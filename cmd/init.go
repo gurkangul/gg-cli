@@ -41,6 +41,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		ggDir,
 		filepath.Join(ggDir, "volumes", "qdrant"),
 		filepath.Join(ggDir, "volumes", "memgraph"),
+		filepath.Join(ggDir, "volumes", "ollama"),
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
@@ -72,6 +73,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("⚠ Docker compose failed — start manually: docker compose -f .gg/docker-compose.yaml up -d")
 	} else {
 		fmt.Println("✓ Docker services started")
+	}
+
+	// Pull embedding model via Ollama
+	fmt.Println("Pulling nomic-embed-text model (first time may take a minute)...")
+	pull := exec.Command("docker", "compose", "-f", filepath.Join(ggDir, "docker-compose.yaml"),
+		"exec", "ollama", "ollama", "pull", "nomic-embed-text")
+	pull.Stdout = os.Stdout
+	pull.Stderr = os.Stderr
+	if err := pull.Run(); err != nil {
+		fmt.Println("⚠ Model pull failed — run manually: docker compose -f .gg/docker-compose.yaml exec ollama ollama pull nomic-embed-text")
+	} else {
+		fmt.Println("✓ nomic-embed-text model ready")
 	}
 
 	// Wait for Qdrant to be ready and set up collections

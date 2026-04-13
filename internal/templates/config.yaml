@@ -3,6 +3,5 @@ qdrant:
   port: 6334
 
 embedding:
-  provider: openai
-  model: text-embedding-3-small
-  api_key: ${OPENAI_API_KEY}
+  host: http://localhost:11434
+  model: nomic-embed-text

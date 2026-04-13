@@ -16,3 +16,11 @@ services:
     volumes:
       - ./volumes/memgraph:/var/lib/memgraph
     restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./volumes/ollama:/root/.ollama
+    restart: unless-stopped

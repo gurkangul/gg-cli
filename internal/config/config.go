@@ -19,9 +19,8 @@ type QdrantConfig struct {
 }
 
 type EmbeddingConfig struct {
-	Provider string `yaml:"provider"`
-	Model    string `yaml:"model"`
-	APIKey   string `yaml:"api_key"`
+	Host  string `yaml:"host"`
+	Model string `yaml:"model"`
 }
 
 type Config struct {
@@ -36,9 +35,8 @@ func DefaultConfig() *Config {
 			Port: 6334,
 		},
 		Embedding: EmbeddingConfig{
-			Provider: "openai",
-			Model:    "text-embedding-3-small",
-			APIKey:   "${OPENAI_API_KEY}",
+			Host:  "http://localhost:11434",
+			Model: "nomic-embed-text",
 		},
 	}
 }
@@ -83,10 +81,6 @@ func Load() (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-	// Resolve environment variable references in API key
-	if cfg.Embedding.APIKey == "${OPENAI_API_KEY}" || cfg.Embedding.APIKey == "" {
-		cfg.Embedding.APIKey = os.Getenv("OPENAI_API_KEY")
 	}
 	return &cfg, nil
 }

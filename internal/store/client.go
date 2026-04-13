@@ -14,7 +14,7 @@ const (
 	CollMessages   = "messages"
 	CollRejections = "rejections"
 
-	VectorSize = 1536 // text-embedding-3-small dimension
+	VectorSize = 768 // nomic-embed-text dimension
 )
 
 type Client struct {

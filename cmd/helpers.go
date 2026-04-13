@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/gurkangul/gg/internal/config"
@@ -21,9 +20,6 @@ func newEmbedder() (*embedding.Generator, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
-	}
-	if cfg.Embedding.APIKey == "" {
-		return nil, fmt.Errorf("OPENAI_API_KEY not set — export it or set in .gg/config.yaml")
 	}
 	return embedding.New(&cfg.Embedding), nil
 }
