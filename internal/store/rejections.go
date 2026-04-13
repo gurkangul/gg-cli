@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,22 +25,25 @@ func (c *Client) AddRejection(ctx context.Context, r Rejection, vector []float32
 		r.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
-	payload := map[string]any{
+	payload, err := qdrant.TryValueMap(map[string]any{
 		"approach":   r.Approach,
 		"reason":     r.Reason,
 		"task_id":    r.TaskID,
 		"created_at": r.CreatedAt,
+	})
+	if err != nil {
+		return fmt.Errorf("build payload: %w", err)
 	}
 
 	wait := true
-	_, err := c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: CollRejections,
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
 				Id:      qdrant.NewID(r.ID),
 				Vectors: qdrant.NewVectors(vector...),
-				Payload: qdrant.NewValueMap(payload),
+				Payload: payload,
 			},
 		},
 	})

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,7 +19,7 @@ type Message struct {
 	CreatedAt string
 }
 
-func (c *Client) SendMessage(ctx context.Context, m Message, vector []float32) error {
+func (c *Client) SendMessage(ctx context.Context, m Message) error {
 	if m.ID == "" {
 		m.ID = uuid.New().String()
 	}
@@ -26,24 +27,29 @@ func (c *Client) SendMessage(ctx context.Context, m Message, vector []float32) e
 		m.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
-	payload := map[string]any{
+	payload, err := qdrant.TryValueMap(map[string]any{
 		"from_role":  m.FromRole,
 		"to_role":    m.ToRole,
 		"content":    m.Content,
 		"read":       false,
 		"task_id":    m.TaskID,
 		"created_at": m.CreatedAt,
+	})
+	if err != nil {
+		return fmt.Errorf("build payload: %w", err)
 	}
 
+	// Messages use a zero vector — they are filtered by role, not searched semantically.
+	zeroVec := make([]float32, VectorSize)
 	wait := true
-	_, err := c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: CollMessages,
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
 				Id:      qdrant.NewID(m.ID),
-				Vectors: qdrant.NewVectors(vector...),
-				Payload: qdrant.NewValueMap(payload),
+				Vectors: qdrant.NewVectors(zeroVec...),
+				Payload: payload,
 			},
 		},
 	})

@@ -25,13 +25,23 @@ type Task struct {
 }
 
 func (c *Client) nextTaskID(ctx context.Context) (string, error) {
-	count, err := c.qc.Count(ctx, &qdrant.CountPoints{
+	// Scroll all tasks to find the max existing ID number, avoiding collisions after deletion.
+	points, err := c.qc.Scroll(ctx, &qdrant.ScrollPoints{
 		CollectionName: CollTasks,
+		Limit:          qdrant.PtrOf(uint32(1000)),
+		WithPayload:    qdrant.NewWithPayloadInclude("task_id"),
 	})
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("TASK-%03d", count+1), nil
+	maxNum := 0
+	for _, p := range points {
+		id := p.GetPayload()["task_id"].GetStringValue()
+		if n, err := ParseTaskID(id); err == nil && n > maxNum {
+			maxNum = n
+		}
+	}
+	return fmt.Sprintf("TASK-%03d", maxNum+1), nil
 }
 
 func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (string, error) {
@@ -50,17 +60,20 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 		t.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
-	payload := map[string]any{
+	payload, err := qdrant.TryValueMap(map[string]any{
 		"task_id":      t.ID,
 		"title":        t.Title,
 		"detail":       t.Detail,
 		"status":       t.Status,
 		"priority":     t.Priority,
-		"depends_on":   t.DependsOn,
-		"tags":         t.Tags,
+		"depends_on":   toAnySlice(t.DependsOn),
+		"tags":         toAnySlice(t.Tags),
 		"block_reason": t.BlockReason,
 		"done_summary": t.DoneSummary,
 		"created_at":   t.CreatedAt,
+	})
+	if err != nil {
+		return "", fmt.Errorf("build payload: %w", err)
 	}
 
 	wait := true
@@ -72,7 +85,7 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 			{
 				Id:      qdrant.NewID(pointID),
 				Vectors: qdrant.NewVectors(vector...),
-				Payload: qdrant.NewValueMap(payload),
+				Payload: payload,
 			},
 		},
 	})
@@ -149,14 +162,20 @@ func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra str
 	}
 
 	statusVal, _ := qdrant.NewValue(status)
+	emptyVal, _ := qdrant.NewValue("")
 	payload := map[string]*qdrant.Value{
 		"status": statusVal,
 	}
 	switch status {
 	case "done":
 		payload["done_summary"], _ = qdrant.NewValue(extra)
+		payload["block_reason"] = emptyVal
 	case "blocked":
 		payload["block_reason"], _ = qdrant.NewValue(extra)
+		payload["done_summary"] = emptyVal
+	case "pending", "in_progress":
+		payload["block_reason"] = emptyVal
+		payload["done_summary"] = emptyVal
 	}
 
 	wait := true

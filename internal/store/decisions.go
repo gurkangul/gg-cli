@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,23 +26,26 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 		d.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
-	payload := map[string]any{
+	payload, err := qdrant.TryValueMap(map[string]any{
 		"text":       d.Text,
 		"reason":     d.Reason,
-		"tags":       d.Tags,
+		"tags":       toAnySlice(d.Tags),
 		"task_id":    d.TaskID,
 		"created_at": d.CreatedAt,
+	})
+	if err != nil {
+		return fmt.Errorf("build payload: %w", err)
 	}
 
 	wait := true
-	_, err := c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: CollDecisions,
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
 				Id:      qdrant.NewID(d.ID),
 				Vectors: qdrant.NewVectors(vector...),
-				Payload: qdrant.NewValueMap(payload),
+				Payload: payload,
 			},
 		},
 	})
@@ -104,6 +108,17 @@ func decisionFromRetrieved(p *qdrant.RetrievedPoint) Decision {
 		TaskID:    pay["task_id"].GetStringValue(),
 		CreatedAt: pay["created_at"].GetStringValue(),
 	}
+}
+
+func toAnySlice(ss []string) []any {
+	if ss == nil {
+		return nil
+	}
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
 }
 
 func extractStringList(v *qdrant.Value) []string {

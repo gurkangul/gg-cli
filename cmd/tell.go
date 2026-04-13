@@ -30,15 +30,6 @@ func runTell(cmd *cobra.Command, args []string) error {
 	toRole := args[0]
 	content := args[1]
 
-	embedder, err := newEmbedder()
-	if err != nil {
-		return err
-	}
-	vector, err := embedder.Generate(content)
-	if err != nil {
-		return fmt.Errorf("generate embedding: %w", err)
-	}
-
 	client, err := newStoreClient()
 	if err != nil {
 		return err
@@ -52,7 +43,7 @@ func runTell(cmd *cobra.Command, args []string) error {
 		TaskID:   tellTask,
 	}
 
-	if err := client.SendMessage(context.Background(), m, vector); err != nil {
+	if err := client.SendMessage(context.Background(), m); err != nil {
 		return fmt.Errorf("send message: %w", err)
 	}
 

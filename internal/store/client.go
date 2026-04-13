@@ -53,20 +53,13 @@ func (c *Client) EnsureCollections(ctx context.Context) error {
 		existMap[name] = true
 	}
 
+	vectorCfg := qdrant.NewVectorsConfig(&qdrant.VectorParams{
+		Size:     VectorSize,
+		Distance: qdrant.Distance_Cosine,
+	})
 	for _, name := range collections {
 		if existMap[name] {
 			continue
-		}
-		vectorCfg := qdrant.NewVectorsConfig(&qdrant.VectorParams{
-			Size:     VectorSize,
-			Distance: qdrant.Distance_Cosine,
-		})
-		// Messages don't need vector search
-		if name == CollMessages {
-			vectorCfg = qdrant.NewVectorsConfig(&qdrant.VectorParams{
-				Size:     VectorSize,
-				Distance: qdrant.Distance_Cosine,
-			})
 		}
 		err := c.qc.CreateCollection(ctx, &qdrant.CreateCollection{
 			CollectionName: name,
@@ -77,9 +70,4 @@ func (c *Client) EnsureCollections(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// Raw returns the underlying Qdrant client for advanced operations.
-func (c *Client) Raw() *qdrant.Client {
-	return c.qc
 }
