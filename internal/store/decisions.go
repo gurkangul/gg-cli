@@ -1,0 +1,122 @@
+package store
+
+import (
+	"context"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/qdrant/go-client/qdrant"
+)
+
+type Decision struct {
+	ID        string
+	Text      string
+	Reason    string
+	Tags      []string
+	TaskID    string
+	CreatedAt string
+}
+
+func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) error {
+	if d.ID == "" {
+		d.ID = uuid.New().String()
+	}
+	if d.CreatedAt == "" {
+		d.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+
+	payload := map[string]any{
+		"text":       d.Text,
+		"reason":     d.Reason,
+		"tags":       d.Tags,
+		"task_id":    d.TaskID,
+		"created_at": d.CreatedAt,
+	}
+
+	wait := true
+	_, err := c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+		CollectionName: CollDecisions,
+		Wait:           &wait,
+		Points: []*qdrant.PointStruct{
+			{
+				Id:      qdrant.NewID(d.ID),
+				Vectors: qdrant.NewVectors(vector...),
+				Payload: qdrant.NewValueMap(payload),
+			},
+		},
+	})
+	return err
+}
+
+func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit uint64) ([]Decision, error) {
+	results, err := c.qc.Query(ctx, &qdrant.QueryPoints{
+		CollectionName: CollDecisions,
+		Query:          qdrant.NewQuery(vector...),
+		Limit:          qdrant.PtrOf(limit),
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var decisions []Decision
+	for _, r := range results {
+		decisions = append(decisions, decisionFromPoint(r))
+	}
+	return decisions, nil
+}
+
+func (c *Client) ListDecisions(ctx context.Context, limit uint32) ([]Decision, error) {
+	points, err := c.qc.Scroll(ctx, &qdrant.ScrollPoints{
+		CollectionName: CollDecisions,
+		Limit:          qdrant.PtrOf(limit),
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var decisions []Decision
+	for _, p := range points {
+		decisions = append(decisions, decisionFromRetrieved(p))
+	}
+	return decisions, nil
+}
+
+func decisionFromPoint(p *qdrant.ScoredPoint) Decision {
+	pay := p.GetPayload()
+	return Decision{
+		ID:        p.GetId().GetUuid(),
+		Text:      pay["text"].GetStringValue(),
+		Reason:    pay["reason"].GetStringValue(),
+		Tags:      extractStringList(pay["tags"]),
+		TaskID:    pay["task_id"].GetStringValue(),
+		CreatedAt: pay["created_at"].GetStringValue(),
+	}
+}
+
+func decisionFromRetrieved(p *qdrant.RetrievedPoint) Decision {
+	pay := p.GetPayload()
+	return Decision{
+		ID:        p.GetId().GetUuid(),
+		Text:      pay["text"].GetStringValue(),
+		Reason:    pay["reason"].GetStringValue(),
+		Tags:      extractStringList(pay["tags"]),
+		TaskID:    pay["task_id"].GetStringValue(),
+		CreatedAt: pay["created_at"].GetStringValue(),
+	}
+}
+
+func extractStringList(v *qdrant.Value) []string {
+	if v == nil {
+		return nil
+	}
+	list := v.GetListValue()
+	if list == nil {
+		return nil
+	}
+	var result []string
+	for _, item := range list.GetValues() {
+		result = append(result, item.GetStringValue())
+	}
+	return result
+}
