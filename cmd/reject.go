@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/gurkangul/gg/internal/store"
@@ -29,25 +28,23 @@ func init() {
 func runReject(cmd *cobra.Command, args []string) error {
 	approach := args[0]
 
-	embedder, err := newEmbedder()
+	d, err := loadDeps(true)
 	if err != nil {
 		return err
 	}
+	defer d.Close()
 
 	embedText := approach
 	if rejectReason != "" {
 		embedText = approach + " " + rejectReason
 	}
-	vector, err := embedder.Generate(embedText)
+	vector, err := d.embedder.Generate(embedText)
 	if err != nil {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
-	client, err := newStoreClient()
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+	ctx, cancel := cmdContext()
+	defer cancel()
 
 	r := store.Rejection{
 		Approach: approach,
@@ -55,7 +52,7 @@ func runReject(cmd *cobra.Command, args []string) error {
 		TaskID:   rejectTask,
 	}
 
-	if err := client.AddRejection(context.Background(), r, vector); err != nil {
+	if err := d.store.AddRejection(ctx, r, vector); err != nil {
 		return fmt.Errorf("store rejection: %w", err)
 	}
 

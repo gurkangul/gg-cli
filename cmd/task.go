@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -29,6 +28,9 @@ var (
 	taskTags     string
 )
 
+var validPriorities = map[string]bool{"high": true, "medium": true, "low": true}
+var validStatuses = map[string]bool{"pending": true, "in_progress": true, "done": true, "blocked": true}
+
 func init() {
 	taskCreateCmd.Flags().StringVar(&taskDetail, "detail", "", "task description")
 	taskCreateCmd.Flags().StringVar(&taskPriority, "priority", "medium", "priority: high, medium, low")
@@ -47,25 +49,27 @@ func init() {
 func runTaskCreate(cmd *cobra.Command, args []string) error {
 	title := args[0]
 
-	embedder, err := newEmbedder()
+	if !validPriorities[taskPriority] {
+		return fmt.Errorf("invalid priority %q — use high, medium, or low", taskPriority)
+	}
+
+	d, err := loadDeps(true)
 	if err != nil {
 		return err
 	}
+	defer d.Close()
 
 	embedText := title
 	if taskDetail != "" {
 		embedText = title + " " + taskDetail
 	}
-	vector, err := embedder.Generate(embedText)
+	vector, err := d.embedder.Generate(embedText)
 	if err != nil {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
-	client, err := newStoreClient()
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+	ctx, cancel := cmdContext()
+	defer cancel()
 
 	t := store.Task{
 		Title:    title,
@@ -74,7 +78,7 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		Tags:     parseTags(taskTags),
 	}
 
-	id, err := client.CreateTask(context.Background(), t, vector)
+	id, err := d.store.CreateTask(ctx, t, vector)
 	if err != nil {
 		return fmt.Errorf("create task: %w", err)
 	}
@@ -94,13 +98,20 @@ var taskListCmd = &cobra.Command{
 var taskListStatus string
 
 func runTaskList(cmd *cobra.Command, args []string) error {
-	client, err := newStoreClient()
+	if taskListStatus != "" && !validStatuses[taskListStatus] {
+		return fmt.Errorf("invalid status %q — use pending, in_progress, done, or blocked", taskListStatus)
+	}
+
+	d, err := loadDeps(false)
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer d.Close()
 
-	tasks, err := client.ListTasks(context.Background(), taskListStatus)
+	ctx, cancel := cmdContext()
+	defer cancel()
+
+	tasks, err := d.store.ListTasks(ctx, taskListStatus)
 	if err != nil {
 		return fmt.Errorf("list tasks: %w", err)
 	}
@@ -132,13 +143,16 @@ var taskGetCmd = &cobra.Command{
 func runTaskGet(cmd *cobra.Command, args []string) error {
 	taskID := strings.ToUpper(args[0])
 
-	client, err := newStoreClient()
+	d, err := loadDeps(false)
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer d.Close()
 
-	t, err := client.GetTask(context.Background(), taskID)
+	ctx, cancel := cmdContext()
+	defer cancel()
+
+	t, err := d.store.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
@@ -176,13 +190,16 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	taskID := strings.ToUpper(args[0])
 	summary := args[1]
 
-	client, err := newStoreClient()
+	d, err := loadDeps(false)
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer d.Close()
 
-	if err := client.UpdateTaskStatus(context.Background(), taskID, "done", summary); err != nil {
+	ctx, cancel := cmdContext()
+	defer cancel()
+
+	if err := d.store.UpdateTaskStatus(ctx, taskID, "done", summary); err != nil {
 		return err
 	}
 
@@ -203,13 +220,16 @@ func runTaskBlock(cmd *cobra.Command, args []string) error {
 	taskID := strings.ToUpper(args[0])
 	reason := args[1]
 
-	client, err := newStoreClient()
+	d, err := loadDeps(false)
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer d.Close()
 
-	if err := client.UpdateTaskStatus(context.Background(), taskID, "blocked", reason); err != nil {
+	ctx, cancel := cmdContext()
+	defer cancel()
+
+	if err := d.store.UpdateTaskStatus(ctx, taskID, "blocked", reason); err != nil {
 		return err
 	}
 

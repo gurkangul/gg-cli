@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -21,14 +20,16 @@ func init() {
 }
 
 func runInbox(cmd *cobra.Command, args []string) error {
-	client, err := newStoreClient()
+	d, err := loadDeps(false)
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer d.Close()
 
-	ctx := context.Background()
-	messages, err := client.GetInbox(ctx, inboxRole)
+	ctx, cancel := cmdContext()
+	defer cancel()
+
+	messages, err := d.store.GetInbox(ctx, inboxRole)
 	if err != nil {
 		return fmt.Errorf("get inbox: %w", err)
 	}
@@ -48,8 +49,7 @@ func runInbox(cmd *cobra.Command, args []string) error {
 		ids = append(ids, m.ID)
 	}
 
-	// Mark all displayed messages as read
-	if err := client.MarkMessagesRead(ctx, ids); err != nil {
+	if err := d.store.MarkMessagesRead(ctx, ids); err != nil {
 		return fmt.Errorf("mark read: %w", err)
 	}
 

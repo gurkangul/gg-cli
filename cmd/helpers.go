@@ -1,27 +1,46 @@
 package cmd
 
 import (
+	"context"
 	"strings"
+	"time"
 
 	"github.com/gurkangul/gg/internal/config"
 	"github.com/gurkangul/gg/internal/embedding"
 	"github.com/gurkangul/gg/internal/store"
 )
 
-func newStoreClient() (*store.Client, error) {
-	cfg, err := config.Load()
-	if err != nil {
-		return nil, err
-	}
-	return store.New(&cfg.Qdrant)
+const cmdTimeout = 10 * time.Second
+
+func cmdContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), cmdTimeout)
 }
 
-func newEmbedder() (*embedding.Generator, error) {
+type deps struct {
+	store   *store.Client
+	embedder *embedding.Generator
+}
+
+func loadDeps(needEmbedding bool) (*deps, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
 	}
-	return embedding.New(&cfg.Embedding), nil
+	client, err := store.New(&cfg.Qdrant)
+	if err != nil {
+		return nil, err
+	}
+	d := &deps{store: client}
+	if needEmbedding {
+		d.embedder = embedding.New(&cfg.Embedding)
+	}
+	return d, nil
+}
+
+func (d *deps) Close() {
+	if d.store != nil {
+		d.store.Close()
+	}
 }
 
 func parseTags(tags string) []string {

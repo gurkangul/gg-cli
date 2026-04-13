@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -25,31 +24,26 @@ func init() {
 func runSearch(cmd *cobra.Command, args []string) error {
 	query := args[0]
 
-	embedder, err := newEmbedder()
+	d, err := loadDeps(true)
 	if err != nil {
 		return err
 	}
-	vector, err := embedder.Generate(query)
+	defer d.Close()
+
+	vector, err := d.embedder.Generate(query)
 	if err != nil {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
-	client, err := newStoreClient()
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+	ctx, cancel := cmdContext()
+	defer cancel()
 
-	ctx := context.Background()
-
-	// Search decisions
-	decisions, err := client.SearchDecisions(ctx, vector, searchLimit)
+	decisions, err := d.store.SearchDecisions(ctx, vector, searchLimit)
 	if err != nil {
 		return fmt.Errorf("search decisions: %w", err)
 	}
 
-	// Search rejections
-	rejections, err := client.SearchRejections(ctx, vector, searchLimit)
+	rejections, err := d.store.SearchRejections(ctx, vector, searchLimit)
 	if err != nil {
 		return fmt.Errorf("search rejections: %w", err)
 	}
@@ -61,16 +55,16 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	if len(decisions) > 0 {
 		fmt.Println("DECISIONS:")
-		for _, d := range decisions {
-			fmt.Printf("  • %s\n", d.Text)
-			if d.Reason != "" {
-				fmt.Printf("    Reason: %s\n", d.Reason)
+		for _, dec := range decisions {
+			fmt.Printf("  • %s\n", dec.Text)
+			if dec.Reason != "" {
+				fmt.Printf("    Reason: %s\n", dec.Reason)
 			}
-			if len(d.Tags) > 0 {
-				fmt.Printf("    Tags: %s\n", strings.Join(d.Tags, ", "))
+			if len(dec.Tags) > 0 {
+				fmt.Printf("    Tags: %s\n", strings.Join(dec.Tags, ", "))
 			}
-			if d.TaskID != "" {
-				fmt.Printf("    Task: %s\n", d.TaskID)
+			if dec.TaskID != "" {
+				fmt.Printf("    Task: %s\n", dec.TaskID)
 			}
 		}
 	}

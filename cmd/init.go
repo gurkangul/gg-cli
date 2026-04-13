@@ -31,12 +31,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	ggDir := filepath.Join(cwd, config.DirName)
 
-	// Check if already initialized
-	if _, err := os.Stat(ggDir); err == nil {
-		return fmt.Errorf(".gg/ already exists — already initialized")
-	}
-
-	// Create directory structure
+	// Idempotent: create dirs if missing
 	dirs := []string{
 		ggDir,
 		filepath.Join(ggDir, "volumes", "qdrant"),
@@ -48,9 +43,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("create %s: %w", d, err)
 		}
 	}
-	fmt.Println("✓ Created .gg/ directory")
 
-	// Write templates
+	// Idempotent: write files only if missing
 	files := map[string]string{
 		"docker-compose.yaml": templates.DockerCompose,
 		"config.yaml":         templates.ConfigYAML,
@@ -58,6 +52,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	for name, content := range files {
 		path := filepath.Join(ggDir, name)
+		if _, err := os.Stat(path); err == nil {
+			fmt.Printf("  .gg/%s already exists, skipping\n", name)
+			continue
+		}
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			return fmt.Errorf("write %s: %w", name, err)
 		}
@@ -66,7 +64,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Start Docker services
 	fmt.Println("Starting Docker services...")
-	compose := exec.Command("docker", "compose", "-f", filepath.Join(ggDir, "docker-compose.yaml"), "up", "-d")
+	composePath := filepath.Join(ggDir, "docker-compose.yaml")
+	compose := exec.Command("docker", "compose", "-f", composePath, "up", "-d")
 	compose.Stdout = os.Stdout
 	compose.Stderr = os.Stderr
 	if err := compose.Run(); err != nil {
@@ -77,7 +76,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Pull embedding model via Ollama
 	fmt.Println("Pulling nomic-embed-text model (first time may take a minute)...")
-	pull := exec.Command("docker", "compose", "-f", filepath.Join(ggDir, "docker-compose.yaml"),
+	pull := exec.Command("docker", "compose", "-f", composePath,
 		"exec", "ollama", "ollama", "pull", "nomic-embed-text")
 	pull.Stdout = os.Stdout
 	pull.Stderr = os.Stderr
@@ -89,7 +88,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Wait for Qdrant to be ready and set up collections
 	fmt.Println("Waiting for Qdrant...")
-	cfg := config.DefaultConfig()
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
 	var client *store.Client
 	for i := 0; i < 15; i++ {
 		client, err = store.New(&cfg.Qdrant)
@@ -106,16 +108,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	if err != nil {
 		fmt.Println("⚠ Qdrant not ready — collections will be created on first use")
+		fmt.Println("\nGG initialized! Add .gg/RULES.md to your agent's config.")
 		return nil
 	}
 	defer client.Close()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	if err := client.EnsureCollections(ctx); err != nil {
 		return fmt.Errorf("setup collections: %w", err)
 	}
 	fmt.Println("✓ Qdrant collections ready (decisions, tasks, messages, rejections)")
 
-	fmt.Println("\n🧠 GG initialized! Add .gg/RULES.md to your agent's config.")
+	fmt.Println("\nGG initialized! Add .gg/RULES.md to your agent's config.")
 	return nil
 }

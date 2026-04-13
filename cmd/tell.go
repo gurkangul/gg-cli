@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/gurkangul/gg/internal/store"
@@ -30,11 +29,14 @@ func runTell(cmd *cobra.Command, args []string) error {
 	toRole := args[0]
 	content := args[1]
 
-	client, err := newStoreClient()
+	d, err := loadDeps(false)
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer d.Close()
+
+	ctx, cancel := cmdContext()
+	defer cancel()
 
 	m := store.Message{
 		FromRole: tellFrom,
@@ -43,7 +45,7 @@ func runTell(cmd *cobra.Command, args []string) error {
 		TaskID:   tellTask,
 	}
 
-	if err := client.SendMessage(context.Background(), m); err != nil {
+	if err := d.store.SendMessage(ctx, m); err != nil {
 		return fmt.Errorf("send message: %w", err)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/gurkangul/gg/internal/config"
 )
@@ -21,14 +22,16 @@ type embedResponse struct {
 }
 
 type Generator struct {
-	host  string
-	model string
+	host   string
+	model  string
+	client *http.Client
 }
 
 func New(cfg *config.EmbeddingConfig) *Generator {
 	return &Generator{
-		host:  cfg.Host,
-		model: cfg.Model,
+		host:   cfg.Host,
+		model:  cfg.Model,
+		client: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -42,13 +45,19 @@ func (g *Generator) Generate(text string) ([]float32, error) {
 		return nil, err
 	}
 
-	resp, err := http.Post(g.host+"/api/embed", "application/json", bytes.NewReader(body))
+	resp, err := g.client.Post(g.host+"/api/embed", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("ollama API call failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ollama returned status %d: %s", resp.StatusCode, string(data))
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -32,35 +31,32 @@ func init() {
 func runDecide(cmd *cobra.Command, args []string) error {
 	text := args[0]
 
-	embedder, err := newEmbedder()
+	d, err := loadDeps(true)
 	if err != nil {
 		return err
 	}
+	defer d.Close()
 
-	// Build embedding from text + reason
 	embedText := text
 	if decideReason != "" {
 		embedText = text + " " + decideReason
 	}
-	vector, err := embedder.Generate(embedText)
+	vector, err := d.embedder.Generate(embedText)
 	if err != nil {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
-	client, err := newStoreClient()
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+	ctx, cancel := cmdContext()
+	defer cancel()
 
-	d := store.Decision{
+	dec := store.Decision{
 		Text:   text,
 		Reason: decideReason,
 		Tags:   parseTags(decideTags),
 		TaskID: decideTask,
 	}
 
-	if err := client.AddDecision(context.Background(), d, vector); err != nil {
+	if err := d.store.AddDecision(ctx, dec, vector); err != nil {
 		return fmt.Errorf("store decision: %w", err)
 	}
 
