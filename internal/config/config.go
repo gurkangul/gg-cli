@@ -75,12 +75,22 @@ func isProjectGGDir(path string) bool {
 	if err != nil || !info.IsDir() {
 		return false
 	}
-	if shared, err := SharedDir(); err == nil {
-		if abs, err := filepath.Abs(path); err == nil {
-			if absShared, err := filepath.Abs(shared); err == nil && abs == absShared {
-				return false
-			}
-		}
+	// Refuse if the path equals the shared infra dir. Fail closed when HOME
+	// is unresolvable: without it we cannot prove path != ~/.gg.
+	shared, err := SharedDir()
+	if err != nil {
+		return false
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	absShared, err := filepath.Abs(shared)
+	if err != nil {
+		return false
+	}
+	if abs == absShared {
+		return false
 	}
 	_, err = os.Stat(filepath.Join(path, ConfigFile))
 	return err == nil

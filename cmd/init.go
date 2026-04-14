@@ -88,16 +88,23 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create %s: %w", ggDir, err)
 	}
 
-	// Detect legacy per-project docker-compose (pre-refactor setups). Don't
-	// silently clobber — guide the user through migration.
+	// Detect legacy pre-refactor artifacts (per-project compose + local volumes).
+	// These either collide on ports with the new shared infra or hide gigabytes
+	// of orphaned data from the user. Refuse with explicit migration steps.
 	legacyCompose := filepath.Join(ggDir, "docker-compose.yaml")
-	if _, err := os.Stat(legacyCompose); err == nil {
-		return fmt.Errorf(
-			"legacy per-project docker-compose found at %s — stop it with\n"+
-				"  docker compose -f %s down -v\n"+
-				"then delete %s and re-run `gg init`. Old collection data will not be migrated automatically",
-			legacyCompose, legacyCompose, legacyCompose,
-		)
+	legacyVolumes := filepath.Join(ggDir, "volumes")
+	_, composeErr := os.Stat(legacyCompose)
+	_, volumesErr := os.Stat(legacyVolumes)
+	if composeErr == nil || volumesErr == nil {
+		msg := "legacy per-project setup detected in " + ggDir + ":\n"
+		if composeErr == nil {
+			msg += "  - docker-compose.yaml (stop: `docker compose -f " + legacyCompose + " down -v`)\n"
+		}
+		if volumesErr == nil {
+			msg += "  - volumes/ (old Qdrant/Memgraph/Ollama data — delete after backing up if needed)\n"
+		}
+		msg += "remove the above and re-run `gg init`. Old collection data is NOT migrated automatically"
+		return fmt.Errorf("%s", msg)
 	}
 
 	// Generate or preserve project_id
@@ -146,9 +153,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 func ensureProjectConfig(ggDir string) (string, error) {
 	configPath := filepath.Join(ggDir, config.ConfigFile)
 	if _, err := os.Stat(configPath); err == nil {
-		// Already exists — load to extract project_id (do NOT regenerate).
 		existing, err := config.Load()
 		if err != nil {
+			// Special-case the pre-refactor config (no project_id) — the
+			// validation error is accurate but confusing during `gg init`.
+			errStr := err.Error()
+			if strings.Contains(errStr, "project_id is required") {
+				return "", fmt.Errorf(
+					"%s looks like a pre-refactor config (no project_id). Delete it to regenerate:\n"+
+						"  rm %s && gg init",
+					configPath, configPath,
+				)
+			}
 			return "", fmt.Errorf("project already initialized but config is invalid: %w", err)
 		}
 		fmt.Printf("  Project already registered as %s\n", existing.ProjectID)
@@ -156,8 +172,17 @@ func ensureProjectConfig(ggDir string) (string, error) {
 	}
 	projectID := uuid.New().String()
 	body := strings.ReplaceAll(templates.ConfigYAML, "PROJECT_ID_PLACEHOLDER", projectID)
-	if err := os.WriteFile(configPath, []byte(body), 0644); err != nil {
+	// O_EXCL to avoid two concurrent gg init's writing different project_ids.
+	f, err := os.OpenFile(configPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
 		return "", fmt.Errorf("write config: %w", err)
+	}
+	if _, err := f.Write([]byte(body)); err != nil {
+		_ = f.Close()
+		return "", fmt.Errorf("write config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("close config: %w", err)
 	}
 	fmt.Printf("✓ Registered project with ID %s\n", projectID)
 	return projectID, nil
@@ -222,7 +247,11 @@ func setupProjectCollections(ctx context.Context, projectID, ggDir string) error
 			_ = client.Close()
 			client = nil
 		}
-		time.Sleep(time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
 	}
 	if healthErr != nil || client == nil {
 		fmt.Println("⚠ Qdrant not ready — collections will be created on first use")
@@ -239,27 +268,37 @@ func setupProjectCollections(ctx context.Context, projectID, ggDir string) error
 	return nil
 }
 
-// guardProjectLocation refuses to init if cwd is the shared dir itself, or
-// if any strict ancestor of cwd already contains a project-local .gg/.
+// guardProjectLocation refuses to init if cwd is the shared dir itself,
+// if cwd would make its .gg/ collide with the shared dir (cwd == parent of
+// shared), or if any strict ancestor of cwd already contains a gg project.
 func guardProjectLocation(cwd string) error {
 	absCwd, err := filepath.Abs(cwd)
 	if err != nil {
 		return err
 	}
-	if shared, err := config.SharedDir(); err == nil {
-		if absShared, err := filepath.Abs(shared); err == nil && absCwd == absShared {
-			return fmt.Errorf("cannot `gg init` inside the shared dir %s — choose a separate project directory", shared)
+	shared, sharedErr := config.SharedDir()
+	if sharedErr == nil {
+		absShared, absErr := filepath.Abs(shared)
+		if absErr == nil {
+			if absCwd == absShared {
+				return fmt.Errorf("cannot `gg init` inside the shared dir %s — choose a separate project directory", shared)
+			}
+			// cwd == $HOME means creating <cwd>/.gg/ would BE the shared dir.
+			if absCwd == filepath.Dir(absShared) {
+				return fmt.Errorf("cannot `gg init` in %s — its .gg/ would collide with the shared infra dir %s", absCwd, absShared)
+			}
 		}
 	}
-	parent := filepath.Dir(absCwd)
-	for parent != absCwd {
+	for {
+		parent := filepath.Dir(absCwd)
+		if parent == absCwd {
+			return nil
+		}
 		if _, err := os.Stat(filepath.Join(parent, config.DirName, config.ConfigFile)); err == nil {
-			return fmt.Errorf("ancestor directory %s already contains a gg project — cannot nest a new project under it", parent)
+			return fmt.Errorf("ancestor directory %s already contains a gg project — run `gg init` from that directory, or choose a directory outside it", parent)
 		}
 		absCwd = parent
-		parent = filepath.Dir(parent)
 	}
-	return nil
 }
 
 // waitForHTTP polls a URL with GET until a 2xx response or timeout.
