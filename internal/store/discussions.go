@@ -3,9 +3,12 @@ package store
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,6 +50,11 @@ type Discussion struct {
 // PayloadSizeWarnThreshold is the approximate byte count at which AppendTurn
 // emits a warning. Qdrant supports ~1 MB per payload; we warn at 80% headroom.
 const PayloadSizeWarnThreshold = 800_000
+
+// discTurnsLocks provides per-discussion in-process mutexes for AppendTurn.
+// This is layered on top of the file-based flock so that both intra-process
+// goroutines and cross-process agents are protected from lost-update races.
+var discTurnsLocks sync.Map // key: discID (string) → *sync.Mutex
 
 func pointUUIDForDiscID(id string) string {
 	return uuid.NewSHA1(discIDNamespace, []byte(id)).String()
@@ -326,7 +334,36 @@ func estimateTurnsBytes(turns []Turn) int {
 // AppendTurn adds a deliberation turn to an existing discussion.
 // It warns (via the returned bool) if the estimated turns payload exceeds
 // PayloadSizeWarnThreshold bytes — callers should surface this to the user.
+//
+// Concurrent safety: the read-modify-write is guarded by two layers:
+//  1. A per-discussion in-process sync.Mutex (discTurnsLocks) serializes
+//     goroutines within the same process.
+//  2. A file-based flock (.gg/.disc-<ID>-turns.lock) serializes concurrent
+//     agent processes on the same machine.
+//
+// Without both guards, two agents writing simultaneously would each read the
+// same snapshot and overwrite each other's turn — silently losing one.
 func (c *Client) AppendTurn(ctx context.Context, discID string, turn Turn) (sizeWarning bool, err error) {
+	// Layer 1: in-process mutex — serializes goroutines within the same process.
+	mu, _ := discTurnsLocks.LoadOrStore(discID, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
+
+	// Layer 2: file flock — serializes across separate agent processes.
+	// Only available when the client has a dataDir (a real project context).
+	if c.dataDir != "" {
+		lockPath := filepath.Join(c.dataDir, ".disc-"+discID+"-turns.lock")
+		f, ferr := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0600)
+		if ferr != nil {
+			return false, fmt.Errorf("open turns lock for %s: %w", discID, ferr)
+		}
+		defer func() { _ = f.Close() }()
+		if lerr := lockFileCtx(ctx, f); lerr != nil {
+			return false, fmt.Errorf("acquire turns lock for %s: %w", discID, lerr)
+		}
+		defer func() { _ = unlockFile(f) }()
+	}
+
 	pointID := qdrant.NewID(pointUUIDForDiscID(discID))
 
 	// Fetch current turns to append to them.

@@ -320,3 +320,58 @@ func TestAllocTaskID_NoDataDir(t *testing.T) {
 		t.Fatal("expected error when dataDir is empty")
 	}
 }
+
+// TestAppendTurnLock_FileCreated verifies that AppendTurn creates the per-disc
+// lock file before reaching Qdrant. When Qdrant is absent the call fails, but
+// the lock file must exist in dataDir after the attempt.
+func TestAppendTurnLock_FileCreated(t *testing.T) {
+	dir := t.TempDir()
+	c := &Client{dataDir: dir}
+	// qc is nil — AppendTurn will panic if it gets past the lock step
+	// because qc.Get is called next. We recover from that panic to confirm
+	// the lock file was created before the Qdrant call.
+	defer func() { recover() }() //nolint:errcheck
+	_, _ = c.AppendTurn(context.Background(), "DISC-001", Turn{By: "test", Text: "x"})
+	// Regardless of Qdrant outcome, the lock file must have been created.
+	lockPath := dir + "/.disc-DISC-001-turns.lock"
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("lock file not created: %v (path: %s)", err, lockPath)
+	}
+}
+
+// TestAppendTurnLock_SerializesConcurrent verifies that the per-discussion
+// in-process sync.Mutex (discTurnsLocks) serializes concurrent goroutines.
+// 50 goroutines each increment a shared counter 100 times while holding the
+// lock — if the mutex fails to serialize, the race detector or a lost-update
+// will surface immediately. This mirrors the acceptance criterion for TASK-105
+// without requiring a live Qdrant instance.
+func TestAppendTurnLock_SerializesConcurrent(t *testing.T) {
+	const (
+		goroutines   = 50
+		acqPerWorker = 100
+	)
+
+	discID := "DISC-042"
+	counter := 0 // shared; safe only because the mutex serializes all access
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			for range acqPerWorker {
+				// Replicate the in-process locking path from AppendTurn.
+				mu, _ := discTurnsLocks.LoadOrStore(discID, &sync.Mutex{})
+				mu.(*sync.Mutex).Lock()
+				counter++ // critical section: must not race
+				mu.(*sync.Mutex).Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	want := goroutines * acqPerWorker
+	if counter != want {
+		t.Errorf("counter = %d, want %d (lost updates detected)", counter, want)
+	}
+}

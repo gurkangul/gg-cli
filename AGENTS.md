@@ -4,7 +4,48 @@ agents_schema: "2.0"
 
 # Agent Guidance
 
-This project uses a shared knowledge base CLI: **gg**.
+## Project Context — gg-cli
+
+**What this project does:** A CLI (`gg`) that gives multiple AI agents a
+shared brain. Every agent (Claude Code, GSD, Codex, Cursor, Aider, …) reads
+the same decisions, tasks, rejections, discussions, notes, and code graph
+through gg — no agent starts from a blank slate.
+
+**Who it's for:** Developers running 2+ AI agents in parallel terminals who
+keep hitting the same three pains:
+1. Each agent re-derives context from scratch
+2. Impact-blind fixes create fix loops
+3. Rejected approaches keep getting re-proposed
+
+**Key constraints (non-negotiable):**
+- **No daemon, no network.** gg is a CLI + local Docker (Qdrant + Ollama +
+  Memgraph). No background process, no telemetry that leaves the machine.
+- **Agent-native.** Agents call gg as a subprocess, not via REST/MCP/RPC.
+- **Multi-project isolation.** Single shared infra at `~/.gg/`, but every
+  project's data is namespaced by a UUID `project_id`.
+- **Forward-only memory.** Append-only Qdrant; soft-filter resolved/done
+  items from default retrieval, never delete.
+
+**Architecture in one paragraph:** The CLI binary lives at
+`cmd/gg/main.go` and dispatches Cobra subcommands in `cmd/`. State lives
+in two stores: Qdrant (decisions, tasks, messages, rejections, discussions,
+notes, bugs — vector + payload) and Memgraph (Symbol/File/Package code
+graph for `gg impact`). Local infra is provisioned by `gg init` via
+docker-compose at `~/.gg/`. Each project's `.gg/` holds only metadata
+(config.yaml, sequence files, RULES.md). Outbox pattern in
+`internal/outbox/` guards dual-store consistency for index operations.
+
+**Look these up before suggesting changes:**
+- `README.md` — public-facing overview + install
+- `docs/architecture.md` — detailed package layout, isolation, crash safety
+- `gg search "<topic>"` — past decisions and rejections on the subject
+- `gg context "<topic>"` — unified bundle (decisions + tasks + code impact)
+
+---
+
+## How agents work in this project
+
+This project uses a shared knowledge base CLI: **gg** (the project itself).
 All decisions, tasks, inter-agent messages, and rejected approaches are
 recorded via the `gg` command.
 

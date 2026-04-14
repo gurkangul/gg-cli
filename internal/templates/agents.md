@@ -4,6 +4,31 @@ agents_schema: "2.0"
 
 # Agent Guidance
 
+## Project Context
+
+> **Replace this section with your project's elevator pitch.** Agents read
+> this at session start to ground every decision they make. Without it,
+> agents have no project context and can suggest things misaligned with
+> your goals.
+
+**What this project does:** [one sentence — what users get from it]
+
+**Who it's for:** [primary user / use case]
+
+**Key constraints:** [non-negotiables — e.g. "no network calls", "stay
+under 1MB binary", "must work offline"]
+
+**Architecture in one paragraph:** [main components, how they fit]
+
+**Look these up before suggesting changes:**
+- `README.md` — public-facing overview + install
+- `gg search "<topic>"` — past decisions and rejections on a subject
+- `gg context "<topic>"` — unified bundle (decisions + tasks + code impact)
+
+---
+
+## How agents work in this project
+
 This project uses a shared knowledge base CLI: **gg**.
 All decisions, tasks, inter-agent messages, and rejected approaches are
 recorded via the `gg` command.
