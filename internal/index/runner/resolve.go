@@ -1,22 +1,53 @@
 package runner
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 )
 
+// ErrIndexerMissing is returned by Resolve when the named binary cannot be
+// found via any of the resolution strategies. Callers can use errors.As to
+// extract the binary name and installation hint.
+type ErrIndexerMissing struct {
+	Binary string // e.g. "scip-go"
+	Hint   string // actionable install command, e.g. "go install ..."
+}
+
+func (e *ErrIndexerMissing) Error() string {
+	return fmt.Sprintf(
+		"indexer %q not found in PATH or ~/.gg/bin/ — run 'gg doctor --install-indexers' or manually: %s",
+		e.Binary, e.Hint,
+	)
+}
+
+// IsIndexerMissing reports whether err (or any error in its chain) is an
+// ErrIndexerMissing. This is the canonical check callers should use.
+func IsIndexerMissing(err error) bool {
+	var e *ErrIndexerMissing
+	return errors.As(err, &e)
+}
+
+// indexerHints maps binary names to their manual installation commands.
+// Used as the Hint field of ErrIndexerMissing.
+var indexerHints = map[string]string{
+	"scip-go":         "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest",
+	"scip-typescript": "npm install -g @sourcegraph/scip-typescript",
+	"scip-python":     "pip install scip-python",
+}
+
 // resolveChain is the ordered list of strategies tried when locating a binary.
 // The first hit wins.
 //
-//  1. PATH  — user already has it installed
-//  2. ~/.gg/bin/<name>  — gg-managed installs (gg doctor --install-indexers puts them here)
-//  3. docker           — fallback via `docker run` wrapper (not implemented yet; reserved)
+//  1. PATH  — user already has it installed globally
+//  2. ~/.gg/bin/<name>  — gg-managed installs (gg doctor --install-indexers writes here)
+//  3. ErrIndexerMissing  — actionable error with install hint
 type resolveChain struct{}
 
-// Resolve returns the absolute path to the named binary, or an error
-// describing where it was looked for.
+// Resolve returns the absolute path to the named binary, or an ErrIndexerMissing
+// describing what to run to fix it.
 func (resolveChain) Resolve(name string) (string, error) {
 	// 1. PATH
 	if p, err := exec.LookPath(name); err == nil {
@@ -32,12 +63,12 @@ func (resolveChain) Resolve(name string) (string, error) {
 		}
 	}
 
-	// 3. Docker fallback — TASK-012 implements gg doctor --install-indexers;
-	// docker shim lives there. Returning a descriptive error for now.
-	return "", fmt.Errorf(
-		"binary %q not found: checked PATH and %s — run 'gg doctor --install-indexers' to download",
-		name, filepath.Join("~/.gg/bin", name),
-	)
+	// 3. Not found — return typed error with actionable hint.
+	hint := indexerHints[name]
+	if hint == "" {
+		hint = fmt.Sprintf("check the %s project for install instructions", name)
+	}
+	return "", &ErrIndexerMissing{Binary: name, Hint: hint}
 }
 
 // ggBinDir returns the absolute path to ~/.gg/bin/.
@@ -59,3 +90,10 @@ func isExecutable(path string) bool {
 }
 
 var resolver = resolveChain{}
+
+// ResolveIndexer is the package-level entry point used by cmd/doctor and
+// runners. It returns the absolute path to the named binary, or an
+// *ErrIndexerMissing if not found.
+func ResolveIndexer(name string) (string, error) {
+	return resolver.Resolve(name)
+}
