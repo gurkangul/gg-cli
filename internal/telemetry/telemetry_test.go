@@ -8,7 +8,7 @@ import (
 
 func TestRecord_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
-	Record(dir, "status")
+	Record(dir, "status", "")
 
 	data, err := os.ReadFile(filePath(dir))
 	if err != nil {
@@ -27,7 +27,7 @@ func TestRecord_DisabledViaEnv(t *testing.T) {
 				t.Fatalf("IsDisabled() = false, want true for %q", val)
 			}
 			dir := t.TempDir()
-			Record(dir, "status")
+			Record(dir, "status", "")
 			if _, err := os.ReadFile(filePath(dir)); !os.IsNotExist(err) {
 				t.Errorf("telemetry file should not be created when disabled (val=%q): err=%v", val, err)
 			}
@@ -41,7 +41,7 @@ func TestRecord_EnabledByDefault(t *testing.T) {
 		t.Fatal("IsDisabled() = true, want false when env unset")
 	}
 	dir := t.TempDir()
-	Record(dir, "status")
+	Record(dir, "status", "")
 	if _, err := os.ReadFile(filePath(dir)); err != nil {
 		t.Errorf("telemetry file should be created when enabled: %v", err)
 	}
@@ -49,9 +49,9 @@ func TestRecord_EnabledByDefault(t *testing.T) {
 
 func TestRecord_EmptyInputsNoOp(t *testing.T) {
 	dir := t.TempDir()
-	Record("", "status")    // empty ggDir
-	Record(dir, "")         // empty verb
-	Record("", "")
+	Record("", "status", "")    // empty ggDir
+	Record(dir, "", "")         // empty verb
+	Record("", "", "")
 
 	_, err := os.ReadFile(filePath(dir))
 	if !os.IsNotExist(err) {
@@ -61,9 +61,9 @@ func TestRecord_EmptyInputsNoOp(t *testing.T) {
 
 func TestRecord_AppendsMultiple(t *testing.T) {
 	dir := t.TempDir()
-	Record(dir, "status")
-	Record(dir, "search")
-	Record(dir, "record")
+	Record(dir, "status", "")
+	Record(dir, "search", "")
+	Record(dir, "record", "")
 
 	sum, err := Summarize(dir)
 	if err != nil {
@@ -98,7 +98,7 @@ func TestSummarize_FiltersOldEntries(t *testing.T) {
 	}
 
 	// Write a recent entry.
-	Record(dir, "status")
+	Record(dir, "status", "")
 
 	sum, err := Summarize(dir)
 	if err != nil {
@@ -117,7 +117,7 @@ func TestRecord_OriginHuman(t *testing.T) {
 	// Ensure GG_ROLE is not set.
 	t.Setenv("GG_ROLE", "")
 
-	Record(dir, "status")
+	Record(dir, "status", "")
 
 	sum, err := Summarize(dir)
 	if err != nil {
@@ -132,7 +132,7 @@ func TestRecord_OriginAgent(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("GG_ROLE", "developer")
 
-	Record(dir, "record")
+	Record(dir, "record", "")
 
 	sum, err := Summarize(dir)
 	if err != nil {
@@ -140,5 +140,43 @@ func TestRecord_OriginAgent(t *testing.T) {
 	}
 	if sum.AgentCalls != 1 || sum.HumanCalls != 0 {
 		t.Errorf("expected 1 agent call, got human=%d agent=%d", sum.HumanCalls, sum.AgentCalls)
+	}
+}
+
+// TestRecord_OriginAgent_FromFlag — passing --from value (e.g. agent calling
+// `gg tell "qa" "msg" --from architect`) classifies the call as agent-initiated
+// even when GG_ROLE/GG_AGENT are unset. This catches the realistic dogfood
+// case where agents follow AGENTS.md but forget to export GG_ROLE.
+func TestRecord_OriginAgent_FromFlag(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_AGENT", "")
+
+	Record(dir, "tell", "architect")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.AgentCalls != 1 || sum.HumanCalls != 0 {
+		t.Errorf("expected 1 agent call (via --from), got human=%d agent=%d", sum.HumanCalls, sum.AgentCalls)
+	}
+}
+
+// TestRecord_OriginAgent_GGAgentEnv — GG_AGENT env (e.g. set by Claude Code
+// or GSD wrapper scripts) classifies as agent without forcing role choice.
+func TestRecord_OriginAgent_GGAgentEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_AGENT", "claude-code")
+
+	Record(dir, "search", "")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.AgentCalls != 1 || sum.HumanCalls != 0 {
+		t.Errorf("expected 1 agent call (via GG_AGENT), got human=%d agent=%d", sum.HumanCalls, sum.AgentCalls)
 	}
 }

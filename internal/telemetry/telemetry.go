@@ -52,12 +52,25 @@ func IsDisabled() bool {
 // Record appends one entry to the telemetry log. Errors are silently ignored
 // so a full disk or missing directory never breaks the command being recorded.
 // No-op if the user has disabled telemetry via GG_TELEMETRY=0.
-func Record(ggDir, verb string) {
+//
+// Origin classification heuristic (best-effort):
+//   - GG_ROLE env set                                → agent
+//   - GG_AGENT env set (e.g. "claude-code", "gsd")   → agent
+//   - --from flag passed (any non-empty value)       → agent
+//   - Otherwise                                       → human
+//
+// Pass fromFlag = "" if the calling command has no --from flag.
+func Record(ggDir, verb, fromFlag string) {
 	if ggDir == "" || verb == "" || IsDisabled() {
 		return
 	}
 	origin := originHuman
-	if strings.TrimSpace(os.Getenv("GG_ROLE")) != "" {
+	switch {
+	case strings.TrimSpace(os.Getenv("GG_ROLE")) != "":
+		origin = originAgent
+	case strings.TrimSpace(os.Getenv("GG_AGENT")) != "":
+		origin = originAgent
+	case strings.TrimSpace(fromFlag) != "":
 		origin = originAgent
 	}
 	e := Entry{

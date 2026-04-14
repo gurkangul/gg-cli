@@ -19,9 +19,16 @@ visible to the others through shared memory.
 
 The very first thing to do at the start of any conversation:
 ```
+export GG_AGENT="claude-code"   # or "gsd", "cursor", "aider", etc.
 gg status
 ```
-Summarize the open tasks, unread messages, and recent decisions for the user.
+
+The `GG_AGENT` export tags every subsequent gg call as agent-initiated in
+telemetry — without it the dogfood metric undercounts and gives false signals
+about adoption. Set it once per shell.
+
+After `gg status`, summarize the open tasks, unread messages, and recent
+decisions for the user.
 
 ## DURING DISCUSSION
 

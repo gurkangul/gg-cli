@@ -32,7 +32,13 @@ func init() {
 		// Record telemetry on every command invocation.
 		// Best-effort: silently skip if the .gg directory can't be located.
 		if ggDir, err := config.GGDir(); err == nil {
-			telemetry.Record(ggDir, cmd.Name())
+			// Pass --from flag value if the command defines one — telemetry
+			// uses it as a "this is an agent" signal alongside GG_ROLE/GG_AGENT.
+			fromFlag := ""
+			if f := cmd.Flags().Lookup("from"); f != nil {
+				fromFlag = f.Value.String()
+			}
+			telemetry.Record(ggDir, cmd.Name(), fromFlag)
 		}
 	}
 }
