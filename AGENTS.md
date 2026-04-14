@@ -91,9 +91,27 @@ gg reject "approach" --reason "why not"
 ```
 This prevents other agents from re-proposing the same rejected path.
 
+## SUBAGENTS AND MULTI-AGENT ROUNDS
+
+When you spawn subagents (BMAD party mode, Task-type subagents, role simulations
+like Winston/Amelia/John, etc.), those subagents usually cannot invoke `gg`
+themselves — they run in isolated prompts that don't read AGENTS.md.
+
+You, as the orchestrator, are responsible for **extracting gg-relevant actions
+from their output and executing the `gg` calls yourself** as soon as the round
+completes. Concretely:
+
+- A subagent says "we should reject X because Y" → you run `gg reject "X" --reason "Y"`
+- A subagent proposes action items / a punch list → you run `gg task create` for each
+- A subagent reaches a conclusion the user accepts → you run `gg decide`
+
+Do this BEFORE asking the user "should I save these?" — the AGENTS.md rule is
+to capture decisions automatically. Asking first violates the contract.
+
 ## NEVER
 
 - Make decisions without `gg`
 - Re-propose a previously rejected approach (search first)
 - Say "we'll do that later" without opening a task
 - Ask the user to run `gg` commands — you run them
+- Finish a subagent round without persisting its decisions/tasks/rejections to `gg`
