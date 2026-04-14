@@ -122,7 +122,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 		}()
 		go func() {
 			defer wg.Done()
-			result.Tasks, taskErr = d.store.SearchTasks(ctx, vector, impactKBLimit)
+			result.Tasks, taskErr = d.store.SearchTasks(ctx, vector, impactKBLimit, true)
 		}()
 		go func() {
 			defer wg.Done()

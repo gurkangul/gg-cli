@@ -207,3 +207,51 @@ func TestNewClient_ConnectsWithAnyHost(t *testing.T) {
 	}
 	defer func() { _ = c.Close() }()
 }
+
+// ── SearchDiscussions filter ──────────────────────────────────────────────────
+
+// TestSearchDiscussions_ExcludesResolvedByDefault verifies that the filter
+// helper used when includeResolved=false targets only the "open" status.
+func TestSearchDiscussions_ExcludesResolvedByDefault(t *testing.T) {
+	f := OpenDiscussionsFilter()
+	if f == nil {
+		t.Fatal("OpenDiscussionsFilter: expected non-nil filter")
+	}
+	if len(f.Must) != 1 {
+		t.Fatalf("Must conditions: got %d, want 1", len(f.Must))
+	}
+	kw := f.Must[0].GetField().GetMatch().GetKeyword()
+	if kw != "open" {
+		t.Errorf("keyword: got %q, want %q", kw, "open")
+	}
+	field := f.Must[0].GetField().GetKey()
+	if field != "status" {
+		t.Errorf("field: got %q, want %q", field, "status")
+	}
+}
+
+// TestSearchTasks_ExcludesDoneByDefault verifies that the filter helper used
+// when includeAll=false targets only pending and in_progress statuses.
+func TestSearchTasks_ExcludesDoneByDefault(t *testing.T) {
+	f := ActiveTasksFilter()
+	if f == nil {
+		t.Fatal("ActiveTasksFilter: expected non-nil filter")
+	}
+	if len(f.Must) != 1 {
+		t.Fatalf("Must conditions: got %d, want 1", len(f.Must))
+	}
+	field := f.Must[0].GetField().GetKey()
+	if field != "status" {
+		t.Errorf("field: got %q, want %q", field, "status")
+	}
+	values := f.Must[0].GetField().GetMatch().GetKeywords().GetStrings()
+	want := map[string]bool{"pending": true, "in_progress": true}
+	if len(values) != len(want) {
+		t.Fatalf("keywords: got %v, want %v", values, want)
+	}
+	for _, v := range values {
+		if !want[v] {
+			t.Errorf("unexpected keyword %q in active tasks filter", v)
+		}
+	}
+}

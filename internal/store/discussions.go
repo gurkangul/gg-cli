@@ -199,13 +199,29 @@ func (c *Client) closeDiscussion(ctx context.Context, discID, status, via, note,
 	return err
 }
 
-func (c *Client) SearchDiscussions(ctx context.Context, vector []float32, limit uint64) ([]Discussion, error) {
-	results, err := c.qc.Query(ctx, &qdrant.QueryPoints{
+// OpenDiscussionsFilter returns the Qdrant filter that restricts results to
+// open discussions only. Exported as a helper so tests can verify it directly.
+func OpenDiscussionsFilter() *qdrant.Filter {
+	return &qdrant.Filter{
+		Must: []*qdrant.Condition{qdrant.NewMatchKeyword("status", "open")},
+	}
+}
+
+// SearchDiscussions performs a semantic search across the discussions collection.
+// When includeResolved is false (the default for agent consumption), only open
+// discussions are returned — resolved and dismissed items are suppressed so
+// agents don't surface stale context.
+func (c *Client) SearchDiscussions(ctx context.Context, vector []float32, limit uint64, includeResolved bool) ([]Discussion, error) {
+	req := &qdrant.QueryPoints{
 		CollectionName: c.collDiscussions(),
 		Query:          qdrant.NewQuery(vector...),
 		Limit:          qdrant.PtrOf(limit),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
-	})
+	}
+	if !includeResolved {
+		req.Filter = OpenDiscussionsFilter()
+	}
+	results, err := c.qc.Query(ctx, req)
 	if err != nil {
 		return nil, err
 	}

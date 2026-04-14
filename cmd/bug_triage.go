@@ -73,8 +73,8 @@ func runBugTriage(cmd *cobra.Command, args []string) error {
 	wg.Add(5)
 	go func() { defer wg.Done(); decisions, decErr = d.store.SearchDecisions(ctx, vector, bugTriageLimit) }()
 	go func() { defer wg.Done(); rejections, rejErr = d.store.SearchRejections(ctx, vector, bugTriageLimit) }()
-	go func() { defer wg.Done(); tasks, taskErr = d.store.SearchTasks(ctx, vector, bugTriageLimit) }()
-	go func() { defer wg.Done(); discussions, discErr = d.store.SearchDiscussions(ctx, vector, bugTriageLimit) }()
+	go func() { defer wg.Done(); tasks, taskErr = d.store.SearchTasks(ctx, vector, bugTriageLimit, true) }()
+	go func() { defer wg.Done(); discussions, discErr = d.store.SearchDiscussions(ctx, vector, bugTriageLimit, true) }()
 	go func() { defer wg.Done(); notes, noteErr = d.store.SearchNotes(ctx, vector, bugTriageLimit) }()
 	wg.Wait()
 

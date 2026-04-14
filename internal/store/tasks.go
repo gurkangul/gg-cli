@@ -245,13 +245,32 @@ func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra str
 	return err
 }
 
-func (c *Client) SearchTasks(ctx context.Context, vector []float32, limit uint64) ([]Task, error) {
-	results, err := c.qc.Query(ctx, &qdrant.QueryPoints{
+// ActiveTasksFilter returns the Qdrant filter that restricts results to tasks
+// in an active state (pending or in_progress). Exported as a helper so tests
+// can verify it directly.
+func ActiveTasksFilter() *qdrant.Filter {
+	return &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			qdrant.NewMatchKeywords("status", "pending", "in_progress"),
+		},
+	}
+}
+
+// SearchTasks performs a semantic search across the tasks collection.
+// When includeAll is false (the default for agent consumption), only pending
+// and in_progress tasks are returned — done and blocked tasks are suppressed so
+// agents don't surface completed or stale work as relevant context.
+func (c *Client) SearchTasks(ctx context.Context, vector []float32, limit uint64, includeAll bool) ([]Task, error) {
+	req := &qdrant.QueryPoints{
 		CollectionName: c.collTasks(),
 		Query:          qdrant.NewQuery(vector...),
 		Limit:          qdrant.PtrOf(limit),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
-	})
+	}
+	if !includeAll {
+		req.Filter = ActiveTasksFilter()
+	}
+	results, err := c.qc.Query(ctx, req)
 	if err != nil {
 		return nil, err
 	}

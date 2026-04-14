@@ -22,9 +22,11 @@ Phase 2 will add Memgraph structural queries (affected files/symbols).`,
 }
 
 var contextLimit uint64
+var contextIncludeResolved bool
 
 func init() {
 	contextCmd.Flags().Uint64Var(&contextLimit, "limit", 5, "max results per collection")
+	contextCmd.Flags().BoolVar(&contextIncludeResolved, "include-resolved", false, "include resolved/dismissed discussions and done/blocked tasks")
 	rootCmd.AddCommand(contextCmd)
 }
 
@@ -76,11 +78,11 @@ func runContext(cmd *cobra.Command, args []string) error {
 	}()
 	go func() {
 		defer wg.Done()
-		bundle.tasks, bundle.taskErr = d.store.SearchTasks(ctx, vector, contextLimit)
+		bundle.tasks, bundle.taskErr = d.store.SearchTasks(ctx, vector, contextLimit, contextIncludeResolved)
 	}()
 	go func() {
 		defer wg.Done()
-		bundle.discussions, bundle.discErr = d.store.SearchDiscussions(ctx, vector, contextLimit)
+		bundle.discussions, bundle.discErr = d.store.SearchDiscussions(ctx, vector, contextLimit, contextIncludeResolved)
 	}()
 	go func() {
 		defer wg.Done()
