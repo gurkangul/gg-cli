@@ -45,7 +45,7 @@ func TestResolveIndexer_GGBin(t *testing.T) {
 	// Override HOME so ggBinDir() points at our temp dir.
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", dir)
-	defer os.Setenv("HOME", origHome)
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	path, err := ResolveIndexer("gg-test-indexer")
 	if err != nil {

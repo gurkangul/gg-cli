@@ -205,5 +205,5 @@ func TestNewClient_ConnectsWithAnyHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 }

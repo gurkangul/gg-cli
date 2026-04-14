@@ -73,7 +73,7 @@ func Record(ggDir, verb string) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, _ = f.Write(append(data, '\n'))
 }
 

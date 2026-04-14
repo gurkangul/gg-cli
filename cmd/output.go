@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 )
 
@@ -51,24 +50,6 @@ func writeJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
-}
-
-// jsonError writes a structured JSON error object to stdout and returns the
-// original error so the caller can still return it to cobra.
-//
-// Format: {"error": "message", "code": N}
-func jsonError(err error, code int) error {
-	_ = writeJSON(map[string]any{
-		"error": err.Error(),
-		"code":  code,
-	})
-	return err
-}
-
-// printlnf is a convenience wrapper — routes to fmt.Printf but lets future
-// callers swap it for a buffered writer without touching every command.
-func printlnf(format string, args ...any) {
-	fmt.Printf(format, args...)
 }
 
 // printJSON writes v as JSON if --json is set, otherwise calls the fallback.

@@ -39,7 +39,7 @@ func ParseFile(ctx context.Context, scipPath string, lang string, h Handler) err
 	if err != nil {
 		return fmt.Errorf("open scip index %s: %w", scipPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	visitor := &scippb.IndexVisitor{
 		VisitDocument: func(ctx context.Context, doc *scippb.Document) error {

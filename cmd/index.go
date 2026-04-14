@@ -65,7 +65,7 @@ func runIndex(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return serviceErr(fmt.Sprintf("memgraph client: %v", err))
 	}
-	defer gc.Close(cmd.Context())
+	defer func() { _ = gc.Close(cmd.Context()) }()
 
 	ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Minute)
 	defer cancel()
@@ -251,7 +251,7 @@ func index(ctx context.Context, root string, lang runner.Lang, r runner.Runner, 
 	if err != nil {
 		return fmt.Errorf("scip index: %w", err)
 	}
-	defer os.Remove(result.IndexPath) // temp file cleanup
+	defer func() { _ = os.Remove(result.IndexPath) }() // temp file cleanup
 
 	if len(result.Stderr) > 0 {
 		fmt.Fprintf(os.Stderr, "indexer: %s\n", result.Stderr)

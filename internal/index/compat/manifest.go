@@ -146,11 +146,6 @@ func Check(ctx context.Context, m *Manifest, binaries []string) error {
 // Returns "unknown" if build info is unavailable (e.g. in tests or non-module
 // builds).
 func SCIPLibVersion() string {
-	// runtime/debug.ReadBuildInfo gives us the module graph of the current binary.
-	// We look for github.com/scip-code/scip/bindings/go/scip.
-	type buildInfo interface {
-		Main() string
-	}
 	// We don't import runtime/debug to avoid a heavy import chain —
 	// the version is baked in at link time via the module path in go.sum.
 	// For day-1, return the version we know we're linked against.

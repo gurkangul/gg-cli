@@ -1,0 +1,57 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck      # unchecked errors are latent bugs
+    - gosec         # security audit (G-series rules)
+    - gocritic      # style + correctness hints
+    - ineffassign   # dead assignments
+    - unused        # unused code
+  settings:
+    errcheck:
+      # Common idiomatic deferred closes that are intentionally silent:
+      # a Close failure on the way out can't be meaningfully handled.
+      exclude-functions:
+        - (os.File).Close
+        - (io.Closer).Close
+        - (net.Conn).Close
+        - fmt.Fprint
+        - fmt.Fprintln
+        - fmt.Fprintf
+        - os.Remove
+    gosec:
+      excludes:
+        # G204: subprocess with variable — gg doctor --install-indexers resolves
+        # binary paths from user config; this is expected and documented.
+        - G204
+        # G301/G302: directory/file permissions — CLI tool data dirs use 0755/0644
+        # intentionally; these are not secret files.
+        - G301
+        - G302
+        # G304: file inclusion — paths come from config.GGDir() and are already
+        # validated; flagging every os.ReadFile is too noisy.
+        - G304
+        # G306: outbox and telemetry files are created with 0644 intentionally.
+        - G306
+        # G115: uintptr → int conversion for syscall.Flock(int(f.Fd()), ...) is
+        # standard POSIX practice; file descriptors fit comfortably in int.
+        - G115
+
+issues:
+  max-same-issues: 5
+  exclude-rules:
+    # Test files use deliberate ignores (t.Fatal, defer c.Close()) that errcheck
+    # would flag — suppress those to keep test code readable.
+    - path: "_test\\.go"
+      linters:
+        - errcheck
+    # Signal-handler os.Exit after defer: root.go uses this pattern deliberately
+    # in signal handling; the defers are not safety-critical there.
+    - text: "exitAfterDefer"
+      linters:
+        - gocritic
+    # Deferred graph/store client closes: these are driver-managed resources;
+    # the error path is logged elsewhere or is unactionable at defer site.
+    - source: "defer (gc|c|d)\\.(Close)"
+      linters:
+        - errcheck

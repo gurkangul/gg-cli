@@ -77,7 +77,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 		if gcErr != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("graph client init: %v", gcErr))
 		} else {
-			defer gc.Close(ctx)
+			defer func() { _ = gc.Close(ctx) }()
 
 			gctx, gcancel := withTimeout(cmd.Context())
 			defer gcancel()

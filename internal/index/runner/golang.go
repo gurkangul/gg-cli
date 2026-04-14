@@ -54,7 +54,7 @@ func outputPath(req *IndexRequest) (string, func(), error) {
 		return "", nil, fmt.Errorf("create temp scip file: %w", err)
 	}
 	path := filepath.Clean(f.Name())
-	f.Close()
-	cleanup := func() { os.Remove(path) }
+	_ = f.Close()
+	cleanup := func() { _ = os.Remove(path) }
 	return path, cleanup, nil
 }

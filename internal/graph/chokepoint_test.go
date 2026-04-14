@@ -29,6 +29,8 @@ func TestNoRawSessRunOutsideQueriesGo(t *testing.T) {
 	pkgDir := filepath.Dir(thisFile)
 
 	fset := token.NewFileSet()
+	//nolint:staticcheck // parser.ParseDir is deprecated in Go 1.25 but still available;
+	// go/packages would add a heavy dependency for this simple AST scan.
 	pkgs, err := parser.ParseDir(fset, pkgDir, nil, 0)
 	if err != nil {
 		t.Fatalf("parse graph package: %v", err)

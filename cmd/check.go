@@ -90,31 +90,34 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 		result.Status = "issues"
 	}
 
-	err = printJSON(result, func() {
-		if pendErr != nil || blocErr != nil {
+	err = printJSON(result, func() { //nolint:gocritic // ifElseChain: branches check distinct variables, switch is not applicable
+		switch {
+		case pendErr != nil || blocErr != nil:
 			fmt.Fprintln(os.Stderr, "warning: could not query tasks (Qdrant unreachable?)")
-		} else if result.OpenTasks > 0 {
+		case result.OpenTasks > 0:
 			fmt.Fprintf(os.Stderr, "warn  %-30s %d open (%d pending, %d blocked)\n",
 				"open tasks", result.OpenTasks, result.PendingTasks, result.BlockedTasks)
-		} else {
+		default:
 			fmt.Printf("  ✓ %-30s all done\n", "open tasks")
 		}
 
-		if discErr != nil {
+		switch {
+		case discErr != nil:
 			fmt.Fprintln(os.Stderr, "warning: could not query discussions")
-		} else if result.OpenDiscussions > 0 {
+		case result.OpenDiscussions > 0:
 			fmt.Fprintf(os.Stderr, "warn  %-30s %d unresolved\n", "open discussions", result.OpenDiscussions)
-		} else {
+		default:
 			fmt.Printf("  ✓ %-30s none\n", "open discussions")
 		}
 
 		fmt.Println(strings.Repeat("─", 50))
 
-		if result.Issues == 0 {
+		switch {
+		case result.Issues == 0:
 			fmt.Println("All clear — safe to push.")
-		} else if checkStrict {
+		case checkStrict:
 			fmt.Fprintf(os.Stderr, "%d issue(s) found — review before pushing (--strict mode)\n", result.Issues)
-		} else {
+		default:
 			fmt.Fprintf(os.Stderr, "%d issue(s) found (use --strict to block push)\n", result.Issues)
 		}
 	})

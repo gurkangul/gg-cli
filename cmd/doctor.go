@@ -259,7 +259,7 @@ func doctorCheckQdrant(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 		report.fail("qdrant", fmt.Sprintf("client init: %v", err))
 		return
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
@@ -296,7 +296,7 @@ func doctorCheckMemgraph(cmd *cobra.Command, cfg *config.Config, report *doctorR
 		report.fail("memgraph", fmt.Sprintf("client init: %v", err))
 		return
 	}
-	defer gc.Close(cmd.Context())
+	defer func() { _ = gc.Close(cmd.Context()) }()
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()

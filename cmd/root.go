@@ -47,7 +47,7 @@ func Execute() {
 			if jsonOutput {
 				_ = writeJSON(map[string]any{"error": "interrupted", "code": ExitSignal})
 			}
-			os.Exit(ExitSignal)
+			os.Exit(ExitSignal) //nolint:gocritic // exitAfterDefer: cancel() not running is intentional — signal already cancelled the context
 		}
 
 		// Unwrap ExitError to get a structured exit code.

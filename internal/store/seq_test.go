@@ -194,7 +194,7 @@ func TestLockFileCtx_CancelWhileWaiting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer holder.Close()
+	defer func() { _ = holder.Close() }()
 	if err := tryLockFile(holder); err != nil {
 		t.Fatalf("acquire holder lock: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestLockFileCtx_CancelWhileWaiting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer waiter.Close()
+	defer func() { _ = waiter.Close() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -237,7 +237,7 @@ func TestLockFileCtx_DeadlineExceeded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer holder.Close()
+	defer func() { _ = holder.Close() }()
 	if err := tryLockFile(holder); err != nil {
 		t.Fatalf("acquire holder lock: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestLockFileCtx_DeadlineExceeded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer waiter.Close()
+	defer func() { _ = waiter.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
