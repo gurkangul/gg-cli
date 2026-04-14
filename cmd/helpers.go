@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -12,16 +14,21 @@ import (
 
 const cmdTimeout = 10 * time.Second
 
-func cmdContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), cmdTimeout)
+// withTimeout derives a timeout-scoped context from the parent (usually
+// cmd.Context()), so Ctrl+C still cancels in-flight work.
+func withTimeout(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(parent, cmdTimeout)
 }
 
 type deps struct {
-	store   *store.Client
+	store    *store.Client
 	embedder *embedding.Generator
 }
 
-func loadDeps(needEmbedding bool) (*deps, error) {
+func loadDeps(needEmbedding bool) (d *deps, err error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
@@ -30,7 +37,12 @@ func loadDeps(needEmbedding bool) (*deps, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &deps{store: client}
+	d = &deps{store: client}
+	defer func() {
+		if err != nil {
+			d.Close()
+		}
+	}()
 	if needEmbedding {
 		d.embedder = embedding.New(&cfg.Embedding)
 	}
@@ -38,8 +50,11 @@ func loadDeps(needEmbedding bool) (*deps, error) {
 }
 
 func (d *deps) Close() {
-	if d.store != nil {
-		d.store.Close()
+	if d == nil || d.store == nil {
+		return
+	}
+	if closeErr := d.store.Close(); closeErr != nil {
+		fmt.Fprintln(os.Stderr, "warning: store close:", closeErr)
 	}
 }
 
@@ -48,7 +63,7 @@ func parseTags(tags string) []string {
 		return nil
 	}
 	parts := strings.Split(tags, ",")
-	var result []string
+	result := make([]string, 0, len(parts))
 	for _, p := range parts {
 		t := strings.TrimSpace(p)
 		if t != "" {
@@ -56,4 +71,12 @@ func parseTags(tags string) []string {
 		}
 	}
 	return result
+}
+
+func requireNonEmpty(name, value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", fmt.Errorf("%s must not be empty", name)
+	}
+	return trimmed, nil
 }

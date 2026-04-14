@@ -46,9 +46,19 @@ func init() {
 	rootCmd.AddCommand(taskCmd)
 }
 
-func runTaskCreate(cmd *cobra.Command, args []string) error {
-	title := args[0]
+func normalizeTaskID(raw string) (string, error) {
+	id := strings.ToUpper(strings.TrimSpace(raw))
+	if _, err := store.ParseTaskID(id); err != nil {
+		return "", err
+	}
+	return id, nil
+}
 
+func runTaskCreate(cmd *cobra.Command, args []string) error {
+	title, err := requireNonEmpty("title", args[0])
+	if err != nil {
+		return err
+	}
 	if !validPriorities[taskPriority] {
 		return fmt.Errorf("invalid priority %q — use high, medium, or low", taskPriority)
 	}
@@ -59,21 +69,21 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
 	embedText := title
 	if taskDetail != "" {
 		embedText = title + " " + taskDetail
 	}
-	vector, err := d.embedder.Generate(embedText)
+	vector, err := d.embedder.Generate(ctx, embedText)
 	if err != nil {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
-	ctx, cancel := cmdContext()
-	defer cancel()
-
 	t := store.Task{
 		Title:    title,
-		Detail:   taskDetail,
+		Detail:   strings.TrimSpace(taskDetail),
 		Priority: taskPriority,
 		Tags:     parseTags(taskTags),
 	}
@@ -108,7 +118,7 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
-	ctx, cancel := cmdContext()
+	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
 	tasks, err := d.store.ListTasks(ctx, taskListStatus)
@@ -122,8 +132,7 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, t := range tasks {
-		status := statusIcon(t.Status)
-		fmt.Printf("%s %s [%s] %s\n", status, t.ID, t.Priority, t.Title)
+		fmt.Printf("%s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
 		if t.Status == "blocked" && t.BlockReason != "" {
 			fmt.Printf("    ⚠ Blocked: %s\n", t.BlockReason)
 		}
@@ -141,7 +150,10 @@ var taskGetCmd = &cobra.Command{
 }
 
 func runTaskGet(cmd *cobra.Command, args []string) error {
-	taskID := strings.ToUpper(args[0])
+	taskID, err := normalizeTaskID(args[0])
+	if err != nil {
+		return err
+	}
 
 	d, err := loadDeps(false)
 	if err != nil {
@@ -149,7 +161,7 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
-	ctx, cancel := cmdContext()
+	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
 	t, err := d.store.GetTask(ctx, taskID)
@@ -187,8 +199,14 @@ var taskDoneCmd = &cobra.Command{
 }
 
 func runTaskDone(cmd *cobra.Command, args []string) error {
-	taskID := strings.ToUpper(args[0])
-	summary := args[1]
+	taskID, err := normalizeTaskID(args[0])
+	if err != nil {
+		return err
+	}
+	summary, err := requireNonEmpty("summary", args[1])
+	if err != nil {
+		return err
+	}
 
 	d, err := loadDeps(false)
 	if err != nil {
@@ -196,7 +214,7 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
-	ctx, cancel := cmdContext()
+	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
 	if err := d.store.UpdateTaskStatus(ctx, taskID, "done", summary); err != nil {
@@ -217,8 +235,14 @@ var taskBlockCmd = &cobra.Command{
 }
 
 func runTaskBlock(cmd *cobra.Command, args []string) error {
-	taskID := strings.ToUpper(args[0])
-	reason := args[1]
+	taskID, err := normalizeTaskID(args[0])
+	if err != nil {
+		return err
+	}
+	reason, err := requireNonEmpty("reason", args[1])
+	if err != nil {
+		return err
+	}
 
 	d, err := loadDeps(false)
 	if err != nil {
@@ -226,7 +250,7 @@ func runTaskBlock(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
-	ctx, cancel := cmdContext()
+	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
 	if err := d.store.UpdateTaskStatus(ctx, taskID, "blocked", reason); err != nil {

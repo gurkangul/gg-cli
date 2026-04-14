@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,7 @@ func init() {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	parentCtx := cmd.Context()
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -62,64 +64,104 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("✓ Created .gg/%s\n", name)
 	}
 
-	// Start Docker services
-	fmt.Println("Starting Docker services...")
 	composePath := filepath.Join(ggDir, "docker-compose.yaml")
-	compose := exec.Command("docker", "compose", "-f", composePath, "up", "-d")
+
+	// Start Docker services — 5 min cap.
+	fmt.Println("Starting Docker services...")
+	composeCtx, cancelCompose := context.WithTimeout(parentCtx, 5*time.Minute)
+	defer cancelCompose()
+	compose := exec.CommandContext(composeCtx, "docker", "compose", "-f", composePath, "up", "-d")
 	compose.Stdout = os.Stdout
 	compose.Stderr = os.Stderr
-	if err := compose.Run(); err != nil {
+	composeErr := compose.Run()
+	if composeErr != nil {
 		fmt.Println("⚠ Docker compose failed — start manually: docker compose -f .gg/docker-compose.yaml up -d")
+		fmt.Println("\nGG initialized (offline). Run `gg init` again after Docker services are up.")
+		return nil
+	}
+	fmt.Println("✓ Docker services started")
+
+	// Wait for Ollama to respond before pulling the model.
+	if err := waitForHTTP(parentCtx, "http://localhost:11434/api/tags", 60*time.Second); err != nil {
+		fmt.Println("⚠ Ollama not reachable within 60s — run `ollama pull nomic-embed-text` manually later.")
 	} else {
-		fmt.Println("✓ Docker services started")
+		fmt.Println("Pulling nomic-embed-text model (first time may take a minute)...")
+		pullCtx, cancelPull := context.WithTimeout(parentCtx, 10*time.Minute)
+		defer cancelPull()
+		pull := exec.CommandContext(pullCtx, "docker", "compose", "-f", composePath,
+			"exec", "-T", "ollama", "ollama", "pull", "nomic-embed-text")
+		pull.Stdout = os.Stdout
+		pull.Stderr = os.Stderr
+		if err := pull.Run(); err != nil {
+			fmt.Println("⚠ Model pull failed — run manually: docker compose -f .gg/docker-compose.yaml exec ollama ollama pull nomic-embed-text")
+		} else {
+			fmt.Println("✓ nomic-embed-text model ready")
+		}
 	}
 
-	// Pull embedding model via Ollama
-	fmt.Println("Pulling nomic-embed-text model (first time may take a minute)...")
-	pull := exec.Command("docker", "compose", "-f", composePath,
-		"exec", "ollama", "ollama", "pull", "nomic-embed-text")
-	pull.Stdout = os.Stdout
-	pull.Stderr = os.Stderr
-	if err := pull.Run(); err != nil {
-		fmt.Println("⚠ Model pull failed — run manually: docker compose -f .gg/docker-compose.yaml exec ollama ollama pull nomic-embed-text")
-	} else {
-		fmt.Println("✓ nomic-embed-text model ready")
-	}
-
-	// Wait for Qdrant to be ready and set up collections
+	// Wait for Qdrant and set up collections.
 	fmt.Println("Waiting for Qdrant...")
-	cfg, err := config.Load()
-	if err != nil {
+	cfg, cfgErr := config.Load()
+	if cfgErr != nil {
 		cfg = config.DefaultConfig()
 	}
 	var client *store.Client
+	var healthErr error
 	for i := 0; i < 15; i++ {
-		client, err = store.New(&cfg.Qdrant)
-		if err == nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			err = client.HealthCheck(ctx)
-			cancel()
-			if err == nil {
+		if parentCtx.Err() != nil {
+			return parentCtx.Err()
+		}
+		client, healthErr = store.New(&cfg.Qdrant)
+		if healthErr == nil {
+			hctx, hcancel := context.WithTimeout(parentCtx, 2*time.Second)
+			healthErr = client.HealthCheck(hctx)
+			hcancel()
+			if healthErr == nil {
 				break
 			}
 			client.Close()
+			client = nil
 		}
 		time.Sleep(time.Second)
 	}
-	if err != nil {
+	if healthErr != nil || client == nil {
 		fmt.Println("⚠ Qdrant not ready — collections will be created on first use")
 		fmt.Println("\nGG initialized! Add .gg/RULES.md to your agent's config.")
 		return nil
 	}
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := client.EnsureCollections(ctx); err != nil {
+	setupCtx, cancelSetup := context.WithTimeout(parentCtx, 10*time.Second)
+	defer cancelSetup()
+	if err := client.EnsureCollections(setupCtx); err != nil {
 		return fmt.Errorf("setup collections: %w", err)
 	}
 	fmt.Println("✓ Qdrant collections ready (decisions, tasks, messages, rejections)")
 
 	fmt.Println("\nGG initialized! Add .gg/RULES.md to your agent's config.")
 	return nil
+}
+
+// waitForHTTP polls a URL with GET until a 2xx response or timeout.
+func waitForHTTP(ctx context.Context, url string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 2 * time.Second}
+	for time.Now().Before(deadline) {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := client.Do(req)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return nil
+			}
+		}
+		time.Sleep(time.Second)
+	}
+	return fmt.Errorf("timeout waiting for %s", url)
 }

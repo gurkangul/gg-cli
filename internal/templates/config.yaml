@@ -1,7 +1,7 @@
 qdrant:
-  host: localhost
-  port: 6334
+  host: localhost       # Qdrant gRPC host
+  port: 6334            # Qdrant gRPC port (NOT the HTTP 6333 port)
 
 embedding:
-  host: http://localhost:11434
-  model: nomic-embed-text
+  host: http://localhost:11434   # Ollama base URL (must include scheme)
+  model: nomic-embed-text        # Embedding model — dimension must match Qdrant collection (768 for nomic-embed-text)

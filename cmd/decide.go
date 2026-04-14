@@ -29,7 +29,10 @@ func init() {
 }
 
 func runDecide(cmd *cobra.Command, args []string) error {
-	text := args[0]
+	text, err := requireNonEmpty("decision text", args[0])
+	if err != nil {
+		return err
+	}
 
 	d, err := loadDeps(true)
 	if err != nil {
@@ -37,23 +40,23 @@ func runDecide(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
 	embedText := text
 	if decideReason != "" {
 		embedText = text + " " + decideReason
 	}
-	vector, err := d.embedder.Generate(embedText)
+	vector, err := d.embedder.Generate(ctx, embedText)
 	if err != nil {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
-	ctx, cancel := cmdContext()
-	defer cancel()
-
 	dec := store.Decision{
 		Text:   text,
-		Reason: decideReason,
+		Reason: strings.TrimSpace(decideReason),
 		Tags:   parseTags(decideTags),
-		TaskID: decideTask,
+		TaskID: strings.TrimSpace(decideTask),
 	}
 
 	if err := d.store.AddDecision(ctx, dec, vector); err != nil {
@@ -61,11 +64,11 @@ func runDecide(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("✓ Decision recorded: %s\n", text)
-	if decideReason != "" {
-		fmt.Printf("  Reason: %s\n", decideReason)
+	if dec.Reason != "" {
+		fmt.Printf("  Reason: %s\n", dec.Reason)
 	}
-	if decideTags != "" {
-		fmt.Printf("  Tags: %s\n", strings.Join(parseTags(decideTags), ", "))
+	if len(dec.Tags) > 0 {
+		fmt.Printf("  Tags: %s\n", strings.Join(dec.Tags, ", "))
 	}
 	return nil
 }

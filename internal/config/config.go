@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -68,28 +70,44 @@ func GGDir() (string, error) {
 	return filepath.Join(root, DirName), nil
 }
 
-// Load reads the config from .gg/config.yaml.
+// Load reads the config from .gg/config.yaml and validates it.
 func Load() (*Config, error) {
 	ggDir, err := GGDir()
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(filepath.Join(ggDir, ConfigFile))
+	path := filepath.Join(ggDir, ConfigFile)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config at %s: %w", path, err)
 	}
 	return &cfg, nil
 }
 
-// Save writes the config to .gg/config.yaml.
-func Save(ggDir string, cfg *Config) error {
-	data, err := yaml.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+// Validate ensures required fields are present and URLs/ports are well-formed.
+func (c *Config) Validate() error {
+	if strings.TrimSpace(c.Qdrant.Host) == "" {
+		return fmt.Errorf("qdrant.host is required")
 	}
-	return os.WriteFile(filepath.Join(ggDir, ConfigFile), data, 0644)
+	if c.Qdrant.Port <= 0 || c.Qdrant.Port > 65535 {
+		return fmt.Errorf("qdrant.port must be 1..65535, got %d", c.Qdrant.Port)
+	}
+	if strings.TrimSpace(c.Embedding.Host) == "" {
+		return fmt.Errorf("embedding.host is required")
+	}
+	u, err := url.Parse(c.Embedding.Host)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("embedding.host must be a full URL including scheme (http:// or https://), got %q", c.Embedding.Host)
+	}
+	if strings.TrimSpace(c.Embedding.Model) == "" {
+		return fmt.Errorf("embedding.model is required")
+	}
+	return nil
 }

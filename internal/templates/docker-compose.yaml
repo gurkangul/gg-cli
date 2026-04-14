@@ -1,26 +1,26 @@
 services:
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.15.1
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - ./volumes/qdrant:/qdrant/storage
     restart: unless-stopped
 
   memgraph:
-    image: memgraph/memgraph:latest
+    image: memgraph/memgraph:3.0.0
     ports:
-      - "7687:7687"
-      - "7444:7444"
+      - "127.0.0.1:7687:7687"
+      - "127.0.0.1:7444:7444"
     volumes:
       - ./volumes/memgraph:/var/lib/memgraph
     restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.5.7
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ./volumes/ollama:/root/.ollama
     restart: unless-stopped

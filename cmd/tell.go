@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gurkangul/gg/internal/store"
 	"github.com/spf13/cobra"
@@ -26,8 +27,14 @@ func init() {
 }
 
 func runTell(cmd *cobra.Command, args []string) error {
-	toRole := args[0]
-	content := args[1]
+	toRole, err := requireNonEmpty("role", args[0])
+	if err != nil {
+		return err
+	}
+	content, err := requireNonEmpty("message", args[1])
+	if err != nil {
+		return err
+	}
 
 	d, err := loadDeps(false)
 	if err != nil {
@@ -35,14 +42,14 @@ func runTell(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
-	ctx, cancel := cmdContext()
+	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
 	m := store.Message{
-		FromRole: tellFrom,
+		FromRole: strings.TrimSpace(tellFrom),
 		ToRole:   toRole,
 		Content:  content,
-		TaskID:   tellTask,
+		TaskID:   strings.TrimSpace(tellTask),
 	}
 
 	if err := d.store.SendMessage(ctx, m); err != nil {

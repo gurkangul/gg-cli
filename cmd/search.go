@@ -22,7 +22,10 @@ func init() {
 }
 
 func runSearch(cmd *cobra.Command, args []string) error {
-	query := args[0]
+	query, err := requireNonEmpty("query", args[0])
+	if err != nil {
+		return err
+	}
 
 	d, err := loadDeps(true)
 	if err != nil {
@@ -30,13 +33,13 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
-	vector, err := d.embedder.Generate(query)
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	vector, err := d.embedder.Generate(ctx, query)
 	if err != nil {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
-
-	ctx, cancel := cmdContext()
-	defer cancel()
 
 	decisions, err := d.store.SearchDecisions(ctx, vector, searchLimit)
 	if err != nil {

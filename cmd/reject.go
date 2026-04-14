@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gurkangul/gg/internal/store"
 	"github.com/spf13/cobra"
@@ -26,7 +27,10 @@ func init() {
 }
 
 func runReject(cmd *cobra.Command, args []string) error {
-	approach := args[0]
+	approach, err := requireNonEmpty("approach", args[0])
+	if err != nil {
+		return err
+	}
 
 	d, err := loadDeps(true)
 	if err != nil {
@@ -34,22 +38,22 @@ func runReject(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
 	embedText := approach
 	if rejectReason != "" {
 		embedText = approach + " " + rejectReason
 	}
-	vector, err := d.embedder.Generate(embedText)
+	vector, err := d.embedder.Generate(ctx, embedText)
 	if err != nil {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
-	ctx, cancel := cmdContext()
-	defer cancel()
-
 	r := store.Rejection{
 		Approach: approach,
-		Reason:   rejectReason,
-		TaskID:   rejectTask,
+		Reason:   strings.TrimSpace(rejectReason),
+		TaskID:   strings.TrimSpace(rejectTask),
 	}
 
 	if err := d.store.AddRejection(ctx, r, vector); err != nil {
@@ -57,8 +61,8 @@ func runReject(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("✗ Rejection recorded: %s\n", approach)
-	if rejectReason != "" {
-		fmt.Printf("  Reason: %s\n", rejectReason)
+	if r.Reason != "" {
+		fmt.Printf("  Reason: %s\n", r.Reason)
 	}
 	return nil
 }

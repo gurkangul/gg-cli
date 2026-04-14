@@ -2,6 +2,7 @@ package embedding
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,7 +37,8 @@ func New(cfg *config.EmbeddingConfig) *Generator {
 }
 
 // Generate creates an embedding vector for the given text via Ollama.
-func (g *Generator) Generate(text string) ([]float32, error) {
+// The context is honored for Ctrl+C and upstream timeouts.
+func (g *Generator) Generate(ctx context.Context, text string) ([]float32, error) {
 	body, err := json.Marshal(embedRequest{
 		Model: g.model,
 		Input: text,
@@ -45,7 +47,13 @@ func (g *Generator) Generate(text string) ([]float32, error) {
 		return nil, err
 	}
 
-	resp, err := g.client.Post(g.host+"/api/embed", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.host+"/api/embed", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := g.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("ollama API call failed: %w", err)
 	}
@@ -57,9 +65,6 @@ func (g *Generator) Generate(text string) ([]float32, error) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("ollama returned status %d: %s", resp.StatusCode, string(data))
-	}
-	if err != nil {
-		return nil, err
 	}
 
 	var result embedResponse
