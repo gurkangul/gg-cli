@@ -12,6 +12,8 @@ require (
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4 // indirect
+	github.com/scip-code/scip/bindings/go/scip v0.7.0 // indirect
+	github.com/sourcegraph/beaut v0.0.0-20240611013027-627e4c25335a // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
