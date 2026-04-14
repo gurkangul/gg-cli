@@ -12,7 +12,10 @@ import (
 	"github.com/gurkangul/gg/internal/store"
 )
 
-const cmdTimeout = 10 * time.Second
+const (
+	cmdTimeout         = 10 * time.Second
+	healthCheckTimeout = 5 * time.Second
+)
 
 // withTimeout derives a timeout-scoped context from the parent (usually
 // cmd.Context()), so Ctrl+C still cancels in-flight work.
@@ -47,6 +50,15 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 			d.Close()
 		}
 	}()
+
+	// Fail fast with a clear message if Qdrant is unreachable — much better
+	// than a cryptic gRPC error bubbling up from inside a store operation.
+	hctx, hcancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+	defer hcancel()
+	if hErr := client.HealthCheck(hctx); hErr != nil {
+		return nil, fmt.Errorf("qdrant health check failed (is Qdrant running?): %w", hErr)
+	}
+
 	if needEmbedding {
 		d.embedder = embedding.New(&cfg.Embedding, store.VectorSize)
 	}
