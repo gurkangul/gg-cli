@@ -23,6 +23,22 @@ While discussing a topic with the user:
 2. The same command surfaces rejections as well.
 3. If any match, inform the user.
 
+## OPEN DISCUSSIONS
+
+When a topic is raised but no conclusion emerges, open a discussion so it
+doesn't vanish between sessions:
+```
+gg discuss open "the question" --detail "context"
+```
+
+Resolve or dismiss open discussions before session end:
+```
+gg discuss resolve DISC-001 --via decision --summary "..."
+gg discuss dismiss DISC-001 --reason "..."
+```
+
+`gg status` lists open discussions — next agent must close them.
+
 ## DECISION POINT
 
 When the user reaches a decision (explicit or implicit):

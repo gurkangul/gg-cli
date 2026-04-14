@@ -34,6 +34,29 @@ When discussing a topic with the user:
 2. The same command also returns prior rejections for that topic.
 3. If any exist, surface them: "X was already decided" / "Y was previously rejected".
 
+## OPEN DISCUSSIONS (unresolved topics)
+
+Not every topic reaches a conclusion in one conversation. When a meaningful
+question is raised but no decision/task/rejection emerges, open a discussion:
+
+```
+gg discuss open "the question" --detail "context" --tags "..."
+```
+
+This prevents the topic from vanishing. `gg status` at session start will
+surface open discussions, so the next agent (or you, tomorrow) knows there's
+something to close. Every open discussion MUST eventually be:
+
+- **Resolved** — linked to a concrete decision/task/rejection:
+  `gg discuss resolve DISC-001 --via decision --summary "decided X, see gg search"`
+- **Dismissed** — marked irrelevant/superseded with a reason:
+  `gg discuss dismiss DISC-001 --reason "superseded by TASK-042 which covered it"`
+
+**Session-end rule:** before closing a session, check `gg status`. If there
+are open discussions YOU opened (or were left by someone else and you
+progressed them), resolve or dismiss them. Handoff unresolved discussions
+explicitly via a broadcast: `gg tell "all" "DISC-003 needs architect input"`.
+
 ## DECISION POINT
 
 When the user reaches a decision (explicit or implicit):
