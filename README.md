@@ -1,5 +1,9 @@
 # gg — One brain, any agent
 
+> **Status: Alpha.** API and storage format may change between releases.
+> Suitable for personal projects and early adopters. Not recommended for
+> production multi-team environments yet.
+
 **gg** is a shared knowledge base CLI for multi-agent AI development setups.
 
 When you run several AI agents in parallel (different terminals, different roles), each one starts with a blank slate. gg fixes the three failure modes that follow:
