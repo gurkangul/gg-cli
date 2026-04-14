@@ -7,6 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/cache"
+	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -45,6 +47,17 @@ type contextBundle struct {
 	noteErr     error
 }
 
+// contextPayload is the cacheable form of a context bundle (exported fields only).
+type contextPayload struct {
+	Decisions   []store.Decision   `json:"decisions"`
+	Rejections  []store.Rejection  `json:"rejections"`
+	Tasks       []store.Task       `json:"tasks"`
+	Discussions []store.Discussion `json:"discussions"`
+	Notes       []store.Note       `json:"notes"`
+}
+
+const contextCacheNS = "ctx:"
+
 func runContext(cmd *cobra.Command, args []string) error {
 	query, err := requireNonEmpty("topic", args[0])
 	if err != nil {
@@ -58,8 +71,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 	defer d.Close()
 
 	if d.qdrantDown {
-		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — read-only fallback mode (context bundle unavailable)")
-		return nil
+		return serveContextFromCache(cmd, query)
 	}
 
 	ctx, cancel := withTimeout(cmd.Context())
@@ -98,6 +110,20 @@ func runContext(cmd *cobra.Command, args []string) error {
 
 	wg.Wait()
 
+	// Persist a full successful bundle to the LKG cache (best-effort).
+	if bundle.decErr == nil && bundle.rejErr == nil && bundle.taskErr == nil &&
+		bundle.discErr == nil && bundle.noteErr == nil {
+		if ggDir, dirErr := config.GGDir(); dirErr == nil {
+			_ = cache.Put(ggDir, contextCacheNS+query, contextPayload{
+				Decisions:   bundle.decisions,
+				Rejections:  bundle.rejections,
+				Tasks:       bundle.tasks,
+				Discussions: bundle.discussions,
+				Notes:       bundle.notes,
+			})
+		}
+	}
+
 	// Collect any errors as warnings — partial results are still useful.
 	var errs []string
 	if bundle.decErr != nil {
@@ -121,6 +147,12 @@ func runContext(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("all searches failed:\n  %s", strings.Join(errs, "\n  "))
 	}
 
+	return printContextBundle(cmd, query, bundle, errs)
+}
+
+// printContextBundle renders a context bundle as human-readable text or JSON.
+// errs is a list of non-fatal collection errors to show as warnings.
+func printContextBundle(_ *cobra.Command, query string, bundle contextBundle, errs []string) error {
 	jsonPayload := map[string]any{
 		"query":       query,
 		"decisions":   bundle.decisions,
@@ -135,105 +167,134 @@ func runContext(cmd *cobra.Command, args []string) error {
 		fmt.Printf("CONTEXT BUNDLE: %q\n", query)
 		fmt.Println(strings.Repeat("─", 60))
 
-	if len(bundle.decisions) > 0 {
-		fmt.Println("\nDECISIONS:")
-		for _, dec := range bundle.decisions {
-			fmt.Printf("  • [%s] %s\n", shortDate(dec.CreatedAt), dec.Text)
-			if dec.Reason != "" {
-				fmt.Printf("    Reason: %s\n", dec.Reason)
-			}
-			if len(dec.Tags) > 0 {
-				fmt.Printf("    Tags: %s\n", strings.Join(dec.Tags, ", "))
-			}
-			if dec.TaskID != "" {
-				fmt.Printf("    Task: %s\n", dec.TaskID)
-			}
-		}
-	}
-
-	if len(bundle.rejections) > 0 {
-		fmt.Println("\nREJECTIONS:")
-		for _, r := range bundle.rejections {
-			fmt.Printf("  ✗ [%s] %s\n", shortDate(r.CreatedAt), r.Approach)
-			if r.Reason != "" {
-				fmt.Printf("    Reason: %s\n", r.Reason)
-			}
-			if len(r.Tags) > 0 {
-				fmt.Printf("    Tags: %s\n", strings.Join(r.Tags, ", "))
-			}
-			if r.TaskID != "" {
-				fmt.Printf("    Task: %s\n", r.TaskID)
-			}
-		}
-	}
-
-	if len(bundle.tasks) > 0 {
-		fmt.Println("\nTASKS:")
-		for _, t := range bundle.tasks {
-			statusIcon := taskStatusIcon(t.Status)
-			fmt.Printf("  %s [%s] %s — %s\n", statusIcon, t.ID, t.Title, t.Priority)
-			if t.Detail != "" {
-				detail := t.Detail
-				if len(detail) > 120 {
-					detail = detail[:117] + "..."
+		if len(bundle.decisions) > 0 {
+			fmt.Println("\nDECISIONS:")
+			for _, dec := range bundle.decisions {
+				fmt.Printf("  • [%s] %s\n", shortDate(dec.CreatedAt), dec.Text)
+				if dec.Reason != "" {
+					fmt.Printf("    Reason: %s\n", dec.Reason)
 				}
-				fmt.Printf("    %s\n", detail)
-			}
-		}
-	}
-
-	if len(bundle.discussions) > 0 {
-		fmt.Println("\nDISCUSSIONS:")
-		for _, disc := range bundle.discussions {
-			statusMark := discStatusMark(disc.Status)
-			fmt.Printf("  %s [%s] %s\n", statusMark, disc.ID, disc.Topic)
-			if disc.Detail != "" {
-				detail := disc.Detail
-				if len(detail) > 120 {
-					detail = detail[:117] + "..."
+				if len(dec.Tags) > 0 {
+					fmt.Printf("    Tags: %s\n", strings.Join(dec.Tags, ", "))
 				}
-				fmt.Printf("    %s\n", detail)
-			}
-			if disc.Status == "resolved" && disc.ResolvedNote != "" {
-				fmt.Printf("    Resolved: %s\n", disc.ResolvedNote)
-			}
-			if contextFullTranscript && len(disc.Turns) > 0 {
-				fmt.Printf("    Transcript (%d turns):\n", len(disc.Turns))
-				for i, t := range disc.Turns {
-					fmt.Printf("      [%d] %s (%s): %s\n", i+1, t.By, t.Role, t.Text)
-				}
-			} else if len(disc.Turns) > 0 {
-				last := disc.Turns[len(disc.Turns)-1]
-				fmt.Printf("    Latest: %s (%s) — %s\n", last.By, last.Role, last.Text)
-				if len(disc.Turns) > 1 {
-					fmt.Printf("    (%d more turns — use --full to show all)\n", len(disc.Turns)-1)
+				if dec.TaskID != "" {
+					fmt.Printf("    Task: %s\n", dec.TaskID)
 				}
 			}
 		}
-	}
 
-	if len(bundle.notes) > 0 {
-		fmt.Println("\nNOTES:")
-		for _, n := range bundle.notes {
-			fmt.Printf("  [%s]", shortDate(n.CreatedAt))
-			if n.TaskID != "" {
-				fmt.Printf(" (%s)", n.TaskID)
+		if len(bundle.rejections) > 0 {
+			fmt.Println("\nREJECTIONS:")
+			for _, r := range bundle.rejections {
+				fmt.Printf("  ✗ [%s] %s\n", shortDate(r.CreatedAt), r.Approach)
+				if r.Reason != "" {
+					fmt.Printf("    Reason: %s\n", r.Reason)
+				}
+				if len(r.Tags) > 0 {
+					fmt.Printf("    Tags: %s\n", strings.Join(r.Tags, ", "))
+				}
+				if r.TaskID != "" {
+					fmt.Printf("    Task: %s\n", r.TaskID)
+				}
 			}
-			fmt.Printf(" %s\n", n.Text)
 		}
-	}
 
-	fmt.Println()
-	fmt.Printf("  %d decisions  %d rejections  %d tasks  %d discussions  %d notes\n",
-		len(bundle.decisions), len(bundle.rejections), len(bundle.tasks), len(bundle.discussions), len(bundle.notes))
+		if len(bundle.tasks) > 0 {
+			fmt.Println("\nTASKS:")
+			for _, t := range bundle.tasks {
+				statusIcon := taskStatusIcon(t.Status)
+				fmt.Printf("  %s [%s] %s — %s\n", statusIcon, t.ID, t.Title, t.Priority)
+				if t.Detail != "" {
+					detail := t.Detail
+					if len(detail) > 120 {
+						detail = detail[:117] + "..."
+					}
+					fmt.Printf("    %s\n", detail)
+				}
+			}
+		}
 
-	// TODO(Phase 2): add Memgraph structural query — affected files and symbols
-	// related to the query topic via graph traversal.
+		if len(bundle.discussions) > 0 {
+			fmt.Println("\nDISCUSSIONS:")
+			for _, disc := range bundle.discussions {
+				statusMark := discStatusMark(disc.Status)
+				fmt.Printf("  %s [%s] %s\n", statusMark, disc.ID, disc.Topic)
+				if disc.Detail != "" {
+					detail := disc.Detail
+					if len(detail) > 120 {
+						detail = detail[:117] + "..."
+					}
+					fmt.Printf("    %s\n", detail)
+				}
+				if disc.Status == "resolved" && disc.ResolvedNote != "" {
+					fmt.Printf("    Resolved: %s\n", disc.ResolvedNote)
+				}
+				if contextFullTranscript && len(disc.Turns) > 0 {
+					fmt.Printf("    Transcript (%d turns):\n", len(disc.Turns))
+					for i, t := range disc.Turns {
+						fmt.Printf("      [%d] %s (%s): %s\n", i+1, t.By, t.Role, t.Text)
+					}
+				} else if len(disc.Turns) > 0 {
+					last := disc.Turns[len(disc.Turns)-1]
+					fmt.Printf("    Latest: %s (%s) — %s\n", last.By, last.Role, last.Text)
+					if len(disc.Turns) > 1 {
+						fmt.Printf("    (%d more turns — use --full to show all)\n", len(disc.Turns)-1)
+					}
+				}
+			}
+		}
+
+		if len(bundle.notes) > 0 {
+			fmt.Println("\nNOTES:")
+			for _, n := range bundle.notes {
+				fmt.Printf("  [%s]", shortDate(n.CreatedAt))
+				if n.TaskID != "" {
+					fmt.Printf(" (%s)", n.TaskID)
+				}
+				fmt.Printf(" %s\n", n.Text)
+			}
+		}
+
+		fmt.Println()
+		fmt.Printf("  %d decisions  %d rejections  %d tasks  %d discussions  %d notes\n",
+			len(bundle.decisions), len(bundle.rejections), len(bundle.tasks), len(bundle.discussions), len(bundle.notes))
+
+		// TODO(Phase 2): add Memgraph structural query — affected files and symbols
+		// related to the query topic via graph traversal.
 
 		if len(errs) > 0 {
 			fmt.Printf("\nWarnings:\n  %s\n", strings.Join(errs, "\n  "))
 		}
 	})
+}
+
+// serveContextFromCache looks up the last-known-good cache entry for query
+// and prints stale results with an offline banner.
+func serveContextFromCache(cmd *cobra.Command, query string) error {
+	ggDir, err := config.GGDir()
+	if err != nil {
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached context available")
+		return nil
+	}
+
+	var payload contextPayload
+	cachedAt, found, err := cache.Get(ggDir, contextCacheNS+query, &payload)
+	if err != nil || !found {
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached context available for this topic")
+		return nil
+	}
+
+	banner := fmt.Sprintf("⚠ Qdrant unreachable — showing cached context from %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
+	fmt.Fprintln(cmd.OutOrStderr(), banner)
+
+	bundle := contextBundle{
+		decisions:   payload.Decisions,
+		rejections:  payload.Rejections,
+		tasks:       payload.Tasks,
+		discussions: payload.Discussions,
+		notes:       payload.Notes,
+	}
+	return printContextBundle(cmd, query, bundle, nil)
 }
 
 // shortDate returns the first 10 characters of an RFC3339 timestamp (YYYY-MM-DD).

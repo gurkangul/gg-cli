@@ -118,6 +118,106 @@ func ReadPercentiles(ggDir string, last int) (Percentiles, error) {
 	}, nil
 }
 
+// ReadSpansFromDir reads spans from all JSONL files in the traces directory.
+// Filters are applied client-side: op (empty = all), since (zero = all), limit
+// (0 = all, otherwise keep the last N matching spans). Returned spans are in
+// append order (oldest first).
+func ReadSpansFromDir(ggDir string, op string, since time.Time, limit int) ([]Span, error) {
+	traceDir := filepath.Join(ggDir, "traces")
+	entries, err := os.ReadDir(traceDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var all []Span
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".jsonl" {
+			continue
+		}
+		spans, err := readSpans(filepath.Join(traceDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		all = append(all, spans...)
+	}
+
+	// Apply filters.
+	var filtered []Span
+	for _, s := range all {
+		if op != "" && s.Op != op {
+			continue
+		}
+		if !since.IsZero() && time.Unix(s.Timestamp, 0).Before(since) {
+			continue
+		}
+		filtered = append(filtered, s)
+	}
+
+	if limit > 0 && len(filtered) > limit {
+		filtered = filtered[len(filtered)-limit:]
+	}
+	return filtered, nil
+}
+
+// SummaryByOp computes p50/p95/p99 per operation from all spans recorded since
+// `since` (zero = all time). Returns a map of op → Percentiles.
+func SummaryByOp(ggDir string, since time.Time) (map[string]Percentiles, error) {
+	spans, err := ReadSpansFromDir(ggDir, "", since, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	byOp := make(map[string][]float64)
+	for _, s := range spans {
+		byOp[s.Op] = append(byOp[s.Op], s.DurationMs)
+	}
+
+	result := make(map[string]Percentiles, len(byOp))
+	for op, durations := range byOp {
+		sort.Float64s(durations)
+		result[op] = Percentiles{
+			P50: percentile(durations, 0.50),
+			P95: percentile(durations, 0.95),
+			P99: percentile(durations, 0.99),
+			N:   len(durations),
+		}
+	}
+	return result, nil
+}
+
+// ClearOlderThan deletes JSONL files in the traces directory whose date is
+// strictly before cutoff. Returns the number of files deleted.
+func ClearOlderThan(ggDir string, cutoff time.Time) (int, error) {
+	traceDir := filepath.Join(ggDir, "traces")
+	entries, err := os.ReadDir(traceDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	cutoffDate := cutoff.UTC().Format("2006-01-02")
+	deleted := 0
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".jsonl" {
+			continue
+		}
+		// Filename format: YYYY-MM-DD.jsonl
+		date := e.Name()[:len(e.Name())-len(".jsonl")]
+		if date < cutoffDate {
+			if err := os.Remove(filepath.Join(traceDir, e.Name())); err != nil {
+				return deleted, err
+			}
+			deleted++
+		}
+	}
+	return deleted, nil
+}
+
 // ggDir resolves the project-local .gg/ directory, preferring the GG_DIR
 // environment variable for test isolation. Falls back to searching upward from
 // the working directory.

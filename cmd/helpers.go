@@ -28,10 +28,14 @@ func withTimeout(parent context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(parent, cmdTimeout)
 }
 
-// ExitStoreDown is the exit code returned by write commands when Qdrant is
-// unreachable. It is distinct from exit code 1 (generic error) so that
-// orchestrators and scripts can detect the specific "storage unavailable" state.
-const ExitStoreDown = 3
+// storeDownErr returns an ExitError with ExitStoreDown for use by write
+// commands when Qdrant is unreachable.
+func storeDownErr() error {
+	return &ExitError{
+		Code:    ExitStoreDown,
+		Message: "Qdrant unreachable — writes blocked, reads served from cache",
+	}
+}
 
 type deps struct {
 	store       *store.Client
@@ -74,12 +78,12 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 		}
 	}()
 
-	// Fail fast with a clear message if Qdrant is unreachable — much better
-	// than a cryptic gRPC error bubbling up from inside a store operation.
+	// Fail fast with a structured exit code if Qdrant is unreachable — write
+	// commands must not silently succeed when the vector store is down.
 	hctx, hcancel := context.WithTimeout(context.Background(), healthCheckTimeout)
 	defer hcancel()
 	if hErr := client.HealthCheck(hctx); hErr != nil {
-		return nil, fmt.Errorf("qdrant health check failed (is Qdrant running?): %w", hErr)
+		return nil, storeDownErr()
 	}
 
 	if needEmbedding {

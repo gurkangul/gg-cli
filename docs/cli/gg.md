@@ -35,4 +35,5 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg status](gg_status.md)	 - Show open tasks, pending messages, and recent decisions
 * [gg task](gg_task.md)	 - Manage tasks
 * [gg tell](gg_tell.md)	 - Send a message to another agent role
+* [gg trace](gg_trace.md)	 - Inspect GG_TRACE span data
 

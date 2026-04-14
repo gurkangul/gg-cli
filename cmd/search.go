@@ -5,6 +5,10 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg-cli/internal/cache"
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/store"
 )
 
 var searchCmd = &cobra.Command{
@@ -21,6 +25,12 @@ func init() {
 	rootCmd.AddCommand(searchCmd)
 }
 
+// searchPayload is the struct persisted to / read from the LKG cache.
+type searchPayload struct {
+	Decisions  []store.Decision  `json:"decisions"`
+	Rejections []store.Rejection `json:"rejections"`
+}
+
 func runSearch(cmd *cobra.Command, args []string) error {
 	query, err := requireNonEmpty("query", args[0])
 	if err != nil {
@@ -34,8 +44,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	defer d.Close()
 
 	if d.qdrantDown {
-		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — read-only fallback mode (no vector search available)")
-		return nil
+		return serveSearchFromCache(cmd, query)
 	}
 
 	ctx, cancel := withTimeout(cmd.Context())
@@ -56,10 +65,42 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("search rejections: %w", err)
 	}
 
+	// Write results to the LKG cache for future offline use (best-effort).
+	if ggDir, dirErr := config.GGDir(); dirErr == nil {
+		_ = cache.Put(ggDir, query, searchPayload{Decisions: decisions, Rejections: rejections})
+	}
+
+	return printSearchResults(cmd, decisions, rejections, "")
+}
+
+// serveSearchFromCache looks up the last-known-good cache entry for query
+// and prints stale results with an offline banner.
+func serveSearchFromCache(cmd *cobra.Command, query string) error {
+	ggDir, err := config.GGDir()
+	if err != nil {
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached results available")
+		return nil
+	}
+
+	var payload searchPayload
+	cachedAt, found, err := cache.Get(ggDir, query, &payload)
+	if err != nil || !found {
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached results available for this query")
+		return nil
+	}
+
+	banner := fmt.Sprintf("⚠ Qdrant unreachable — showing cached results from %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
+	return printSearchResults(cmd, payload.Decisions, payload.Rejections, banner)
+}
+
+func printSearchResults(cmd *cobra.Command, decisions []store.Decision, rejections []store.Rejection, banner string) error {
 	return printJSON(map[string]any{
 		"decisions":  decisions,
 		"rejections": rejections,
 	}, func() {
+		if banner != "" {
+			fmt.Fprintln(cmd.OutOrStderr(), banner)
+		}
 		if len(decisions) == 0 && len(rejections) == 0 {
 			fmt.Println("No results found.")
 			return

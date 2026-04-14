@@ -36,6 +36,28 @@ jobs:
       - name: Test
         run: go test ./... -race -count=1
 
+      - name: Coverage thresholds
+        run: |
+          check_coverage() {
+            pkg="$1"; threshold="$2"
+            pct=$(go test "$pkg" -coverprofile=/tmp/cov.out -covermode=atomic -count=1 2>/dev/null | grep -oE '[0-9]+\.[0-9]+%' | tr -d '%')
+            if [ -z "$pct" ]; then
+              echo "FAIL: could not measure coverage for $pkg"
+              exit 1
+            fi
+            # Compare using awk for float arithmetic
+            ok=$(echo "$pct $threshold" | awk '{print ($1 >= $2) ? "yes" : "no"}')
+            if [ "$ok" = "yes" ]; then
+              echo "OK: $pkg ${pct}% >= ${threshold}%"
+            else
+              echo "FAIL: $pkg ${pct}% < ${threshold}% (required)"
+              exit 1
+            fi
+          }
+          check_coverage ./cmd 40
+          check_coverage ./internal/store 50
+          check_coverage ./internal/graph 40
+
   lint:
     name: lint
     runs-on: ubuntu-latest

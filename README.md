@@ -158,6 +158,16 @@ gg index --lang python
 
 Supported indexers: `scip-go`, `scip-typescript`, `scip-python`.
 
+### Observability (GG_TRACE=1)
+
+| Command | Description |
+|---|---|
+| `gg trace show [--op=X] [--since=1h] [--limit=N]` | Print recorded spans, newest first |
+| `gg trace summary [--since=1h]` | Per-operation p50/p95/p99 latency breakdown |
+| `gg trace clear [--older-than=7d]` | Delete old trace JSONL files |
+
+Enable recording: `GG_TRACE=1 gg search "topic"`. See [`docs/commands/trace.md`](docs/commands/trace.md) for details.
+
 ### Ops
 
 | Command | Description |

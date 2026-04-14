@@ -10,19 +10,21 @@ var jsonOutput bool
 
 // Exit code constants — callers can check the exit code to distinguish error classes.
 //
-//   0  success
-//   1  general error
-//   2  resource not found
-//   3  config / init error (run `gg init`)
-//   4  service unreachable (Qdrant / Ollama / Memgraph)
+//   0   success
+//   1   general error
+//   2   resource not found
+//   3   config / init error (run `gg init`)
+//   4   service unreachable (Qdrant / Ollama / Memgraph)
+//   6   store down — writes blocked, reads served from cache
 //   130 interrupted (Ctrl+C)
 const (
-	ExitOK      = 0
-	ExitGeneral = 1
-	ExitNotFound = 2
-	ExitConfig  = 3
-	ExitService = 4
-	ExitSignal  = 130
+	ExitOK         = 0
+	ExitGeneral    = 1
+	ExitNotFound   = 2
+	ExitConfig     = 3
+	ExitService    = 4
+	ExitStoreDown  = 6  // Qdrant unreachable: write commands fail, read commands serve cached results
+	ExitSignal     = 130
 )
 
 // ExitError is a sentinel that carries a structured exit code alongside the

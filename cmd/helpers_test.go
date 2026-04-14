@@ -131,3 +131,24 @@ func TestRequireTaskID_Invalid(t *testing.T) {
 		t.Fatal("expected error for invalid task ID format")
 	}
 }
+
+// ── requireBugID ─────────────────────────────────────────────────────────────
+
+func TestRequireBugID_Empty_Error(t *testing.T) {
+	if _, err := requireBugID(""); err == nil {
+		t.Fatal("expected error for empty bug ID")
+	}
+}
+
+// ── parseTaskIDList ──────────────────────────────────────────────────────────
+
+func TestParseTaskIDList_ConsecutiveCommas(t *testing.T) {
+	// Empty elements between commas should be silently skipped.
+	ids, err := parseTaskIDList("TASK-001,,TASK-002")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Errorf("expected 2 IDs, got %d: %v", len(ids), ids)
+	}
+}
