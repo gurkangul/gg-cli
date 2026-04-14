@@ -1,93 +1,84 @@
-# GG KURALLARI
+# GG RULES
 
-Sen bu projede paylaşılan bir bilgi tabanı ile çalışıyorsun.
-Tüm kararlar, tasklar ve bilgi alışverişi gg CLI üzerinden yapılır.
-Kullanıcı senden gg çalıştırmanı ASLA istemez — sen otomatik çalıştırırsın.
+This project uses a shared knowledge base. All decisions, tasks, and
+inter-agent information exchange flow through the `gg` CLI.
+The user will NEVER ask you to run `gg` — you detect the intent and run it.
 
-## OTURUM BAŞLANGIÇ
+## SESSION START
 
-Her konuşma başladığında ilk iş:
+First thing in every conversation:
 ```
 gg status
 ```
-Açık tasklar, bekleyen mesajlar, son kararlar özetini al ve kullanıcıya bildir.
+Summarize open tasks, unread messages, and recent decisions for the user.
 
-## TARTIŞMA SIRASINDA
+## DURING DISCUSSION
 
-Kullanıcıyla bir konu tartışırken:
+While discussing a topic with the user:
 
-1. Konu hakkında daha önce karar alınmış mı:
+1. Check for prior decisions on the topic:
    ```
-   gg search "konu"
+   gg search "topic"
    ```
-2. Reddedilmiş yaklaşım var mı kontrol et
-3. Varsa kullanıcıya bildir
+2. The same command surfaces rejections as well.
+3. If any match, inform the user.
 
-## KARAR ANI
+## DECISION POINT
 
-Kullanıcı ile bir karara vardığında (açık veya üstü kapalı):
+When the user reaches a decision (explicit or implicit):
 
-- "JWT kullanalım" → karar
-- "tamam öyle yapalım" → önceki önerinin onayı = karar
-- "evet mantıklı" → karar
+- "Let's use JWT" → decision
+- "Yes, do that" → approval of prior suggestion = decision
+- "Sounds good" → decision
 
-Tespit ettiğinde:
+Detect and record:
 ```
-gg decide "kısa karar" --reason "sebep" --tags "etiketler"
+gg decide "short decision" --reason "why" --tags "tag1,tag2"
 ```
-Kullanıcıya: "Karar olarak kaydettim."
+Tell the user: "Recorded that decision."
 
-## TASK OLUŞTURMA
+## TASK CREATION
 
-Bir iş yapılması gerektiği netleştiğinde:
+When a unit of work becomes clear:
 ```
-gg task create "başlık" --detail "açıklama" --priority high --tags "etiketler"
+gg task create "title" --detail "description" --priority high --tags "tag1,tag2"
 ```
-Kullanıcıya: "Task açtım: TASK-XXX"
+Tell the user: "Opened task TASK-XXX."
 
-## TASK ÇÖZME
+## WORKING TASKS
 
-Kullanıcı "taskları çöz" veya "TASK-XXX'i yap" dediğinde:
+When the user says "work on the tasks" or "do TASK-XXX":
 
 1. `gg task list --status pending`
-2. Her task için:
-   a. `gg task get TASK-XXX`
-   b. `gg impact "etkilenecek dosyalar"`
-   c. Kodu yaz, test et, commit at
-   d. `gg task done TASK-XXX "özet"`
+2. For each task:
+   1. `gg task get TASK-XXX`
+   2. Write code, test, commit.
+   3. `gg task done TASK-XXX "summary"`
 
-## DOSYA DEĞİŞTİRMEDEN ÖNCE
+## MESSAGING ANOTHER AGENT
 
-Her zaman:
+When work should transfer to a different role:
 ```
-gg impact src/dosya/yolu.ts
-```
-
-## BAŞKA AGENT'A MESAJ
-
-Bir iş başka role kalıyorsa:
-```
-gg tell "hedef-rol" "mesaj"
+gg tell "target-role" "message" --from your-role
 ```
 
-## HATA / BLOCKER
+## BLOCKERS
 
-Task çözülemiyorsa:
+When a task cannot proceed:
 ```
-gg task block TASK-XXX "sebep"
-```
-
-## REDDEDİLEN YAKLAŞIMLAR
-
-Yaklaşım reddedildiğinde:
-```
-gg reject "yaklaşım" --reason "neden"
+gg task block TASK-XXX "reason"
 ```
 
-## ASLA YAPMA
+## REJECTED APPROACHES
 
-- gg olmadan karar alma
-- Reddedilmiş yaklaşımı tekrarlama
-- Task açmadan "sonra yaparız" deme
-- impact kontrolü yapmadan dosya değiştirme
-- Kullanıcıdan gg komutu çalıştırmasını isteme
+When an approach is considered but not chosen:
+```
+gg reject "approach" --reason "why not"
+```
+
+## NEVER
+
+- Make decisions without `gg`
+- Re-propose a rejected approach (search first)
+- Say "we'll do that later" without opening a task
+- Ask the user to run `gg` commands

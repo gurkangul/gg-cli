@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -9,6 +10,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// ErrMissingProjectID is returned by Validate when project_id is empty —
+// typically a pre-refactor config. Callers can detect this with errors.Is
+// to provide tailored migration guidance.
+var ErrMissingProjectID = errors.New("project_id is required")
 
 const (
 	DirName       = ".gg"
@@ -75,21 +81,14 @@ func isProjectGGDir(path string) bool {
 	if err != nil || !info.IsDir() {
 		return false
 	}
-	// Refuse if the path equals the shared infra dir. Fail closed when HOME
-	// is unresolvable: without it we cannot prove path != ~/.gg.
+	// Refuse if the path equals the shared infra dir (including via symlink).
+	// Fail closed when HOME is unresolvable: without it we cannot prove the
+	// path isn't actually ~/.gg.
 	shared, err := SharedDir()
 	if err != nil {
 		return false
 	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return false
-	}
-	absShared, err := filepath.Abs(shared)
-	if err != nil {
-		return false
-	}
-	if abs == absShared {
+	if SamePath(path, shared) {
 		return false
 	}
 	_, err = os.Stat(filepath.Join(path, ConfigFile))
@@ -113,6 +112,24 @@ func SharedDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, SharedDirName), nil
+}
+
+// SamePath reports whether two paths resolve to the same filesystem entry.
+// It canonicalises via filepath.Abs and filepath.EvalSymlinks when possible;
+// paths that don't yet exist fall back to lexical comparison.
+func SamePath(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(absA); err == nil {
+		absA = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(absB); err == nil {
+		absB = resolved
+	}
+	return absA == absB
 }
 
 // Load reads the project-local config and validates it.
@@ -139,7 +156,7 @@ func Load() (*Config, error) {
 // Validate ensures required fields are present and URLs/ports are well-formed.
 func (c *Config) Validate() error {
 	if strings.TrimSpace(c.ProjectID) == "" {
-		return fmt.Errorf("project_id is required — run 'gg init' to generate one")
+		return fmt.Errorf("%w — run 'gg init' to generate one", ErrMissingProjectID)
 	}
 	if strings.TrimSpace(c.Qdrant.Host) == "" {
 		return fmt.Errorf("qdrant.host is required")

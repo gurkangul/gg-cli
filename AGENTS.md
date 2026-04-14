@@ -1,95 +1,99 @@
 # Agent Guidance
 
-Bu proje paylaşılan bir bilgi tabanı kullanır: **gg** CLI.
-Tüm kararlar, tasklar, agent-arası mesajlar ve reddedilen yaklaşımlar `gg` üzerinden kaydedilir.
+This project uses a shared knowledge base CLI: **gg**.
+All decisions, tasks, inter-agent messages, and rejected approaches are
+recorded via the `gg` command.
 
-Her agent kendi terminalinde bağımsız çalışır ama hepsi aynı Qdrant + Ollama altyapısına yazar.
-Böylece bir agent'ın aldığı karar, diğer agent'ın da görebildiği ortak bellekte olur.
+Every agent runs independently in its own terminal but they all write to the
+same Qdrant + Ollama backend. A decision made by one agent is immediately
+visible to the others through shared memory.
 
-> Kullanıcı senden `gg` çalıştırmanı ASLA istemez — sen tespit ederek otomatik çalıştırırsın.
+> The user will NEVER ask you to run `gg`. You detect the intent and invoke it
+> automatically.
 
 ---
 
-# GG KURALLARI
+# GG RULES
 
-## OTURUM BAŞLANGIÇ
+## SESSION START
 
-Her konuşma başladığında ilk iş:
+The very first thing to do at the start of any conversation:
 ```
 gg status
 ```
-Açık tasklar, bekleyen mesajlar, son kararlar özetini al ve kullanıcıya kısaca özetle.
+Summarize the open tasks, unread messages, and recent decisions for the user.
 
-## TARTIŞMA SIRASINDA
+## DURING DISCUSSION
 
-Kullanıcıyla bir konu tartışırken:
+When discussing a topic with the user:
 
-1. Konu hakkında daha önce karar alınmış mı:
+1. Check if the topic already has a decision:
    ```
-   gg search "konu"
+   gg search "topic"
    ```
-2. Reddedilmiş yaklaşım var mı kontrol et (aynı komut rejection'ları da döndürür)
-3. Varsa kullanıcıya bildir — "daha önce X kararı alınmış, Y yaklaşımı reddedilmiş"
+2. The same command also returns prior rejections for that topic.
+3. If any exist, surface them: "X was already decided" / "Y was previously rejected".
 
-## KARAR ANI
+## DECISION POINT
 
-Kullanıcı ile bir karara vardığında (açık veya üstü kapalı):
+When the user reaches a decision (explicit or implicit):
 
-- "JWT kullanalım" → karar
-- "tamam öyle yapalım" → önceki önerinin onayı = karar
-- "evet mantıklı" → karar
+- "Let's use JWT" → decision
+- "Yes, that works" / "sounds good" → approval of the prior suggestion = decision
+- "Go ahead with that" → decision
 
-Tespit ettiğinde:
+As soon as you detect it:
 ```
-gg decide "kısa karar" --reason "sebep" --tags "etiketler"
+gg decide "short decision text" --reason "why" --tags "tag1,tag2"
 ```
-Kullanıcıya: "Karar olarak kaydettim."
+Tell the user: "Recorded that decision."
 
-## TASK OLUŞTURMA
+## TASK CREATION
 
-Bir iş yapılması gerektiği netleştiğinde:
+When a unit of work is clearly needed:
 ```
-gg task create "başlık" --detail "açıklama" --priority high --tags "etiketler"
+gg task create "title" --detail "description" --priority high --tags "tag1,tag2"
 ```
-Kullanıcıya: "Task açtım: TASK-XXX"
+Tell the user: "Opened task TASK-XXX."
 
-## TASK ÇÖZME
+## WORKING TASKS
 
-Kullanıcı "taskları çöz" veya "TASK-XXX'i yap" dediğinde:
+When the user says "work on the tasks" or "do TASK-XXX":
 
 1. `gg task list --status pending`
-2. Her task için:
+2. For each task:
    1. `gg task get TASK-XXX`
-   2. Kodu yaz, test et, commit at
-   3. `gg task done TASK-XXX "özet"`
+   2. Write the code, test it, commit it.
+   3. `gg task done TASK-XXX "summary"`
 
-## BAŞKA AGENT'A MESAJ
+## MESSAGING ANOTHER AGENT
 
-Bir iş başka role kalıyorsa (ör. architect kararı verdi, developer yazacak):
+When some work belongs to a different role (e.g. architect decided, developer
+implements):
 ```
-gg tell "developer" "mesaj" --from architect
-```
-
-Rol kendini belirlemek için: `export GG_ROLE=architect` (ya da developer, qa).
-
-## HATA / BLOCKER
-
-Task çözülemiyorsa:
-```
-gg task block TASK-XXX "sebep"
+gg tell "developer" "message" --from architect
 ```
 
-## REDDEDİLEN YAKLAŞIMLAR
+Set your role once per shell: `export GG_ROLE=architect` (or developer, qa, etc.).
 
-Bir yaklaşım değerlendirildi ama seçilmedi — mutlaka kaydet:
+## BLOCKERS
+
+If a task cannot be completed:
 ```
-gg reject "yaklaşım" --reason "neden"
+gg task block TASK-XXX "reason"
 ```
-Bu, başka agent'ların aynı reddedilen yolu tekrar önermesini engeller.
 
-## ASLA YAPMA
+## REJECTED APPROACHES
 
-- `gg` olmadan karar alma
-- Reddedilmiş yaklaşımı tekrarlama (search önce)
-- Task açmadan "sonra yaparız" deme
-- Kullanıcıdan `gg` komutu çalıştırmasını isteme
+When an approach is considered but not chosen — always record it:
+```
+gg reject "approach" --reason "why not"
+```
+This prevents other agents from re-proposing the same rejected path.
+
+## NEVER
+
+- Make decisions without `gg`
+- Re-propose a previously rejected approach (search first)
+- Say "we'll do that later" without opening a task
+- Ask the user to run `gg` commands — you run them

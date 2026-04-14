@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -29,6 +30,15 @@ func init() {
 
 func runInit(cmd *cobra.Command, args []string) error {
 	parentCtx := cmd.Context()
+
+	// --- Validate project location BEFORE provisioning anything ---
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	if err := guardProjectLocation(cwd); err != nil {
+		return err
+	}
 
 	// --- Shared infra at ~/.gg/ ---
 	sharedDir, err := config.SharedDir()
@@ -71,18 +81,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- Project-local .gg/ ---
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-
-	// Refuse to init inside the shared dir or inside an ancestor that already
-	// has a .gg/ — that would create a nested project under an existing one,
-	// with confusing semantics.
-	if err := guardProjectLocation(cwd); err != nil {
-		return err
-	}
-
 	ggDir := filepath.Join(cwd, config.DirName)
 	if err := os.MkdirAll(ggDir, 0755); err != nil {
 		return fmt.Errorf("create %s: %w", ggDir, err)
@@ -152,24 +150,33 @@ func runInit(cmd *cobra.Command, args []string) error {
 // project_id. Returns the project_id either way.
 func ensureProjectConfig(ggDir string) (string, error) {
 	configPath := filepath.Join(ggDir, config.ConfigFile)
-	if _, err := os.Stat(configPath); err == nil {
-		existing, err := config.Load()
-		if err != nil {
-			// Special-case the pre-refactor config (no project_id) — the
-			// validation error is accurate but confusing during `gg init`.
-			errStr := err.Error()
-			if strings.Contains(errStr, "project_id is required") {
-				return "", fmt.Errorf(
-					"%s looks like a pre-refactor config (no project_id). Delete it to regenerate:\n"+
-						"  rm %s && gg init",
-					configPath, configPath,
-				)
+	if info, statErr := os.Stat(configPath); statErr == nil {
+		// Recover from a zero-byte config — previous init crashed between
+		// O_EXCL create and Write. Treat as "never written", remove and
+		// fall through to the create path.
+		if info.Size() == 0 {
+			if err := os.Remove(configPath); err != nil {
+				return "", fmt.Errorf("remove empty config: %w", err)
 			}
-			return "", fmt.Errorf("project already initialized but config is invalid: %w", err)
+			fmt.Println("  Removed empty .gg/config.yaml from a prior failed init")
+		} else {
+			existing, loadErr := config.Load()
+			if loadErr != nil {
+				if errors.Is(loadErr, config.ErrMissingProjectID) {
+					return "", fmt.Errorf(
+						"%s looks like a pre-refactor config (no project_id). Delete it to regenerate:\n"+
+							"  rm %s && gg init",
+						configPath, configPath,
+					)
+				}
+				return "", fmt.Errorf("project already initialized but config is invalid: %w", loadErr)
+			}
+			fmt.Printf("  Project already registered as %s\n", existing.ProjectID)
+			return existing.ProjectID, nil
 		}
-		fmt.Printf("  Project already registered as %s\n", existing.ProjectID)
-		return existing.ProjectID, nil
 	}
+	// UUID collision risk is ~2^-122; Qdrant collection-create would fail
+	// loudly on the astronomically unlikely collision anyway.
 	projectID := uuid.New().String()
 	body := strings.ReplaceAll(templates.ConfigYAML, "PROJECT_ID_PLACEHOLDER", projectID)
 	// O_EXCL to avoid two concurrent gg init's writing different project_ids.
@@ -268,27 +275,27 @@ func setupProjectCollections(ctx context.Context, projectID, ggDir string) error
 	return nil
 }
 
-// guardProjectLocation refuses to init if cwd is the shared dir itself,
-// if cwd would make its .gg/ collide with the shared dir (cwd == parent of
-// shared), or if any strict ancestor of cwd already contains a gg project.
+// guardProjectLocation refuses to init if cwd is the shared dir itself, if
+// cwd's .gg/ would collide with the shared dir, or if any strict ancestor of
+// cwd already contains a gg project. Symlinks are resolved to real paths via
+// config.SamePath so symlink-to-home does not bypass the home-collision guard.
 func guardProjectLocation(cwd string) error {
 	absCwd, err := filepath.Abs(cwd)
 	if err != nil {
 		return err
 	}
-	shared, sharedErr := config.SharedDir()
-	if sharedErr == nil {
-		absShared, absErr := filepath.Abs(shared)
-		if absErr == nil {
-			if absCwd == absShared {
-				return fmt.Errorf("cannot `gg init` inside the shared dir %s — choose a separate project directory", shared)
-			}
-			// cwd == $HOME means creating <cwd>/.gg/ would BE the shared dir.
-			if absCwd == filepath.Dir(absShared) {
-				return fmt.Errorf("cannot `gg init` in %s — its .gg/ would collide with the shared infra dir %s", absCwd, absShared)
-			}
+	if shared, err := config.SharedDir(); err == nil {
+		if config.SamePath(absCwd, shared) {
+			return fmt.Errorf("cannot `gg init` inside the shared dir %s — choose a separate project directory", shared)
+		}
+		// cwd's .gg/ would BE the shared dir (cwd == parent of shared).
+		candidate := filepath.Join(absCwd, config.DirName)
+		if config.SamePath(candidate, shared) {
+			return fmt.Errorf("cannot `gg init` in %s — its .gg/ would collide with the shared infra dir %s", absCwd, shared)
 		}
 	}
+	// We treat os.Stat errors as "no project here" deliberately; a transient
+	// EACCES on a remote mount shouldn't abort init in a sibling directory.
 	for {
 		parent := filepath.Dir(absCwd)
 		if parent == absCwd {
@@ -320,7 +327,11 @@ func waitForHTTP(ctx context.Context, url string, timeout time.Duration) error {
 				return nil
 			}
 		}
-		time.Sleep(time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
 	}
 	return fmt.Errorf("timeout waiting for %s", url)
 }
