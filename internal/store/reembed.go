@@ -25,12 +25,13 @@ var collTextExtractors = map[string]func(map[string]*qdrant.Value) string{
 		return text
 	},
 	collSuffixRejections: func(p map[string]*qdrant.Value) string {
-		text := p["text"].GetStringValue()
+		// AddRejection stores text under "approach", not "text".
+		approach := p["approach"].GetStringValue()
 		reason := p["reason"].GetStringValue()
 		if reason != "" {
-			return text + " " + reason
+			return approach + " " + reason
 		}
-		return text
+		return approach
 	},
 	collSuffixTasks: func(p map[string]*qdrant.Value) string {
 		title := p["title"].GetStringValue()
@@ -52,15 +53,17 @@ var collTextExtractors = map[string]func(map[string]*qdrant.Value) string{
 		return p["text"].GetStringValue()
 	},
 	collSuffixMessages: func(p map[string]*qdrant.Value) string {
-		return p["text"].GetStringValue()
+		// SendMessage stores body under "content", not "text".
+		return p["content"].GetStringValue()
 	},
 	collSuffixDiscussions: func(p map[string]*qdrant.Value) string {
-		question := p["question"].GetStringValue()
+		// OpenDiscussion stores headline under "topic", not "question".
+		topic := p["topic"].GetStringValue()
 		detail := p["detail"].GetStringValue()
 		if detail != "" {
-			return question + " " + detail
+			return topic + " " + detail
 		}
-		return question
+		return topic
 	},
 }
 

@@ -191,19 +191,31 @@ func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	return &t, nil
 }
 
+// ErrAlreadyInState is returned by UpdateTaskStatus when the task is already
+// in the requested status. Used to detect lost-update races between agents
+// (e.g. two agents both calling `gg task done TASK-X` simultaneously — the
+// second one sees the same target state and bails instead of clobbering the
+// first agent's summary).
+var ErrAlreadyInState = fmt.Errorf("task already in target state")
+
 func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra string) error {
 	pointID := qdrant.NewID(pointUUIDForTaskID(taskID))
-	// Verify the task exists before updating.
+	// Verify the task exists AND read current status to guard against the
+	// concurrent-update race (no Qdrant CAS — this is best-effort).
 	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
 		CollectionName: c.collTasks(),
 		Ids:            []*qdrant.PointId{pointID},
-		WithPayload:    qdrant.NewWithPayloadInclude("task_id"),
+		WithPayload:    qdrant.NewWithPayloadInclude("task_id", "status"),
 	})
 	if err != nil {
 		return err
 	}
 	if len(existing) == 0 {
 		return fmt.Errorf("task %s not found", taskID)
+	}
+	currentStatus := existing[0].GetPayload()["status"].GetStringValue()
+	if currentStatus == status {
+		return fmt.Errorf("%w: task %s already %s — refusing to overwrite (use --force to clobber)", ErrAlreadyInState, taskID, status)
 	}
 
 	statusVal, _ := qdrant.NewValue(status)

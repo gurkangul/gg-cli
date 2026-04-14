@@ -20,17 +20,19 @@ When you run several AI agents in parallel (different terminals, different roles
 
 ## Prerequisites
 
+**Required:** [Docker](https://docs.docker.com/get-docker/) with Compose v2.
+`gg init` runs the three services below as containers via a shared
+`~/.gg/docker-compose.yaml` — no manual install needed for Qdrant /
+Memgraph / Ollama.
+
 | Service | Purpose | Default |
 |---|---|---|
 | [Qdrant](https://qdrant.tech) | Vector store (decisions, tasks, notes, bugs, …) | `localhost:6334` |
 | [Ollama](https://ollama.ai) | Local embeddings | `http://localhost:11434` |
 | [Memgraph](https://memgraph.com) | Code knowledge graph (optional, for `gg index`) | `bolt://localhost:7687` |
 
-Embedding model default: `nomic-embed-text` (768-dim). Pull it once:
-
-```sh
-ollama pull nomic-embed-text
-```
+Embedding model: `nomic-embed-text` (768-dim) — `gg init` pulls this
+into the Ollama container automatically on first run.
 
 ---
 

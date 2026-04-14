@@ -175,6 +175,10 @@ func (c *Client) updateBugStatus(ctx context.Context, bugID, status, rootCause, 
 	if len(existing) == 0 {
 		return fmt.Errorf("bug %s not found", bugID)
 	}
+	currentStatus := existing[0].GetPayload()["status"].GetStringValue()
+	if currentStatus == status {
+		return fmt.Errorf("%w: bug %s already %s — refusing to overwrite root_cause/summary (concurrent update?)", ErrAlreadyInState, bugID, status)
+	}
 
 	statusVal, _ := qdrant.NewValue(status)
 	rootVal, _ := qdrant.NewValue(rootCause)
