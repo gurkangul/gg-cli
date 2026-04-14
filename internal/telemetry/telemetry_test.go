@@ -1,0 +1,144 @@
+package telemetry
+
+import (
+	"os"
+	"testing"
+	"time"
+)
+
+func TestRecord_CreatesFile(t *testing.T) {
+	dir := t.TempDir()
+	Record(dir, "status")
+
+	data, err := os.ReadFile(filePath(dir))
+	if err != nil {
+		t.Fatalf("telemetry file not created: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("telemetry file is empty")
+	}
+}
+
+func TestRecord_DisabledViaEnv(t *testing.T) {
+	for _, val := range []string{"0", "false", "FALSE", "no", "off", " 0 "} {
+		t.Run("GG_TELEMETRY="+val, func(t *testing.T) {
+			t.Setenv("GG_TELEMETRY", val)
+			if !IsDisabled() {
+				t.Fatalf("IsDisabled() = false, want true for %q", val)
+			}
+			dir := t.TempDir()
+			Record(dir, "status")
+			if _, err := os.ReadFile(filePath(dir)); !os.IsNotExist(err) {
+				t.Errorf("telemetry file should not be created when disabled (val=%q): err=%v", val, err)
+			}
+		})
+	}
+}
+
+func TestRecord_EnabledByDefault(t *testing.T) {
+	t.Setenv("GG_TELEMETRY", "")
+	if IsDisabled() {
+		t.Fatal("IsDisabled() = true, want false when env unset")
+	}
+	dir := t.TempDir()
+	Record(dir, "status")
+	if _, err := os.ReadFile(filePath(dir)); err != nil {
+		t.Errorf("telemetry file should be created when enabled: %v", err)
+	}
+}
+
+func TestRecord_EmptyInputsNoOp(t *testing.T) {
+	dir := t.TempDir()
+	Record("", "status")    // empty ggDir
+	Record(dir, "")         // empty verb
+	Record("", "")
+
+	_, err := os.ReadFile(filePath(dir))
+	if !os.IsNotExist(err) {
+		t.Error("expected no file to be created for empty inputs")
+	}
+}
+
+func TestRecord_AppendsMultiple(t *testing.T) {
+	dir := t.TempDir()
+	Record(dir, "status")
+	Record(dir, "search")
+	Record(dir, "record")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.Total != 3 {
+		t.Errorf("expected 3 entries, got %d", sum.Total)
+	}
+	if sum.VerbCounts["status"] != 1 || sum.VerbCounts["search"] != 1 || sum.VerbCounts["record"] != 1 {
+		t.Errorf("verb counts wrong: %v", sum.VerbCounts)
+	}
+}
+
+func TestSummarize_MissingFile_ReturnsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sum.Total != 0 {
+		t.Errorf("expected 0 total, got %d", sum.Total)
+	}
+}
+
+func TestSummarize_FiltersOldEntries(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write an old entry (>7 days ago) directly.
+	oldEntry := `{"verb":"old","origin":"human","ts":"` + time.Now().AddDate(0, 0, -8).UTC().Format(time.RFC3339) + `"}` + "\n"
+	if err := os.WriteFile(filePath(dir), []byte(oldEntry), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Write a recent entry.
+	Record(dir, "status")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.Total != 1 {
+		t.Errorf("expected 1 recent entry, got %d (old entry should be filtered)", sum.Total)
+	}
+	if sum.VerbCounts["status"] != 1 {
+		t.Errorf("expected status=1, got %v", sum.VerbCounts)
+	}
+}
+
+func TestRecord_OriginHuman(t *testing.T) {
+	dir := t.TempDir()
+	// Ensure GG_ROLE is not set.
+	t.Setenv("GG_ROLE", "")
+
+	Record(dir, "status")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.HumanCalls != 1 || sum.AgentCalls != 0 {
+		t.Errorf("expected 1 human call, got human=%d agent=%d", sum.HumanCalls, sum.AgentCalls)
+	}
+}
+
+func TestRecord_OriginAgent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GG_ROLE", "developer")
+
+	Record(dir, "record")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.AgentCalls != 1 || sum.HumanCalls != 0 {
+		t.Errorf("expected 1 agent call, got human=%d agent=%d", sum.HumanCalls, sum.AgentCalls)
+	}
+}

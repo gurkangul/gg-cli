@@ -9,6 +9,9 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg/internal/config"
+	"github.com/gurkangul/gg/internal/telemetry"
 )
 
 // version is overridable at build time via -ldflags "-X ...cmd.version=vX.Y.Z".
@@ -25,6 +28,13 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output results as JSON")
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
+		// Record telemetry on every command invocation.
+		// Best-effort: silently skip if the .gg directory can't be located.
+		if ggDir, err := config.GGDir(); err == nil {
+			telemetry.Record(ggDir, cmd.Name())
+		}
+	}
 }
 
 func Execute() {

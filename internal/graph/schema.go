@@ -146,14 +146,13 @@ func (c *Client) SchemaInit(ctx context.Context) error {
 		"CREATE INDEX ON :Package(import_path)",
 	}
 
-	sess := c.session(ctx)
-	defer sess.Close(ctx)
-
+	// DDL queries carry no project scope — use runQueryNoPID.
 	for _, cypher := range indexes {
-		_, err := sess.Run(ctx, cypher, nil)
+		_, cleanup, err := c.runQueryNoPID(ctx, cypher, nil)
 		if err != nil {
 			return fmt.Errorf("schema init %q: %w", cypher, err)
 		}
+		cleanup()
 	}
 	return nil
 }
@@ -162,12 +161,9 @@ func (c *Client) SchemaInit(ctx context.Context) error {
 // client's project. These represent the exported API surface of the indexed
 // codebase for this project only.
 func (c *Client) BoundarySymbols(ctx context.Context) ([]*Node, error) {
-	sess := c.session(ctx)
-	defer sess.Close(ctx)
-
 	// resolution = "semantic" enforces the hybrid tier contract: syntactic
 	// (tree-sitter) nodes are never authoritative API surface.
-	result, err := sess.Run(ctx,
+	result, cleanup, err := c.runQuery(ctx,
 		"MATCH (n:Symbol {boundary: true, project_id: $pid, resolution: $tier}) "+
 			"RETURN toString(id(n)) AS id, properties(n) AS props",
 		map[string]any{"pid": c.projectID, "tier": string(ResolutionSemantic)},
@@ -175,6 +171,7 @@ func (c *Client) BoundarySymbols(ctx context.Context) ([]*Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("boundary symbols query: %w", err)
 	}
+	defer cleanup()
 
 	var nodes []*Node
 	for result.Next(ctx) {

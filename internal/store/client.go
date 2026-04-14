@@ -89,7 +89,9 @@ func (c *Client) CollectionStatus(ctx context.Context) (present, missing []strin
 }
 
 // EnsureCollections creates this project's Qdrant collections if they don't exist.
-func (c *Client) EnsureCollections(ctx context.Context) error {
+// vectorSize is the embedding dimension for the project — pass the value from the
+// embedding meta file (or store.VectorSize as a default for first-time setups).
+func (c *Client) EnsureCollections(ctx context.Context, vectorSize uint64) error {
 	collections := []string{c.collDecisions(), c.collTasks(), c.collMessages(), c.collRejections(), c.collDiscussions(), c.collNotes(), c.collBugs()}
 	existing, err := c.qc.ListCollections(ctx)
 	if err != nil {
@@ -101,7 +103,7 @@ func (c *Client) EnsureCollections(ctx context.Context) error {
 	}
 
 	vectorCfg := qdrant.NewVectorsConfig(&qdrant.VectorParams{
-		Size:     VectorSize,
+		Size:     vectorSize,
 		Distance: qdrant.Distance_Cosine,
 	})
 	for _, name := range collections {
@@ -114,6 +116,18 @@ func (c *Client) EnsureCollections(ctx context.Context) error {
 		})
 		if err != nil {
 			return fmt.Errorf("create collection %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// DropAllCollections deletes all project collections from Qdrant.
+// Used by `gg reembed` before recreating collections with a new vector size.
+func (c *Client) DropAllCollections(ctx context.Context) error {
+	collections := []string{c.collDecisions(), c.collTasks(), c.collMessages(), c.collRejections(), c.collDiscussions(), c.collNotes(), c.collBugs()}
+	for _, name := range collections {
+		if err := c.qc.DeleteCollection(ctx, name); err != nil {
+			return fmt.Errorf("drop collection %s: %w", name, err)
 		}
 	}
 	return nil

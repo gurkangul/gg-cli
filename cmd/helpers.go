@@ -42,6 +42,21 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Fail-fast if the configured embedding model differs from the one used to
+	// create existing Qdrant collections. Mixed-model collections produce broken
+	// recall because vectors from different models are not comparable.
+	if metaErr := embedding.CheckMeta(ggDir, cfg.Embedding.Model, store.VectorSize); metaErr != nil {
+		return nil, metaErr
+	}
+
+	// Resolve the expected embedding dimension from the meta file. On first
+	// run CheckMeta has already written the meta, so ReadMeta will succeed.
+	dim := store.VectorSize
+	if meta, readErr := embedding.ReadMeta(ggDir); readErr == nil && meta != nil {
+		dim = meta.Dim
+	}
+
 	client, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
 	if err != nil {
 		return nil, err
@@ -62,7 +77,7 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 	}
 
 	if needEmbedding {
-		d.embedder = embedding.New(&cfg.Embedding, store.VectorSize)
+		d.embedder = embedding.New(&cfg.Embedding, dim)
 	}
 	return d, nil
 }

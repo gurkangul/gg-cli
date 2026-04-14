@@ -3,10 +3,14 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
-	"github.com/gurkangul/gg/internal/store"
 	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg/internal/config"
+	"github.com/gurkangul/gg/internal/store"
+	"github.com/gurkangul/gg/internal/telemetry"
 )
 
 var statusCmd = &cobra.Command{
@@ -152,7 +156,40 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				fmt.Printf("  ✗ %s\n", r.Approach)
 			}
 		}
+
+		// Telemetry — best-effort weekly summary.
+		if ggDir, dirErr := config.GGDir(); dirErr == nil {
+			if tsum, tErr := telemetry.Summarize(ggDir); tErr == nil && tsum.Total > 0 {
+				fmt.Printf("\nTELEMETRY (last 7 days — %d calls, %d%% agent-initiated):\n",
+					tsum.Total, pct(tsum.AgentCalls, tsum.Total))
+				// Print verb breakdown sorted by count desc.
+				type kv struct {
+					verb  string
+					count int
+				}
+				var verbs []kv
+				for v, c := range tsum.VerbCounts {
+					verbs = append(verbs, kv{v, c})
+				}
+				sort.Slice(verbs, func(i, j int) bool {
+					if verbs[i].count != verbs[j].count {
+						return verbs[i].count > verbs[j].count
+					}
+					return verbs[i].verb < verbs[j].verb
+				})
+				for _, v := range verbs {
+					fmt.Printf("  %-16s %d\n", v.verb, v.count)
+				}
+			}
+		}
 	})
+}
+
+func pct(part, total int) int {
+	if total == 0 {
+		return 0
+	}
+	return (part * 100) / total
 }
 
 func fmtCount(n uint64, err error) string {

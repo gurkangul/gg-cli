@@ -67,9 +67,17 @@ When the user reaches a decision (explicit or implicit):
 
 As soon as you detect it:
 ```
-gg decide "short decision text" --reason "why" --tags "tag1,tag2"
+gg record "short decision text" --reason "why" --tags "tag1,tag2"
 ```
 Tell the user: "Recorded that decision."
+
+To record a **rejected approach**:
+```
+gg record --stance=reject "approach" --reason "why not" --tags "tag1,tag2"
+```
+
+> **Note:** `gg decide` and `gg reject` still work but are deprecated.
+> Prefer `gg record [--stance=accept|reject]` going forward.
 
 ## TASK CREATION
 
@@ -168,8 +176,8 @@ Severity tiers: **critical** (data loss, security), **high** (core feature broke
 4. **Fix** — write code, test, commit; then:
    `gg bug fix BUG-NNN "what was changed" --root-cause "what caused it"`
 5. **Retrospective** — record what you learned so it doesn't recur:
-   - If an architectural decision led to the bug: `gg decide "new constraint" --reason "BUG-NNN revealed that ..."`
-   - If the approach that caused it should be avoided: `gg reject "pattern" --reason "BUG-NNN: caused X because ..."`
+   - If an architectural decision led to the bug: `gg record "new constraint" --reason "BUG-NNN revealed that ..."`
+   - If the approach that caused it should be avoided: `gg record --stance=reject "pattern" --reason "BUG-NNN: caused X because ..."`
    - If follow-up work is needed: `gg task create "follow-up" --detail "..."`
 
 ### Retrospective rule (TASK-024 contract)
@@ -178,7 +186,7 @@ Every **fixed** bug must have at least one retrospective artifact — a decision
 
 If the fix is trivial (e.g. typo), a one-line rejection is still required:
 ```
-gg reject "pattern that caused BUG-NNN" --reason "typo in X — verified by test Y"
+gg record --stance=reject "pattern that caused BUG-NNN" --reason "typo in X — verified by test Y"
 ```
 
 ### Won't-fix
@@ -199,7 +207,7 @@ gg task block TASK-XXX "reason"
 
 When an approach is considered but not chosen — always record it:
 ```
-gg reject "approach" --reason "why not"
+gg record --stance=reject "approach" --reason "why not"
 ```
 This prevents other agents from re-proposing the same rejected path.
 
@@ -213,9 +221,9 @@ You, as the orchestrator, are responsible for **extracting gg-relevant actions
 from their output and executing the `gg` calls yourself** as soon as the round
 completes. Concretely:
 
-- A subagent says "we should reject X because Y" → you run `gg reject "X" --reason "Y"`
+- A subagent says "we should reject X because Y" → you run `gg record --stance=reject "X" --reason "Y"`
 - A subagent proposes action items / a punch list → you run `gg task create` for each
-- A subagent reaches a conclusion the user accepts → you run `gg decide`
+- A subagent reaches a conclusion the user accepts → you run `gg record "conclusion"`
 
 Do this BEFORE asking the user "should I save these?" — the AGENTS.md rule is
 to capture decisions automatically. Asking first violates the contract.

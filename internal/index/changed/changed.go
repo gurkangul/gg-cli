@@ -63,3 +63,26 @@ func HeadSHA(ctx context.Context, projectRoot string) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// IsAncestor reports whether sha is a reachable ancestor of HEAD in projectRoot.
+// It uses `git merge-base --is-ancestor <sha> HEAD` which exits 0 when true.
+//
+// Returns false (not an error) when sha is not an ancestor — callers use this
+// to detect branch switches, rebases, or force pushes that break the linear
+// history assumption of `--changed`.
+//
+// Returns an error only if git itself fails (e.g. sha is malformed or the repo
+// is corrupt).
+func IsAncestor(ctx context.Context, projectRoot, sha string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", projectRoot, "merge-base", "--is-ancestor", sha, "HEAD")
+	var errOut bytes.Buffer
+	cmd.Stderr = &errOut
+	if err := cmd.Run(); err != nil {
+		// Exit code 1 means "not an ancestor" — that is a valid outcome, not an error.
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, fmt.Errorf("git merge-base: %w — %s", err, strings.TrimSpace(errOut.String()))
+	}
+	return true, nil
+}

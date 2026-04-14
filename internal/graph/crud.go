@@ -10,9 +10,9 @@ import (
 // Node represents a graph node with a label and arbitrary properties.
 // TASK-007 will define the concrete label taxonomy (Symbol, File, Package, etc.).
 type Node struct {
-	ID         string            // populated after CreateNode
-	Label      string            // e.g. "Symbol", "File"
-	Properties map[string]any    // Cypher-compatible property map
+	ID         string         // populated after CreateNode / UpsertNode
+	Label      string         // e.g. "Symbol", "File"
+	Properties map[string]any // Cypher-compatible property map
 }
 
 // CreateNode creates a node with the given label and properties.
@@ -31,16 +31,17 @@ func (c *Client) CreateNode(ctx context.Context, n *Node) error {
 	}
 	props["project_id"] = c.projectID
 
-	sess := c.session(ctx)
-	defer sess.Close(ctx)
-
-	result, err := sess.Run(ctx,
+	// CREATE query: project_id is inside $props (not a WHERE filter), so
+	// runQuery is used even though no explicit $pid param appears in the Cypher.
+	result, cleanup, err := c.runQuery(ctx,
 		fmt.Sprintf("CREATE (n:%s $props) RETURN toString(id(n)) AS id", n.Label),
 		map[string]any{"props": props},
 	)
 	if err != nil {
 		return fmt.Errorf("create node %s: %w", n.Label, err)
 	}
+	defer cleanup()
+
 	record, err := result.Single(ctx)
 	if err != nil {
 		return fmt.Errorf("create node single record: %w", err)
@@ -53,14 +54,69 @@ func (c *Client) CreateNode(ctx context.Context, n *Node) error {
 	return nil
 }
 
+// UpsertNode merges a node by the given mergeKeys (plus the implicit project_id),
+// creating it when absent or updating all properties when it already exists.
+// This makes index writes safe to retry without generating duplicate nodes.
+//
+// mergeKeys must name properties present in n.Properties. The combination of
+// mergeKeys + project_id is treated as the unique identity for the MERGE.
+func (c *Client) UpsertNode(ctx context.Context, n *Node, mergeKeys []string) error {
+	if n.Label == "" {
+		return fmt.Errorf("node label is required")
+	}
+	if len(mergeKeys) == 0 {
+		return fmt.Errorf("upsert node: at least one merge key is required")
+	}
+
+	// Build full property map with project_id stamped in.
+	props := make(map[string]any, len(n.Properties)+1)
+	for k, v := range n.Properties {
+		props[k] = v
+	}
+	props["project_id"] = c.projectID
+
+	// Build the MERGE identity: project_id + caller-specified keys.
+	// All mergeKeys must be present in props — a missing key would silently
+	// produce a wrong MERGE identity, causing either duplicate nodes or
+	// incorrect matches. Fail loudly so the caller can fix the call site.
+	identity := make(map[string]any, len(mergeKeys)+1)
+	identity["project_id"] = c.projectID
+	for _, k := range mergeKeys {
+		v, ok := props[k]
+		if !ok {
+			return fmt.Errorf("upsert node %s: merge key %q not present in properties", n.Label, k)
+		}
+		identity[k] = v
+	}
+
+	// MERGE: project_id is in $identity (the merge key). runQuery is used; the
+	// isolation guarantee is in the identity map, not a separate $pid param.
+	result, cleanup, err := c.runQuery(ctx,
+		fmt.Sprintf("MERGE (n:%s $identity) SET n += $props RETURN toString(id(n)) AS id", n.Label),
+		map[string]any{"identity": identity, "props": props},
+	)
+	if err != nil {
+		return fmt.Errorf("upsert node %s: %w", n.Label, err)
+	}
+	defer cleanup()
+
+	record, err := result.Single(ctx)
+	if err != nil {
+		return fmt.Errorf("upsert node %s single record: %w", n.Label, err)
+	}
+	id, _, err := neo4j.GetRecordValue[string](record, "id")
+	if err != nil {
+		return fmt.Errorf("upsert node %s get id: %w", n.Label, err)
+	}
+	n.ID = id
+	return nil
+}
+
 // FindNodeByProperty returns the first node with the given label whose
 // property key matches value, scoped to this client's project_id.
 // Returns (nil, nil) when not found.
 func (c *Client) FindNodeByProperty(ctx context.Context, label, key string, value any) (*Node, error) {
-	sess := c.session(ctx)
-	defer sess.Close(ctx)
-
-	result, err := sess.Run(ctx,
+	result, cleanup, err := c.runQuery(ctx,
 		fmt.Sprintf(
 			"MATCH (n:%s {%s: $val, project_id: $pid}) RETURN toString(id(n)) AS id, properties(n) AS props LIMIT 1",
 			label, key,
@@ -70,6 +126,7 @@ func (c *Client) FindNodeByProperty(ctx context.Context, label, key string, valu
 	if err != nil {
 		return nil, fmt.Errorf("find node %s.%s: %w", label, key, err)
 	}
+	defer cleanup()
 
 	record, err := result.Single(ctx)
 	if err == nil {
@@ -78,8 +135,7 @@ func (c *Client) FindNodeByProperty(ctx context.Context, label, key string, valu
 		return &Node{ID: id, Label: label, Properties: props}, nil
 	}
 	// No results is not an error in our contract.
-	summary, _ := result.Consume(ctx)
-	_ = summary
+	_, _ = result.Consume(ctx)
 	return nil, nil
 }
 
@@ -90,16 +146,14 @@ func (c *Client) DeleteNode(ctx context.Context, elementID string) error {
 	if elementID == "" {
 		return fmt.Errorf("elementID is required")
 	}
-	sess := c.session(ctx)
-	defer sess.Close(ctx)
-
-	_, err := sess.Run(ctx,
+	_, cleanup, err := c.runQuery(ctx,
 		"MATCH (n) WHERE toString(id(n)) = $id AND n.project_id = $pid DETACH DELETE n",
 		map[string]any{"id": elementID, "pid": c.projectID},
 	)
 	if err != nil {
 		return fmt.Errorf("delete node %s: %w", elementID, err)
 	}
+	cleanup()
 	return nil
 }
 
@@ -111,26 +165,25 @@ func (c *Client) DeleteNode(ctx context.Context, elementID string) error {
 // The operation is idempotent: running it twice produces the same graph state.
 // If the file no longer exists on disk, call this and skip the SCIP run.
 func (c *Client) InvalidateFile(ctx context.Context, filePath string) error {
-	sess := c.session(ctx)
-	defer sess.Close(ctx)
-
 	// Step 1: delete all Symbol nodes produced from this file.
-	_, err := sess.Run(ctx,
+	_, cleanup1, err := c.runQuery(ctx,
 		"MATCH (n:Symbol {source_file: $path, project_id: $pid}) DETACH DELETE n",
 		map[string]any{"path": filePath, "pid": c.projectID},
 	)
 	if err != nil {
 		return fmt.Errorf("invalidate symbols for %s: %w", filePath, err)
 	}
+	cleanup1()
 
 	// Step 2: delete the File node itself.
-	_, err = sess.Run(ctx,
+	_, cleanup2, err := c.runQuery(ctx,
 		"MATCH (f:File {path: $path, project_id: $pid}) DETACH DELETE f",
 		map[string]any{"path": filePath, "pid": c.projectID},
 	)
 	if err != nil {
 		return fmt.Errorf("invalidate file node for %s: %w", filePath, err)
 	}
+	cleanup2()
 	return nil
 }
 
@@ -138,16 +191,14 @@ func (c *Client) InvalidateFile(ctx context.Context, filePath string) error {
 // (1-hop dependent lookup, CHANGED_CONTRACT.md §2). Used to expand the
 // invalidation set during --changed runs.
 func (c *Client) DependentsOf(ctx context.Context, filePath string) ([]string, error) {
-	sess := c.session(ctx)
-	defer sess.Close(ctx)
-
-	result, err := sess.Run(ctx,
+	result, cleanup, err := c.runQuery(ctx,
 		"MATCH (d:File {project_id: $pid})-[:IMPORTS]->(f:File {path: $path, project_id: $pid}) RETURN d.path AS dep",
 		map[string]any{"path": filePath, "pid": c.projectID},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dependents of %s: %w", filePath, err)
 	}
+	defer cleanup()
 
 	var deps []string
 	for result.Next(ctx) {
@@ -160,6 +211,49 @@ func (c *Client) DependentsOf(ctx context.Context, filePath string) ([]string, e
 		return nil, fmt.Errorf("dependents of %s iterate: %w", filePath, err)
 	}
 	return deps, nil
+}
+
+// FileSymbols returns all Symbol nodes whose source_file matches the given
+// path, scoped to this project. Used by `gg impact` to show what symbols
+// a changed file exports.
+func (c *Client) FileSymbols(ctx context.Context, filePath string) ([]*Node, error) {
+	result, cleanup, err := c.runQuery(ctx,
+		"MATCH (n:Symbol {source_file: $path, project_id: $pid}) RETURN toString(id(n)) AS id, properties(n) AS props",
+		map[string]any{"path": filePath, "pid": c.projectID},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("file symbols %s: %w", filePath, err)
+	}
+	defer cleanup()
+
+	var nodes []*Node
+	for result.Next(ctx) {
+		record := result.Record()
+		id, _, _ := neo4j.GetRecordValue[string](record, "id")
+		props, _, _ := neo4j.GetRecordValue[map[string]any](record, "props")
+		nodes = append(nodes, &Node{ID: id, Label: LabelSymbol, Properties: props})
+	}
+	if err := result.Err(); err != nil {
+		return nil, fmt.Errorf("file symbols %s iterate: %w", filePath, err)
+	}
+	return nodes, nil
+}
+
+// SweepProject removes ALL nodes (and their edges) belonging to this project.
+// Call this before a full re-index to ensure that nodes from a previous branch
+// or rebase don't survive as ghost symbols in the graph.
+//
+// The operation is idempotent and safe to call on an empty project.
+func (c *Client) SweepProject(ctx context.Context) error {
+	_, cleanup, err := c.runQuery(ctx,
+		"MATCH (n {project_id: $pid}) DETACH DELETE n",
+		map[string]any{"pid": c.projectID},
+	)
+	if err != nil {
+		return fmt.Errorf("sweep project: %w", err)
+	}
+	cleanup()
+	return nil
 }
 
 // Edge represents a directed relationship between two nodes identified by element ID.
@@ -189,10 +283,7 @@ func (c *Client) CreateEdge(ctx context.Context, e *Edge) error {
 	}
 	props["project_id"] = c.projectID
 
-	sess := c.session(ctx)
-	defer sess.Close(ctx)
-
-	_, err := sess.Run(ctx,
+	_, cleanup, err := c.runQuery(ctx,
 		fmt.Sprintf(
 			"MATCH (a) WHERE toString(id(a)) = $from AND a.project_id = $pid "+
 				"MATCH (b) WHERE toString(id(b)) = $to AND b.project_id = $pid "+
@@ -209,5 +300,46 @@ func (c *Client) CreateEdge(ctx context.Context, e *Edge) error {
 	if err != nil {
 		return fmt.Errorf("create edge %s: %w", e.Type, err)
 	}
+	cleanup()
+	return nil
+}
+
+// UpsertEdge creates a directed relationship between two existing nodes, or
+// updates its properties if an identical (from, type, to) edge already exists.
+// Like CreateEdge, both endpoints must belong to this client's project.
+// Use this instead of CreateEdge when the operation may be retried (e.g. after
+// an outbox reconcile), to avoid duplicate edges in the graph.
+func (c *Client) UpsertEdge(ctx context.Context, e *Edge) error {
+	if e.FromID == "" || e.ToID == "" {
+		return fmt.Errorf("edge FromID and ToID are required")
+	}
+	if e.Type == "" {
+		return fmt.Errorf("edge Type is required")
+	}
+
+	props := make(map[string]any, len(e.Properties)+1)
+	for k, v := range e.Properties {
+		props[k] = v
+	}
+	props["project_id"] = c.projectID
+
+	_, cleanup, err := c.runQuery(ctx,
+		fmt.Sprintf(
+			"MATCH (a) WHERE toString(id(a)) = $from AND a.project_id = $pid "+
+				"MATCH (b) WHERE toString(id(b)) = $to AND b.project_id = $pid "+
+				"MERGE (a)-[r:%s]->(b) SET r += $props",
+			e.Type,
+		),
+		map[string]any{
+			"from":  e.FromID,
+			"to":    e.ToID,
+			"pid":   c.projectID,
+			"props": props,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("upsert edge %s: %w", e.Type, err)
+	}
+	cleanup()
 	return nil
 }

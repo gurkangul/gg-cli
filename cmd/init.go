@@ -268,7 +268,7 @@ func setupProjectCollections(ctx context.Context, projectID, ggDir string) error
 
 	setupCtx, cancelSetup := context.WithTimeout(ctx, 10*time.Second)
 	defer cancelSetup()
-	if err := client.EnsureCollections(setupCtx); err != nil {
+	if err := client.EnsureCollections(setupCtx, store.VectorSize); err != nil {
 		return fmt.Errorf("setup collections: %w", err)
 	}
 	fmt.Printf("✓ Qdrant collections ready for project %s\n", projectID)

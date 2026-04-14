@@ -15,6 +15,7 @@ import (
 	"github.com/gurkangul/gg/internal/index/parser"
 	"github.com/gurkangul/gg/internal/index/runner"
 	"github.com/gurkangul/gg/internal/index/state"
+	"github.com/gurkangul/gg/internal/outbox"
 )
 
 var indexCmd = &cobra.Command{
@@ -80,6 +81,16 @@ func runIndex(cmd *cobra.Command, _ []string) error {
 	return runFullIndex(ctx, root, ggDir, lang, r, gc)
 }
 
+// indexOutboxPayload is the payload written to the outbox for index runs.
+// It contains enough information for `gg doctor --reconcile` to re-run
+// the index if the process died before state.json was written.
+type indexOutboxPayload struct {
+	Kind string `json:"kind"` // "full" or "changed"
+	Root string `json:"root"`
+	Lang string `json:"lang"`
+	SHA  string `json:"sha"`
+}
+
 // runFullIndex runs a complete re-index of the project root.
 func runFullIndex(ctx context.Context, root, ggDir string, lang runner.Lang, r runner.Runner, gc *graph.Client) error {
 	fmt.Printf("indexing %s (full, lang=%s) ...\n", root, lang)
@@ -89,7 +100,27 @@ func runFullIndex(ctx context.Context, root, ggDir string, lang runner.Lang, r r
 		return fmt.Errorf("get HEAD sha: %w", err)
 	}
 
-	if err := index(ctx, root, lang, r, gc, nil); err != nil {
+	// Record intent in the outbox before touching Memgraph.
+	// If the process exits before state.json is written, reconcile will re-run.
+	outboxID, outboxErr := outbox.Write(ggDir, "full-index", indexOutboxPayload{
+		Kind: "full",
+		Root: root,
+		Lang: string(lang),
+		SHA:  headSHA,
+	})
+	if outboxErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: outbox write failed (continuing): %v\n", outboxErr)
+	}
+
+	// Sweep all existing project nodes before re-indexing. Without this, nodes
+	// from a previous branch (e.g. after a switch or rebase) survive as ghost
+	// symbols — they exist in the graph but not in the current working tree.
+	fmt.Println("sweeping stale graph nodes ...")
+	if sweepErr := gc.SweepProject(ctx); sweepErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: sweep project failed (continuing): %v\n", sweepErr)
+	}
+
+	if err := index(ctx, root, lang, r, gc, nil, headSHA); err != nil {
 		return err
 	}
 
@@ -98,6 +129,12 @@ func runFullIndex(ctx context.Context, root, ggDir string, lang runner.Lang, r r
 		fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
 	} else {
 		fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
+		// State is consistent — clear the outbox entry.
+		if outboxID != "" {
+			if delErr := outbox.Delete(ggDir, outboxID); delErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: outbox delete failed: %v\n", delErr)
+			}
+		}
 	}
 	return nil
 }
@@ -111,6 +148,21 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 	}
 	if err != nil {
 		return fmt.Errorf("read index state: %w", err)
+	}
+
+	// Verify that the last indexed SHA is a reachable ancestor of the current
+	// HEAD. If it is not (branch switch, rebase, force push), the `git diff`
+	// below would compute a wrong delta or fail entirely, and ghost symbols from
+	// the old branch would survive in the graph. Fall back to a full re-index
+	// which sweeps old nodes first.
+	ancestor, ancestorErr := changed.IsAncestor(ctx, root, s.LastIndexedSHA)
+	if ancestorErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: ancestor check failed (%v) — falling back to full index\n", ancestorErr)
+		return runFullIndex(ctx, root, ggDir, lang, r, gc)
+	}
+	if !ancestor {
+		fmt.Printf("non-linear history detected (last indexed sha=%s is not an ancestor of HEAD) — falling back to full index\n", s.LastIndexedSHA[:8])
+		return runFullIndex(ctx, root, ggDir, lang, r, gc)
 	}
 
 	fmt.Printf("incremental index since %s ...\n", s.LastIndexedSHA[:8])
@@ -154,26 +206,43 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 	// The indexer doesn't support per-file mode, so we always index the whole
 	// project and re-parse only the changed files from the resulting .scip output.
 	// This is intentionally simple (see CHANGED_CONTRACT.md §6 — day-2: partial runs).
-	if err := index(ctx, root, lang, r, gc, toInvalidate); err != nil {
-		return err
-	}
-
 	headSHA, err := changed.HeadSHA(ctx, root)
 	if err != nil {
 		return fmt.Errorf("get HEAD sha: %w", err)
+	}
+
+	// Record intent before Memgraph writes.
+	outboxID, outboxErr := outbox.Write(ggDir, "changed-index", indexOutboxPayload{
+		Kind: "changed",
+		Root: root,
+		Lang: string(lang),
+		SHA:  headSHA,
+	})
+	if outboxErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: outbox write failed (continuing): %v\n", outboxErr)
+	}
+
+	if err := index(ctx, root, lang, r, gc, toInvalidate, headSHA); err != nil {
+		return err
 	}
 
 	if err := state.Write(ggDir, headSHA); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
 	} else {
 		fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
+		if outboxID != "" {
+			if delErr := outbox.Delete(ggDir, outboxID); delErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: outbox delete failed: %v\n", delErr)
+			}
+		}
 	}
 	return nil
 }
 
 // index runs the SCIP indexer and processes the output into Memgraph.
 // If fileFilter is non-nil, only documents whose path is in the filter are processed.
-func index(ctx context.Context, root string, lang runner.Lang, r runner.Runner, gc *graph.Client, fileFilter map[string]bool) error {
+// headSHA is stamped on every written node as indexed_at_commit.
+func index(ctx context.Context, root string, lang runner.Lang, r runner.Runner, gc *graph.Client, fileFilter map[string]bool, headSHA string) error {
 	req := &runner.IndexRequest{
 		Root: root,
 		Lang: lang,
@@ -190,7 +259,7 @@ func index(ctx context.Context, root string, lang runner.Lang, r runner.Runner, 
 
 	fmt.Printf("parsing %s ...\n", result.IndexPath)
 
-	h := &graphHandler{gc: gc, root: root, fileFilter: fileFilter}
+	h := &graphHandler{gc: gc, root: root, fileFilter: fileFilter, headSHA: headSHA}
 	if err := parser.ParseFile(ctx, result.IndexPath, string(lang), h); err != nil {
 		return fmt.Errorf("parse scip: %w", err)
 	}
@@ -203,6 +272,7 @@ func index(ctx context.Context, root string, lang runner.Lang, r runner.Runner, 
 type graphHandler struct {
 	gc         *graph.Client
 	root       string
+	headSHA    string          // stamped on every node as indexed_at_commit
 	fileFilter map[string]bool // if non-nil, only these file paths are written
 	files      int
 	symbols    int
@@ -218,7 +288,13 @@ func (h *graphHandler) OnFile(ctx context.Context, node *graph.Node) error {
 	// Overwrite path with absolute form and set source_file for idempotent reaping.
 	node.Properties["path"] = absPath
 	node.Properties["source_file"] = absPath
-	if err := h.gc.CreateNode(ctx, node); err != nil {
+	// Stamp the commit SHA so ghost-sweep queries can identify stale nodes.
+	if h.headSHA != "" {
+		node.Properties["indexed_at_commit"] = h.headSHA
+	}
+	// UpsertNode (MERGE on path+project_id) makes re-runs safe: re-indexing the
+	// same file updates the node rather than creating a duplicate.
+	if err := h.gc.UpsertNode(ctx, node, []string{"path"}); err != nil {
 		return err
 	}
 	h.files++
@@ -236,7 +312,12 @@ func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNo
 	}
 	// source_file is mandatory (CHANGED_CONTRACT.md §5) so reaping can find this node.
 	symNode.Properties["source_file"] = absPath
-	if err := h.gc.CreateNode(ctx, symNode); err != nil {
+	// Stamp the commit SHA so ghost-sweep queries can identify stale nodes.
+	if h.headSHA != "" {
+		symNode.Properties["indexed_at_commit"] = h.headSHA
+	}
+	// MERGE on (name, source_file, project_id) — a symbol name is unique per file.
+	if err := h.gc.UpsertNode(ctx, symNode, []string{"name", "source_file"}); err != nil {
 		return err
 	}
 	// Create DEFINES edge: (File)-[:DEFINES]->(Symbol)
@@ -246,9 +327,9 @@ func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNo
 			ToID:   symNode.ID,
 			Type:   graph.RelDefines,
 		}
-		if err := h.gc.CreateEdge(ctx, edge); err != nil {
+		if err := h.gc.UpsertEdge(ctx, edge); err != nil {
 			// Non-fatal: log and continue.
-			fmt.Fprintf(os.Stderr, "warning: create DEFINES edge: %v\n", err)
+			fmt.Fprintf(os.Stderr, "warning: upsert DEFINES edge: %v\n", err)
 		}
 	}
 	h.symbols++

@@ -10,9 +10,15 @@ import (
 
 var rejectCmd = &cobra.Command{
 	Use:   `reject "approach"`,
-	Short: "Record a rejected approach",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runReject,
+	Short: "Record a rejected approach (deprecated: use gg record --stance=reject)",
+	Long: `Record a rejected approach.
+
+DEPRECATED: use 'gg record --stance=reject' instead.
+This command will be removed in a future release.
+
+  gg record --stance=reject "approach" --reason "why"`,
+	Args: cobra.ExactArgs(1),
+	RunE: runReject,
 }
 
 var (
@@ -30,6 +36,8 @@ func init() {
 }
 
 func runReject(cmd *cobra.Command, args []string) error {
+	fmt.Fprintln(cmd.ErrOrStderr(), "warning: 'gg reject' is deprecated — use 'gg record --stance=reject' instead")
+
 	approach, err := requireNonEmpty("approach", args[0])
 	if err != nil {
 		return err
