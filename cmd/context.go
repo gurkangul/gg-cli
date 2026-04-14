@@ -23,10 +23,12 @@ Phase 2 will add Memgraph structural queries (affected files/symbols).`,
 
 var contextLimit uint64
 var contextIncludeResolved bool
+var contextFullTranscript bool
 
 func init() {
 	contextCmd.Flags().Uint64Var(&contextLimit, "limit", 5, "max results per collection")
 	contextCmd.Flags().BoolVar(&contextIncludeResolved, "include-resolved", false, "include resolved/dismissed discussions and done/blocked tasks")
+	contextCmd.Flags().BoolVar(&contextFullTranscript, "full", false, "print full deliberation transcript for each discussion")
 	rootCmd.AddCommand(contextCmd)
 }
 
@@ -189,6 +191,18 @@ func runContext(cmd *cobra.Command, args []string) error {
 			}
 			if disc.Status == "resolved" && disc.ResolvedNote != "" {
 				fmt.Printf("    Resolved: %s\n", disc.ResolvedNote)
+			}
+			if contextFullTranscript && len(disc.Turns) > 0 {
+				fmt.Printf("    Transcript (%d turns):\n", len(disc.Turns))
+				for i, t := range disc.Turns {
+					fmt.Printf("      [%d] %s (%s): %s\n", i+1, t.By, t.Role, t.Text)
+				}
+			} else if len(disc.Turns) > 0 {
+				last := disc.Turns[len(disc.Turns)-1]
+				fmt.Printf("    Latest: %s (%s) — %s\n", last.By, last.Role, last.Text)
+				if len(disc.Turns) > 1 {
+					fmt.Printf("    (%d more turns — use --full to show all)\n", len(disc.Turns)-1)
+				}
 			}
 		}
 	}

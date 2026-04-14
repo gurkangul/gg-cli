@@ -12,6 +12,14 @@ import (
 	"github.com/qdrant/go-client/qdrant"
 )
 
+// Turn is one deliberation entry in a discussion transcript.
+type Turn struct {
+	By   string // agent or user name
+	Text string // the contribution text
+	Role string // dev | pm | architect | ux | analyst | writer | user
+	At   string // RFC3339 timestamp
+}
+
 // discIDNamespace seeds the deterministic UUID for a discussion point, mirroring
 // the task pattern so concurrent opens with the same DISC-ID collapse safely.
 var discIDNamespace = uuid.MustParse("c0c0c0c0-1a5c-4d0d-bab0-000000000002")
@@ -31,9 +39,14 @@ type Discussion struct {
 	ResolvedNote string // summary of how it was resolved
 	DismissNote  string // why it was dismissed (if applicable)
 	Tags         []string
+	Turns        []Turn // deliberation transcript — not in default context bundle
 	CreatedAt    string
 	UpdatedAt    string
 }
+
+// PayloadSizeWarnThreshold is the approximate byte count at which AppendTurn
+// emits a warning. Qdrant supports ~1 MB per payload; we warn at 80% headroom.
+const PayloadSizeWarnThreshold = 800_000
 
 func pointUUIDForDiscID(id string) string {
 	return uuid.NewSHA1(discIDNamespace, []byte(id)).String()
@@ -79,6 +92,7 @@ func (c *Client) OpenDiscussion(ctx context.Context, d Discussion, vector []floa
 		"resolved_note": "",
 		"dismiss_note":  "",
 		"tags":          toAnySlice(d.Tags),
+		"turns":         turnsToAny(d.Turns),
 		"created_at":    d.CreatedAt,
 		"updated_at":    d.UpdatedAt,
 	})
@@ -251,9 +265,110 @@ func discussionFromPayload(pay map[string]*qdrant.Value) Discussion {
 		ResolvedNote: pay["resolved_note"].GetStringValue(),
 		DismissNote:  pay["dismiss_note"].GetStringValue(),
 		Tags:         extractStringList(pay["tags"]),
+		Turns:        extractTurns(pay["turns"]),
 		CreatedAt:    pay["created_at"].GetStringValue(),
 		UpdatedAt:    pay["updated_at"].GetStringValue(),
 	}
+}
+
+// turnsToAny serializes []Turn to []any for qdrant.TryValueMap encoding.
+func turnsToAny(turns []Turn) []any {
+	if len(turns) == 0 {
+		return nil
+	}
+	out := make([]any, len(turns))
+	for i, t := range turns {
+		out[i] = map[string]any{
+			"by":   t.By,
+			"text": t.Text,
+			"role": t.Role,
+			"at":   t.At,
+		}
+	}
+	return out
+}
+
+// extractTurns deserializes a Qdrant ListValue of struct values into []Turn.
+func extractTurns(v *qdrant.Value) []Turn {
+	if v == nil {
+		return nil
+	}
+	list := v.GetListValue()
+	if list == nil {
+		return nil
+	}
+	turns := make([]Turn, 0, len(list.Values))
+	for _, item := range list.Values {
+		fields := item.GetStructValue().GetFields()
+		if fields == nil {
+			continue
+		}
+		turns = append(turns, Turn{
+			By:   fields["by"].GetStringValue(),
+			Text: fields["text"].GetStringValue(),
+			Role: fields["role"].GetStringValue(),
+			At:   fields["at"].GetStringValue(),
+		})
+	}
+	return turns
+}
+
+// estimateTurnsBytes returns a rough byte count for the turns slice to support
+// the payload size guard in AppendTurn.
+func estimateTurnsBytes(turns []Turn) int {
+	total := 0
+	for _, t := range turns {
+		total += len(t.By) + len(t.Text) + len(t.Role) + len(t.At) + 32 // key overhead
+	}
+	return total
+}
+
+// AppendTurn adds a deliberation turn to an existing discussion.
+// It warns (via the returned bool) if the estimated turns payload exceeds
+// PayloadSizeWarnThreshold bytes — callers should surface this to the user.
+func (c *Client) AppendTurn(ctx context.Context, discID string, turn Turn) (sizeWarning bool, err error) {
+	pointID := qdrant.NewID(pointUUIDForDiscID(discID))
+
+	// Fetch current turns to append to them.
+	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
+		CollectionName: c.collDiscussions(),
+		Ids:            []*qdrant.PointId{pointID},
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	})
+	if err != nil {
+		return false, err
+	}
+	if len(existing) == 0 {
+		return false, fmt.Errorf("discussion %s not found", discID)
+	}
+
+	currentTurns := extractTurns(existing[0].GetPayload()["turns"])
+	if turn.At == "" {
+		turn.At = time.Now().UTC().Format(time.RFC3339)
+	}
+	newTurns := append(currentTurns, turn)
+
+	turnsVal, err := qdrant.NewValue(turnsToAny(newTurns))
+	if err != nil {
+		return false, fmt.Errorf("encode turns: %w", err)
+	}
+	updatedVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
+
+	wait := true
+	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+		CollectionName: c.collDiscussions(),
+		Wait:           &wait,
+		Payload: map[string]*qdrant.Value{
+			"turns":      turnsVal,
+			"updated_at": updatedVal,
+		},
+		PointsSelector: qdrant.NewPointsSelector(pointID),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return estimateTurnsBytes(newTurns) > PayloadSizeWarnThreshold, nil
 }
 
 // ParseDiscID extracts the numeric suffix from a discussion ID like "DISC-001".

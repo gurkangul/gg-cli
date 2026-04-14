@@ -74,8 +74,38 @@ var discussDismissCmd = &cobra.Command{
 
 var discussDismissReason string
 
+// --- discuss note ---
+
+var discussNoteCmd = &cobra.Command{
+	Use:   `note DISC-ID "text"`,
+	Short: "Append a deliberation turn to a discussion transcript",
+	Long: `Records one turn in the discussion's audit transcript.
+Use --by to identify the contributor and --role for their perspective.`,
+	Args: cobra.ExactArgs(2),
+	RunE: runDiscussNote,
+}
+
+var (
+	discussNoteBy   string
+	discussNoteRole string
+)
+
+// --- discuss show ---
+
+var discussShowCmd = &cobra.Command{
+	Use:   "show DISC-ID",
+	Short: "Show a discussion with optional full transcript",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runDiscussShow,
+}
+
+var discussShowTranscript bool
+
 var validDiscussStatuses = map[string]bool{"open": true, "resolved": true, "dismissed": true}
 var validDiscussVia = map[string]bool{"decision": true, "task": true, "rejection": true}
+var validDiscussRoles = map[string]bool{
+	"dev": true, "pm": true, "architect": true, "ux": true, "analyst": true, "writer": true, "user": true,
+}
 
 func init() {
 	discussOpenCmd.Flags().StringVar(&discussDetail, "detail", "", "longer context")
@@ -91,7 +121,13 @@ func init() {
 	discussDismissCmd.Flags().StringVar(&discussDismissReason, "reason", "", "why this discussion is no longer relevant")
 	_ = discussDismissCmd.MarkFlagRequired("reason")
 
-	discussCmd.AddCommand(discussOpenCmd, discussListCmd, discussGetCmd, discussResolveCmd, discussDismissCmd)
+	discussNoteCmd.Flags().StringVar(&discussNoteBy, "by", "", "contributor name or agent role")
+	discussNoteCmd.Flags().StringVar(&discussNoteRole, "role", "user", "perspective: dev|pm|architect|ux|analyst|writer|user")
+	_ = discussNoteCmd.MarkFlagRequired("by")
+
+	discussShowCmd.Flags().BoolVar(&discussShowTranscript, "transcript", false, "print full deliberation transcript")
+
+	discussCmd.AddCommand(discussOpenCmd, discussListCmd, discussGetCmd, discussResolveCmd, discussDismissCmd, discussNoteCmd, discussShowCmd)
 	rootCmd.AddCommand(discussCmd)
 }
 
@@ -286,6 +322,109 @@ func runDiscussDismiss(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("⊘ %s dismissed: %s\n", discID, reason)
+	return nil
+}
+
+func runDiscussNote(cmd *cobra.Command, args []string) error {
+	discID, err := normalizeDiscID(args[0])
+	if err != nil {
+		return err
+	}
+	text, err := requireNonEmpty("text", args[1])
+	if err != nil {
+		return err
+	}
+	by, err := requireNonEmpty("--by", discussNoteBy)
+	if err != nil {
+		return err
+	}
+	role := strings.ToLower(strings.TrimSpace(discussNoteRole))
+	if !validDiscussRoles[role] {
+		return fmt.Errorf("invalid --role %q — use dev, pm, architect, ux, analyst, writer, or user", discussNoteRole)
+	}
+
+	d, err := loadDeps(false)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	warned, err := d.store.AppendTurn(ctx, discID, store.Turn{
+		By:   by,
+		Text: text,
+		Role: role,
+	})
+	if err != nil {
+		return fmt.Errorf("append turn: %w", err)
+	}
+
+	fmt.Printf("• Turn appended to %s (by %s / %s)\n", discID, by, role)
+	if warned {
+		fmt.Printf("  ⚠ Transcript payload is approaching the 1 MB Qdrant limit — consider archiving older turns.\n")
+	}
+	return nil
+}
+
+func runDiscussShow(cmd *cobra.Command, args []string) error {
+	discID, err := normalizeDiscID(args[0])
+	if err != nil {
+		return err
+	}
+
+	d, err := loadDeps(false)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	disc, err := d.store.GetDiscussion(ctx, discID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s %s — %s\n", discussStatusIcon(disc.Status), disc.ID, disc.Topic)
+	if disc.Detail != "" {
+		fmt.Printf("  Detail: %s\n", disc.Detail)
+	}
+	if len(disc.Tags) > 0 {
+		fmt.Printf("  Tags: %s\n", strings.Join(disc.Tags, ", "))
+	}
+	fmt.Printf("  Status: %s\n", disc.Status)
+	if disc.Status == "resolved" {
+		fmt.Printf("  Resolved via: %s\n", disc.ResolvedVia)
+		fmt.Printf("  Summary: %s\n", disc.ResolvedNote)
+	}
+	if disc.Status == "dismissed" {
+		fmt.Printf("  Dismiss reason: %s\n", disc.DismissNote)
+	}
+	fmt.Printf("  Opened: %s\n", disc.CreatedAt)
+	if disc.UpdatedAt != disc.CreatedAt {
+		fmt.Printf("  Updated: %s\n", disc.UpdatedAt)
+	}
+
+	if len(disc.Turns) == 0 {
+		return nil
+	}
+
+	if discussShowTranscript {
+		fmt.Printf("\nTRANSCRIPT (%d turns):\n", len(disc.Turns))
+		for i, t := range disc.Turns {
+			fmt.Printf("  [%d] %s (%s) @ %s\n", i+1, t.By, t.Role, shortDate(t.At))
+			fmt.Printf("      %s\n", t.Text)
+		}
+	} else {
+		last := disc.Turns[len(disc.Turns)-1]
+		fmt.Printf("\n  Latest turn: %s (%s) — %s\n", last.By, last.Role, last.Text)
+		if len(disc.Turns) > 1 {
+			fmt.Printf("  (%d more turns — use --transcript to show all)\n", len(disc.Turns)-1)
+		}
+	}
 	return nil
 }
 

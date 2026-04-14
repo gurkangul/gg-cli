@@ -255,3 +255,56 @@ func TestSearchTasks_ExcludesDoneByDefault(t *testing.T) {
 		}
 	}
 }
+
+// ── Turn (de)serialization ────────────────────────────────────────────────────
+
+func TestTurnsRoundTrip(t *testing.T) {
+	turns := []Turn{
+		{By: "architect", Text: "we should use JWT", Role: "architect", At: "2026-01-01T00:00:00Z"},
+		{By: "dev", Text: "agreed, simpler than sessions", Role: "dev", At: "2026-01-01T01:00:00Z"},
+	}
+	encoded := turnsToAny(turns)
+	if len(encoded) != 2 {
+		t.Fatalf("turnsToAny: got %d items, want 2", len(encoded))
+	}
+
+	// Verify the maps round-trip correctly via TryValueMap then extractTurns.
+	pm, err := qdrant.TryValueMap(map[string]any{"turns": encoded})
+	if err != nil {
+		t.Fatalf("TryValueMap: %v", err)
+	}
+	decoded := extractTurns(pm["turns"])
+	if len(decoded) != len(turns) {
+		t.Fatalf("extractTurns: got %d turns, want %d", len(decoded), len(turns))
+	}
+	for i, want := range turns {
+		got := decoded[i]
+		if got.By != want.By || got.Text != want.Text || got.Role != want.Role || got.At != want.At {
+			t.Errorf("[%d]: got %+v, want %+v", i, got, want)
+		}
+	}
+}
+
+func TestTurnsToAny_Empty(t *testing.T) {
+	if got := turnsToAny(nil); got != nil {
+		t.Errorf("expected nil for nil input, got %v", got)
+	}
+	if got := turnsToAny([]Turn{}); got != nil {
+		t.Errorf("expected nil for empty input, got %v", got)
+	}
+}
+
+func TestEstimateTurnsBytes(t *testing.T) {
+	turns := []Turn{
+		{By: "dev", Text: "short", Role: "dev", At: "2026-01-01T00:00:00Z"},
+	}
+	size := estimateTurnsBytes(turns)
+	if size <= 0 {
+		t.Errorf("estimateTurnsBytes: got %d, want > 0", size)
+	}
+	// Adding a turn must increase the estimate.
+	turns2 := append(turns, Turn{By: "pm", Text: "another turn", Role: "pm", At: "2026-01-01T01:00:00Z"})
+	if estimateTurnsBytes(turns2) <= size {
+		t.Error("estimateTurnsBytes: expected larger estimate after adding a turn")
+	}
+}
