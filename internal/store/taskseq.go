@@ -30,12 +30,12 @@ func (c *Client) allocTaskID(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open %s: %w", seqPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if err := lockFileCtx(ctx, f); err != nil {
 		return "", fmt.Errorf("lock %s: %w", seqPath, err)
 	}
-	defer unlockFile(f)
+	defer func() { _ = unlockFile(f) }()
 
 	data, err := io.ReadAll(f)
 	if err != nil {
@@ -83,10 +83,12 @@ func (c *Client) allocTaskID(ctx context.Context) (string, error) {
 
 // lockFileCtx is a context-aware exclusive lock: it polls non-blocking flock
 // so Ctrl+C/ctx cancel unblocks while another process holds the lock.
+// Permanent errors (not just "would block") fail fast instead of retrying.
 func lockFileCtx(ctx context.Context, f *os.File) error {
-	// Fast path.
 	if err := tryLockFile(f); err == nil {
 		return nil
+	} else if !isLockContention(err) {
+		return err
 	}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -95,8 +97,12 @@ func lockFileCtx(ctx context.Context, f *os.File) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := tryLockFile(f); err == nil {
+			err := tryLockFile(f)
+			if err == nil {
 				return nil
+			}
+			if !isLockContention(err) {
+				return err
 			}
 		}
 	}

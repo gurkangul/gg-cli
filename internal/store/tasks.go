@@ -44,13 +44,16 @@ func (c *Client) scrollAll(ctx context.Context, req *qdrant.ScrollPoints) ([]*qd
 	var offset *qdrant.PointId
 	for {
 		page, next, err := c.qc.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
-			CollectionName: req.CollectionName,
-			Filter:         req.Filter,
-			Limit:          &pageSize,
-			Offset:         offset,
-			WithPayload:    req.WithPayload,
-			WithVectors:    req.WithVectors,
-			OrderBy:        req.OrderBy,
+			CollectionName:   req.CollectionName,
+			Filter:           req.Filter,
+			Limit:            &pageSize,
+			Offset:           offset,
+			WithPayload:      req.WithPayload,
+			WithVectors:      req.WithVectors,
+			OrderBy:          req.OrderBy,
+			ReadConsistency:  req.ReadConsistency,
+			ShardKeySelector: req.ShardKeySelector,
+			Timeout:          req.Timeout,
 		})
 		if err != nil {
 			return nil, err
@@ -77,7 +80,7 @@ func (c *Client) maxTaskIDNumber(ctx context.Context) (int, error) {
 		WithPayload:    qdrant.NewWithPayloadInclude("task_id"),
 	})
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("scan tasks collection (did you run `gg init`?): %w", err)
 	}
 	maxNum := 0
 	for _, p := range points {

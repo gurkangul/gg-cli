@@ -102,6 +102,9 @@ func normalizeTaskRef(raw string) (string, error) {
 // malformed input is an error.
 func requireTaskID(raw string) (string, error) {
 	t := strings.ToUpper(strings.TrimSpace(raw))
+	if t == "" {
+		return "", fmt.Errorf("task ID is required (expected TASK-NNN)")
+	}
 	if _, err := store.ParseTaskID(t); err != nil {
 		return "", err
 	}

@@ -83,7 +83,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Wait for Ollama to respond before pulling the model.
 	if err := waitForHTTP(parentCtx, "http://localhost:11434/api/tags", 60*time.Second); err != nil {
-		fmt.Println("⚠ Ollama not reachable within 60s — run `ollama pull nomic-embed-text` manually later.")
+		fmt.Println("⚠ Ollama not reachable within 60s — run `docker compose -f .gg/docker-compose.yaml exec ollama ollama pull nomic-embed-text` manually later.")
 	} else {
 		fmt.Println("Pulling nomic-embed-text model (first time may take a minute)...")
 		pullCtx, cancelPull := context.WithTimeout(parentCtx, 10*time.Minute)
@@ -119,7 +119,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			if healthErr == nil {
 				break
 			}
-			client.Close()
+			_ = client.Close()
 			client = nil
 		}
 		time.Sleep(time.Second)
@@ -129,7 +129,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("\nGG initialized! Add .gg/RULES.md to your agent's config.")
 		return nil
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	setupCtx, cancelSetup := context.WithTimeout(parentCtx, 10*time.Second)
 	defer cancelSetup()
