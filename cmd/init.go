@@ -46,16 +46,28 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 	composePath := filepath.Join(sharedDir, "docker-compose.yaml")
-	if _, err := os.Stat(composePath); err != nil {
-		if err := os.WriteFile(composePath, []byte(templates.DockerCompose), 0644); err != nil {
-			return fmt.Errorf("write shared docker-compose: %w", err)
+	f, err := os.OpenFile(composePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	switch {
+	case err == nil:
+		_, writeErr := f.Write([]byte(templates.DockerCompose))
+		closeErr := f.Close()
+		if writeErr != nil {
+			return fmt.Errorf("write shared docker-compose: %w", writeErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close shared docker-compose: %w", closeErr)
 		}
 		fmt.Printf("✓ Created %s (shared infrastructure)\n", composePath)
+	case os.IsExist(err):
+		// Another init wrote it first, or we're re-running — both fine.
+	default:
+		return fmt.Errorf("create shared docker-compose: %w", err)
 	}
 
 	composeOK := startSharedServices(parentCtx, composePath)
+	ollamaHost := config.DefaultConfig().Embedding.Host
 	if composeOK {
-		pullOllamaModel(parentCtx, composePath)
+		pullOllamaModel(parentCtx, composePath, ollamaHost)
 	}
 
 	// --- Project-local .gg/ ---
@@ -63,9 +75,29 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Refuse to init inside the shared dir or inside an ancestor that already
+	// has a .gg/ — that would create a nested project under an existing one,
+	// with confusing semantics.
+	if err := guardProjectLocation(cwd); err != nil {
+		return err
+	}
+
 	ggDir := filepath.Join(cwd, config.DirName)
 	if err := os.MkdirAll(ggDir, 0755); err != nil {
 		return fmt.Errorf("create %s: %w", ggDir, err)
+	}
+
+	// Detect legacy per-project docker-compose (pre-refactor setups). Don't
+	// silently clobber — guide the user through migration.
+	legacyCompose := filepath.Join(ggDir, "docker-compose.yaml")
+	if _, err := os.Stat(legacyCompose); err == nil {
+		return fmt.Errorf(
+			"legacy per-project docker-compose found at %s — stop it with\n"+
+				"  docker compose -f %s down -v\n"+
+				"then delete %s and re-run `gg init`. Old collection data will not be migrated automatically",
+			legacyCompose, legacyCompose, legacyCompose,
+		)
 	}
 
 	// Generate or preserve project_id
@@ -80,6 +112,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err := os.WriteFile(rulesPath, []byte(templates.RulesMD), 0644); err != nil {
 			return fmt.Errorf("write RULES.md: %w", err)
 		}
+		fmt.Println("✓ Created .gg/RULES.md")
 	}
 
 	// AGENTS.md at project root — read by GSD, Claude Code, and other agents.
@@ -122,7 +155,7 @@ func ensureProjectConfig(ggDir string) (string, error) {
 		return existing.ProjectID, nil
 	}
 	projectID := uuid.New().String()
-	body := strings.Replace(templates.ConfigYAML, "PROJECT_ID_PLACEHOLDER", projectID, 1)
+	body := strings.ReplaceAll(templates.ConfigYAML, "PROJECT_ID_PLACEHOLDER", projectID)
 	if err := os.WriteFile(configPath, []byte(body), 0644); err != nil {
 		return "", fmt.Errorf("write config: %w", err)
 	}
@@ -145,8 +178,9 @@ func startSharedServices(ctx context.Context, composePath string) bool {
 	return true
 }
 
-func pullOllamaModel(ctx context.Context, composePath string) {
-	if err := waitForHTTP(ctx, "http://localhost:11434/api/tags", 60*time.Second); err != nil {
+func pullOllamaModel(ctx context.Context, composePath, ollamaHost string) {
+	tagsURL := strings.TrimRight(ollamaHost, "/") + "/api/tags"
+	if err := waitForHTTP(ctx, tagsURL, 60*time.Second); err != nil {
 		fmt.Println("⚠ Ollama not reachable within 60s — pull model manually:")
 		fmt.Println("  docker compose -f", composePath, "exec ollama ollama pull nomic-embed-text")
 		return
@@ -169,8 +203,7 @@ func setupProjectCollections(ctx context.Context, projectID, ggDir string) error
 	fmt.Println("Waiting for Qdrant...")
 	cfg, err := config.Load()
 	if err != nil {
-		cfg = config.DefaultConfig()
-		cfg.ProjectID = projectID
+		return fmt.Errorf("load freshly-written project config: %w", err)
 	}
 	var client *store.Client
 	var healthErr error
@@ -203,6 +236,29 @@ func setupProjectCollections(ctx context.Context, projectID, ggDir string) error
 		return fmt.Errorf("setup collections: %w", err)
 	}
 	fmt.Printf("✓ Qdrant collections ready for project %s\n", projectID)
+	return nil
+}
+
+// guardProjectLocation refuses to init if cwd is the shared dir itself, or
+// if any strict ancestor of cwd already contains a project-local .gg/.
+func guardProjectLocation(cwd string) error {
+	absCwd, err := filepath.Abs(cwd)
+	if err != nil {
+		return err
+	}
+	if shared, err := config.SharedDir(); err == nil {
+		if absShared, err := filepath.Abs(shared); err == nil && absCwd == absShared {
+			return fmt.Errorf("cannot `gg init` inside the shared dir %s — choose a separate project directory", shared)
+		}
+	}
+	parent := filepath.Dir(absCwd)
+	for parent != absCwd {
+		if _, err := os.Stat(filepath.Join(parent, config.DirName, config.ConfigFile)); err == nil {
+			return fmt.Errorf("ancestor directory %s already contains a gg project — cannot nest a new project under it", parent)
+		}
+		absCwd = parent
+		parent = filepath.Dir(parent)
+	}
 	return nil
 }
 

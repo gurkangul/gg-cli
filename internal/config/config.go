@@ -68,10 +68,19 @@ func FindRoot() (string, error) {
 
 // isProjectGGDir reports whether the given path is a project-local .gg dir
 // (contains config.yaml), as opposed to the shared ~/.gg/ infra dir.
+// It explicitly refuses the shared dir even if the user somehow created a
+// config.yaml there, preventing accidental data writes to home.
 func isProjectGGDir(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil || !info.IsDir() {
 		return false
+	}
+	if shared, err := SharedDir(); err == nil {
+		if abs, err := filepath.Abs(path); err == nil {
+			if absShared, err := filepath.Abs(shared); err == nil && abs == absShared {
+				return false
+			}
+		}
 	}
 	_, err = os.Stat(filepath.Join(path, ConfigFile))
 	return err == nil
