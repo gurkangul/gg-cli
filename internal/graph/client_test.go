@@ -4,6 +4,7 @@ package graph_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/gurkangul/gg/internal/config"
@@ -20,7 +21,9 @@ func newTestClient(t *testing.T) *graph.Client {
 		Username: "",
 		Password: "",
 	}
-	c, err := graph.New(cfg)
+	// Each test run uses a unique project ID to avoid cross-test data leakage.
+	projectID := fmt.Sprintf("test-%s", t.Name())
+	c, err := graph.New(cfg, projectID)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

@@ -91,14 +91,18 @@ func PackageNode(name, lang, importPath string) *Node {
 // Safe to call on an already-initialised schema — Memgraph CREATE INDEX IF NOT EXISTS.
 //
 // Indexes created:
-//   - Symbol(name)       — fast lookup by symbol name
-//   - Symbol(boundary)   — enumerate all boundary symbols across the codebase
+//   - Symbol(project_id) — isolate queries by project (the primary isolation index)
+//   - Symbol(name)       — fast lookup by symbol name within a project
+//   - Symbol(boundary)   — enumerate all boundary symbols within a project
+//   - File(project_id)   — file lookup within a project
 //   - File(path)         — deduplicate / lookup files by path
 //   - Package(import_path) — deduplicate packages by canonical import path
 func (c *Client) SchemaInit(ctx context.Context) error {
 	indexes := []string{
+		"CREATE INDEX ON :Symbol(project_id)",
 		"CREATE INDEX ON :Symbol(name)",
 		"CREATE INDEX ON :Symbol(boundary)",
+		"CREATE INDEX ON :File(project_id)",
 		"CREATE INDEX ON :File(path)",
 		"CREATE INDEX ON :Package(import_path)",
 	}
@@ -115,15 +119,16 @@ func (c *Client) SchemaInit(ctx context.Context) error {
 	return nil
 }
 
-// BoundarySymbols returns all Symbol nodes with boundary=true.
-// These represent the exported API surface of the indexed codebase.
+// BoundarySymbols returns all Symbol nodes with boundary=true scoped to this
+// client's project. These represent the exported API surface of the indexed
+// codebase for this project only.
 func (c *Client) BoundarySymbols(ctx context.Context) ([]*Node, error) {
 	sess := c.session(ctx)
 	defer sess.Close(ctx)
 
 	result, err := sess.Run(ctx,
-		"MATCH (n:Symbol {boundary: true}) RETURN toString(id(n)) AS id, properties(n) AS props",
-		nil,
+		"MATCH (n:Symbol {boundary: true, project_id: $pid}) RETURN toString(id(n)) AS id, properties(n) AS props",
+		map[string]any{"pid": c.projectID},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("boundary symbols query: %w", err)

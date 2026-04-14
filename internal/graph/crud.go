@@ -16,18 +16,27 @@ type Node struct {
 }
 
 // CreateNode creates a node with the given label and properties.
+// It automatically stamps the node with {project_id: c.projectID} so that
+// every node is scoped to this project.
 // It assigns a server-generated internal ID to n.ID on success.
 func (c *Client) CreateNode(ctx context.Context, n *Node) error {
 	if n.Label == "" {
 		return fmt.Errorf("node label is required")
 	}
 
+	// Shallow-copy props and inject project_id without mutating the caller's map.
+	props := make(map[string]any, len(n.Properties)+1)
+	for k, v := range n.Properties {
+		props[k] = v
+	}
+	props["project_id"] = c.projectID
+
 	sess := c.session(ctx)
 	defer sess.Close(ctx)
 
 	result, err := sess.Run(ctx,
 		fmt.Sprintf("CREATE (n:%s $props) RETURN toString(id(n)) AS id", n.Label),
-		map[string]any{"props": n.Properties},
+		map[string]any{"props": props},
 	)
 	if err != nil {
 		return fmt.Errorf("create node %s: %w", n.Label, err)
@@ -45,17 +54,18 @@ func (c *Client) CreateNode(ctx context.Context, n *Node) error {
 }
 
 // FindNodeByProperty returns the first node with the given label whose
-// property key matches value. Returns (nil, nil) when not found.
+// property key matches value, scoped to this client's project_id.
+// Returns (nil, nil) when not found.
 func (c *Client) FindNodeByProperty(ctx context.Context, label, key string, value any) (*Node, error) {
 	sess := c.session(ctx)
 	defer sess.Close(ctx)
 
 	result, err := sess.Run(ctx,
 		fmt.Sprintf(
-			"MATCH (n:%s {%s: $val}) RETURN toString(id(n)) AS id, properties(n) AS props LIMIT 1",
+			"MATCH (n:%s {%s: $val, project_id: $pid}) RETURN toString(id(n)) AS id, properties(n) AS props LIMIT 1",
 			label, key,
 		),
-		map[string]any{"val": value},
+		map[string]any{"val": value, "pid": c.projectID},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find node %s.%s: %w", label, key, err)

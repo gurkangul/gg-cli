@@ -11,17 +11,29 @@ import (
 // Client wraps the neo4j driver configured to talk to Memgraph via Bolt.
 // Memgraph is Bolt-compatible; we use neo4j-go-driver/v5 as the transport.
 //
+// Per-project isolation: every node carries a project_id property injected
+// automatically by CreateNode. All queries filter on project_id so multiple
+// projects can share the same Memgraph instance without seeing each other's
+// data — mirroring the Qdrant collection-prefix pattern in the store package.
+//
 // Thread safety: Driver is safe for concurrent use. Sessions must not be
 // shared across goroutines — callers should obtain a new session per operation
 // (done automatically by the helper methods below).
 type Client struct {
-	driver neo4j.DriverWithContext
+	driver    neo4j.DriverWithContext
+	projectID string // per-project namespace — set on every created node
 }
 
-// New creates a Memgraph client from config. Call Close() when done.
-func New(cfg *config.MemgraphConfig) (*Client, error) {
+// New creates a Memgraph client from config. projectID must be a non-empty
+// string identifying this project (e.g. the UUID from config.ProjectID).
+// All nodes written by this client carry {project_id: projectID} and all
+// queries filter on it. Call Close() when done.
+func New(cfg *config.MemgraphConfig, projectID string) (*Client, error) {
 	if cfg.URI == "" {
 		return nil, fmt.Errorf("memgraph.uri is required")
+	}
+	if projectID == "" {
+		return nil, fmt.Errorf("projectID is required — config missing project_id")
 	}
 
 	var auth neo4j.AuthToken
@@ -35,7 +47,7 @@ func New(cfg *config.MemgraphConfig) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("memgraph driver init: %w", err)
 	}
-	return &Client{driver: driver}, nil
+	return &Client{driver: driver, projectID: projectID}, nil
 }
 
 // Close releases driver resources. Safe to call multiple times.
