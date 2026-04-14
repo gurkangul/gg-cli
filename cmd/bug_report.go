@@ -62,6 +62,11 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
+	if promptIfDuplicate(ctx, d, "bugs", vector) {
+		fmt.Println("Aborted — no bug reported.")
+		return nil
+	}
+
 	b := store.Bug{
 		Title:    title,
 		Detail:   strings.TrimSpace(bugDetail),

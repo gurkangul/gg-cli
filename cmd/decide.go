@@ -79,6 +79,11 @@ func runDecide(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
+	if promptIfDuplicate(ctx, d, "decisions", vector) {
+		fmt.Println("Aborted — nothing recorded.")
+		return nil
+	}
+
 	dec := store.Decision{
 		Text:   text,
 		Reason: reason,
@@ -128,6 +133,11 @@ func runDecideAsRejection(cmd *cobra.Command, approach string) error {
 	vector, err := d.embedder.Generate(ctx, embedText)
 	if err != nil {
 		return fmt.Errorf("generate embedding: %w", err)
+	}
+
+	if promptIfDuplicate(ctx, d, "rejections", vector) {
+		fmt.Println("Aborted — nothing recorded.")
+		return nil
 	}
 
 	r := store.Rejection{

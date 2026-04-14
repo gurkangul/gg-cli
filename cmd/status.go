@@ -112,6 +112,20 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	return printJSON(payload, func() {
+		// North Star metric — one-liner at the very top so agents and humans
+		// can instantly gauge dogfood adoption without scrolling.
+		if ggDir, dirErr := config.GGDir(); dirErr == nil {
+			if tsum, tErr := telemetry.Summarize(ggDir); tErr == nil {
+				agentPct := pct(tsum.AgentCalls, tsum.Total)
+				if tsum.Total > 0 {
+					fmt.Printf("North Star  Last 7d: %d calls, %d%% agent-initiated\n\n", tsum.Total, agentPct)
+				} else {
+					fmt.Println("North Star  Last 7d: no calls recorded yet")
+					fmt.Println()
+				}
+			}
+		}
+
 		fmt.Println("TASKS:")
 		fmt.Printf("  ○ Pending: %s  → In Progress: %s  ⚠ Blocked: %s  ✓ Done: %s\n",
 			fmtCount(counts["pending"].n, counts["pending"].err),

@@ -66,6 +66,11 @@ func runReject(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
+	if promptIfDuplicate(ctx, d, "rejections", vector) {
+		fmt.Println("Aborted — nothing recorded.")
+		return nil
+	}
+
 	r := store.Rejection{
 		Approach: approach,
 		Reason:   reason,

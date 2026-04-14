@@ -75,6 +75,11 @@ func runNote(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
+	if promptIfDuplicate(ctx, d, "notes", vector) {
+		fmt.Println("Aborted — no note saved.")
+		return nil
+	}
+
 	n := store.Note{
 		Text:   text,
 		Tags:   parseTags(noteTags),

@@ -73,6 +73,15 @@ func runRecord(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
+	dupKind := "decisions"
+	if stance == "reject" {
+		dupKind = "rejections"
+	}
+	if promptIfDuplicate(ctx, d, dupKind, vector) {
+		fmt.Println("Aborted — nothing recorded.")
+		return nil
+	}
+
 	if stance == "reject" {
 		r := store.Rejection{
 			Approach: text,

@@ -65,6 +65,11 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
+	if promptIfDuplicate(ctx, d, "tasks", vector) {
+		fmt.Println("Aborted — no task created.")
+		return nil
+	}
+
 	t := store.Task{
 		Title:     title,
 		Detail:    strings.TrimSpace(taskDetail),

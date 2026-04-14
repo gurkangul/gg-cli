@@ -130,6 +130,11 @@ func runDiscussOpen(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
+	if promptIfDuplicate(ctx, d, "discussions", vector) {
+		fmt.Println("Aborted — no discussion opened.")
+		return nil
+	}
+
 	disc := store.Discussion{
 		Topic:  topic,
 		Detail: strings.TrimSpace(discussDetail),
