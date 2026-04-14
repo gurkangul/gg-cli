@@ -80,6 +80,26 @@ func (c *Client) GetInbox(ctx context.Context, role string) ([]Message, error) {
 	return messages, nil
 }
 
+// DismissAll marks all unread messages (optionally filtered by recipient role)
+// as read. Returns the count of dismissed messages.
+func (c *Client) DismissAll(ctx context.Context, role string) (int, error) {
+	msgs, err := c.GetInbox(ctx, role)
+	if err != nil {
+		return 0, err
+	}
+	if len(msgs) == 0 {
+		return 0, nil
+	}
+	ids := make([]string, len(msgs))
+	for i, m := range msgs {
+		ids[i] = m.ID
+	}
+	if err := c.MarkMessagesRead(ctx, ids); err != nil {
+		return 0, err
+	}
+	return len(msgs), nil
+}
+
 func (c *Client) MarkMessagesRead(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
