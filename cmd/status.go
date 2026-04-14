@@ -83,6 +83,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Open discussions — unresolved topics the next agent must close.
+	openDiscs, err := d.store.ListDiscussions(ctx, "open")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warning: list discussions:", err)
+	} else if len(openDiscs) > 0 {
+		fmt.Printf("\nOPEN DISCUSSIONS (%d — resolve or dismiss before closing session):\n", len(openDiscs))
+		for _, disc := range openDiscs {
+			fmt.Printf("  • %s — %s\n", disc.ID, disc.Topic)
+		}
+	}
+
 	// Recent decisions
 	decisions, err := d.store.ListDecisions(ctx, 5)
 	if err != nil {

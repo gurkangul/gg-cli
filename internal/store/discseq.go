@@ -1,0 +1,72 @@
+package store
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+const discSeqFile = ".disc-seq"
+
+// allocDiscID atomically allocates the next DISC-NNN using a file lock on
+// .gg/.disc-seq, mirroring the task sequence pattern.
+func (c *Client) allocDiscID(ctx context.Context) (string, error) {
+	if c.dataDir == "" {
+		return "", fmt.Errorf("store client has no data dir — cannot allocate discussion ID")
+	}
+	seqPath := filepath.Join(c.dataDir, discSeqFile)
+
+	f, err := os.OpenFile(seqPath, os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		return "", fmt.Errorf("open %s: %w", seqPath, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if err := lockFileCtx(ctx, f); err != nil {
+		return "", fmt.Errorf("lock %s: %w", seqPath, err)
+	}
+	defer func() { _ = unlockFile(f) }()
+
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", seqPath, err)
+	}
+
+	n := 0
+	if s := strings.TrimSpace(string(data)); s != "" {
+		parsed, perr := strconv.Atoi(s)
+		if perr != nil || parsed < 0 {
+			return "", fmt.Errorf("corrupt %s: %q — delete this file to re-bootstrap from qdrant", seqPath, s)
+		}
+		n = parsed
+	}
+
+	if n == 0 {
+		existingMax, err := c.maxDiscIDNumber(ctx)
+		if err != nil {
+			return "", fmt.Errorf("bootstrap disc seq from qdrant: %w", err)
+		}
+		n = existingMax
+	}
+
+	n++
+
+	if _, err := f.Seek(0, 0); err != nil {
+		return "", err
+	}
+	if err := f.Truncate(0); err != nil {
+		return "", err
+	}
+	if _, err := fmt.Fprintf(f, "%d\n", n); err != nil {
+		return "", err
+	}
+	if err := f.Sync(); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("DISC-%03d", n), nil
+}

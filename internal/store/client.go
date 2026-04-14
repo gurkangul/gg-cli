@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	collSuffixDecisions  = "decisions"
-	collSuffixTasks      = "tasks"
-	collSuffixMessages   = "messages"
-	collSuffixRejections = "rejections"
+	collSuffixDecisions   = "decisions"
+	collSuffixTasks       = "tasks"
+	collSuffixMessages    = "messages"
+	collSuffixRejections  = "rejections"
+	collSuffixDiscussions = "discussions"
 
 	VectorSize = 768 // nomic-embed-text dimension
 )
@@ -52,14 +53,15 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 
 // Collection names are composed of <project_id>-<type>. The project_id is a
 // UUID, safe for collection names.
-func (c *Client) collDecisions() string  { return c.projectID + "-" + collSuffixDecisions }
-func (c *Client) collTasks() string      { return c.projectID + "-" + collSuffixTasks }
-func (c *Client) collMessages() string   { return c.projectID + "-" + collSuffixMessages }
-func (c *Client) collRejections() string { return c.projectID + "-" + collSuffixRejections }
+func (c *Client) collDecisions() string   { return c.projectID + "-" + collSuffixDecisions }
+func (c *Client) collTasks() string       { return c.projectID + "-" + collSuffixTasks }
+func (c *Client) collMessages() string    { return c.projectID + "-" + collSuffixMessages }
+func (c *Client) collRejections() string  { return c.projectID + "-" + collSuffixRejections }
+func (c *Client) collDiscussions() string { return c.projectID + "-" + collSuffixDiscussions }
 
 // EnsureCollections creates this project's Qdrant collections if they don't exist.
 func (c *Client) EnsureCollections(ctx context.Context) error {
-	collections := []string{c.collDecisions(), c.collTasks(), c.collMessages(), c.collRejections()}
+	collections := []string{c.collDecisions(), c.collTasks(), c.collMessages(), c.collRejections(), c.collDiscussions()}
 	existing, err := c.qc.ListCollections(ctx)
 	if err != nil {
 		return fmt.Errorf("list collections: %w", err)
