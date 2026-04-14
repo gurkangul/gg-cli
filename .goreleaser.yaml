@@ -1,0 +1,73 @@
+version: 2
+
+project_name: gg
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod verify
+
+builds:
+  - id: gg
+    main: ./main.go
+    binary: gg
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/gurkangul/gg/cmd.version={{.Version}}
+
+archives:
+  - id: gg-archive
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+release:
+  github:
+    owner: gurkangul
+    name: gg
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+  footer: |
+    ## Install
+
+    ```sh
+    go install github.com/gurkangul/gg@v{{.Version}}
+    ```
+
+    Or download the binary for your platform from the assets above.
+
+    **Full Changelog**: [CHANGELOG.md](https://github.com/gurkangul/gg/blob/main/CHANGELOG.md)
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^chore:"
+      - "^docs:"
+      - "^test:"
+      - "Merge pull request"
+      - "Merge branch"
