@@ -32,6 +32,12 @@ type EmbeddingConfig struct {
 	Model string `yaml:"model"`
 }
 
+type MemgraphConfig struct {
+	URI      string `yaml:"uri"`      // Bolt URI, e.g. bolt://localhost:7687
+	Username string `yaml:"username"` // empty string = no auth (Memgraph default)
+	Password string `yaml:"password"` // empty string = no auth
+}
+
 type Config struct {
 	// ProjectID is a unique per-project UUID used to namespace Qdrant
 	// collections. Multiple projects share the same Qdrant instance but see
@@ -39,6 +45,7 @@ type Config struct {
 	ProjectID string          `yaml:"project_id"`
 	Qdrant    QdrantConfig    `yaml:"qdrant"`
 	Embedding EmbeddingConfig `yaml:"embedding"`
+	Memgraph  MemgraphConfig  `yaml:"memgraph"`
 }
 
 func DefaultConfig() *Config {
@@ -50,6 +57,11 @@ func DefaultConfig() *Config {
 		Embedding: EmbeddingConfig{
 			Host:  "http://localhost:11434",
 			Model: "nomic-embed-text",
+		},
+		Memgraph: MemgraphConfig{
+			URI:      "bolt://localhost:7687",
+			Username: "",
+			Password: "",
 		},
 	}
 }

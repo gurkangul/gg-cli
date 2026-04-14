@@ -9,3 +9,8 @@ qdrant:
 embedding:
   host: http://localhost:11434   # Shared Ollama base URL
   model: nomic-embed-text        # 768-dim — matches Qdrant collection vector size
+
+memgraph:
+  uri: bolt://localhost:7687     # Bolt protocol endpoint (from ~/.gg/docker-compose.yaml)
+  username: ""                   # Leave empty — Memgraph default has no auth
+  password: ""
