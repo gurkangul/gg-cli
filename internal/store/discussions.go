@@ -101,7 +101,7 @@ func (c *Client) OpenDiscussion(ctx context.Context, d Discussion, vector []floa
 	}
 
 	wait := true
-	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: c.collDiscussions(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
@@ -235,7 +235,7 @@ func (c *Client) SearchDiscussions(ctx context.Context, vector []float32, limit 
 	if !includeResolved {
 		req.Filter = OpenDiscussionsFilter()
 	}
-	results, err := c.qc.Query(ctx, req)
+	results, err := c.qdrantQuery(ctx, req)
 	if err != nil {
 		return nil, err
 	}

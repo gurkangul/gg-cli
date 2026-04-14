@@ -167,7 +167,7 @@ func (c *Client) ReembedAll(ctx context.Context, embedder Embedder, newVectorSiz
 			}
 
 			wait := true
-			_, upsertErr := c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+			upsertErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 				CollectionName: cd.name,
 				Wait:           &wait,
 				Points: []*qdrant.PointStruct{

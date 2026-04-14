@@ -1,3 +1,7 @@
+---
+agents_schema: "2.0"
+---
+
 # Agent Guidance
 
 This project uses a shared knowledge base CLI: **gg**.

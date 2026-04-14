@@ -41,7 +41,7 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 	}
 
 	wait := true
-	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: c.collDecisions(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
@@ -56,7 +56,7 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 }
 
 func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit uint64) ([]Decision, error) {
-	results, err := c.qc.Query(ctx, &qdrant.QueryPoints{
+	results, err := c.qdrantQuery(ctx, &qdrant.QueryPoints{
 		CollectionName: c.collDecisions(),
 		Query:          qdrant.NewQuery(vector...),
 		Limit:          qdrant.PtrOf(limit),

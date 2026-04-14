@@ -129,7 +129,7 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 	wait := true
 	// Deterministic point UUID — concurrent create with same task_id collapses
 	// to one row instead of creating duplicates.
-	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: c.collTasks(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
@@ -270,7 +270,7 @@ func (c *Client) SearchTasks(ctx context.Context, vector []float32, limit uint64
 	if !includeAll {
 		req.Filter = ActiveTasksFilter()
 	}
-	results, err := c.qc.Query(ctx, req)
+	results, err := c.qdrantQuery(ctx, req)
 	if err != nil {
 		return nil, err
 	}

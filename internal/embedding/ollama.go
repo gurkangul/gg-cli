@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/trace"
 )
 
 type embedRequest struct {
@@ -45,7 +46,9 @@ func New(cfg *config.EmbeddingConfig, expectedDim int) *Generator {
 
 // Generate creates an embedding vector for the given text via Ollama.
 // The context is honored for Ctrl+C and upstream timeouts.
-func (g *Generator) Generate(ctx context.Context, text string) ([]float32, error) {
+func (g *Generator) Generate(ctx context.Context, text string) (vec []float32, retErr error) {
+	start := time.Now()
+	defer func() { trace.Record("embed.generate", start, retErr) }()
 	body, err := json.Marshal(embedRequest{
 		Model: g.model,
 		Input: text,
@@ -84,7 +87,7 @@ func (g *Generator) Generate(ctx context.Context, text string) ([]float32, error
 	if len(result.Embeddings) == 0 || len(result.Embeddings[0]) == 0 {
 		return nil, fmt.Errorf("no embedding returned from ollama")
 	}
-	vec := result.Embeddings[0]
+	vec = result.Embeddings[0]
 	if g.expectedDim > 0 && len(vec) != g.expectedDim {
 		return nil, fmt.Errorf(
 			"embedding dimension mismatch: model %q returned %d dimensions, expected %d — check that your embedding model matches the Qdrant collection size (hint: nomic-embed-text produces %d-dim vectors)",

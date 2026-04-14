@@ -27,11 +27,16 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	d, err := loadDeps(true)
+	d, err := loadDepsReadOnly(true)
 	if err != nil {
 		return err
 	}
 	defer d.Close()
+
+	if d.qdrantDown {
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — read-only fallback mode (no vector search available)")
+		return nil
+	}
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()

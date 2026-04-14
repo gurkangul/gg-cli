@@ -1,8 +1,16 @@
-# GG — Shared Brain for AI Agents
+# GG — Original Vision and Phase Plan
+
+> **Historical document.** This is the original design vision written before development began.
+> It describes the intended phases and data model. The canonical current state is the README
+> and the live codebase — this document may reflect aspirations that were later revised, scoped
+> down, or implemented differently.
+
+---
 
 ## Vision
 
-AI agent'lar (Claude Code, GSD2, BMAD, Codex, vb.) kendi terminallerinde bağımsız çalışır ama hepsi aynı bilgi tabanını kullanır. Orchestrator yok, daemon yok, UI yok. Sadece bir CLI + Qdrant + Memgraph.
+AI agents (Claude Code, GSD, BMAD, Codex, etc.) run independently in their own terminals but all
+share the same knowledge base. No orchestrator, no daemon, no UI. Just a CLI + Qdrant + Memgraph.
 
 **Tagline:** "One brain, any agent."
 
@@ -10,106 +18,107 @@ AI agent'lar (Claude Code, GSD2, BMAD, Codex, vb.) kendi terminallerinde bağım
 
 ## Problem
 
-- Her agent kendi klasöründe izole çalışır, birbirinden habersiz
-- Bir agent'ın aldığı kararı diğeri bilmiyor
-- Reddedilen yaklaşımlar tekrarlanıyor
-- Kod yapısı hakkında bilgi her seferinde sıfırdan keşfediliyor
-- Agent'lar arası iletişim yok
+- Each agent works in isolation, unaware of what the others know
+- A decision made by one agent is invisible to others
+- Rejected approaches get re-proposed from scratch
+- Code structure knowledge is rediscovered from zero every session
+- No inter-agent communication
 
-## Çözüm
+## Solution
 
-Tek bir CLI tool (`gg`) + iki veritabanı (Qdrant + Memgraph, Docker'da lokal):
+A single CLI tool (`gg`) + two databases (Qdrant + Memgraph, running locally in Docker):
 
-- **Qdrant** → kararlar, tasklar, mesajlar, reddedilenler (semantic search)
-- **Memgraph** → kod yapısı, dosya ilişkileri, bağımlılık graph'i
+- **Qdrant** → decisions, tasks, messages, rejections (semantic search)
+- **Memgraph** → code structure, file relationships, dependency graph
 
-Her agent'ın rules dosyasına aynı kurallar inject edilir. Agent otomatik olarak `gg` CLI'ı çağırarak ortak beyni kullanır. Kullanıcı sadece agent ile konuşur, `gg` komutlarını agent çalıştırır.
+The same rules are injected into every agent's context file. The agent automatically calls the
+`gg` CLI to use the shared brain. The user talks to the agent; the agent runs `gg`.
 
 ---
 
 ## Tech Stack
 
-| Bileşen          | Teknoloji                           |
+| Component        | Technology                          |
 | ---------------- | ----------------------------------- |
 | CLI              | Go                                  |
 | Semantic Storage | Qdrant (Docker)                     |
 | Code Graph       | Memgraph (Docker)                   |
-| Embedding        | OpenAI API veya local (nomic-embed) |
+| Embedding        | OpenAI API or local (nomic-embed)   |
 | Config           | YAML                                |
 
 ---
 
-## Proje İçi Yapı
+## Project Layout
 
 ```
 .gg/
-  RULES.md                ← agent kuralları (tek kaynak, her agent'a inject)
-  config.yaml             ← qdrant/memgraph bağlantı ayarları
+  RULES.md                ← agent rules (single source, injected into each agent)
+  config.yaml             ← qdrant/memgraph connection settings
   docker-compose.yaml     ← Qdrant + Memgraph
   volumes/
-    qdrant/               ← Qdrant data (projeye özel, taşınabilir)
-    memgraph/             ← Memgraph data (projeye özel, taşınabilir)
+    qdrant/               ← Qdrant data (project-scoped, portable)
+    memgraph/             ← Memgraph data (project-scoped, portable)
 ```
 
-Başka dosya yok. Task yok, karar dosyası yok, session yok. Her şey veritabanında.
+No other files. No task files, no decision files, no session files. Everything lives in the database.
 
 ---
 
-## CLI Komutları
+## CLI Commands (original design)
 
-### Oturum
-
-```bash
-gg init              # .gg/ oluştur, docker-compose up, ilk index
-gg status            # açık tasklar, bekleyen mesajlar, son kararlar
-```
-
-### Kararlar
+### Session
 
 ```bash
-gg decide "JWT kullanılacak" --reason "stateless, mobile uyumlu" --tags "auth,backend"
-gg search "authentication"          # semantic arama
-gg reject "session-based auth" --reason "stateful, ölçeklenmiyor" --task "TASK-001"
+gg init              # create .gg/, docker-compose up, first index
+gg status            # open tasks, pending messages, recent decisions
 ```
 
-### Tasklar
+### Decisions
+
+```bash
+gg decide "use JWT" --reason "stateless, mobile-friendly" --tags "auth,backend"
+gg search "authentication"          # semantic search
+gg reject "session-based auth" --reason "stateful, doesn't scale" --task "TASK-001"
+```
+
+### Tasks
 
 ```bash
 gg task create "JWT auth endpoint" --detail "login, register, refresh" --priority high --tags "auth"
-gg task list                        # tüm tasklar (filtreleme: --status pending/done/blocked)
-gg task get TASK-001                # detay + ilgili kararlar + etkilenen dosyalar
-gg task done TASK-001 "JWT auth implemented, test yazıldı"
-gg task block TASK-001 "payment API key eksik"
+gg task list                        # all tasks (filter: --status pending/done/blocked)
+gg task get TASK-001                # detail + related decisions + affected files
+gg task done TASK-001 "JWT auth implemented, tests written"
+gg task block TASK-001 "payment API key missing"
 ```
 
 ### Code Intelligence
 
 ```bash
-gg index                            # tüm codebase'i Memgraph'a indexle
-gg index --changed                  # sadece son commit'teki değişiklikleri indexle
-gg impact src/auth/login.ts         # bu dosya değişirse ne etkilenir
+gg index                            # index the full codebase into Memgraph
+gg index --changed                  # incremental index (last commit changes only)
+gg impact src/auth/login.ts         # what breaks if this file changes
 ```
 
-### Agent İletişim
+### Agent Messaging
 
 ```bash
-gg tell "developer" "auth modülü hazır, JWT 1 saat expire"
-gg tell "qa" "login endpoint'te rate limiting test edilmeli"
-gg inbox                            # sana gelen mesajlar
-gg inbox --role developer           # role göre filtrele
+gg tell "developer" "auth module ready, JWT 1h expire"
+gg tell "qa" "login endpoint rate limiting needs testing"
+gg inbox                            # messages addressed to you
+gg inbox --role developer           # filter by role
 ```
 
 ---
 
-## Veri Modeli
+## Data Model
 
 ### Qdrant Collections
 
 ```
 decisions
   ├── id: uuid
-  ├── text: "JWT based authentication kullanılacak"
-  ├── reason: "stateless, mobile uyumlu, microservice ready"
+  ├── text: "Use JWT-based authentication"
+  ├── reason: "stateless, mobile-friendly, microservice-ready"
   ├── tags: ["auth", "backend"]
   ├── task_id: "TASK-001" (nullable)
   ├── created_at: timestamp
@@ -118,7 +127,7 @@ decisions
 tasks
   ├── id: "TASK-001"
   ├── title: "JWT auth endpoint"
-  ├── detail: "login, register, refresh token implement et"
+  ├── detail: "implement login, register, refresh token"
   ├── status: "pending" | "in_progress" | "done" | "blocked"
   ├── priority: "high" | "medium" | "low"
   ├── depends_on: ["TASK-000"]
@@ -132,7 +141,7 @@ messages
   ├── id: uuid
   ├── from_role: "architect"
   ├── to_role: "developer"
-  ├── content: "auth modülü hazır, JWT 1 saat expire"
+  ├── content: "auth module ready, JWT 1h expire"
   ├── read: false
   ├── task_id: "TASK-001" (nullable)
   └── created_at: timestamp
@@ -140,7 +149,7 @@ messages
 rejections
   ├── id: uuid
   ├── approach: "session-based authentication"
-  ├── reason: "stateful, horizontal scaling zorlaştırır"
+  ├── reason: "stateful, complicates horizontal scaling"
   ├── task_id: "TASK-001" (nullable)
   ├── created_at: timestamp
   └── embedding: vector
@@ -149,103 +158,19 @@ rejections
 ### Memgraph Schema
 
 ```cypher
-// Node tipleri
+// Node types
 (:File {path: "src/auth/login.ts", language: "typescript", last_indexed: timestamp})
 (:Function {name: "handleLogin", file: "src/auth/login.ts", line: 42})
 (:Module {name: "auth", path: "src/auth/"})
 (:Package {name: "jsonwebtoken", version: "9.0.0"})
 
-// İlişkiler
+// Relationships
 (File)-[:IMPORTS]->(File)
 (File)-[:BELONGS_TO]->(Module)
 (Function)-[:CALLS]->(Function)
 (Function)-[:DEFINED_IN]->(File)
 (File)-[:USES_PACKAGE]->(Package)
 (Module)-[:DEPENDS_ON]->(Module)
-```
-
----
-
-## RULES.md (Agent Kuralları)
-
-```markdown
-# GG KURALLARI
-
-Sen bu projede paylaşılan bir bilgi tabanı ile çalışıyorsun.
-Tüm kararlar, tasklar ve bilgi alışverişi gg CLI üzerinden yapılır.
-Kullanıcı senden gg çalıştırmanı ASLA istemez — sen otomatik çalıştırırsın.
-
-## OTURUM BAŞLANGIÇ
-
-Her konuşma başladığında ilk iş:
-gg status
-Açık tasklar, bekleyen mesajlar, son kararlar özetini al ve kullanıcıya bildir.
-
-## TARTIŞMA SIRASINDA
-
-Kullanıcıyla bir konu tartışırken:
-
-1. Konu hakkında daha önce karar alınmış mı:
-   gg search "konu"
-2. Reddedilmiş yaklaşım var mı kontrol et
-3. Varsa kullanıcıya bildir
-
-## KARAR ANI
-
-Kullanıcı ile bir karara vardığında (açık veya üstü kapalı):
-
-- "JWT kullanalım" → karar
-- "tamam öyle yapalım" → önceki önerinin onayı = karar
-- "evet mantıklı" → karar
-
-Tespit ettiğinde:
-gg decide "kısa karar" --reason "sebep" --tags "etiketler"
-Kullanıcıya: "Karar olarak kaydettim."
-
-## TASK OLUŞTURMA
-
-Bir iş yapılması gerektiği netleştiğinde:
-gg task create "başlık" --detail "açıklama" --priority high --tags "etiketler"
-Kullanıcıya: "Task açtım: TASK-XXX"
-
-## TASK ÇÖZME
-
-Kullanıcı "taskları çöz" veya "TASK-XXX'i yap" dediğinde:
-
-1. gg task list --status pending
-2. Her task için:
-   a. gg task get TASK-XXX
-   b. gg impact "etkilenecek dosyalar"
-   c. Kodu yaz, test et, commit at
-   d. gg task done TASK-XXX "özet"
-
-## DOSYA DEĞİŞTİRMEDEN ÖNCE
-
-Her zaman:
-gg impact src/dosya/yolu.ts
-
-## BAŞKA AGENT'A MESAJ
-
-Bir iş başka role kalıyorsa:
-gg tell "hedef-rol" "mesaj"
-
-## HATA / BLOCKER
-
-Task çözülemiyorsa:
-gg task block TASK-XXX "sebep"
-
-## REDDEDİLEN YAKLAŞIMLAR
-
-Yaklaşım reddedildiğinde:
-gg reject "yaklaşım" --reason "neden"
-
-## ASLA YAPMA
-
-- gg olmadan karar alma
-- Reddedilmiş yaklaşımı tekrarlama
-- Task açmadan "sonra yaparız" deme
-- impact kontrolü yapmadan dosya değiştirme
-- Kullanıcıdan gg komutu çalıştırmasını isteme
 ```
 
 ---
@@ -259,101 +184,99 @@ gg index --changed
 
 # .git/hooks/pre-push
 #!/bin/sh
-gg check  # kaydedilmemiş karar veya açık task uyarısı
+gg check  # warn on unrecorded decisions or open tasks
 ```
 
 ---
 
-## Faz 1 — Core CLI (Hafta 1)
+## Phase 1 — Core CLI (Week 1)
 
-- [ ] Go project init + CLI framework (cobra)
-- [ ] `gg init` — .gg/ dizin oluştur, docker-compose up, config.yaml
-- [ ] Qdrant bağlantısı + collection setup
-- [ ] Embedding generation (OpenAI API veya local)
-- [ ] `gg decide` / `gg search` / `gg reject`
-- [ ] `gg task create/list/get/done/block`
-- [ ] `gg tell` / `gg inbox`
-- [ ] `gg status`
-- [ ] docker-compose.yaml (Qdrant + Memgraph)
-- [ ] RULES.md template generation
+- [x] Go project init + CLI framework (cobra)
+- [x] `gg init` — create .gg/, docker-compose up, config.yaml
+- [x] Qdrant connection + collection setup
+- [x] Embedding generation (local via Ollama / nomic-embed-text)
+- [x] `gg decide` / `gg search` / `gg reject`
+- [x] `gg task create/list/get/done/block`
+- [x] `gg tell` / `gg inbox`
+- [x] `gg status`
+- [x] docker-compose.yaml (Qdrant + Memgraph + Ollama)
+- [x] AGENTS.md template generation
 
-**Deliverable:** Agent'lar karar alıp, task açıp, mesajlaşabilir.
+**Deliverable:** Agents can record decisions, open tasks, and message each other.
 
-## Faz 2 — Code Intelligence (Hafta 2)
+## Phase 2 — Code Intelligence (Week 2)
 
-- [ ] Memgraph bağlantısı + schema setup
-- [ ] `gg index` — AST parse (TypeScript, Go, Python) → Memgraph
-- [ ] `gg index --changed` — incremental index
-- [ ] `gg impact src/file.ts` — bağımlılık analizi
-- [ ] Git post-commit hook (otomatik index)
-- [ ] Git pre-push hook (check)
-- [ ] `gg context "konu"` — Qdrant + Memgraph birleşik sorgu
-- [ ] Task get çıktısına ilgili kararlar + etkilenen dosyalar ekle
+- [x] Memgraph connection + schema setup
+- [x] `gg index` — SCIP-based indexing (Go, TypeScript, Python) → Memgraph
+- [x] `gg index --changed` — incremental index
+- [x] `gg impact <file>` — dependency analysis
+- [x] Git post-commit hook (auto-index)
+- [x] Git pre-push hook (check)
+- [x] `gg context "topic"` — unified Qdrant + Memgraph query
+- [x] Task get output with related decisions + affected files
 
-**Deliverable:** Agent'lar kod yapısını biliyor, impact analizi yapabiliyor.
+**Deliverable:** Agents understand code structure and can run impact analysis.
 
-## Faz 3 — Polish + Open Source (3-5 gün)
+## Phase 3 — Polish + Open Source (3-5 days)
 
-- [ ] README.md — hero banner, quick start, demo GIF
-- [ ] Agent inject script — RULES.md'yi CLAUDE.md/.gsd/PROJECT.md'ye ekle
-- [ ] `gg doctor` — bağlantı kontrolü, agent rules kontrolü
-- [ ] Testler
-- [ ] GitHub Actions CI
-- [ ] GitHub release + `go install github.com/gurkan/gg@latest` desteği
-- [ ] docs/ — writing adapters, RULES.md customization
+- [x] README.md — hero banner, quick start
+- [x] `gg doctor` — connectivity checks, agent rules check
+- [x] Tests
+- [x] GitHub Actions CI
+- [x] GitHub release
+- [x] docs/ — architecture, commands, getting started
 
-**Toplam: ~2.5-3 hafta**
+**Estimated total: ~2.5-3 weeks**
 
 ---
 
-## Örnek Akış
+## Example Flow
 
 ```
-Terminal 1: BMAD/Claude Code (Architect rolünde)
+Terminal 1: BMAD/Claude Code (Architect role)
 ─────────────────────────────────────────────────
-Sen: "Auth sistemi nasıl yapalım?"
+You: "How should we build the auth system?"
 
-Agent: (gg search "auth" → sonuç yok)
-       "Auth ile ilgili daha önce bir karar yok.
-        İki seçenek: JWT veya session-based..."
+Agent: (gg search "auth" → no results)
+       "No prior decisions on auth.
+        Two options: JWT or session-based..."
 
-Sen: "JWT olsun"
+You: "Let's go with JWT"
 
-Agent: (gg decide "JWT based auth" --reason "stateless, mobile uyumlu" --tags "auth")
-       (gg reject "session-based auth" --reason "stateful, scaling zorlaştırır")
-       "Kaydettim. Auth endpoint'i için task açıyorum."
+Agent: (gg decide "JWT-based auth" --reason "stateless, mobile-friendly" --tags "auth")
+       (gg reject "session-based auth" --reason "stateful, complicates scaling")
+       "Recorded. Opening a task for the auth endpoint."
        (gg task create "JWT auth endpoint" --detail "login, register, refresh token.
-        JWT 1 saat expire, refresh 7 gün." --priority high --tags "auth,api")
-       "TASK-001 açıldı."
-       (gg tell "developer" "JWT auth tasarımı onaylandı, detaylar TASK-001'de")
+        JWT 1h expire, refresh 7 days." --priority high --tags "auth,api")
+       "TASK-001 opened."
+       (gg tell "developer" "JWT auth design approved, details in TASK-001")
 
 
-Terminal 2: GSD2 (Developer rolünde)
+Terminal 2: GSD (Developer role)
 ─────────────────────────────────────────────────
-Sen: "Taskları çöz"
+You: "Work on the tasks"
 
-GSD2: (gg inbox → "JWT auth tasarımı onaylandı, detaylar TASK-001'de")
-      (gg task list --status pending → TASK-001)
-      (gg task get TASK-001 → detay + JWT kararı + reject bilgisi)
-      (gg impact "src/auth/" → yeni modül, mevcut bağımlılık yok)
+GSD: (gg inbox → "JWT auth design approved, details in TASK-001")
+     (gg task list --status pending → TASK-001)
+     (gg task get TASK-001 → detail + JWT decision + rejection)
+     (gg impact "src/auth/" → new module, no existing dependents)
 
-      → kodu yazar: src/auth/login.ts, src/auth/register.ts
-      → test yazar: src/auth/__tests__/
-      → commit atar
-      → (post-commit hook: gg index --changed)
+     → writes code: src/auth/login.ts, src/auth/register.ts
+     → writes tests: src/auth/__tests__/
+     → commits
+     → (post-commit hook: gg index --changed)
 
-      (gg task done TASK-001 "JWT auth implemented. Login, register, refresh endpoints ready.")
-      (gg tell "qa" "auth endpoint'leri hazır, rate limiting ve token expire edge case'leri test edilmeli")
-      "TASK-001 tamamlandı."
+     (gg task done TASK-001 "JWT auth implemented. Login, register, refresh endpoints ready.")
+     (gg tell "qa" "auth endpoints ready, test rate limiting and token expire edge cases")
+     "TASK-001 complete."
 ```
 
 ---
 
-## Gelecek (v2 fikirler — MVP sonrası)
+## Future Ideas (post-MVP)
 
-- Web UI dashboard (opsiyonel — tasklar, kararlar, graph görselleştirme)
-- Agent otomatik tetikleme (daemon mode)
-- OneLift entegrasyonu (`lift install gg`)
-- Plugin marketplace (custom embedding modelleri, graph indexer'lar)
-- Team mode — birden fazla developer aynı brain'i kullanır
-- Pro features — advanced analytics, agent scoring
+- Web UI dashboard (optional — tasks, decisions, graph visualization)
+- Agent auto-triggering (daemon mode)
+- Plugin marketplace (custom embedding models, graph indexers)
+- Team mode — multiple developers sharing one brain across a network
+- Advanced analytics, agent activity scoring

@@ -138,7 +138,7 @@ func (c *Client) upsertBundlePoints(ctx context.Context, coll string, points []B
 			structs = append(structs, ps)
 		}
 		wait := true
-		if _, err := c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+		if err := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 			CollectionName: coll,
 			Wait:           &wait,
 			Points:         structs,

@@ -88,7 +88,7 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 	}
 
 	wait := true
-	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: c.collBugs(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
@@ -203,7 +203,7 @@ func (c *Client) updateBugStatus(ctx context.Context, bugID, status, rootCause, 
 }
 
 func (c *Client) SearchBugs(ctx context.Context, vector []float32, limit uint64) ([]Bug, error) {
-	results, err := c.qc.Query(ctx, &qdrant.QueryPoints{
+	results, err := c.qdrantQuery(ctx, &qdrant.QueryPoints{
 		CollectionName: c.collBugs(),
 		Query:          qdrant.NewQuery(vector...),
 		Limit:          qdrant.PtrOf(limit),

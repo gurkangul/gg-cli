@@ -25,7 +25,7 @@ func (c *Client) FindNearDups(ctx context.Context, kind string, vector []float32
 		return nil, err
 	}
 
-	results, err := c.qc.Query(ctx, &qdrant.QueryPoints{
+	results, err := c.qdrantQuery(ctx, &qdrant.QueryPoints{
 		CollectionName: coll,
 		Query:          qdrant.NewQuery(vector...),
 		Limit:          qdrant.PtrOf(limit),

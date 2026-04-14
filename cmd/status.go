@@ -11,6 +11,7 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/telemetry"
+	"github.com/gurkangul/gg-cli/internal/trace"
 )
 
 var statusCmd = &cobra.Command{
@@ -188,6 +189,19 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			fmt.Println("\nRECENT REJECTIONS:")
 			for _, r := range rejections {
 				fmt.Printf("  ✗ %s\n", r.Approach)
+			}
+		}
+
+		// Trace percentiles — shown only when trace data exists (GG_TRACE=1 must
+		// have been set during prior runs). Best-effort; missing files are silent.
+		if ggDir, dirErr := config.GGDir(); dirErr == nil {
+			if pcts, pErr := trace.ReadPercentiles(ggDir, 100); pErr == nil && pcts.N > 0 {
+				fmt.Printf("\nOP LATENCY (last %d spans — p50 %s  p95 %s  p99 %s)\n",
+					pcts.N,
+					trace.FmtMs(pcts.P50),
+					trace.FmtMs(pcts.P95),
+					trace.FmtMs(pcts.P99),
+				)
 			}
 		}
 

@@ -2,11 +2,21 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/trace"
 	"github.com/qdrant/go-client/qdrant"
 )
+
+// ErrQdrantDown is returned by read operations (Query, Scroll) when Qdrant
+// is unreachable. Write operations (Upsert) return this error too, but callers
+// should treat it as fatal for mutations — writes that silently succeed
+// nowhere are worse than an explicit failure.
+var ErrQdrantDown = errors.New("qdrant unreachable")
 
 const (
 	collSuffixDecisions   = "decisions"
@@ -119,6 +129,59 @@ func (c *Client) EnsureCollections(ctx context.Context, vectorSize uint64) error
 		}
 	}
 	return nil
+}
+
+// qdrantUpsert is the single choke-point for all Qdrant upsert calls in this
+// package. It wraps qc.Upsert with a trace span so GG_TRACE=1 captures latency.
+// Returns ErrQdrantDown when the error is a network connectivity failure so
+// callers can distinguish "Qdrant is down" from "bad request".
+func (c *Client) qdrantUpsert(ctx context.Context, req *qdrant.UpsertPoints) error {
+	start := time.Now()
+	_, err := c.qc.Upsert(ctx, req)
+	trace.Record("store.upsert", start, err)
+	if err != nil && isConnectivityError(err) {
+		return fmt.Errorf("%w: %v", ErrQdrantDown, err)
+	}
+	return err
+}
+
+// qdrantQuery is the single choke-point for all Qdrant vector query calls in
+// this package. It wraps qc.Query with a trace span.
+// Returns ErrQdrantDown when the error is a network connectivity failure.
+func (c *Client) qdrantQuery(ctx context.Context, req *qdrant.QueryPoints) ([]*qdrant.ScoredPoint, error) {
+	start := time.Now()
+	results, err := c.qc.Query(ctx, req)
+	trace.Record("store.query", start, err)
+	if err != nil && isConnectivityError(err) {
+		return nil, fmt.Errorf("%w: %v", ErrQdrantDown, err)
+	}
+	return results, err
+}
+
+// isConnectivityError reports whether err looks like a network-level failure
+// (connection refused, host unreachable, DNS failure, deadline exceeded on
+// connect). These are distinct from Qdrant-level errors (wrong collection,
+// bad vector dimension) which should still propagate as real errors.
+func isConnectivityError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, pattern := range []string{
+		"connection refused",
+		"no such host",
+		"network is unreachable",
+		"dial tcp",
+		"context deadline exceeded",
+		"transport is closing",
+		"code = unavailable",
+		"failed to connect",
+	} {
+		if strings.Contains(msg, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // DropAllCollections deletes all project collections from Qdrant.

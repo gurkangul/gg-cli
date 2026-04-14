@@ -40,7 +40,7 @@ func (c *Client) AddNote(ctx context.Context, n Note, vector []float32) (string,
 	}
 
 	wait := true
-	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: c.collNotes(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
@@ -80,7 +80,7 @@ func (c *Client) ListNotes(ctx context.Context, limit int) ([]Note, error) {
 }
 
 func (c *Client) SearchNotes(ctx context.Context, vector []float32, limit uint64) ([]Note, error) {
-	results, err := c.qc.Query(ctx, &qdrant.QueryPoints{
+	results, err := c.qdrantQuery(ctx, &qdrant.QueryPoints{
 		CollectionName: c.collNotes(),
 		Query:          qdrant.NewQuery(vector...),
 		Limit:          qdrant.PtrOf(limit),

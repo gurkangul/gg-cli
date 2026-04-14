@@ -1,6 +1,13 @@
 gg
 .gg/
 .claude/
+# Common secret files — never commit these
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+secrets.json
 .bg-shell/
 # GSD runtime state (notifications, codebase notes, etc.)
 # Per GSD README, only .gsd/PREFERENCES.md should be checked in

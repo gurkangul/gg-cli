@@ -53,3 +53,44 @@ jobs:
         with:
           version: latest
           args: --timeout=5m
+
+  vulncheck:
+    name: vulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  docs-drift:
+    name: docs drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Regenerate CLI docs
+        run: go run ./tools/docs-gen
+
+      - name: Check for drift
+        run: |
+          if ! git diff --exit-code docs/cli/; then
+            echo ""
+            echo "docs/cli/ is out of date — run 'go run ./tools/docs-gen' locally and commit the result."
+            exit 1
+          fi

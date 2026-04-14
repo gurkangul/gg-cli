@@ -43,6 +43,12 @@ func init() {
 	}
 }
 
+// RootCmd returns the root cobra command. Used by tools/docs-gen for
+// generating the docs/cli/ reference via cobra/doc.GenMarkdownTree.
+func RootCmd() *cobra.Command {
+	return rootCmd
+}
+
 func Execute() {
 	// Cancel the root context on Ctrl+C / SIGTERM so in-flight requests unwind.
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

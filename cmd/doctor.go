@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/gurkangul/gg-cli/internal/index/runner"
 	"github.com/gurkangul/gg-cli/internal/outbox"
 	"github.com/gurkangul/gg-cli/internal/store"
+	"github.com/gurkangul/gg-cli/internal/templates"
 )
 
 var doctorCmd = &cobra.Command{
@@ -373,6 +375,8 @@ func doctorCheckProjectStructure(report *doctorReport) {
 		report.warn("AGENTS.md", fmt.Sprintf("stat error: %v", err))
 	} else {
 		report.ok("AGENTS.md", agentsPath)
+		// Schema version check — compare major version of project AGENTS.md vs bundled template.
+		doctorCheckAgentsSchema(report, agentsPath)
 	}
 
 	indexState := filepath.Join(root, config.DirName, "index-state.json")
@@ -381,6 +385,92 @@ func doctorCheckProjectStructure(report *doctorReport) {
 	} else if err == nil {
 		report.ok("index-state.json", "present")
 	}
+}
+
+// doctorCheckAgentsSchema parses agents_schema from the project's AGENTS.md frontmatter
+// and compares the major version to the bundled template. A major version mismatch
+// means the project's AGENTS.md is incompatible with the current CLI — agents will
+// be missing protocol rules. Minor version differences are just warnings.
+func doctorCheckAgentsSchema(report *doctorReport, agentsPath string) {
+	data, err := os.ReadFile(agentsPath)
+	if err != nil {
+		report.warn("agents_schema", fmt.Sprintf("could not read AGENTS.md: %v", err))
+		return
+	}
+
+	projectSchema, ok := parseAgentsSchema(string(data))
+	if !ok {
+		report.warn("agents_schema", "no agents_schema frontmatter — add '---\\nagents_schema: \"2.0\"\\n---' to AGENTS.md")
+		return
+	}
+
+	bundledSchema, _ := parseAgentsSchema(templates.AgentsMD)
+	if bundledSchema == "" {
+		// Bundled template missing schema — internal inconsistency.
+		report.warn("agents_schema", fmt.Sprintf("project has schema %q; bundled template schema unknown", projectSchema))
+		return
+	}
+
+	projectMajor := schemaMajor(projectSchema)
+	bundledMajor := schemaMajor(bundledSchema)
+
+	if projectMajor != bundledMajor {
+		report.fail("agents_schema",
+			fmt.Sprintf("major version mismatch: project=%q bundled=%q — re-run `gg init` to refresh AGENTS.md, or manually update agents_schema",
+				projectSchema, bundledSchema))
+		return
+	}
+
+	if projectSchema == bundledSchema {
+		report.ok("agents_schema", fmt.Sprintf("up to date (%s)", projectSchema))
+	} else {
+		// Same major, different minor — agent is still compatible but old.
+		report.warn("agents_schema",
+			fmt.Sprintf("minor drift: project=%q bundled=%q — consider updating AGENTS.md", projectSchema, bundledSchema))
+	}
+}
+
+// parseAgentsSchema extracts the agents_schema value from YAML frontmatter.
+// Returns ("", false) if no frontmatter or no agents_schema field.
+func parseAgentsSchema(content string) (string, bool) {
+	if !strings.HasPrefix(strings.TrimLeft(content, "\r\n"), "---") {
+		return "", false
+	}
+	lines := strings.SplitN(content, "\n", 50)
+	inFront := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			if !inFront {
+				inFront = true
+				continue
+			}
+			break // closing ---
+		}
+		if !inFront {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "agents_schema:") {
+			val := strings.TrimSpace(strings.TrimPrefix(trimmed, "agents_schema:"))
+			val = strings.Trim(val, `"'`)
+			return val, true
+		}
+	}
+	return "", false
+}
+
+// schemaMajor returns the major version integer from a semver-like string ("2.1" → 2).
+// Returns 0 if the string cannot be parsed.
+func schemaMajor(schema string) int {
+	parts := strings.SplitN(schema, ".", 2)
+	if len(parts) == 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // checkIndexers verifies each SCIP binary. With --install-indexers, missing

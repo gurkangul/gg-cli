@@ -28,9 +28,15 @@ func withTimeout(parent context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(parent, cmdTimeout)
 }
 
+// ExitStoreDown is the exit code returned by write commands when Qdrant is
+// unreachable. It is distinct from exit code 1 (generic error) so that
+// orchestrators and scripts can detect the specific "storage unavailable" state.
+const ExitStoreDown = 3
+
 type deps struct {
-	store    *store.Client
-	embedder *embedding.Generator
+	store       *store.Client
+	embedder    *embedding.Generator
+	qdrantDown  bool // true when Qdrant is unreachable; reads degrade, writes fail
 }
 
 func loadDeps(needEmbedding bool) (d *deps, err error) {
@@ -74,6 +80,55 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 	defer hcancel()
 	if hErr := client.HealthCheck(hctx); hErr != nil {
 		return nil, fmt.Errorf("qdrant health check failed (is Qdrant running?): %w", hErr)
+	}
+
+	if needEmbedding {
+		d.embedder = embedding.New(&cfg.Embedding, dim)
+	}
+	return d, nil
+}
+
+// loadDepsReadOnly is like loadDeps but tolerates Qdrant being unreachable.
+// It sets d.qdrantDown=true instead of returning an error when the health
+// check fails. Callers must print a degraded-mode banner and return empty
+// results rather than propagating store errors.
+//
+// Use this for read-only commands (search, context) that should degrade
+// gracefully. Write commands must use loadDeps, which hard-fails on Qdrant down.
+func loadDepsReadOnly(needEmbedding bool) (d *deps, err error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	ggDir, err := config.GGDir()
+	if err != nil {
+		return nil, err
+	}
+
+	if metaErr := embedding.CheckMeta(ggDir, cfg.Embedding.Model, store.VectorSize); metaErr != nil {
+		return nil, metaErr
+	}
+
+	dim := store.VectorSize
+	if meta, readErr := embedding.ReadMeta(ggDir); readErr == nil && meta != nil {
+		dim = meta.Dim
+	}
+
+	client, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	d = &deps{store: client}
+	defer func() {
+		if err != nil {
+			d.Close()
+		}
+	}()
+
+	hctx, hcancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+	defer hcancel()
+	if hErr := client.HealthCheck(hctx); hErr != nil {
+		d.qdrantDown = true
 	}
 
 	if needEmbedding {

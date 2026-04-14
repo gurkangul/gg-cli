@@ -75,6 +75,8 @@ gg impact <file>          # downstream deps + exported symbols + related KB entr
 gg check                  # pre-push: open tasks + unresolved discussions
 ```
 
+See [docs/commands/impact.md](commands/impact.md) for the full `gg impact` semantic contract (hop depth, exit codes, KB selection, flags).
+
 ## Operations
 
 ```sh

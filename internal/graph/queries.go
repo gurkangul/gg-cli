@@ -27,7 +27,9 @@ package graph
 
 import (
 	"context"
+	"time"
 
+	"github.com/gurkangul/gg-cli/internal/trace"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
@@ -38,8 +40,10 @@ import (
 // All data-plane queries (MATCH, CREATE, MERGE, DELETE) must use this method.
 // Do not call sess.Run directly — use runQuery or runQueryNoPID.
 func (c *Client) runQuery(ctx context.Context, cypher string, params map[string]any) (neo4j.ResultWithContext, func(), error) {
+	start := time.Now()
 	sess := c.session(ctx)
 	result, err := sess.Run(ctx, cypher, params)
+	trace.Record("graph.query", start, err)
 	cleanup := func() { _ = sess.Close(ctx) }
 	if err != nil {
 		cleanup()

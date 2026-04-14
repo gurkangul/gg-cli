@@ -42,7 +42,7 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 	// Messages use a zero vector — they are filtered by role, not searched semantically.
 	zeroVec := make([]float32, VectorSize)
 	wait := true
-	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
+	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: c.collMessages(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{

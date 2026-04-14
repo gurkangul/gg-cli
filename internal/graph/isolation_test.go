@@ -5,6 +5,7 @@ package graph
 //  1. New() rejects empty projectID
 //  2. CreateNode injects project_id into properties without mutating the caller's map
 //  3. Node constructors don't pre-set project_id (isolation is at persistence layer)
+//  4. No direct sess.Run() calls exist outside queries.go (choke-point enforcement)
 
 import (
 	"context"
@@ -107,3 +108,7 @@ func TestPackageNode_NoProjectID(t *testing.T) {
 		t.Error("PackageNode must not set project_id — that is injected by CreateNode")
 	}
 }
+
+// Cross-project sess.Run choke-point enforcement is covered by
+// TestNoRawSessRunOutsideQueriesGo in chokepoint_test.go (AST-based, no
+// Memgraph required). See that file for the static enforcement logic.
