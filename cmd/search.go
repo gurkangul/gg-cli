@@ -79,6 +79,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 			if r.Reason != "" {
 				fmt.Printf("    Reason: %s\n", r.Reason)
 			}
+			if len(r.Tags) > 0 {
+				fmt.Printf("    Tags: %s\n", strings.Join(r.Tags, ", "))
+			}
 			if r.TaskID != "" {
 				fmt.Printf("    Task: %s\n", r.TaskID)
 			}

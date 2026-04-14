@@ -14,6 +14,7 @@ type Rejection struct {
 	ID        string
 	Approach  string
 	Reason    string
+	Tags      []string
 	TaskID    string
 	CreatedAt string
 }
@@ -29,6 +30,7 @@ func (c *Client) AddRejection(ctx context.Context, r Rejection, vector []float32
 	payload, err := qdrant.TryValueMap(map[string]any{
 		"approach":   r.Approach,
 		"reason":     r.Reason,
+		"tags":       toAnySlice(r.Tags),
 		"task_id":    r.TaskID,
 		"created_at": r.CreatedAt,
 	})
@@ -96,6 +98,7 @@ func rejectionFromPayload(id string, pay map[string]*qdrant.Value) Rejection {
 		ID:        id,
 		Approach:  pay["approach"].GetStringValue(),
 		Reason:    pay["reason"].GetStringValue(),
+		Tags:      extractStringList(pay["tags"]),
 		TaskID:    pay["task_id"].GetStringValue(),
 		CreatedAt: pay["created_at"].GetStringValue(),
 	}
