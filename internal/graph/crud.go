@@ -83,7 +83,9 @@ func (c *Client) FindNodeByProperty(ctx context.Context, label, key string, valu
 	return nil, nil
 }
 
-// DeleteNode removes the node with the given element ID and all its relationships.
+// DeleteNode removes the node with the given element ID — but ONLY if it
+// belongs to this client's project. Cross-project deletion is impossible:
+// a request matching a node in a different project becomes a no-op.
 func (c *Client) DeleteNode(ctx context.Context, elementID string) error {
 	if elementID == "" {
 		return fmt.Errorf("elementID is required")
@@ -92,13 +94,72 @@ func (c *Client) DeleteNode(ctx context.Context, elementID string) error {
 	defer sess.Close(ctx)
 
 	_, err := sess.Run(ctx,
-		"MATCH (n) WHERE toString(id(n)) = $id DETACH DELETE n",
-		map[string]any{"id": elementID},
+		"MATCH (n) WHERE toString(id(n)) = $id AND n.project_id = $pid DETACH DELETE n",
+		map[string]any{"id": elementID, "pid": c.projectID},
 	)
 	if err != nil {
 		return fmt.Errorf("delete node %s: %w", elementID, err)
 	}
 	return nil
+}
+
+// InvalidateFile removes all Symbol and File nodes for the given source file
+// path (scoped to this project), along with any relationships they participate in.
+// This is the "reaping" step from CHANGED_CONTRACT.md §3 — call before re-indexing
+// a changed file to ensure the graph reflects only the current version of the file.
+//
+// The operation is idempotent: running it twice produces the same graph state.
+// If the file no longer exists on disk, call this and skip the SCIP run.
+func (c *Client) InvalidateFile(ctx context.Context, filePath string) error {
+	sess := c.session(ctx)
+	defer sess.Close(ctx)
+
+	// Step 1: delete all Symbol nodes produced from this file.
+	_, err := sess.Run(ctx,
+		"MATCH (n:Symbol {source_file: $path, project_id: $pid}) DETACH DELETE n",
+		map[string]any{"path": filePath, "pid": c.projectID},
+	)
+	if err != nil {
+		return fmt.Errorf("invalidate symbols for %s: %w", filePath, err)
+	}
+
+	// Step 2: delete the File node itself.
+	_, err = sess.Run(ctx,
+		"MATCH (f:File {path: $path, project_id: $pid}) DETACH DELETE f",
+		map[string]any{"path": filePath, "pid": c.projectID},
+	)
+	if err != nil {
+		return fmt.Errorf("invalidate file node for %s: %w", filePath, err)
+	}
+	return nil
+}
+
+// DependentsOf returns the paths of files that directly import the given file
+// (1-hop dependent lookup, CHANGED_CONTRACT.md §2). Used to expand the
+// invalidation set during --changed runs.
+func (c *Client) DependentsOf(ctx context.Context, filePath string) ([]string, error) {
+	sess := c.session(ctx)
+	defer sess.Close(ctx)
+
+	result, err := sess.Run(ctx,
+		"MATCH (d:File {project_id: $pid})-[:IMPORTS]->(f:File {path: $path, project_id: $pid}) RETURN d.path AS dep",
+		map[string]any{"path": filePath, "pid": c.projectID},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("dependents of %s: %w", filePath, err)
+	}
+
+	var deps []string
+	for result.Next(ctx) {
+		dep, _, _ := neo4j.GetRecordValue[string](result.Record(), "dep")
+		if dep != "" {
+			deps = append(deps, dep)
+		}
+	}
+	if err := result.Err(); err != nil {
+		return nil, fmt.Errorf("dependents of %s iterate: %w", filePath, err)
+	}
+	return deps, nil
 }
 
 // Edge represents a directed relationship between two nodes identified by element ID.
@@ -109,7 +170,10 @@ type Edge struct {
 	Properties map[string]any
 }
 
-// CreateEdge creates a directed relationship between two existing nodes.
+// CreateEdge creates a directed relationship between two existing nodes — but
+// ONLY if both nodes belong to this client's project. The edge itself also
+// carries a project_id property so range scans on a relationship can filter
+// by project (mirrors the node-level scoping in CreateNode).
 func (c *Client) CreateEdge(ctx context.Context, e *Edge) error {
 	if e.FromID == "" || e.ToID == "" {
 		return fmt.Errorf("edge FromID and ToID are required")
@@ -118,20 +182,28 @@ func (c *Client) CreateEdge(ctx context.Context, e *Edge) error {
 		return fmt.Errorf("edge Type is required")
 	}
 
+	// Shallow-copy props and inject project_id without mutating the caller's map.
+	props := make(map[string]any, len(e.Properties)+1)
+	for k, v := range e.Properties {
+		props[k] = v
+	}
+	props["project_id"] = c.projectID
+
 	sess := c.session(ctx)
 	defer sess.Close(ctx)
 
 	_, err := sess.Run(ctx,
 		fmt.Sprintf(
-			"MATCH (a) WHERE toString(id(a)) = $from "+
-				"MATCH (b) WHERE toString(id(b)) = $to "+
+			"MATCH (a) WHERE toString(id(a)) = $from AND a.project_id = $pid "+
+				"MATCH (b) WHERE toString(id(b)) = $to AND b.project_id = $pid "+
 				"CREATE (a)-[r:%s $props]->(b)",
 			e.Type,
 		),
 		map[string]any{
 			"from":  e.FromID,
 			"to":    e.ToID,
-			"props": e.Properties,
+			"pid":   c.projectID,
+			"props": props,
 		},
 	)
 	if err != nil {
