@@ -64,19 +64,16 @@ func (c *Client) GetInbox(ctx context.Context, role string) ([]Message, error) {
 		conditions = append(conditions, qdrant.NewMatchKeyword("to_role", role))
 	}
 
-	points, err := c.qc.Scroll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
 		CollectionName: CollMessages,
-		Limit:          qdrant.PtrOf(uint32(100)),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
-		Filter: &qdrant.Filter{
-			Must: conditions,
-		},
+		Filter:         &qdrant.Filter{Must: conditions},
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	var messages []Message
+	messages := make([]Message, 0, len(points))
 	for _, p := range points {
 		messages = append(messages, messageFromRetrieved(p))
 	}

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -70,20 +71,32 @@ func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit ui
 	return decisions, nil
 }
 
-func (c *Client) ListDecisions(ctx context.Context, limit uint32) ([]Decision, error) {
-	points, err := c.qc.Scroll(ctx, &qdrant.ScrollPoints{
+// ListDecisions returns the most recently created decisions, sorted descending
+// by created_at. It paginates internally and then trims to limit — Qdrant's
+// scroll itself has no time-ordering guarantee.
+func (c *Client) ListDecisions(ctx context.Context, limit int) ([]Decision, error) {
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
 		CollectionName: CollDecisions,
-		Limit:          qdrant.PtrOf(limit),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return nil, err
 	}
-	var decisions []Decision
+	decisions := make([]Decision, 0, len(points))
 	for _, p := range points {
 		decisions = append(decisions, decisionFromRetrieved(p))
 	}
+	sortDecisionsDesc(decisions)
+	if limit > 0 && len(decisions) > limit {
+		decisions = decisions[:limit]
+	}
 	return decisions, nil
+}
+
+func sortDecisionsDesc(ds []Decision) {
+	sort.Slice(ds, func(i, j int) bool {
+		return ds[i].CreatedAt > ds[j].CreatedAt // RFC3339 is lexically orderable
+	})
 }
 
 func decisionFromPoint(p *qdrant.ScoredPoint) Decision {

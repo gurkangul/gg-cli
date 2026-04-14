@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"time"
@@ -10,6 +11,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/qdrant/go-client/qdrant"
 )
+
+// taskIDNamespace seeds the deterministic UUID derived from a task_id.
+// This guarantees concurrent `gg task create` calls with the same logical
+// ID would upsert into the same Qdrant point rather than creating duplicates.
+var taskIDNamespace = uuid.MustParse("c0c0c0c0-1a5c-4d0d-bab0-000000000001")
+
+var taskIDRegex = regexp.MustCompile(`^TASK-\d{3,}$`)
 
 type Task struct {
 	ID          string
@@ -24,9 +32,33 @@ type Task struct {
 	CreatedAt   string
 }
 
+// scrollAll paginates through every point matching the given request template.
+// The caller's Offset is ignored; Limit is used as the page size.
+func (c *Client) scrollAll(ctx context.Context, req *qdrant.ScrollPoints) ([]*qdrant.RetrievedPoint, error) {
+	if req.Limit == nil {
+		req.Limit = qdrant.PtrOf(uint32(256))
+	}
+	var all []*qdrant.RetrievedPoint
+	for {
+		page, next, err := c.qc.ScrollAndOffset(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if next == nil {
+			break
+		}
+		req.Offset = next
+	}
+	return all, nil
+}
+
+func pointUUIDForTaskID(taskID string) string {
+	return uuid.NewSHA1(taskIDNamespace, []byte(taskID)).String()
+}
+
 func (c *Client) nextTaskID(ctx context.Context) (string, error) {
-	// Scroll all tasks to find the max existing ID number, avoiding collisions after deletion.
-	points, err := c.qc.Scroll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
 		CollectionName: CollTasks,
 		Limit:          qdrant.PtrOf(uint32(1000)),
 		WithPayload:    qdrant.NewWithPayloadInclude("task_id"),
@@ -77,13 +109,14 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 	}
 
 	wait := true
-	pointID := uuid.New().String()
+	// Deterministic point UUID — concurrent create with same task_id collapses
+	// to one row instead of creating duplicates.
 	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: CollTasks,
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
-				Id:      qdrant.NewID(pointID),
+				Id:      qdrant.NewID(pointUUIDForTaskID(t.ID)),
 				Vectors: qdrant.NewVectors(vector...),
 				Payload: payload,
 			},
@@ -96,42 +129,39 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 }
 
 func (c *Client) ListTasks(ctx context.Context, statusFilter string) ([]Task, error) {
-	scroll := &qdrant.ScrollPoints{
+	req := &qdrant.ScrollPoints{
 		CollectionName: CollTasks,
-		Limit:          qdrant.PtrOf(uint32(100)),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	}
 	if statusFilter != "" {
-		scroll.Filter = &qdrant.Filter{
+		req.Filter = &qdrant.Filter{
 			Must: []*qdrant.Condition{
 				qdrant.NewMatchKeyword("status", statusFilter),
 			},
 		}
 	}
-	points, err := c.qc.Scroll(ctx, scroll)
+	points, err := c.scrollAll(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	var tasks []Task
+	tasks := make([]Task, 0, len(points))
 	for _, p := range points {
 		tasks = append(tasks, taskFromRetrieved(p))
 	}
+	// Sort by numeric task ID suffix so TASK-1000 follows TASK-999.
 	sort.Slice(tasks, func(i, j int) bool {
-		return tasks[i].ID < tasks[j].ID
+		ni, _ := ParseTaskID(tasks[i].ID)
+		nj, _ := ParseTaskID(tasks[j].ID)
+		return ni < nj
 	})
 	return tasks, nil
 }
 
 func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
-	points, err := c.qc.Scroll(ctx, &qdrant.ScrollPoints{
+	points, err := c.qc.Get(ctx, &qdrant.GetPoints{
 		CollectionName: CollTasks,
-		Limit:          qdrant.PtrOf(uint32(1)),
+		Ids:            []*qdrant.PointId{qdrant.NewID(pointUUIDForTaskID(taskID))},
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
-		Filter: &qdrant.Filter{
-			Must: []*qdrant.Condition{
-				qdrant.NewMatchKeyword("task_id", taskID),
-			},
-		},
 	})
 	if err != nil {
 		return nil, err
@@ -139,25 +169,22 @@ func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	if len(points) == 0 {
 		return nil, fmt.Errorf("task %s not found", taskID)
 	}
-	t := taskFromRetrieved(points[0])
+	t := taskFromRetrievedByIDs(points[0])
 	return &t, nil
 }
 
 func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra string) error {
-	points, err := c.qc.Scroll(ctx, &qdrant.ScrollPoints{
+	pointID := qdrant.NewID(pointUUIDForTaskID(taskID))
+	// Verify the task exists before updating.
+	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
 		CollectionName: CollTasks,
-		Limit:          qdrant.PtrOf(uint32(1)),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
-		Filter: &qdrant.Filter{
-			Must: []*qdrant.Condition{
-				qdrant.NewMatchKeyword("task_id", taskID),
-			},
-		},
+		Ids:            []*qdrant.PointId{pointID},
+		WithPayload:    qdrant.NewWithPayloadInclude("task_id"),
 	})
 	if err != nil {
 		return err
 	}
-	if len(points) == 0 {
+	if len(existing) == 0 {
 		return fmt.Errorf("task %s not found", taskID)
 	}
 
@@ -183,7 +210,7 @@ func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra str
 		CollectionName: CollTasks,
 		Wait:           &wait,
 		Payload:        payload,
-		PointsSelector: qdrant.NewPointsSelector(points[0].GetId()),
+		PointsSelector: qdrant.NewPointsSelector(pointID),
 	})
 	return err
 }
@@ -218,10 +245,17 @@ func taskFromRetrieved(p *qdrant.RetrievedPoint) Task {
 	}
 }
 
+// taskFromRetrievedByIDs adapts a point returned by qdrant.Client.Get.
+// qdrant.RetrievedPoint is the same type, so this is a thin wrapper
+// kept for clarity where the source is Get vs Scroll.
+func taskFromRetrievedByIDs(p *qdrant.RetrievedPoint) Task {
+	return taskFromRetrieved(p)
+}
+
 // ParseTaskID extracts the numeric suffix from a task ID like "TASK-001".
 func ParseTaskID(id string) (int, error) {
-	if len(id) < 6 || id[:5] != "TASK-" {
-		return 0, fmt.Errorf("invalid task ID: %s", id)
+	if !taskIDRegex.MatchString(id) {
+		return 0, fmt.Errorf("invalid task ID %q (expected TASK-NNN)", id)
 	}
 	return strconv.Atoi(id[5:])
 }

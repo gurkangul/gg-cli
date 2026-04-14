@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -75,16 +76,16 @@ func (c *Client) SearchRejections(ctx context.Context, vector []float32, limit u
 	return rejections, nil
 }
 
-func (c *Client) ListRejections(ctx context.Context, limit uint32) ([]Rejection, error) {
-	points, err := c.qc.Scroll(ctx, &qdrant.ScrollPoints{
+// ListRejections returns rejections sorted by created_at descending, trimmed to limit.
+func (c *Client) ListRejections(ctx context.Context, limit int) ([]Rejection, error) {
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
 		CollectionName: CollRejections,
-		Limit:          qdrant.PtrOf(limit),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return nil, err
 	}
-	var rejections []Rejection
+	rejections := make([]Rejection, 0, len(points))
 	for _, p := range points {
 		pay := p.GetPayload()
 		rejections = append(rejections, Rejection{
@@ -94,6 +95,12 @@ func (c *Client) ListRejections(ctx context.Context, limit uint32) ([]Rejection,
 			TaskID:    pay["task_id"].GetStringValue(),
 			CreatedAt: pay["created_at"].GetStringValue(),
 		})
+	}
+	sort.Slice(rejections, func(i, j int) bool {
+		return rejections[i].CreatedAt > rejections[j].CreatedAt
+	})
+	if limit > 0 && len(rejections) > limit {
+		rejections = rejections[:limit]
 	}
 	return rejections, nil
 }
