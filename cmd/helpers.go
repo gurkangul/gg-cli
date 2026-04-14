@@ -85,13 +85,23 @@ func requireNonEmpty(name, value string) (string, error) {
 	return trimmed, nil
 }
 
-// normalizeTaskRef validates a TASK-ID string, uppercases and trims it, and
-// returns the canonical form. Empty input is allowed and returns "".
+// normalizeTaskRef validates an optional TASK-ID flag value, uppercases and
+// trims it. Empty input returns "" with no error.
 func normalizeTaskRef(raw string) (string, error) {
 	t := strings.ToUpper(strings.TrimSpace(raw))
 	if t == "" {
 		return "", nil
 	}
+	if _, err := store.ParseTaskID(t); err != nil {
+		return "", err
+	}
+	return t, nil
+}
+
+// requireTaskID validates a required TASK-ID positional argument. Empty or
+// malformed input is an error.
+func requireTaskID(raw string) (string, error) {
+	t := strings.ToUpper(strings.TrimSpace(raw))
 	if _, err := store.ParseTaskID(t); err != nil {
 		return "", err
 	}

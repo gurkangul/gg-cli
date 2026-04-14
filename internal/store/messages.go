@@ -102,21 +102,6 @@ func (c *Client) MarkMessagesRead(ctx context.Context, ids []string) error {
 	return err
 }
 
-func (c *Client) CountUnreadMessages(ctx context.Context, role string) (uint64, error) {
-	conditions := []*qdrant.Condition{
-		qdrant.NewMatchBool("read", false),
-	}
-	if role != "" {
-		conditions = append(conditions, qdrant.NewMatchKeyword("to_role", role))
-	}
-	return c.qc.Count(ctx, &qdrant.CountPoints{
-		CollectionName: CollMessages,
-		Filter: &qdrant.Filter{
-			Must: conditions,
-		},
-	})
-}
-
 func messageFromRetrieved(p *qdrant.RetrievedPoint) Message {
 	pay := p.GetPayload()
 	return Message{

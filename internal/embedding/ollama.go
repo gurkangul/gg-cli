@@ -57,7 +57,7 @@ func (g *Generator) Generate(ctx context.Context, text string) ([]float32, error
 	if err != nil {
 		return nil, fmt.Errorf("ollama API call failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {

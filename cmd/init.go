@@ -156,7 +156,7 @@ func waitForHTTP(ctx context.Context, url string, timeout time.Duration) error {
 		}
 		resp, err := client.Do(req)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				return nil
 			}

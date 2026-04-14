@@ -46,14 +46,6 @@ func init() {
 	rootCmd.AddCommand(taskCmd)
 }
 
-func normalizeTaskID(raw string) (string, error) {
-	id := strings.ToUpper(strings.TrimSpace(raw))
-	if _, err := store.ParseTaskID(id); err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
 func runTaskCreate(cmd *cobra.Command, args []string) error {
 	title, err := requireNonEmpty("title", args[0])
 	if err != nil {
@@ -150,7 +142,7 @@ var taskGetCmd = &cobra.Command{
 }
 
 func runTaskGet(cmd *cobra.Command, args []string) error {
-	taskID, err := normalizeTaskID(args[0])
+	taskID, err := requireTaskID(args[0])
 	if err != nil {
 		return err
 	}
@@ -199,7 +191,7 @@ var taskDoneCmd = &cobra.Command{
 }
 
 func runTaskDone(cmd *cobra.Command, args []string) error {
-	taskID, err := normalizeTaskID(args[0])
+	taskID, err := requireTaskID(args[0])
 	if err != nil {
 		return err
 	}
@@ -235,7 +227,7 @@ var taskBlockCmd = &cobra.Command{
 }
 
 func runTaskBlock(cmd *cobra.Command, args []string) error {
-	taskID, err := normalizeTaskID(args[0])
+	taskID, err := requireTaskID(args[0])
 	if err != nil {
 		return err
 	}

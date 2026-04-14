@@ -33,18 +33,25 @@ type Task struct {
 }
 
 // scrollAll paginates through every point matching the given request template.
-// The caller's Offset field is overridden; Limit (if set) is used as the page
-// size. The passed request is not mutated — internal pagination state lives on
-// a shallow copy.
+// It builds a fresh ScrollPoints internally (avoiding the protobuf copylocks
+// hazard of cloning the caller's struct) and uses Limit as the page size.
 func (c *Client) scrollAll(ctx context.Context, req *qdrant.ScrollPoints) ([]*qdrant.RetrievedPoint, error) {
-	local := *req
-	if local.Limit == nil {
-		local.Limit = qdrant.PtrOf(uint32(256))
+	pageSize := uint32(256)
+	if req.Limit != nil {
+		pageSize = *req.Limit
 	}
-	local.Offset = nil
 	var all []*qdrant.RetrievedPoint
+	var offset *qdrant.PointId
 	for {
-		page, next, err := c.qc.ScrollAndOffset(ctx, &local)
+		page, next, err := c.qc.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
+			CollectionName: req.CollectionName,
+			Filter:         req.Filter,
+			Limit:          &pageSize,
+			Offset:         offset,
+			WithPayload:    req.WithPayload,
+			WithVectors:    req.WithVectors,
+			OrderBy:        req.OrderBy,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -52,7 +59,7 @@ func (c *Client) scrollAll(ctx context.Context, req *qdrant.ScrollPoints) ([]*qd
 		if next == nil {
 			break
 		}
-		local.Offset = next
+		offset = next
 	}
 	return all, nil
 }
