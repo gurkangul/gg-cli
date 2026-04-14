@@ -82,16 +82,22 @@ func TestCreateNode_DoesNotMutateCallerProps(t *testing.T) {
 // project_id. Isolation is the persistence layer's responsibility, not the
 // node factory's.
 func TestSymbolNode_NoProjectID(t *testing.T) {
-	n := SymbolNode("Foo", "go", KindFunction, VisPublic)
+	n := SymbolNode("Foo", "go", KindFunction, VisPublic, ResolutionSemantic)
 	if _, ok := n.Properties["project_id"]; ok {
 		t.Error("SymbolNode must not set project_id — that is injected by CreateNode")
+	}
+	if n.Properties["resolution"] != string(ResolutionSemantic) {
+		t.Errorf("expected resolution=%s, got %v", ResolutionSemantic, n.Properties["resolution"])
 	}
 }
 
 func TestFileNode_NoProjectID(t *testing.T) {
-	n := FileNode("main.go", "go", "abc123")
+	n := FileNode("main.go", "go", "abc123", ResolutionSyntactic)
 	if _, ok := n.Properties["project_id"]; ok {
 		t.Error("FileNode must not set project_id — that is injected by CreateNode")
+	}
+	if n.Properties["resolution"] != string(ResolutionSyntactic) {
+		t.Errorf("expected resolution=%s, got %v", ResolutionSyntactic, n.Properties["resolution"])
 	}
 }
 

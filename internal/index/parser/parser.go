@@ -54,7 +54,8 @@ func ParseFile(ctx context.Context, scipPath string, lang string, h Handler) err
 
 // visitDocument processes a single SCIP document (source file).
 func visitDocument(ctx context.Context, doc *scippb.Document, lang string, h Handler) error {
-	fileNode := graph.FileNode(doc.GetRelativePath(), lang, "" /* checksum filled by caller */)
+	// SCIP parser always produces semantic (authoritative) nodes.
+	fileNode := graph.FileNode(doc.GetRelativePath(), lang, "" /* checksum filled by caller */, graph.ResolutionSemantic)
 
 	if err := h.OnFile(ctx, fileNode); err != nil {
 		return fmt.Errorf("OnFile %s: %w", doc.GetRelativePath(), err)
@@ -128,7 +129,8 @@ func symbolNode(scipSymbol, lang string, meta symbolMeta) *graph.Node {
 	// Use the last segment of the SCIP symbol as the display name.
 	name := scipSymbolName(scipSymbol)
 
-	return graph.SymbolNode(name, lang, kind, vis)
+	// SCIP parser always produces semantic (authoritative) nodes.
+	return graph.SymbolNode(name, lang, kind, vis, graph.ResolutionSemantic)
 }
 
 // scipKindToGraphKind maps SCIP SymbolInformation_Kind to graph.SymbolKind.

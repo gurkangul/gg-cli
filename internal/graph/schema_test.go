@@ -23,7 +23,7 @@ func TestSchemaInit(t *testing.T) {
 }
 
 func TestSymbolNodeConstructor(t *testing.T) {
-	n := graph.SymbolNode("NewClient", "go", graph.KindFunction, graph.VisPublic)
+	n := graph.SymbolNode("NewClient", "go", graph.KindFunction, graph.VisPublic, graph.ResolutionSemantic)
 	if n.Label != graph.LabelSymbol {
 		t.Errorf("want label %s, got %s", graph.LabelSymbol, n.Label)
 	}
@@ -33,9 +33,12 @@ func TestSymbolNodeConstructor(t *testing.T) {
 	if n.Properties["kind"] != string(graph.KindFunction) {
 		t.Errorf("unexpected kind=%v", n.Properties["kind"])
 	}
+	if n.Properties["resolution"] != string(graph.ResolutionSemantic) {
+		t.Errorf("resolution should be 'semantic', got %v", n.Properties["resolution"])
+	}
 
 	// Private symbol must NOT be a boundary.
-	priv := graph.SymbolNode("internalHelper", "go", graph.KindFunction, graph.VisPrivate)
+	priv := graph.SymbolNode("internalHelper", "go", graph.KindFunction, graph.VisPrivate, graph.ResolutionSemantic)
 	if priv.Properties["boundary"] != false {
 		t.Errorf("private symbol should have boundary=false")
 	}
@@ -50,8 +53,8 @@ func TestBoundarySymbolsRoundtrip(t *testing.T) {
 	}
 
 	// Create one public + one private symbol.
-	pub := graph.SymbolNode("ExportedFunc", "go", graph.KindFunction, graph.VisPublic)
-	priv := graph.SymbolNode("internalFunc", "go", graph.KindFunction, graph.VisPrivate)
+	pub := graph.SymbolNode("ExportedFunc", "go", graph.KindFunction, graph.VisPublic, graph.ResolutionSemantic)
+	priv := graph.SymbolNode("internalFunc", "go", graph.KindFunction, graph.VisPrivate, graph.ResolutionSemantic)
 
 	if err := c.CreateNode(ctx, pub); err != nil {
 		t.Fatalf("CreateNode pub: %v", err)
@@ -88,7 +91,7 @@ func TestFileAndPackageNodes(t *testing.T) {
 	ctx := context.Background()
 	c := newTestClient(t)
 
-	file := graph.FileNode("internal/graph/client.go", "go", "abc123")
+	file := graph.FileNode("internal/graph/client.go", "go", "abc123", graph.ResolutionSemantic)
 	pkg := graph.PackageNode("graph", "go", "github.com/gurkangul/gg/internal/graph")
 
 	if err := c.CreateNode(ctx, file); err != nil {
