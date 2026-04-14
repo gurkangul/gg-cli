@@ -18,10 +18,11 @@ const (
 )
 
 type Client struct {
-	qc *qdrant.Client
+	qc      *qdrant.Client
+	dataDir string // absolute path to .gg/ — used for file-locked counters
 }
 
-func New(cfg *config.QdrantConfig) (*Client, error) {
+func New(cfg *config.QdrantConfig, dataDir string) (*Client, error) {
 	qc, err := qdrant.NewClient(&qdrant.Config{
 		Host: cfg.Host,
 		Port: cfg.Port,
@@ -29,7 +30,7 @@ func New(cfg *config.QdrantConfig) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("qdrant connect failed: %w", err)
 	}
-	return &Client{qc: qc}, nil
+	return &Client{qc: qc, dataDir: dataDir}, nil
 }
 
 func (c *Client) Close() error {

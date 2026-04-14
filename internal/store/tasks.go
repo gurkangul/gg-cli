@@ -57,14 +57,16 @@ func pointUUIDForTaskID(taskID string) string {
 	return uuid.NewSHA1(taskIDNamespace, []byte(taskID)).String()
 }
 
-func (c *Client) nextTaskID(ctx context.Context) (string, error) {
+// maxTaskIDNumber scans Qdrant for the highest existing task_id suffix.
+// Only used to bootstrap the seq file on first allocation.
+func (c *Client) maxTaskIDNumber(ctx context.Context) (int, error) {
 	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
 		CollectionName: CollTasks,
 		Limit:          qdrant.PtrOf(uint32(1000)),
 		WithPayload:    qdrant.NewWithPayloadInclude("task_id"),
 	})
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 	maxNum := 0
 	for _, p := range points {
@@ -73,11 +75,11 @@ func (c *Client) nextTaskID(ctx context.Context) (string, error) {
 			maxNum = n
 		}
 	}
-	return fmt.Sprintf("TASK-%03d", maxNum+1), nil
+	return maxNum, nil
 }
 
 func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (string, error) {
-	id, err := c.nextTaskID(ctx)
+	id, err := c.allocTaskID(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -169,7 +171,7 @@ func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	if len(points) == 0 {
 		return nil, fmt.Errorf("task %s not found", taskID)
 	}
-	t := taskFromRetrievedByIDs(points[0])
+	t := taskFromRetrieved(points[0])
 	return &t, nil
 }
 
@@ -243,13 +245,6 @@ func taskFromRetrieved(p *qdrant.RetrievedPoint) Task {
 		DoneSummary: pay["done_summary"].GetStringValue(),
 		CreatedAt:   pay["created_at"].GetStringValue(),
 	}
-}
-
-// taskFromRetrievedByIDs adapts a point returned by qdrant.Client.Get.
-// qdrant.RetrievedPoint is the same type, so this is a thin wrapper
-// kept for clarity where the source is Get vs Scroll.
-func taskFromRetrievedByIDs(p *qdrant.RetrievedPoint) Task {
-	return taskFromRetrieved(p)
 }
 
 // ParseTaskID extracts the numeric suffix from a task ID like "TASK-001".

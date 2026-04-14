@@ -33,7 +33,11 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 	if err != nil {
 		return nil, err
 	}
-	client, err := store.New(&cfg.Qdrant)
+	ggDir, err := config.GGDir()
+	if err != nil {
+		return nil, err
+	}
+	client, err := store.New(&cfg.Qdrant, ggDir)
 	if err != nil {
 		return nil, err
 	}

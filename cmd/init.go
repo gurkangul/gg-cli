@@ -111,7 +111,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if parentCtx.Err() != nil {
 			return parentCtx.Err()
 		}
-		client, healthErr = store.New(&cfg.Qdrant)
+		client, healthErr = store.New(&cfg.Qdrant, ggDir)
 		if healthErr == nil {
 			hctx, hcancel := context.WithTimeout(parentCtx, 2*time.Second)
 			healthErr = client.HealthCheck(hctx)
