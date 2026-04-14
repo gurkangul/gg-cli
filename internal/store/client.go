@@ -24,8 +24,9 @@ type Client struct {
 
 func New(cfg *config.QdrantConfig, dataDir string) (*Client, error) {
 	qc, err := qdrant.NewClient(&qdrant.Config{
-		Host: cfg.Host,
-		Port: cfg.Port,
+		Host:                   cfg.Host,
+		Port:                   cfg.Port,
+		SkipCompatibilityCheck: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("qdrant connect failed: %w", err)
