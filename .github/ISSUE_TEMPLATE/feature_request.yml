@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a new command, flag, or behaviour
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening: run `gg search "<topic>"` locally — the decision log may already have context on this.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the workflow friction or gap you are hitting.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would the command or behaviour look like? Include example CLI invocations if you have them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about and why you rejected them.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Related issues, prior art, or any other relevant information.
