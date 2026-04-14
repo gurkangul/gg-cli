@@ -144,7 +144,16 @@ func SamePath(a, b string) bool {
 	return absA == absB
 }
 
-// Load reads the project-local config and validates it.
+// Load reads the project-local config, applies env var overrides, and validates.
+//
+// Env var precedence (highest wins):
+//
+//	MEMGRAPH_PASSWORD — overrides memgraph.password
+//	MEMGRAPH_USERNAME — overrides memgraph.username
+//	MEMGRAPH_URI      — overrides memgraph.uri
+//
+// Passwords should never be stored in config.yaml. Leave memgraph.password
+// empty and set MEMGRAPH_PASSWORD in the shell environment instead.
 func Load() (*Config, error) {
 	ggDir, err := GGDir()
 	if err != nil {
@@ -159,10 +168,25 @@ func Load() (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
+	applyMemgraphEnvOverrides(&cfg.Memgraph)
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config at %s: %w", path, err)
 	}
 	return &cfg, nil
+}
+
+// applyMemgraphEnvOverrides sets Memgraph credentials from environment variables
+// when they are present, so that passwords are never required in config.yaml.
+func applyMemgraphEnvOverrides(m *MemgraphConfig) {
+	if v := os.Getenv("MEMGRAPH_PASSWORD"); v != "" {
+		m.Password = v
+	}
+	if v := os.Getenv("MEMGRAPH_USERNAME"); v != "" {
+		m.Username = v
+	}
+	if v := os.Getenv("MEMGRAPH_URI"); v != "" {
+		m.URI = v
+	}
 }
 
 // Validate ensures required fields are present and URLs/ports are well-formed.

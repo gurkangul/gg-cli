@@ -13,4 +13,5 @@ embedding:
 memgraph:
   uri: bolt://localhost:7687     # Bolt protocol endpoint (from ~/.gg/docker-compose.yaml)
   username: ""                   # Leave empty — Memgraph default has no auth
-  password: ""
+  password: ""                   # Leave empty; set MEMGRAPH_PASSWORD env var instead of writing here
+                                 # MEMGRAPH_URI and MEMGRAPH_USERNAME env vars also override their fields

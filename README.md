@@ -185,7 +185,32 @@ embedding:
 memgraph:
   uri: bolt://localhost:7687
   username: ""
-  password: ""
+  password: ""                  # leave empty; use MEMGRAPH_PASSWORD instead (see below)
+```
+
+### Security — Credentials
+
+**Never write a Memgraph password into `.gg/config.yaml`.**
+The file is easy to accidentally commit. Use environment variables instead — they
+override the corresponding config fields at runtime:
+
+| Env var | Overrides |
+|---|---|
+| `MEMGRAPH_PASSWORD` | `memgraph.password` |
+| `MEMGRAPH_USERNAME` | `memgraph.username` |
+| `MEMGRAPH_URI` | `memgraph.uri` |
+
+```sh
+# Shell or .env (gitignored)
+export MEMGRAPH_PASSWORD="your-password"
+gg status   # password is picked up automatically
+```
+
+Add `.gg/config.yaml` to your project's `.gitignore` as an extra precaution
+(the project UUID inside is not secret, but belt-and-suspenders never hurts):
+
+```
+.gg/config.yaml
 ```
 
 ---
