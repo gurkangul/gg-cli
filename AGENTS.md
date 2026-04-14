@@ -102,6 +102,15 @@ autonomously:
 
 When the user says "do TASK-XXX" specifically, skip selection and go to step 6.
 
+## ACTIVITY NOTES
+
+For observations, ambient context, or progress that doesn't fit a decision,
+rejection, or task — capture it as a note so it shows up in `gg context` searches:
+```
+gg note "observed X while working on TASK-NNN — might affect Y"
+```
+Notes are semantically searchable. Use them freely; they have no lifecycle.
+
 ## MESSAGING ANOTHER AGENT
 
 When some work belongs to a different role (e.g. architect decided, developer
@@ -139,6 +148,45 @@ gg tell "all" "short status" --from <your-role>
 
 Rule of thumb: if another agent doesn't need to know to avoid duplicate work,
 collision, or confusion — skip the broadcast. Noise defeats the purpose.
+
+## BUG HANDLING
+
+When a defect is discovered — during code review, testing, or by the user:
+
+```
+gg bug report "short description" --detail "reproduction steps / observed vs expected" --severity high
+```
+
+Severity tiers: **critical** (data loss, security), **high** (core feature broken), **medium** (degraded), **low** (cosmetic).
+
+### Bug lifecycle
+
+1. **Report** — `gg bug report "title"` — creates BUG-NNN, status=open
+2. **Triage** — `gg bug triage BUG-NNN` — fetches a context bundle (related decisions, rejections, tasks, notes) to prime a fix
+3. **Start** — `gg bug start BUG-NNN` — signals you're actively fixing it (status=fixing); broadcast so other agents don't duplicate effort:
+   `gg tell "all" "BUG-NNN picked up: <title>" --from <your-role>`
+4. **Fix** — write code, test, commit; then:
+   `gg bug fix BUG-NNN "what was changed" --root-cause "what caused it"`
+5. **Retrospective** — record what you learned so it doesn't recur:
+   - If an architectural decision led to the bug: `gg decide "new constraint" --reason "BUG-NNN revealed that ..."`
+   - If the approach that caused it should be avoided: `gg reject "pattern" --reason "BUG-NNN: caused X because ..."`
+   - If follow-up work is needed: `gg task create "follow-up" --detail "..."`
+
+### Retrospective rule (TASK-024 contract)
+
+Every **fixed** bug must have at least one retrospective artifact — a decision, rejection, or task — recorded in `gg` before the fix session closes. A fix without a retrospective means the root cause lives only in git history and will resurface.
+
+If the fix is trivial (e.g. typo), a one-line rejection is still required:
+```
+gg reject "pattern that caused BUG-NNN" --reason "typo in X — verified by test Y"
+```
+
+### Won't-fix
+
+If a bug is intentional, out-of-scope, or superseded:
+```
+gg bug wontfix BUG-NNN "rationale"
+```
 
 ## BLOCKERS
 

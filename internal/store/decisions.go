@@ -16,6 +16,7 @@ type Decision struct {
 	Reason    string
 	Tags      []string
 	TaskID    string
+	Author    string // agent role or user that recorded this decision (e.g. "developer")
 	CreatedAt string
 }
 
@@ -32,6 +33,7 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 		"reason":     d.Reason,
 		"tags":       toAnySlice(d.Tags),
 		"task_id":    d.TaskID,
+		"author":     d.Author,
 		"created_at": d.CreatedAt,
 	})
 	if err != nil {
@@ -106,6 +108,7 @@ func decisionFromPayload(id string, pay map[string]*qdrant.Value) Decision {
 		Reason:    pay["reason"].GetStringValue(),
 		Tags:      extractStringList(pay["tags"]),
 		TaskID:    pay["task_id"].GetStringValue(),
+		Author:    pay["author"].GetStringValue(),
 		CreatedAt: pay["created_at"].GetStringValue(),
 	}
 }

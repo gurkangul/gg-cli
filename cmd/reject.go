@@ -25,6 +25,7 @@ func init() {
 	rejectCmd.Flags().StringVar(&rejectReason, "reason", "", "why this approach was rejected")
 	rejectCmd.Flags().StringVar(&rejectTags, "tags", "", "comma-separated tags")
 	rejectCmd.Flags().StringVar(&rejectTask, "task", "", "related task ID")
+	addFromFlag(rejectCmd)
 	rootCmd.AddCommand(rejectCmd)
 }
 
@@ -62,18 +63,20 @@ func runReject(cmd *cobra.Command, args []string) error {
 		Reason:   reason,
 		Tags:     parseTags(rejectTags),
 		TaskID:   taskRef,
+		Author:   resolveAuthor(cmd),
 	}
 
 	if err := d.store.AddRejection(ctx, r, vector); err != nil {
 		return fmt.Errorf("store rejection: %w", err)
 	}
 
-	fmt.Printf("✗ Rejection recorded: %s\n", approach)
-	if r.Reason != "" {
-		fmt.Printf("  Reason: %s\n", r.Reason)
-	}
-	if len(r.Tags) > 0 {
-		fmt.Printf("  Tags: %s\n", strings.Join(r.Tags, ", "))
-	}
-	return nil
+	return printJSON(r, func() {
+		fmt.Printf("✗ Rejection recorded: %s\n", approach)
+		if r.Reason != "" {
+			fmt.Printf("  Reason: %s\n", r.Reason)
+		}
+		if len(r.Tags) > 0 {
+			fmt.Printf("  Tags: %s\n", strings.Join(r.Tags, ", "))
+		}
+	})
 }

@@ -29,6 +29,7 @@ type Task struct {
 	Tags        []string
 	BlockReason string
 	DoneSummary string
+	Author      string // agent role or user that created this task
 	CreatedAt   string
 }
 
@@ -118,6 +119,7 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 		"tags":         toAnySlice(t.Tags),
 		"block_reason": t.BlockReason,
 		"done_summary": t.DoneSummary,
+		"author":       t.Author,
 		"created_at":   t.CreatedAt,
 	})
 	if err != nil {
@@ -231,6 +233,39 @@ func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra str
 	return err
 }
 
+func (c *Client) SearchTasks(ctx context.Context, vector []float32, limit uint64) ([]Task, error) {
+	results, err := c.qc.Query(ctx, &qdrant.QueryPoints{
+		CollectionName: c.collTasks(),
+		Query:          qdrant.NewQuery(vector...),
+		Limit:          qdrant.PtrOf(limit),
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	})
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]Task, 0, len(results))
+	for _, r := range results {
+		tasks = append(tasks, taskFromPayload(r.GetPayload()))
+	}
+	return tasks, nil
+}
+
+func taskFromPayload(pay map[string]*qdrant.Value) Task {
+	return Task{
+		ID:          pay["task_id"].GetStringValue(),
+		Title:       pay["title"].GetStringValue(),
+		Detail:      pay["detail"].GetStringValue(),
+		Status:      pay["status"].GetStringValue(),
+		Priority:    pay["priority"].GetStringValue(),
+		DependsOn:   extractStringList(pay["depends_on"]),
+		Tags:        extractStringList(pay["tags"]),
+		BlockReason: pay["block_reason"].GetStringValue(),
+		DoneSummary: pay["done_summary"].GetStringValue(),
+		Author:      pay["author"].GetStringValue(),
+		CreatedAt:   pay["created_at"].GetStringValue(),
+	}
+}
+
 func (c *Client) CountTasks(ctx context.Context, status string) (uint64, error) {
 	req := &qdrant.CountPoints{
 		CollectionName: c.collTasks(),
@@ -246,19 +281,7 @@ func (c *Client) CountTasks(ctx context.Context, status string) (uint64, error) 
 }
 
 func taskFromRetrieved(p *qdrant.RetrievedPoint) Task {
-	pay := p.GetPayload()
-	return Task{
-		ID:          pay["task_id"].GetStringValue(),
-		Title:       pay["title"].GetStringValue(),
-		Detail:      pay["detail"].GetStringValue(),
-		Status:      pay["status"].GetStringValue(),
-		Priority:    pay["priority"].GetStringValue(),
-		DependsOn:   extractStringList(pay["depends_on"]),
-		Tags:        extractStringList(pay["tags"]),
-		BlockReason: pay["block_reason"].GetStringValue(),
-		DoneSummary: pay["done_summary"].GetStringValue(),
-		CreatedAt:   pay["created_at"].GetStringValue(),
-	}
+	return taskFromPayload(p.GetPayload())
 }
 
 // ParseTaskID extracts the numeric suffix from a task ID like "TASK-001".

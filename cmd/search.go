@@ -51,42 +51,49 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("search rejections: %w", err)
 	}
 
-	if len(decisions) == 0 && len(rejections) == 0 {
-		fmt.Println("No results found.")
-		return nil
-	}
-
-	if len(decisions) > 0 {
-		fmt.Println("DECISIONS:")
-		for _, dec := range decisions {
-			fmt.Printf("  • %s\n", dec.Text)
-			if dec.Reason != "" {
-				fmt.Printf("    Reason: %s\n", dec.Reason)
-			}
-			if len(dec.Tags) > 0 {
-				fmt.Printf("    Tags: %s\n", strings.Join(dec.Tags, ", "))
-			}
-			if dec.TaskID != "" {
-				fmt.Printf("    Task: %s\n", dec.TaskID)
+	return printJSON(map[string]any{
+		"decisions":  decisions,
+		"rejections": rejections,
+	}, func() {
+		if len(decisions) == 0 && len(rejections) == 0 {
+			fmt.Println("No results found.")
+			return
+		}
+		if len(decisions) > 0 {
+			fmt.Println("DECISIONS:")
+			for _, dec := range decisions {
+				fmt.Printf("  • %s\n", dec.Text)
+				if dec.Reason != "" {
+					fmt.Printf("    Reason: %s\n", dec.Reason)
+				}
+				if len(dec.Tags) > 0 {
+					fmt.Printf("    Tags: %s\n", strings.Join(dec.Tags, ", "))
+				}
+				if dec.TaskID != "" {
+					fmt.Printf("    Task: %s\n", dec.TaskID)
+				}
+				if dec.Author != "" {
+					fmt.Printf("    By: %s\n", dec.Author)
+				}
 			}
 		}
-	}
-
-	if len(rejections) > 0 {
-		fmt.Println("REJECTIONS:")
-		for _, r := range rejections {
-			fmt.Printf("  ✗ %s\n", r.Approach)
-			if r.Reason != "" {
-				fmt.Printf("    Reason: %s\n", r.Reason)
-			}
-			if len(r.Tags) > 0 {
-				fmt.Printf("    Tags: %s\n", strings.Join(r.Tags, ", "))
-			}
-			if r.TaskID != "" {
-				fmt.Printf("    Task: %s\n", r.TaskID)
+		if len(rejections) > 0 {
+			fmt.Println("REJECTIONS:")
+			for _, r := range rejections {
+				fmt.Printf("  ✗ %s\n", r.Approach)
+				if r.Reason != "" {
+					fmt.Printf("    Reason: %s\n", r.Reason)
+				}
+				if len(r.Tags) > 0 {
+					fmt.Printf("    Tags: %s\n", strings.Join(r.Tags, ", "))
+				}
+				if r.TaskID != "" {
+					fmt.Printf("    Task: %s\n", r.TaskID)
+				}
+				if r.Author != "" {
+					fmt.Printf("    By: %s\n", r.Author)
+				}
 			}
 		}
-	}
-
-	return nil
+	})
 }

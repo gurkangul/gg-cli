@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gurkangul/gg/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -45,14 +46,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Println("TASKS:")
-	fmt.Printf("  ○ Pending: %s  → In Progress: %s  ⚠ Blocked: %s  ✓ Done: %s\n",
-		fmtCount(counts["pending"].n, counts["pending"].err),
-		fmtCount(counts["in_progress"].n, counts["in_progress"].err),
-		fmtCount(counts["blocked"].n, counts["blocked"].err),
-		fmtCount(counts["done"].n, counts["done"].err),
-	)
-
+	var openTasks []store.Task
 	hasOpen := counts["pending"].n+counts["in_progress"].n+counts["blocked"].n > 0
 	if hasOpen {
 		tasks, err := d.store.ListTasks(ctx, "")
@@ -63,63 +57,102 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				if t.Status == "done" {
 					continue
 				}
-				fmt.Printf("  %s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
+				openTasks = append(openTasks, t)
 			}
 		}
 	}
 
 	// Messages — fetch once and derive the count from the result so we can't
 	// race with a concurrent `gg inbox` between Count and Scroll.
-	messages, err := d.store.GetInbox(ctx, "")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "warning: get inbox:", err)
-	} else {
-		fmt.Printf("\nMESSAGES:\n  Unread: %d\n", len(messages))
-		for _, m := range messages {
-			fmt.Printf("  [%s → %s] %s\n", m.FromRole, m.ToRole, m.Content)
-		}
-		if len(messages) > 0 {
-			fmt.Println("  (run `gg inbox` to mark as read)")
-		}
+	messages, messagesErr := d.store.GetInbox(ctx, "")
+	if messagesErr != nil {
+		fmt.Fprintln(os.Stderr, "warning: get inbox:", messagesErr)
 	}
 
 	// Open discussions — unresolved topics the next agent must close.
-	openDiscs, err := d.store.ListDiscussions(ctx, "open")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "warning: list discussions:", err)
-	} else if len(openDiscs) > 0 {
-		fmt.Printf("\nOPEN DISCUSSIONS (%d — resolve or dismiss before closing session):\n", len(openDiscs))
-		for _, disc := range openDiscs {
-			fmt.Printf("  • %s — %s\n", disc.ID, disc.Topic)
-		}
+	openDiscs, discsErr := d.store.ListDiscussions(ctx, "open")
+	if discsErr != nil {
+		fmt.Fprintln(os.Stderr, "warning: list discussions:", discsErr)
 	}
 
 	// Recent decisions
-	decisions, err := d.store.ListDecisions(ctx, 5)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "warning: list decisions:", err)
-	} else if len(decisions) > 0 {
-		fmt.Println("\nRECENT DECISIONS:")
-		for _, dec := range decisions {
-			fmt.Printf("  • %s\n", dec.Text)
-			if len(dec.Tags) > 0 {
-				fmt.Printf("    Tags: %s\n", strings.Join(dec.Tags, ", "))
-			}
-		}
+	decisions, decisionsErr := d.store.ListDecisions(ctx, 5)
+	if decisionsErr != nil {
+		fmt.Fprintln(os.Stderr, "warning: list decisions:", decisionsErr)
 	}
 
 	// Recent rejections
-	rejections, err := d.store.ListRejections(ctx, 5)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "warning: list rejections:", err)
-	} else if len(rejections) > 0 {
-		fmt.Println("\nRECENT REJECTIONS:")
-		for _, r := range rejections {
-			fmt.Printf("  ✗ %s\n", r.Approach)
-		}
+	rejections, rejectionsErr := d.store.ListRejections(ctx, 5)
+	if rejectionsErr != nil {
+		fmt.Fprintln(os.Stderr, "warning: list rejections:", rejectionsErr)
 	}
 
-	return nil
+	type countVal struct {
+		Pending    uint64 `json:"pending"`
+		InProgress uint64 `json:"in_progress"`
+		Blocked    uint64 `json:"blocked"`
+		Done       uint64 `json:"done"`
+	}
+	payload := map[string]any{
+		"task_counts": countVal{
+			Pending:    counts["pending"].n,
+			InProgress: counts["in_progress"].n,
+			Blocked:    counts["blocked"].n,
+			Done:       counts["done"].n,
+		},
+		"open_tasks":  openTasks,
+		"messages":    messages,
+		"discussions": openDiscs,
+		"decisions":   decisions,
+		"rejections":  rejections,
+	}
+
+	return printJSON(payload, func() {
+		fmt.Println("TASKS:")
+		fmt.Printf("  ○ Pending: %s  → In Progress: %s  ⚠ Blocked: %s  ✓ Done: %s\n",
+			fmtCount(counts["pending"].n, counts["pending"].err),
+			fmtCount(counts["in_progress"].n, counts["in_progress"].err),
+			fmtCount(counts["blocked"].n, counts["blocked"].err),
+			fmtCount(counts["done"].n, counts["done"].err),
+		)
+		for _, t := range openTasks {
+			fmt.Printf("  %s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
+		}
+
+		if messagesErr == nil {
+			fmt.Printf("\nMESSAGES:\n  Unread: %d\n", len(messages))
+			for _, m := range messages {
+				fmt.Printf("  [%s → %s] %s\n", m.FromRole, m.ToRole, m.Content)
+			}
+			if len(messages) > 0 {
+				fmt.Println("  (run `gg inbox` to mark as read)")
+			}
+		}
+
+		if discsErr == nil && len(openDiscs) > 0 {
+			fmt.Printf("\nOPEN DISCUSSIONS (%d — resolve or dismiss before closing session):\n", len(openDiscs))
+			for _, disc := range openDiscs {
+				fmt.Printf("  • %s — %s\n", disc.ID, disc.Topic)
+			}
+		}
+
+		if decisionsErr == nil && len(decisions) > 0 {
+			fmt.Println("\nRECENT DECISIONS:")
+			for _, dec := range decisions {
+				fmt.Printf("  • %s\n", dec.Text)
+				if len(dec.Tags) > 0 {
+					fmt.Printf("    Tags: %s\n", strings.Join(dec.Tags, ", "))
+				}
+			}
+		}
+
+		if rejectionsErr == nil && len(rejections) > 0 {
+			fmt.Println("\nRECENT REJECTIONS:")
+			for _, r := range rejections {
+				fmt.Printf("  ✗ %s\n", r.Approach)
+			}
+		}
+	})
 }
 
 func fmtCount(n uint64, err error) string {

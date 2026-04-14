@@ -23,9 +23,10 @@ var taskCreateCmd = &cobra.Command{
 }
 
 var (
-	taskDetail   string
-	taskPriority string
-	taskTags     string
+	taskDetail    string
+	taskPriority  string
+	taskTags      string
+	taskDependsOn string
 )
 
 var validPriorities = map[string]bool{"high": true, "medium": true, "low": true}
@@ -35,14 +36,18 @@ func init() {
 	taskCreateCmd.Flags().StringVar(&taskDetail, "detail", "", "task description")
 	taskCreateCmd.Flags().StringVar(&taskPriority, "priority", "medium", "priority: high, medium, low")
 	taskCreateCmd.Flags().StringVar(&taskTags, "tags", "", "comma-separated tags")
+	taskCreateCmd.Flags().StringVar(&taskDependsOn, "depends-on", "", "comma-separated task IDs this task depends on (e.g. TASK-001,TASK-002)")
+	addFromFlag(taskCreateCmd)
 
 	taskListCmd.Flags().StringVar(&taskListStatus, "status", "", "filter by status: pending, in_progress, done, blocked")
+	taskListCmd.Flags().BoolVar(&taskListReady, "ready", false, "show only pending tasks whose dependencies are all done")
 
 	taskCmd.AddCommand(taskCreateCmd)
 	taskCmd.AddCommand(taskListCmd)
 	taskCmd.AddCommand(taskGetCmd)
 	taskCmd.AddCommand(taskDoneCmd)
 	taskCmd.AddCommand(taskBlockCmd)
+	taskCmd.AddCommand(taskDepsCmd)
 	rootCmd.AddCommand(taskCmd)
 }
 
@@ -53,6 +58,12 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 	}
 	if !validPriorities[taskPriority] {
 		return fmt.Errorf("invalid priority %q — use high, medium, or low", taskPriority)
+	}
+
+	// Validate and normalise depends-on task IDs.
+	deps, err := parseTaskIDList(taskDependsOn)
+	if err != nil {
+		return fmt.Errorf("--depends-on: %w", err)
 	}
 
 	d, err := loadDeps(true)
@@ -74,10 +85,12 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	t := store.Task{
-		Title:    title,
-		Detail:   strings.TrimSpace(taskDetail),
-		Priority: taskPriority,
-		Tags:     parseTags(taskTags),
+		Title:     title,
+		Detail:    strings.TrimSpace(taskDetail),
+		Priority:  taskPriority,
+		Tags:      parseTags(taskTags),
+		DependsOn: deps,
+		Author:    resolveAuthor(cmd),
 	}
 
 	id, err := d.store.CreateTask(ctx, t, vector)
@@ -85,8 +98,9 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create task: %w", err)
 	}
 
-	fmt.Printf("✓ Task created: %s — %s\n", id, title)
-	return nil
+	return printJSON(map[string]any{"id": id, "title": title}, func() {
+		fmt.Printf("✓ Task created: %s — %s\n", id, title)
+	})
 }
 
 // --- task list ---
@@ -97,7 +111,10 @@ var taskListCmd = &cobra.Command{
 	RunE:  runTaskList,
 }
 
-var taskListStatus string
+var (
+	taskListStatus string
+	taskListReady  bool
+)
 
 func runTaskList(cmd *cobra.Command, args []string) error {
 	if taskListStatus != "" && !validStatuses[taskListStatus] {
@@ -113,23 +130,63 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	tasks, err := d.store.ListTasks(ctx, taskListStatus)
+	// --ready implicitly filters to pending tasks.
+	statusFilter := taskListStatus
+	if taskListReady {
+		statusFilter = "pending"
+	}
+
+	tasks, err := d.store.ListTasks(ctx, statusFilter)
 	if err != nil {
 		return fmt.Errorf("list tasks: %w", err)
 	}
 
-	if len(tasks) == 0 {
-		fmt.Println("No tasks found.")
-		return nil
+	// --ready: build a done-set, then keep only tasks with all deps satisfied.
+	if taskListReady {
+		doneTasks, listErr := d.store.ListTasks(ctx, "done")
+		if listErr != nil {
+			return fmt.Errorf("list done tasks: %w", listErr)
+		}
+		doneSet := make(map[string]bool, len(doneTasks))
+		for _, t := range doneTasks {
+			doneSet[t.ID] = true
+		}
+		var ready []store.Task
+		for _, t := range tasks {
+			allDone := true
+			for _, dep := range t.DependsOn {
+				if !doneSet[dep] {
+					allDone = false
+					break
+				}
+			}
+			if allDone {
+				ready = append(ready, t)
+			}
+		}
+		tasks = ready
 	}
 
-	for _, t := range tasks {
-		fmt.Printf("%s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
-		if t.Status == "blocked" && t.BlockReason != "" {
-			fmt.Printf("    ⚠ Blocked: %s\n", t.BlockReason)
+	return printJSON(tasks, func() {
+		if len(tasks) == 0 {
+			if taskListReady {
+				fmt.Println("No ready tasks — all pending tasks have unfinished dependencies.")
+			} else {
+				fmt.Println("No tasks found.")
+			}
+			return
 		}
-	}
-	return nil
+		for _, t := range tasks {
+			author := ""
+			if t.Author != "" {
+				author = " (" + t.Author + ")"
+			}
+			fmt.Printf("%s %s [%s] %s%s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title, author)
+			if t.Status == "blocked" && t.BlockReason != "" {
+				fmt.Printf("    ⚠ Blocked: %s\n", t.BlockReason)
+			}
+		}
+	})
 }
 
 // --- task get ---
@@ -158,27 +215,31 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 
 	t, err := d.store.GetTask(ctx, taskID)
 	if err != nil {
-		return err
+		return notFound(err.Error())
 	}
 
-	fmt.Printf("%s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
-	if t.Detail != "" {
-		fmt.Printf("  Detail: %s\n", t.Detail)
-	}
-	if len(t.Tags) > 0 {
-		fmt.Printf("  Tags: %s\n", strings.Join(t.Tags, ", "))
-	}
-	if len(t.DependsOn) > 0 {
-		fmt.Printf("  Depends on: %s\n", strings.Join(t.DependsOn, ", "))
-	}
-	if t.BlockReason != "" {
-		fmt.Printf("  ⚠ Blocked: %s\n", t.BlockReason)
-	}
-	if t.DoneSummary != "" {
-		fmt.Printf("  ✓ Done: %s\n", t.DoneSummary)
-	}
-	fmt.Printf("  Created: %s\n", t.CreatedAt)
-	return nil
+	return printJSON(t, func() {
+		fmt.Printf("%s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
+		if t.Detail != "" {
+			fmt.Printf("  Detail: %s\n", t.Detail)
+		}
+		if len(t.Tags) > 0 {
+			fmt.Printf("  Tags: %s\n", strings.Join(t.Tags, ", "))
+		}
+		if len(t.DependsOn) > 0 {
+			fmt.Printf("  Depends on: %s\n", strings.Join(t.DependsOn, ", "))
+		}
+		if t.BlockReason != "" {
+			fmt.Printf("  ⚠ Blocked: %s\n", t.BlockReason)
+		}
+		if t.DoneSummary != "" {
+			fmt.Printf("  ✓ Done: %s\n", t.DoneSummary)
+		}
+		if t.Author != "" {
+			fmt.Printf("  By: %s\n", t.Author)
+		}
+		fmt.Printf("  Created: %s\n", t.CreatedAt)
+	})
 }
 
 // --- task done ---
@@ -213,8 +274,9 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("✓ %s marked as done\n", taskID)
-	return nil
+	return printJSON(map[string]any{"id": taskID, "status": "done", "summary": summary}, func() {
+		fmt.Printf("✓ %s marked as done\n", taskID)
+	})
 }
 
 // --- task block ---
@@ -249,8 +311,108 @@ func runTaskBlock(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("⚠ %s marked as blocked: %s\n", taskID, reason)
-	return nil
+	return printJSON(map[string]any{"id": taskID, "status": "blocked", "reason": reason}, func() {
+		fmt.Printf("⚠ %s marked as blocked: %s\n", taskID, reason)
+	})
+}
+
+// --- task deps ---
+
+var taskDepsCmd = &cobra.Command{
+	Use:   "deps TASK-ID",
+	Short: "Show dependency status for a task",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runTaskDeps,
+}
+
+func runTaskDeps(cmd *cobra.Command, args []string) error {
+	taskID, err := requireTaskID(args[0])
+	if err != nil {
+		return err
+	}
+
+	d, err := loadDeps(false)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	t, err := d.store.GetTask(ctx, taskID)
+	if err != nil {
+		return notFound(err.Error())
+	}
+
+	type depEntry struct {
+		ID       string `json:"id"`
+		Status   string `json:"status"`
+		Priority string `json:"priority,omitempty"`
+		Title    string `json:"title,omitempty"`
+		Found    bool   `json:"found"`
+	}
+
+	var deps []depEntry
+	allDone := true
+	for _, depID := range t.DependsOn {
+		dep, err := d.store.GetTask(ctx, depID)
+		if err != nil {
+			deps = append(deps, depEntry{ID: depID, Found: false})
+			allDone = false
+			continue
+		}
+		deps = append(deps, depEntry{ID: dep.ID, Status: dep.Status, Priority: dep.Priority, Title: dep.Title, Found: true})
+		if dep.Status != "done" {
+			allDone = false
+		}
+	}
+
+	payload := map[string]any{
+		"task_id":  taskID,
+		"all_done": allDone,
+		"deps":     deps,
+	}
+	return printJSON(payload, func() {
+		if len(deps) == 0 {
+			fmt.Printf("%s has no dependencies.\n", taskID)
+			return
+		}
+		fmt.Printf("Dependencies of %s:\n", taskID)
+		for _, dep := range deps {
+			if !dep.Found {
+				fmt.Printf("  ! %-12s (not found)\n", dep.ID)
+				continue
+			}
+			fmt.Printf("  %s %-12s [%s] %s\n", statusIcon(dep.Status), dep.ID, dep.Priority, dep.Title)
+		}
+		fmt.Println()
+		if allDone {
+			fmt.Printf("✓ All dependencies done — %s is ready to start.\n", taskID)
+		} else {
+			fmt.Printf("○ Not all dependencies are done — %s is blocked by the above.\n", taskID)
+		}
+	})
+}
+
+// parseTaskIDList parses a comma-separated list of task IDs, validating each.
+func parseTaskIDList(raw string) ([]string, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	ids := make([]string, 0, len(parts))
+	for _, p := range parts {
+		id := strings.ToUpper(strings.TrimSpace(p))
+		if id == "" {
+			continue
+		}
+		if _, err := store.ParseTaskID(id); err != nil {
+			return nil, fmt.Errorf("invalid task ID %q: %w", p, err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func statusIcon(status string) string {

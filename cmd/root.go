@@ -23,17 +23,39 @@ var rootCmd = &cobra.Command{
 	SilenceErrors: true,
 }
 
+func init() {
+	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output results as JSON")
+}
+
 func Execute() {
 	// Cancel the root context on Ctrl+C / SIGTERM so in-flight requests unwind.
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		// Distinguish cancellation from real errors.
 		if errors.Is(err, context.Canceled) {
-			os.Exit(130)
+			if jsonOutput {
+				_ = writeJSON(map[string]any{"error": "interrupted", "code": ExitSignal})
+			}
+			os.Exit(ExitSignal)
 		}
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+
+		// Unwrap ExitError to get a structured exit code.
+		var exitErr *ExitError
+		if errors.As(err, &exitErr) {
+			if jsonOutput {
+				_ = writeJSON(map[string]any{"error": exitErr.Message, "code": exitErr.Code})
+			} else {
+				fmt.Fprintln(os.Stderr, "error:", exitErr.Message)
+			}
+			os.Exit(exitErr.Code)
+		}
+
+		if jsonOutput {
+			_ = writeJSON(map[string]any{"error": err.Error(), "code": ExitGeneral})
+		} else {
+			fmt.Fprintln(os.Stderr, "error:", err)
+		}
+		os.Exit(ExitGeneral)
 	}
 }

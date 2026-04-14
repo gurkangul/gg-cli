@@ -199,6 +199,23 @@ func (c *Client) closeDiscussion(ctx context.Context, discID, status, via, note,
 	return err
 }
 
+func (c *Client) SearchDiscussions(ctx context.Context, vector []float32, limit uint64) ([]Discussion, error) {
+	results, err := c.qc.Query(ctx, &qdrant.QueryPoints{
+		CollectionName: c.collDiscussions(),
+		Query:          qdrant.NewQuery(vector...),
+		Limit:          qdrant.PtrOf(limit),
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	})
+	if err != nil {
+		return nil, err
+	}
+	discussions := make([]Discussion, 0, len(results))
+	for _, r := range results {
+		discussions = append(discussions, discussionFromPayload(r.GetPayload()))
+	}
+	return discussions, nil
+}
+
 func (c *Client) CountOpenDiscussions(ctx context.Context) (uint64, error) {
 	return c.qc.Count(ctx, &qdrant.CountPoints{
 		CollectionName: c.collDiscussions(),

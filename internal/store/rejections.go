@@ -16,6 +16,7 @@ type Rejection struct {
 	Reason    string
 	Tags      []string
 	TaskID    string
+	Author    string // agent role or user that recorded this rejection
 	CreatedAt string
 }
 
@@ -32,6 +33,7 @@ func (c *Client) AddRejection(ctx context.Context, r Rejection, vector []float32
 		"reason":     r.Reason,
 		"tags":       toAnySlice(r.Tags),
 		"task_id":    r.TaskID,
+		"author":     r.Author,
 		"created_at": r.CreatedAt,
 	})
 	if err != nil {
@@ -100,6 +102,7 @@ func rejectionFromPayload(id string, pay map[string]*qdrant.Value) Rejection {
 		Reason:    pay["reason"].GetStringValue(),
 		Tags:      extractStringList(pay["tags"]),
 		TaskID:    pay["task_id"].GetStringValue(),
+		Author:    pay["author"].GetStringValue(),
 		CreatedAt: pay["created_at"].GetStringValue(),
 	}
 }

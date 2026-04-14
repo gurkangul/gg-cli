@@ -14,6 +14,8 @@ const (
 	collSuffixMessages    = "messages"
 	collSuffixRejections  = "rejections"
 	collSuffixDiscussions = "discussions"
+	collSuffixNotes = "notes"
+	collSuffixBugs  = "bugs"
 
 	VectorSize = 768 // nomic-embed-text dimension
 )
@@ -58,10 +60,37 @@ func (c *Client) collTasks() string       { return c.projectID + "-" + collSuffi
 func (c *Client) collMessages() string    { return c.projectID + "-" + collSuffixMessages }
 func (c *Client) collRejections() string  { return c.projectID + "-" + collSuffixRejections }
 func (c *Client) collDiscussions() string { return c.projectID + "-" + collSuffixDiscussions }
+func (c *Client) collNotes() string { return c.projectID + "-" + collSuffixNotes }
+func (c *Client) collBugs() string  { return c.projectID + "-" + collSuffixBugs }
+
+// CollectionStatus reports which of the expected Qdrant collections are
+// present vs. missing for this project. It returns (present, missing, error).
+func (c *Client) CollectionStatus(ctx context.Context) (present, missing []string, err error) {
+	expected := []string{
+		c.collDecisions(), c.collTasks(), c.collMessages(),
+		c.collRejections(), c.collDiscussions(), c.collNotes(), c.collBugs(),
+	}
+	all, err := c.qc.ListCollections(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list collections: %w", err)
+	}
+	existMap := make(map[string]bool, len(all))
+	for _, name := range all {
+		existMap[name] = true
+	}
+	for _, name := range expected {
+		if existMap[name] {
+			present = append(present, name)
+		} else {
+			missing = append(missing, name)
+		}
+	}
+	return present, missing, nil
+}
 
 // EnsureCollections creates this project's Qdrant collections if they don't exist.
 func (c *Client) EnsureCollections(ctx context.Context) error {
-	collections := []string{c.collDecisions(), c.collTasks(), c.collMessages(), c.collRejections(), c.collDiscussions()}
+	collections := []string{c.collDecisions(), c.collTasks(), c.collMessages(), c.collRejections(), c.collDiscussions(), c.collNotes(), c.collBugs()}
 	existing, err := c.qc.ListCollections(ctx)
 	if err != nil {
 		return fmt.Errorf("list collections: %w", err)
