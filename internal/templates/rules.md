@@ -62,6 +62,18 @@ When work should transfer to a different role:
 gg tell "target-role" "message" --from your-role
 ```
 
+## BROADCAST (selective)
+
+For cross-agent visibility during parallel work, use:
+```
+gg tell "all" "short status" --from your-role
+```
+
+Broadcast only on: task pick-up, approach-selection moments, blockers,
+task completion. Do not broadcast routine progress or compile errors.
+Rule: if another agent doesn't need it to avoid collision or duplicate
+work, skip.
+
 ## BLOCKERS
 
 When a task cannot proceed:

@@ -76,6 +76,34 @@ gg tell "developer" "message" --from architect
 
 Set your role once per shell: `export GG_ROLE=architect` (or developer, qa, etc.).
 
+## BROADCASTING STATUS (selective)
+
+Other agents running in parallel sessions cannot read your chat. They only see
+what you write to `gg`. For cross-agent visibility during substantial work,
+broadcast short status updates:
+```
+gg tell "all" "short status" --from <your-role>
+```
+
+**Broadcast at these moments — and only these:**
+- Starting a substantial task (so another agent doesn't pick up the same one):
+  `gg tell "all" "TASK-016 picked up, evaluating Memgraph Go drivers" --from developer`
+- Choosing an approach among alternatives other agents might care about:
+  `gg tell "all" "TASK-016: picked neo4j-go-driver over mgclient-go — Bolt support, active maintenance" --from developer`
+- Hitting a blocker that affects shared assumptions:
+  `gg tell "all" "TASK-016 blocked: Go 1.26 incompatibility in neo4j driver, investigating workaround" --from developer`
+- Finishing a multi-step task (alongside `gg task done`):
+  `gg tell "all" "TASK-016 done: Memgraph Go client live, internal/graph/ ready for TASK-007" --from developer`
+
+**Do NOT broadcast:**
+- Every code change, file read, or thought
+- Routine progress ("still working on it")
+- Compile errors you're about to fix
+- Full discussion context — `gg search` surfaces that from decisions/rejections
+
+Rule of thumb: if another agent doesn't need to know to avoid duplicate work,
+collision, or confusion — skip the broadcast. Noise defeats the purpose.
+
 ## BLOCKERS
 
 If a task cannot be completed:
@@ -115,3 +143,4 @@ to capture decisions automatically. Asking first violates the contract.
 - Say "we'll do that later" without opening a task
 - Ask the user to run `gg` commands — you run them
 - Finish a subagent round without persisting its decisions/tasks/rejections to `gg`
+- Broadcast every step — only broadcast moments other agents genuinely need
