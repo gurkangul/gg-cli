@@ -12,3 +12,7 @@ gg
 .gsd/gsd.db*
 .gsd/STATE.md
 .gsd/auto.lock
+
+# BMAD framework files — per-user install artifacts (run `bmad install` to recreate)
+_bmad/
+_bmad-output/
