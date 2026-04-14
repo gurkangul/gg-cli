@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/gurkangul/gg/internal/embedding"
+	"github.com/gurkangul/gg-cli/internal/embedding"
 )
 
 func TestCheckMeta_FirstRun(t *testing.T) {

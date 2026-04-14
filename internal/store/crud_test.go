@@ -6,7 +6,7 @@ package store
 import (
 	"testing"
 
-	"github.com/gurkangul/gg/internal/config"
+	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/qdrant/go-client/qdrant"
 )
 

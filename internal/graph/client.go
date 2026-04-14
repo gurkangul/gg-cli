@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gurkangul/gg/internal/config"
+	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 

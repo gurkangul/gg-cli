@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gurkangul/gg/internal/config"
+	"github.com/gurkangul/gg-cli/internal/config"
 )
 
 func testServer(t *testing.T, dims int) (*httptest.Server, *Generator) {

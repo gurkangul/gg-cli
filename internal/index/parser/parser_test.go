@@ -5,7 +5,7 @@ import (
 
 	scippb "github.com/scip-code/scip/bindings/go/scip"
 
-	"github.com/gurkangul/gg/internal/graph"
+	"github.com/gurkangul/gg-cli/internal/graph"
 )
 
 func TestIsDefinition(t *testing.T) {
@@ -29,8 +29,8 @@ func TestScipSymbolName(t *testing.T) {
 		sym  string
 		want string
 	}{
-		{"go github.com/gurkangul/gg/internal/graph/Client#New().", "New"},
-		{"go github.com/gurkangul/gg/internal/graph/Client#", "Client"},
+		{"go github.com/gurkangul/gg-cli/internal/graph/Client#New().", "New"},
+		{"go github.com/gurkangul/gg-cli/internal/graph/Client#", "Client"},
 		{"local abc123", "local abc123"},
 		{"", ""},
 		{"simple", "simple"},

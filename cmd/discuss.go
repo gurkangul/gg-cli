@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gurkangul/gg/internal/store"
+	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/spf13/cobra"
 )
 

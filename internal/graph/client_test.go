@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/gurkangul/gg/internal/config"
-	"github.com/gurkangul/gg/internal/graph"
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/graph"
 )
 
 // Run with: go test -tags integration ./internal/graph/...

@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/gurkangul/gg/internal/outbox"
+	"github.com/gurkangul/gg-cli/internal/outbox"
 )
 
 func TestWriteListDelete(t *testing.T) {

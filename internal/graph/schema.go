@@ -112,7 +112,7 @@ func FileNode(path, lang, checksum string, tier ResolutionTier) *Node {
 }
 
 // PackageNode creates a Node representing a package or module.
-// importPath is the canonical import identifier (e.g. "github.com/gurkangul/gg/internal/graph").
+// importPath is the canonical import identifier (e.g. "github.com/gurkangul/gg-cli/internal/graph").
 func PackageNode(name, lang, importPath string) *Node {
 	return &Node{
 		Label: LabelPackage,

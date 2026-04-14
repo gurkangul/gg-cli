@@ -61,7 +61,7 @@ gg status
 The canonical rules are in `AGENTS.md`. To update after a `gg` upgrade:
 
 ```sh
-go install github.com/gurkangul/gg@latest
+go install github.com/gurkangul/gg-cli/cmd/gg@latest
 gg init  # regenerates AGENTS.md
 ```
 

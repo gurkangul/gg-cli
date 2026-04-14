@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gurkangul/gg/internal/index/changed"
+	"github.com/gurkangul/gg-cli/internal/index/changed"
 )
 
 // makeGitRepo creates a throwaway git repo with at least one commit and returns

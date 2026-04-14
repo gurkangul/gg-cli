@@ -76,6 +76,6 @@ gg --version
 
 To get the latest `AGENTS.md`:
 ```sh
-# From your project root after go install github.com/gurkangul/gg@latest
+# From your project root after go install github.com/gurkangul/gg-cli/cmd/gg@latest
 gg init  # re-running init updates AGENTS.md in place
 ```

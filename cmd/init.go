@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gurkangul/gg/internal/config"
-	"github.com/gurkangul/gg/internal/store"
-	"github.com/gurkangul/gg/internal/templates"
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/store"
+	"github.com/gurkangul/gg-cli/internal/templates"
 	"github.com/spf13/cobra"
 )
 

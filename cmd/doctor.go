@@ -14,12 +14,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gurkangul/gg/internal/config"
-	"github.com/gurkangul/gg/internal/embedding"
-	"github.com/gurkangul/gg/internal/graph"
-	"github.com/gurkangul/gg/internal/index/runner"
-	"github.com/gurkangul/gg/internal/outbox"
-	"github.com/gurkangul/gg/internal/store"
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/embedding"
+	"github.com/gurkangul/gg-cli/internal/graph"
+	"github.com/gurkangul/gg-cli/internal/index/runner"
+	"github.com/gurkangul/gg-cli/internal/outbox"
+	"github.com/gurkangul/gg-cli/internal/store"
 )
 
 var doctorCmd = &cobra.Command{

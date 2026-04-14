@@ -20,7 +20,7 @@
 
 4. **gg** — install the CLI:
    ```sh
-   go install github.com/gurkangul/gg@latest
+   go install github.com/gurkangul/gg-cli/cmd/gg@latest
    ```
 
 ## Initialize a project

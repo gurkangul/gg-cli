@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gurkangul/gg/internal/config"
-	"github.com/gurkangul/gg/internal/graph"
-	"github.com/gurkangul/gg/internal/store"
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/graph"
+	"github.com/gurkangul/gg-cli/internal/store"
 )
 
 var impactCmd = &cobra.Command{

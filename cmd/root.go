@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gurkangul/gg/internal/config"
-	"github.com/gurkangul/gg/internal/telemetry"
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
 
 // version is overridable at build time via -ldflags "-X ...cmd.version=vX.Y.Z".

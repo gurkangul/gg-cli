@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gurkangul/gg/internal/graph"
+	"github.com/gurkangul/gg-cli/internal/graph"
 )
 
 const spikeScipPath = "/tmp/gg-cli.scip"

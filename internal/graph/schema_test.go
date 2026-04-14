@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gurkangul/gg/internal/graph"
+	"github.com/gurkangul/gg-cli/internal/graph"
 )
 
 func TestSchemaInit(t *testing.T) {
@@ -92,7 +92,7 @@ func TestFileAndPackageNodes(t *testing.T) {
 	c := newTestClient(t)
 
 	file := graph.FileNode("internal/graph/client.go", "go", "abc123", graph.ResolutionSemantic)
-	pkg := graph.PackageNode("graph", "go", "github.com/gurkangul/gg/internal/graph")
+	pkg := graph.PackageNode("graph", "go", "github.com/gurkangul/gg-cli/internal/graph")
 
 	if err := c.CreateNode(ctx, file); err != nil {
 		t.Fatalf("CreateNode file: %v", err)

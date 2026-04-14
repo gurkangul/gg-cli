@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gurkangul/gg/internal/config"
+	"github.com/gurkangul/gg-cli/internal/config"
 )
 
 // TestHealthCheck_Unreachable verifies that HealthCheck returns a non-nil

@@ -37,15 +37,18 @@ ollama pull nomic-embed-text
 ## Install
 
 ```sh
-go install github.com/gurkangul/gg@latest
+go install github.com/gurkangul/gg-cli/cmd/gg@latest
 ```
+
+The binary is `gg`. The repo is `gg-cli` for descriptiveness; the
+command stays short.
 
 Or build from source:
 
 ```sh
-git clone https://github.com/gurkangul/gg
-cd gg
-go build -o gg .
+git clone https://github.com/gurkangul/gg-cli
+cd gg-cli
+go build -o gg ./cmd/gg
 ```
 
 ---

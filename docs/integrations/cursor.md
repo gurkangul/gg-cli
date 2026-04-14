@@ -75,6 +75,6 @@ When the `gg` protocol changes, update `.cursor/rules/gg.mdc` to match the new `
 
 Upgrade the CLI and regenerate `AGENTS.md`:
 ```sh
-go install github.com/gurkangul/gg@latest
+go install github.com/gurkangul/gg-cli/cmd/gg@latest
 gg init  # updates AGENTS.md in place
 ```

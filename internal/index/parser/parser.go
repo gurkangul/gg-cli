@@ -17,7 +17,7 @@ import (
 
 	scippb "github.com/scip-code/scip/bindings/go/scip"
 
-	"github.com/gurkangul/gg/internal/graph"
+	"github.com/gurkangul/gg-cli/internal/graph"
 )
 
 // Handler receives parsed graph primitives. All methods are called from a

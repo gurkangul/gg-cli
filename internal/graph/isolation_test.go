@@ -10,7 +10,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gurkangul/gg/internal/config"
+	"github.com/gurkangul/gg-cli/internal/config"
 )
 
 // TestNew_RequiresProjectID verifies that New returns an error when projectID is empty.

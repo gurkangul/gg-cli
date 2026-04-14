@@ -1,4 +1,4 @@
-module github.com/gurkangul/gg
+module github.com/gurkangul/gg-cli
 
 go 1.26.2
 

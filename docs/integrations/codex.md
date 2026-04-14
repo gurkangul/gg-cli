@@ -50,7 +50,7 @@ For project-level use, `gg init` generates `AGENTS.md` with the full protocol al
 The canonical source of truth is `AGENTS.md` in the project root. To update after a `gg` upgrade:
 
 ```sh
-go install github.com/gurkangul/gg@latest
+go install github.com/gurkangul/gg-cli/cmd/gg@latest
 gg init  # regenerates AGENTS.md with current rules
 ```
 

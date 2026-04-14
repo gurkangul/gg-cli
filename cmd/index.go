@@ -9,13 +9,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gurkangul/gg/internal/config"
-	"github.com/gurkangul/gg/internal/graph"
-	"github.com/gurkangul/gg/internal/index/changed"
-	"github.com/gurkangul/gg/internal/index/parser"
-	"github.com/gurkangul/gg/internal/index/runner"
-	"github.com/gurkangul/gg/internal/index/state"
-	"github.com/gurkangul/gg/internal/outbox"
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/graph"
+	"github.com/gurkangul/gg-cli/internal/index/changed"
+	"github.com/gurkangul/gg-cli/internal/index/parser"
+	"github.com/gurkangul/gg-cli/internal/index/runner"
+	"github.com/gurkangul/gg-cli/internal/index/state"
+	"github.com/gurkangul/gg-cli/internal/outbox"
 )
 
 var indexCmd = &cobra.Command{
