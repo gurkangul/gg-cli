@@ -28,25 +28,33 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	// Tasks summary — fail fast if the first call errors (likely Qdrant down).
-	pending, err := d.store.CountTasks(ctx, "pending")
-	if err != nil {
-		return fmt.Errorf("count tasks: %w", err)
+	// Tasks summary — each sub-count is allowed to fail independently with "?"
+	// so the user sees whatever is available when Qdrant is partially degraded.
+	counts := map[string]struct {
+		n   uint64
+		err error
+	}{}
+	for _, s := range []string{"pending", "in_progress", "blocked", "done"} {
+		n, err := d.store.CountTasks(ctx, s)
+		counts[s] = struct {
+			n   uint64
+			err error
+		}{n, err}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: count tasks (%s): %v\n", s, err)
+		}
 	}
-	inProgress, ipErr := d.store.CountTasks(ctx, "in_progress")
-	blocked, blErr := d.store.CountTasks(ctx, "blocked")
-	done, doErr := d.store.CountTasks(ctx, "done")
 
 	fmt.Println("TASKS:")
 	fmt.Printf("  ○ Pending: %s  → In Progress: %s  ⚠ Blocked: %s  ✓ Done: %s\n",
-		fmtCount(pending, nil),
-		fmtCount(inProgress, ipErr),
-		fmtCount(blocked, blErr),
-		fmtCount(done, doErr),
+		fmtCount(counts["pending"].n, counts["pending"].err),
+		fmtCount(counts["in_progress"].n, counts["in_progress"].err),
+		fmtCount(counts["blocked"].n, counts["blocked"].err),
+		fmtCount(counts["done"].n, counts["done"].err),
 	)
-	warnIf(ipErr, blErr, doErr)
 
-	if pending+inProgress+blocked > 0 {
+	hasOpen := counts["pending"].n+counts["in_progress"].n+counts["blocked"].n > 0
+	if hasOpen {
 		tasks, err := d.store.ListTasks(ctx, "")
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "warning: list tasks:", err)
@@ -60,22 +68,18 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Unread messages
-	unread, err := d.store.CountUnreadMessages(ctx, "")
+	// Messages — fetch once and derive the count from the result so we can't
+	// race with a concurrent `gg inbox` between Count and Scroll.
+	messages, err := d.store.GetInbox(ctx, "")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "warning: count unread:", err)
+		fmt.Fprintln(os.Stderr, "warning: get inbox:", err)
 	} else {
-		fmt.Printf("\nMESSAGES:\n  Unread: %d\n", unread)
-		if unread > 0 {
-			messages, err := d.store.GetInbox(ctx, "")
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "warning: get inbox:", err)
-			} else {
-				for _, m := range messages {
-					fmt.Printf("  [%s → %s] %s\n", m.FromRole, m.ToRole, m.Content)
-				}
-				fmt.Println("  (run `gg inbox` to mark as read)")
-			}
+		fmt.Printf("\nMESSAGES:\n  Unread: %d\n", len(messages))
+		for _, m := range messages {
+			fmt.Printf("  [%s → %s] %s\n", m.FromRole, m.ToRole, m.Content)
+		}
+		if len(messages) > 0 {
+			fmt.Println("  (run `gg inbox` to mark as read)")
 		}
 	}
 
@@ -112,13 +116,4 @@ func fmtCount(n uint64, err error) string {
 		return "?"
 	}
 	return fmt.Sprintf("%d", n)
-}
-
-func warnIf(errs ...error) {
-	for _, e := range errs {
-		if e != nil {
-			fmt.Fprintln(os.Stderr, "warning: count tasks:", e)
-			return
-		}
-	}
 }

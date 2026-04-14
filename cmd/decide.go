@@ -33,6 +33,11 @@ func runDecide(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	reason := strings.TrimSpace(decideReason)
+	taskRef, err := normalizeTaskRef(decideTask)
+	if err != nil {
+		return fmt.Errorf("--task: %w", err)
+	}
 
 	d, err := loadDeps(true)
 	if err != nil {
@@ -44,8 +49,8 @@ func runDecide(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	embedText := text
-	if decideReason != "" {
-		embedText = text + " " + decideReason
+	if reason != "" {
+		embedText = text + " " + reason
 	}
 	vector, err := d.embedder.Generate(ctx, embedText)
 	if err != nil {
@@ -54,9 +59,9 @@ func runDecide(cmd *cobra.Command, args []string) error {
 
 	dec := store.Decision{
 		Text:   text,
-		Reason: strings.TrimSpace(decideReason),
+		Reason: reason,
 		Tags:   parseTags(decideTags),
-		TaskID: strings.TrimSpace(decideTask),
+		TaskID: taskRef,
 	}
 
 	if err := d.store.AddDecision(ctx, dec, vector); err != nil {

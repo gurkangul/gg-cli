@@ -62,16 +62,9 @@ func (c *Client) SearchRejections(ctx context.Context, vector []float32, limit u
 		return nil, err
 	}
 
-	var rejections []Rejection
+	rejections := make([]Rejection, 0, len(results))
 	for _, r := range results {
-		pay := r.GetPayload()
-		rejections = append(rejections, Rejection{
-			ID:        r.GetId().GetUuid(),
-			Approach:  pay["approach"].GetStringValue(),
-			Reason:    pay["reason"].GetStringValue(),
-			TaskID:    pay["task_id"].GetStringValue(),
-			CreatedAt: pay["created_at"].GetStringValue(),
-		})
+		rejections = append(rejections, rejectionFromPayload(r.GetId().GetUuid(), r.GetPayload()))
 	}
 	return rejections, nil
 }
@@ -87,14 +80,7 @@ func (c *Client) ListRejections(ctx context.Context, limit int) ([]Rejection, er
 	}
 	rejections := make([]Rejection, 0, len(points))
 	for _, p := range points {
-		pay := p.GetPayload()
-		rejections = append(rejections, Rejection{
-			ID:        p.GetId().GetUuid(),
-			Approach:  pay["approach"].GetStringValue(),
-			Reason:    pay["reason"].GetStringValue(),
-			TaskID:    pay["task_id"].GetStringValue(),
-			CreatedAt: pay["created_at"].GetStringValue(),
-		})
+		rejections = append(rejections, rejectionFromPayload(p.GetId().GetUuid(), p.GetPayload()))
 	}
 	sort.Slice(rejections, func(i, j int) bool {
 		return rejections[i].CreatedAt > rejections[j].CreatedAt
@@ -103,4 +89,14 @@ func (c *Client) ListRejections(ctx context.Context, limit int) ([]Rejection, er
 		rejections = rejections[:limit]
 	}
 	return rejections, nil
+}
+
+func rejectionFromPayload(id string, pay map[string]*qdrant.Value) Rejection {
+	return Rejection{
+		ID:        id,
+		Approach:  pay["approach"].GetStringValue(),
+		Reason:    pay["reason"].GetStringValue(),
+		TaskID:    pay["task_id"].GetStringValue(),
+		CreatedAt: pay["created_at"].GetStringValue(),
+	}
 }

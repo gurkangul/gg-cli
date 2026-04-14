@@ -31,6 +31,11 @@ func runReject(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	reason := strings.TrimSpace(rejectReason)
+	taskRef, err := normalizeTaskRef(rejectTask)
+	if err != nil {
+		return fmt.Errorf("--task: %w", err)
+	}
 
 	d, err := loadDeps(true)
 	if err != nil {
@@ -42,8 +47,8 @@ func runReject(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	embedText := approach
-	if rejectReason != "" {
-		embedText = approach + " " + rejectReason
+	if reason != "" {
+		embedText = approach + " " + reason
 	}
 	vector, err := d.embedder.Generate(ctx, embedText)
 	if err != nil {
@@ -52,8 +57,8 @@ func runReject(cmd *cobra.Command, args []string) error {
 
 	r := store.Rejection{
 		Approach: approach,
-		Reason:   strings.TrimSpace(rejectReason),
-		TaskID:   strings.TrimSpace(rejectTask),
+		Reason:   reason,
+		TaskID:   taskRef,
 	}
 
 	if err := d.store.AddRejection(ctx, r, vector); err != nil {

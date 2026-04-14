@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/gurkangul/gg/internal/store"
@@ -21,7 +22,7 @@ var (
 )
 
 func init() {
-	tellCmd.Flags().StringVar(&tellFrom, "from", "user", "sender role")
+	tellCmd.Flags().StringVar(&tellFrom, "from", "", "sender role (defaults to $GG_ROLE, then 'user')")
 	tellCmd.Flags().StringVar(&tellTask, "task", "", "related task ID")
 	rootCmd.AddCommand(tellCmd)
 }
@@ -35,6 +36,18 @@ func runTell(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	taskRef, err := normalizeTaskRef(tellTask)
+	if err != nil {
+		return fmt.Errorf("--task: %w", err)
+	}
+
+	from := strings.TrimSpace(tellFrom)
+	if from == "" {
+		from = strings.TrimSpace(os.Getenv("GG_ROLE"))
+	}
+	if from == "" {
+		from = "user"
+	}
 
 	d, err := loadDeps(false)
 	if err != nil {
@@ -46,16 +59,16 @@ func runTell(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	m := store.Message{
-		FromRole: strings.TrimSpace(tellFrom),
+		FromRole: from,
 		ToRole:   toRole,
 		Content:  content,
-		TaskID:   strings.TrimSpace(tellTask),
+		TaskID:   taskRef,
 	}
 
 	if err := d.store.SendMessage(ctx, m); err != nil {
 		return fmt.Errorf("send message: %w", err)
 	}
 
-	fmt.Printf("✓ Message sent to %s: %s\n", toRole, content)
+	fmt.Printf("✓ Message sent from %s to %s: %s\n", from, toRole, content)
 	return nil
 }

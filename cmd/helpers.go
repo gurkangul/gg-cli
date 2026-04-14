@@ -84,3 +84,16 @@ func requireNonEmpty(name, value string) (string, error) {
 	}
 	return trimmed, nil
 }
+
+// normalizeTaskRef validates a TASK-ID string, uppercases and trims it, and
+// returns the canonical form. Empty input is allowed and returns "".
+func normalizeTaskRef(raw string) (string, error) {
+	t := strings.ToUpper(strings.TrimSpace(raw))
+	if t == "" {
+		return "", nil
+	}
+	if _, err := store.ParseTaskID(t); err != nil {
+		return "", err
+	}
+	return t, nil
+}

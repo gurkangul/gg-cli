@@ -64,9 +64,9 @@ func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit ui
 		return nil, err
 	}
 
-	var decisions []Decision
+	decisions := make([]Decision, 0, len(results))
 	for _, r := range results {
-		decisions = append(decisions, decisionFromPoint(r))
+		decisions = append(decisions, decisionFromPayload(r.GetId().GetUuid(), r.GetPayload()))
 	}
 	return decisions, nil
 }
@@ -84,7 +84,7 @@ func (c *Client) ListDecisions(ctx context.Context, limit int) ([]Decision, erro
 	}
 	decisions := make([]Decision, 0, len(points))
 	for _, p := range points {
-		decisions = append(decisions, decisionFromRetrieved(p))
+		decisions = append(decisions, decisionFromPayload(p.GetId().GetUuid(), p.GetPayload()))
 	}
 	sortDecisionsDesc(decisions)
 	if limit > 0 && len(decisions) > limit {
@@ -99,22 +99,9 @@ func sortDecisionsDesc(ds []Decision) {
 	})
 }
 
-func decisionFromPoint(p *qdrant.ScoredPoint) Decision {
-	pay := p.GetPayload()
+func decisionFromPayload(id string, pay map[string]*qdrant.Value) Decision {
 	return Decision{
-		ID:        p.GetId().GetUuid(),
-		Text:      pay["text"].GetStringValue(),
-		Reason:    pay["reason"].GetStringValue(),
-		Tags:      extractStringList(pay["tags"]),
-		TaskID:    pay["task_id"].GetStringValue(),
-		CreatedAt: pay["created_at"].GetStringValue(),
-	}
-}
-
-func decisionFromRetrieved(p *qdrant.RetrievedPoint) Decision {
-	pay := p.GetPayload()
-	return Decision{
-		ID:        p.GetId().GetUuid(),
+		ID:        id,
 		Text:      pay["text"].GetStringValue(),
 		Reason:    pay["reason"].GetStringValue(),
 		Tags:      extractStringList(pay["tags"]),
