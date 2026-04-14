@@ -8,5 +8,8 @@ var DockerCompose string
 //go:embed rules.md
 var RulesMD string
 
+//go:embed agents.md
+var AgentsMD string
+
 //go:embed config.yaml
 var ConfigYAML string

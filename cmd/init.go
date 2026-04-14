@@ -64,6 +64,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("✓ Created .gg/%s\n", name)
 	}
 
+	// AGENTS.md at project root — read by GSD, Claude Code, and other agents
+	// as project-level behavioral guidance. Idempotent: don't overwrite user edits.
+	agentsPath := filepath.Join(cwd, "AGENTS.md")
+	if _, err := os.Stat(agentsPath); err == nil {
+		fmt.Println("  AGENTS.md already exists at project root, skipping (merge gg rules manually if needed)")
+	} else {
+		if err := os.WriteFile(agentsPath, []byte(templates.AgentsMD), 0644); err != nil {
+			return fmt.Errorf("write AGENTS.md: %w", err)
+		}
+		fmt.Println("✓ Created AGENTS.md at project root")
+	}
+
 	composePath := filepath.Join(ggDir, "docker-compose.yaml")
 
 	// Start Docker services — 5 min cap.
