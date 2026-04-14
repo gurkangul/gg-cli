@@ -46,8 +46,7 @@ func promptIfDuplicate(ctx context.Context, d *deps, kind string, vector []float
 	}
 
 	fmt.Fprint(os.Stderr, "Create anyway? [y/N]: ")
-	reader := bufio.NewReader(os.Stdin)
-	line, _ := reader.ReadString('\n')
+	line, _ := newStdinReader().ReadString('\n')
 	answer := strings.ToLower(strings.TrimSpace(line))
 	return answer != "y" && answer != "yes"
 }
@@ -59,4 +58,10 @@ func isTerminal(f *os.File) bool {
 		return false
 	}
 	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+// newStdinReader returns a buffered reader for os.Stdin.
+// Centralised here so dedup and init prompts use the same reader type.
+func newStdinReader() *bufio.Reader {
+	return bufio.NewReader(os.Stdin)
 }
