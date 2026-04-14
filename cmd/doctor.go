@@ -136,6 +136,14 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	fmt.Println(strings.Repeat("─", 50))
 	if report.problems == 0 {
 		fmt.Println("All checks passed.")
+		fmt.Println()
+		fmt.Println("Agent handoff prompt (paste into your AI agent's chat):")
+		fmt.Println()
+		fmt.Println("    Read AGENTS.md and follow the gg protocol from now on.")
+		fmt.Println()
+		fmt.Println("Works with any agent that can read files (Claude Code, GSD,")
+		fmt.Println("Codex, Cursor, Aider, …). The agent will run gg status, search")
+		fmt.Println("prior decisions, and persist new ones automatically.")
 		return nil
 	}
 	return fmt.Errorf("%d problem(s) found — fix the issues above and re-run `gg doctor`", report.problems)

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gurkangul/gg-cli/internal/adapters"
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/templates"
@@ -25,11 +24,8 @@ var initCmd = &cobra.Command{
 	RunE:  runInit,
 }
 
-var initAdaptAgents string // comma-separated agent names for --adapt-agents flag
 
 func init() {
-	initCmd.Flags().StringVar(&initAdaptAgents, "adapt-agents", "",
-		"comma-separated agents to inject gg rules into (e.g. cursor,aider) — skips interactive prompt")
 	rootCmd.AddCommand(initCmd)
 }
 
@@ -136,13 +132,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("  AGENTS.md already exists, skipping (merge gg rules manually if needed)")
 	}
 
-	// --- Agent adapter detection ---
-	// Read the just-written (or already-existing) AGENTS.md for injection.
-	agentsBytes, _ := os.ReadFile(agentsPath)
-	if len(agentsBytes) > 0 {
-		runInitAdapt(cwd, string(agentsBytes))
-	}
-
 	if !composeOK {
 		fmt.Println("\n⚠ Docker services not running. Project registered with ID", projectID)
 		fmt.Println("  Start services manually: docker compose -f ~/.gg/docker-compose.yaml up -d")
@@ -164,8 +153,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("and persist new ones automatically. Works with any agent that can")
 	fmt.Println("read files (Claude Code, GSD, Codex, Cursor, Aider, …).")
 	fmt.Println()
-	fmt.Println("Optional: `gg adapt --agent <name>` writes the rules into the agent's")
-	fmt.Println("convention file so you don't have to instruct it every session.")
+	fmt.Println("Forgot the prompt? Run `gg doctor` — it shows it again.")
 	return nil
 }
 
@@ -359,83 +347,3 @@ func waitForHTTP(ctx context.Context, url string, timeout time.Duration) error {
 	return fmt.Errorf("timeout waiting for %s", url)
 }
 
-// runInitAdapt auto-detects AI coding agents in the project and injects gg
-// rules using the adapter registry. Called from runInit after AGENTS.md is ready.
-//
-// Behaviour:
-//   - If --adapt-agents flag is set: inject for exactly those agents (non-interactive).
-//   - Otherwise: scan for installed agents and, for each detected agent,
-//     prompt the user interactively. Non-TTY stdin skips the prompt and
-//     does nothing (safe for CI).
-//   - Native agents (codex, claude-code) read AGENTS.md directly — notify
-//     but do not inject.
-func runInitAdapt(cwd, agentsContent string) {
-	nativeAgents := map[string]bool{"codex": true, "claude-code": true}
-
-	// --adapt-agents: non-interactive path.
-	if initAdaptAgents != "" {
-		names := strings.Split(initAdaptAgents, ",")
-		fmt.Println()
-		for _, name := range names {
-			name = strings.TrimSpace(name)
-			if name == "" {
-				continue
-			}
-			a := adapters.ByName(name)
-			if a == nil {
-				fmt.Fprintf(os.Stderr, "  gg adapt: unknown agent %q — skipping\n", name)
-				continue
-			}
-			injectAdapter(cwd, a, agentsContent)
-		}
-		return
-	}
-
-	// Auto-detect path — only run when stdin is a terminal.
-	if !isTerminal(os.Stdin) {
-		return
-	}
-
-	detected := adapters.Detect(cwd)
-	if len(detected) == 0 {
-		return
-	}
-
-	fmt.Println("\nAGENT DETECTION:")
-	for _, a := range detected {
-		if nativeAgents[a.Name] {
-			fmt.Printf("  %s — reads AGENTS.md natively, no adapter needed\n", a.Name)
-			continue
-		}
-		targetPath := a.ResolveTarget(cwd)
-		rel, _ := filepath.Rel(cwd, targetPath)
-		fmt.Printf("  Detected %s (%s) — inject gg rules? [Y/n]: ", a.Name, rel)
-		reader := newStdinReader()
-		line, _ := reader.ReadString('\n')
-		answer := strings.ToLower(strings.TrimSpace(line))
-		if answer == "" || answer == "y" || answer == "yes" {
-			injectAdapter(cwd, &a, agentsContent)
-		}
-	}
-}
-
-func injectAdapter(cwd string, a *adapters.Adapter, agentsContent string) {
-	targetPath := a.ResolveTarget(cwd)
-	if targetPath == "" {
-		return
-	}
-	result, err := adapters.Inject(a, targetPath, agentsContent)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  gg adapt %s: %v\n", a.Name, err)
-		return
-	}
-	rel, _ := filepath.Rel(cwd, result.Path)
-	switch {
-	case result.Created:
-		fmt.Printf("  ✓ %-16s created %s\n", a.Name, rel)
-	case result.Updated:
-		fmt.Printf("  ✓ %-16s updated %s\n", a.Name, rel)
-	default:
-		fmt.Printf("  = %-16s up-to-date %s\n", a.Name, rel)
-	}
-}
