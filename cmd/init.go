@@ -155,6 +155,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\nGG ready. Project %s is registered in shared Qdrant.\n", projectID)
+	fmt.Println()
+	fmt.Println("Next: open your AI agent in this directory and say:")
+	fmt.Println()
+	fmt.Println("    Read AGENTS.md and follow the gg protocol from now on.")
+	fmt.Println()
+	fmt.Println("That's it — the agent will run `gg status`, search prior decisions,")
+	fmt.Println("and persist new ones automatically. Works with any agent that can")
+	fmt.Println("read files (Claude Code, GSD, Codex, Cursor, Aider, …).")
+	fmt.Println()
+	fmt.Println("Optional: `gg adapt --agent <name>` writes the rules into the agent's")
+	fmt.Println("convention file so you don't have to instruct it every session.")
 	return nil
 }
 
