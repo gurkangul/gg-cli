@@ -81,13 +81,26 @@ Tell the user: "Opened task TASK-XXX."
 
 ## WORKING TASKS
 
-When the user says "work on the tasks" or "do TASK-XXX":
+When the user says "work on the tasks", "continue", "keep going", "devam et",
+or gives no specific instruction but implies "do the next thing" — select
+autonomously:
 
-1. `gg task list --status pending`
-2. For each task:
-   1. `gg task get TASK-XXX`
-   2. Write the code, test it, commit it.
-   3. `gg task done TASK-XXX "summary"`
+1. `gg status` — see pending tasks + open discussions + inbox.
+2. **Open discussions first**: if any `DISC-NNN` is open, close it (resolve
+   or dismiss) before picking work. Unresolved discussions block new work
+   because the decision they represent may change which task matters.
+3. Check inbox for recent `[... → all]` broadcasts — has another agent
+   already claimed a task? If yes, skip those.
+4. Pick the highest-priority unclaimed pending task (`high` before `medium`
+   before `low`; among equal priority, lowest TASK-NNN wins).
+5. Claim it with a broadcast so other agents don't collide:
+   `gg tell "all" "TASK-XXX picked up" --from <your-role>`
+6. `gg task get TASK-XXX` — read the detail.
+7. Write code, test, commit.
+8. `gg task done TASK-XXX "summary"` — and broadcast completion:
+   `gg tell "all" "TASK-XXX done: key outcome" --from <your-role>`
+
+When the user says "do TASK-XXX" specifically, skip selection and go to step 6.
 
 ## MESSAGING ANOTHER AGENT
 

@@ -63,13 +63,18 @@ Tell the user: "Opened task TASK-XXX."
 
 ## WORKING TASKS
 
-When the user says "work on the tasks" or "do TASK-XXX":
+User says "continue"/"devam et"/"keep going" → pick next work autonomously:
 
-1. `gg task list --status pending`
-2. For each task:
-   1. `gg task get TASK-XXX`
-   2. Write code, test, commit.
-   3. `gg task done TASK-XXX "summary"`
+1. `gg status` — see open tasks/discussions/inbox
+2. **Close any open DISC-NNN first** (resolve or dismiss) — blocks new work
+3. Skip tasks already claimed in recent inbox broadcasts
+4. Pick highest-priority unclaimed pending task
+5. Claim: `gg tell "all" "TASK-XXX picked up" --from <role>`
+6. `gg task get TASK-XXX`
+7. Write code, test, commit
+8. `gg task done TASK-XXX "summary"` + broadcast: `gg tell "all" "TASK-XXX done: ..."`
+
+User says "do TASK-XXX" specifically → skip selection, go to step 6.
 
 ## MESSAGING ANOTHER AGENT
 
