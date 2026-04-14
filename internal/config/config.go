@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	DirName    = ".gg"
-	ConfigFile = "config.yaml"
+	DirName       = ".gg"
+	ConfigFile    = "config.yaml"
+	SharedDirName = ".gg" // ~/.gg/ for shared infrastructure
 )
 
 type QdrantConfig struct {
@@ -26,6 +27,10 @@ type EmbeddingConfig struct {
 }
 
 type Config struct {
+	// ProjectID is a unique per-project UUID used to namespace Qdrant
+	// collections. Multiple projects share the same Qdrant instance but see
+	// only their own decisions/tasks/messages/rejections.
+	ProjectID string          `yaml:"project_id"`
 	Qdrant    QdrantConfig    `yaml:"qdrant"`
 	Embedding EmbeddingConfig `yaml:"embedding"`
 }
@@ -43,14 +48,14 @@ func DefaultConfig() *Config {
 	}
 }
 
-// FindRoot walks up from cwd looking for the .gg directory.
+// FindRoot walks up from cwd looking for a project-local .gg directory.
 func FindRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, DirName)); err == nil {
+		if isProjectGGDir(filepath.Join(dir, DirName)) {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
@@ -61,7 +66,18 @@ func FindRoot() (string, error) {
 	}
 }
 
-// GGDir returns the absolute path to the .gg directory.
+// isProjectGGDir reports whether the given path is a project-local .gg dir
+// (contains config.yaml), as opposed to the shared ~/.gg/ infra dir.
+func isProjectGGDir(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(path, ConfigFile))
+	return err == nil
+}
+
+// GGDir returns the absolute path to the project-local .gg directory.
 func GGDir() (string, error) {
 	root, err := FindRoot()
 	if err != nil {
@@ -70,7 +86,17 @@ func GGDir() (string, error) {
 	return filepath.Join(root, DirName), nil
 }
 
-// Load reads the config from .gg/config.yaml and validates it.
+// SharedDir returns the absolute path to ~/.gg/ — the shared infrastructure
+// directory holding docker-compose.yaml and service volumes.
+func SharedDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, SharedDirName), nil
+}
+
+// Load reads the project-local config and validates it.
 func Load() (*Config, error) {
 	ggDir, err := GGDir()
 	if err != nil {
@@ -93,6 +119,9 @@ func Load() (*Config, error) {
 
 // Validate ensures required fields are present and URLs/ports are well-formed.
 func (c *Config) Validate() error {
+	if strings.TrimSpace(c.ProjectID) == "" {
+		return fmt.Errorf("project_id is required — run 'gg init' to generate one")
+	}
 	if strings.TrimSpace(c.Qdrant.Host) == "" {
 		return fmt.Errorf("qdrant.host is required")
 	}

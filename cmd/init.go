@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gurkangul/gg/internal/config"
 	"github.com/gurkangul/gg/internal/store"
 	"github.com/gurkangul/gg/internal/templates"
@@ -17,7 +19,7 @@ import (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize .gg/ directory with config, docker services, and Qdrant collections",
+	Short: "Initialize shared gg infrastructure (~/.gg/) and register this project",
 	RunE:  runInit,
 }
 
@@ -27,105 +29,158 @@ func init() {
 
 func runInit(cmd *cobra.Command, args []string) error {
 	parentCtx := cmd.Context()
+
+	// --- Shared infra at ~/.gg/ ---
+	sharedDir, err := config.SharedDir()
+	if err != nil {
+		return fmt.Errorf("resolve home dir: %w", err)
+	}
+	sharedVolumes := []string{
+		filepath.Join(sharedDir, "volumes", "qdrant"),
+		filepath.Join(sharedDir, "volumes", "memgraph"),
+		filepath.Join(sharedDir, "volumes", "ollama"),
+	}
+	for _, d := range sharedVolumes {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			return fmt.Errorf("create %s: %w", d, err)
+		}
+	}
+	composePath := filepath.Join(sharedDir, "docker-compose.yaml")
+	if _, err := os.Stat(composePath); err != nil {
+		if err := os.WriteFile(composePath, []byte(templates.DockerCompose), 0644); err != nil {
+			return fmt.Errorf("write shared docker-compose: %w", err)
+		}
+		fmt.Printf("✓ Created %s (shared infrastructure)\n", composePath)
+	}
+
+	composeOK := startSharedServices(parentCtx, composePath)
+	if composeOK {
+		pullOllamaModel(parentCtx, composePath)
+	}
+
+	// --- Project-local .gg/ ---
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
 	ggDir := filepath.Join(cwd, config.DirName)
-
-	// Idempotent: create dirs if missing
-	dirs := []string{
-		ggDir,
-		filepath.Join(ggDir, "volumes", "qdrant"),
-		filepath.Join(ggDir, "volumes", "memgraph"),
-		filepath.Join(ggDir, "volumes", "ollama"),
+	if err := os.MkdirAll(ggDir, 0755); err != nil {
+		return fmt.Errorf("create %s: %w", ggDir, err)
 	}
-	for _, d := range dirs {
-		if err := os.MkdirAll(d, 0755); err != nil {
-			return fmt.Errorf("create %s: %w", d, err)
+
+	// Generate or preserve project_id
+	projectID, err := ensureProjectConfig(ggDir)
+	if err != nil {
+		return err
+	}
+
+	// Reference copy of rules for humans reading .gg/
+	rulesPath := filepath.Join(ggDir, "RULES.md")
+	if _, err := os.Stat(rulesPath); err != nil {
+		if err := os.WriteFile(rulesPath, []byte(templates.RulesMD), 0644); err != nil {
+			return fmt.Errorf("write RULES.md: %w", err)
 		}
 	}
 
-	// Idempotent: write files only if missing
-	files := map[string]string{
-		"docker-compose.yaml": templates.DockerCompose,
-		"config.yaml":         templates.ConfigYAML,
-		"RULES.md":            templates.RulesMD,
-	}
-	for name, content := range files {
-		path := filepath.Join(ggDir, name)
-		if _, err := os.Stat(path); err == nil {
-			fmt.Printf("  .gg/%s already exists, skipping\n", name)
-			continue
-		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			return fmt.Errorf("write %s: %w", name, err)
-		}
-		fmt.Printf("✓ Created .gg/%s\n", name)
-	}
-
-	// AGENTS.md at project root — read by GSD, Claude Code, and other agents
-	// as project-level behavioral guidance. Idempotent: don't overwrite user edits.
+	// AGENTS.md at project root — read by GSD, Claude Code, and other agents.
 	agentsPath := filepath.Join(cwd, "AGENTS.md")
-	if _, err := os.Stat(agentsPath); err == nil {
-		fmt.Println("  AGENTS.md already exists at project root, skipping (merge gg rules manually if needed)")
-	} else {
+	if _, err := os.Stat(agentsPath); err != nil {
 		if err := os.WriteFile(agentsPath, []byte(templates.AgentsMD), 0644); err != nil {
 			return fmt.Errorf("write AGENTS.md: %w", err)
 		}
 		fmt.Println("✓ Created AGENTS.md at project root")
+	} else {
+		fmt.Println("  AGENTS.md already exists, skipping (merge gg rules manually if needed)")
 	}
 
-	composePath := filepath.Join(ggDir, "docker-compose.yaml")
+	if !composeOK {
+		fmt.Println("\n⚠ Docker services not running. Project registered with ID", projectID)
+		fmt.Println("  Start services manually: docker compose -f ~/.gg/docker-compose.yaml up -d")
+		return nil
+	}
 
-	// Start Docker services — 5 min cap.
-	fmt.Println("Starting Docker services...")
-	composeCtx, cancelCompose := context.WithTimeout(parentCtx, 5*time.Minute)
-	defer cancelCompose()
+	// Wait for Qdrant and create this project's collections.
+	if err := setupProjectCollections(parentCtx, projectID, ggDir); err != nil {
+		return err
+	}
+
+	fmt.Printf("\nGG ready. Project %s is registered in shared Qdrant.\n", projectID)
+	return nil
+}
+
+// ensureProjectConfig creates .gg/config.yaml if missing, generating a fresh
+// project_id. Returns the project_id either way.
+func ensureProjectConfig(ggDir string) (string, error) {
+	configPath := filepath.Join(ggDir, config.ConfigFile)
+	if _, err := os.Stat(configPath); err == nil {
+		// Already exists — load to extract project_id (do NOT regenerate).
+		existing, err := config.Load()
+		if err != nil {
+			return "", fmt.Errorf("project already initialized but config is invalid: %w", err)
+		}
+		fmt.Printf("  Project already registered as %s\n", existing.ProjectID)
+		return existing.ProjectID, nil
+	}
+	projectID := uuid.New().String()
+	body := strings.Replace(templates.ConfigYAML, "PROJECT_ID_PLACEHOLDER", projectID, 1)
+	if err := os.WriteFile(configPath, []byte(body), 0644); err != nil {
+		return "", fmt.Errorf("write config: %w", err)
+	}
+	fmt.Printf("✓ Registered project with ID %s\n", projectID)
+	return projectID, nil
+}
+
+func startSharedServices(ctx context.Context, composePath string) bool {
+	fmt.Println("Starting shared Docker services...")
+	composeCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
 	compose := exec.CommandContext(composeCtx, "docker", "compose", "-f", composePath, "up", "-d")
 	compose.Stdout = os.Stdout
 	compose.Stderr = os.Stderr
-	composeErr := compose.Run()
-	if composeErr != nil {
-		fmt.Println("⚠ Docker compose failed — start manually: docker compose -f .gg/docker-compose.yaml up -d")
-		fmt.Println("\nGG initialized (offline). Run `gg init` again after Docker services are up.")
-		return nil
+	if err := compose.Run(); err != nil {
+		fmt.Println("⚠ Docker compose failed — start manually: docker compose -f", composePath, "up -d")
+		return false
 	}
-	fmt.Println("✓ Docker services started")
+	fmt.Println("✓ Shared Docker services running")
+	return true
+}
 
-	// Wait for Ollama to respond before pulling the model.
-	if err := waitForHTTP(parentCtx, "http://localhost:11434/api/tags", 60*time.Second); err != nil {
-		fmt.Println("⚠ Ollama not reachable within 60s — run `docker compose -f .gg/docker-compose.yaml exec ollama ollama pull nomic-embed-text` manually later.")
-	} else {
-		fmt.Println("Pulling nomic-embed-text model (first time may take a minute)...")
-		pullCtx, cancelPull := context.WithTimeout(parentCtx, 10*time.Minute)
-		defer cancelPull()
-		pull := exec.CommandContext(pullCtx, "docker", "compose", "-f", composePath,
-			"exec", "-T", "ollama", "ollama", "pull", "nomic-embed-text")
-		pull.Stdout = os.Stdout
-		pull.Stderr = os.Stderr
-		if err := pull.Run(); err != nil {
-			fmt.Println("⚠ Model pull failed — run manually: docker compose -f .gg/docker-compose.yaml exec ollama ollama pull nomic-embed-text")
-		} else {
-			fmt.Println("✓ nomic-embed-text model ready")
-		}
+func pullOllamaModel(ctx context.Context, composePath string) {
+	if err := waitForHTTP(ctx, "http://localhost:11434/api/tags", 60*time.Second); err != nil {
+		fmt.Println("⚠ Ollama not reachable within 60s — pull model manually:")
+		fmt.Println("  docker compose -f", composePath, "exec ollama ollama pull nomic-embed-text")
+		return
 	}
+	fmt.Println("Pulling nomic-embed-text model (first time only, shared across all projects)...")
+	pullCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	pull := exec.CommandContext(pullCtx, "docker", "compose", "-f", composePath,
+		"exec", "-T", "ollama", "ollama", "pull", "nomic-embed-text")
+	pull.Stdout = os.Stdout
+	pull.Stderr = os.Stderr
+	if err := pull.Run(); err != nil {
+		fmt.Println("⚠ Model pull failed — retry manually: docker compose -f", composePath, "exec ollama ollama pull nomic-embed-text")
+		return
+	}
+	fmt.Println("✓ nomic-embed-text model ready")
+}
 
-	// Wait for Qdrant and set up collections.
+func setupProjectCollections(ctx context.Context, projectID, ggDir string) error {
 	fmt.Println("Waiting for Qdrant...")
-	cfg, cfgErr := config.Load()
-	if cfgErr != nil {
+	cfg, err := config.Load()
+	if err != nil {
 		cfg = config.DefaultConfig()
+		cfg.ProjectID = projectID
 	}
 	var client *store.Client
 	var healthErr error
 	for i := 0; i < 15; i++ {
-		if parentCtx.Err() != nil {
-			return parentCtx.Err()
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
-		client, healthErr = store.New(&cfg.Qdrant, ggDir)
+		client, healthErr = store.New(&cfg.Qdrant, ggDir, projectID)
 		if healthErr == nil {
-			hctx, hcancel := context.WithTimeout(parentCtx, 2*time.Second)
+			hctx, hcancel := context.WithTimeout(ctx, 2*time.Second)
 			healthErr = client.HealthCheck(hctx)
 			hcancel()
 			if healthErr == nil {
@@ -138,19 +193,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	if healthErr != nil || client == nil {
 		fmt.Println("⚠ Qdrant not ready — collections will be created on first use")
-		fmt.Println("\nGG initialized! Add .gg/RULES.md to your agent's config.")
 		return nil
 	}
 	defer func() { _ = client.Close() }()
 
-	setupCtx, cancelSetup := context.WithTimeout(parentCtx, 10*time.Second)
+	setupCtx, cancelSetup := context.WithTimeout(ctx, 10*time.Second)
 	defer cancelSetup()
 	if err := client.EnsureCollections(setupCtx); err != nil {
 		return fmt.Errorf("setup collections: %w", err)
 	}
-	fmt.Println("✓ Qdrant collections ready (decisions, tasks, messages, rejections)")
-
-	fmt.Println("\nGG initialized! Add .gg/RULES.md to your agent's config.")
+	fmt.Printf("✓ Qdrant collections ready for project %s\n", projectID)
 	return nil
 }
 

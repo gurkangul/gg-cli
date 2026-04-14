@@ -9,20 +9,27 @@ import (
 )
 
 const (
-	CollDecisions  = "decisions"
-	CollTasks      = "tasks"
-	CollMessages   = "messages"
-	CollRejections = "rejections"
+	collSuffixDecisions  = "decisions"
+	collSuffixTasks      = "tasks"
+	collSuffixMessages   = "messages"
+	collSuffixRejections = "rejections"
 
 	VectorSize = 768 // nomic-embed-text dimension
 )
 
 type Client struct {
-	qc      *qdrant.Client
-	dataDir string // absolute path to .gg/ — used for file-locked counters
+	qc        *qdrant.Client
+	dataDir   string // absolute path to project-local .gg/ — used for file-locked counters
+	projectID string // per-project namespace prefix for Qdrant collections
 }
 
-func New(cfg *config.QdrantConfig, dataDir string) (*Client, error) {
+// New creates a store client bound to a specific project. All Qdrant
+// collection names are prefixed with projectID so multiple projects can share
+// a single Qdrant instance without seeing each other's data.
+func New(cfg *config.QdrantConfig, dataDir, projectID string) (*Client, error) {
+	if projectID == "" {
+		return nil, fmt.Errorf("project ID is required — config missing project_id")
+	}
 	qc, err := qdrant.NewClient(&qdrant.Config{
 		Host:                   cfg.Host,
 		Port:                   cfg.Port,
@@ -31,7 +38,7 @@ func New(cfg *config.QdrantConfig, dataDir string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("qdrant connect failed: %w", err)
 	}
-	return &Client{qc: qc, dataDir: dataDir}, nil
+	return &Client{qc: qc, dataDir: dataDir, projectID: projectID}, nil
 }
 
 func (c *Client) Close() error {
@@ -43,9 +50,16 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 	return err
 }
 
-// EnsureCollections creates all required Qdrant collections if they don't exist.
+// Collection names are composed of <project_id>-<type>. The project_id is a
+// UUID, safe for collection names.
+func (c *Client) collDecisions() string  { return c.projectID + "-" + collSuffixDecisions }
+func (c *Client) collTasks() string      { return c.projectID + "-" + collSuffixTasks }
+func (c *Client) collMessages() string   { return c.projectID + "-" + collSuffixMessages }
+func (c *Client) collRejections() string { return c.projectID + "-" + collSuffixRejections }
+
+// EnsureCollections creates this project's Qdrant collections if they don't exist.
 func (c *Client) EnsureCollections(ctx context.Context) error {
-	collections := []string{CollDecisions, CollTasks, CollMessages, CollRejections}
+	collections := []string{c.collDecisions(), c.collTasks(), c.collMessages(), c.collRejections()}
 	existing, err := c.qc.ListCollections(ctx)
 	if err != nil {
 		return fmt.Errorf("list collections: %w", err)

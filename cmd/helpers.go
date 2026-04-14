@@ -37,7 +37,7 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 	if err != nil {
 		return nil, err
 	}
-	client, err := store.New(&cfg.Qdrant, ggDir)
+	client, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
 	if err != nil {
 		return nil, err
 	}

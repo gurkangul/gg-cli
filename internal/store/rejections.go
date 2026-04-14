@@ -38,7 +38,7 @@ func (c *Client) AddRejection(ctx context.Context, r Rejection, vector []float32
 
 	wait := true
 	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
-		CollectionName: CollRejections,
+		CollectionName: c.collRejections(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
@@ -53,7 +53,7 @@ func (c *Client) AddRejection(ctx context.Context, r Rejection, vector []float32
 
 func (c *Client) SearchRejections(ctx context.Context, vector []float32, limit uint64) ([]Rejection, error) {
 	results, err := c.qc.Query(ctx, &qdrant.QueryPoints{
-		CollectionName: CollRejections,
+		CollectionName: c.collRejections(),
 		Query:          qdrant.NewQuery(vector...),
 		Limit:          qdrant.PtrOf(limit),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
@@ -72,7 +72,7 @@ func (c *Client) SearchRejections(ctx context.Context, vector []float32, limit u
 // ListRejections returns rejections sorted by created_at descending, trimmed to limit.
 func (c *Client) ListRejections(ctx context.Context, limit int) ([]Rejection, error) {
 	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
-		CollectionName: CollRejections,
+		CollectionName: c.collRejections(),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	})
 	if err != nil {

@@ -40,7 +40,7 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 
 	wait := true
 	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
-		CollectionName: CollDecisions,
+		CollectionName: c.collDecisions(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
@@ -55,7 +55,7 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 
 func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit uint64) ([]Decision, error) {
 	results, err := c.qc.Query(ctx, &qdrant.QueryPoints{
-		CollectionName: CollDecisions,
+		CollectionName: c.collDecisions(),
 		Query:          qdrant.NewQuery(vector...),
 		Limit:          qdrant.PtrOf(limit),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
@@ -76,7 +76,7 @@ func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit ui
 // scroll itself has no time-ordering guarantee.
 func (c *Client) ListDecisions(ctx context.Context, limit int) ([]Decision, error) {
 	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
-		CollectionName: CollDecisions,
+		CollectionName: c.collDecisions(),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	})
 	if err != nil {

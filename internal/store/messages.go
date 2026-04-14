@@ -43,7 +43,7 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 	zeroVec := make([]float32, VectorSize)
 	wait := true
 	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
-		CollectionName: CollMessages,
+		CollectionName: c.collMessages(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
@@ -65,7 +65,7 @@ func (c *Client) GetInbox(ctx context.Context, role string) ([]Message, error) {
 	}
 
 	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
-		CollectionName: CollMessages,
+		CollectionName: c.collMessages(),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 		Filter:         &qdrant.Filter{Must: conditions},
 	})
@@ -92,7 +92,7 @@ func (c *Client) MarkMessagesRead(ctx context.Context, ids []string) error {
 	wait := true
 	readVal, _ := qdrant.NewValue(true)
 	_, err := c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
-		CollectionName: CollMessages,
+		CollectionName: c.collMessages(),
 		Wait:           &wait,
 		Payload: map[string]*qdrant.Value{
 			"read": readVal,

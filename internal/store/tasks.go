@@ -75,7 +75,7 @@ func pointUUIDForTaskID(taskID string) string {
 // Only used to bootstrap the seq file on first allocation.
 func (c *Client) maxTaskIDNumber(ctx context.Context) (int, error) {
 	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
-		CollectionName: CollTasks,
+		CollectionName: c.collTasks(),
 		Limit:          qdrant.PtrOf(uint32(1000)),
 		WithPayload:    qdrant.NewWithPayloadInclude("task_id"),
 	})
@@ -128,7 +128,7 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 	// Deterministic point UUID — concurrent create with same task_id collapses
 	// to one row instead of creating duplicates.
 	_, err = c.qc.Upsert(ctx, &qdrant.UpsertPoints{
-		CollectionName: CollTasks,
+		CollectionName: c.collTasks(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
@@ -146,7 +146,7 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 
 func (c *Client) ListTasks(ctx context.Context, statusFilter string) ([]Task, error) {
 	req := &qdrant.ScrollPoints{
-		CollectionName: CollTasks,
+		CollectionName: c.collTasks(),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	}
 	if statusFilter != "" {
@@ -175,7 +175,7 @@ func (c *Client) ListTasks(ctx context.Context, statusFilter string) ([]Task, er
 
 func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	points, err := c.qc.Get(ctx, &qdrant.GetPoints{
-		CollectionName: CollTasks,
+		CollectionName: c.collTasks(),
 		Ids:            []*qdrant.PointId{qdrant.NewID(pointUUIDForTaskID(taskID))},
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	})
@@ -193,7 +193,7 @@ func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra str
 	pointID := qdrant.NewID(pointUUIDForTaskID(taskID))
 	// Verify the task exists before updating.
 	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
-		CollectionName: CollTasks,
+		CollectionName: c.collTasks(),
 		Ids:            []*qdrant.PointId{pointID},
 		WithPayload:    qdrant.NewWithPayloadInclude("task_id"),
 	})
@@ -223,7 +223,7 @@ func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra str
 
 	wait := true
 	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
-		CollectionName: CollTasks,
+		CollectionName: c.collTasks(),
 		Wait:           &wait,
 		Payload:        payload,
 		PointsSelector: qdrant.NewPointsSelector(pointID),
@@ -233,7 +233,7 @@ func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra str
 
 func (c *Client) CountTasks(ctx context.Context, status string) (uint64, error) {
 	req := &qdrant.CountPoints{
-		CollectionName: CollTasks,
+		CollectionName: c.collTasks(),
 	}
 	if status != "" {
 		req.Filter = &qdrant.Filter{
