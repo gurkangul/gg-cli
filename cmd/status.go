@@ -119,14 +119,34 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			fmtCount(counts["blocked"].n, counts["blocked"].err),
 			fmtCount(counts["done"].n, counts["done"].err),
 		)
+		// Show all actionable tasks (pending + in_progress). Blocked tasks are
+		// counted in the summary line above and surface via `gg task list
+		// --status blocked` — no need to clutter the inline list with them.
 		for _, t := range openTasks {
+			if t.Status == "blocked" {
+				continue
+			}
 			fmt.Printf("  %s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
 		}
 
 		if messagesErr == nil {
 			fmt.Printf("\nMESSAGES:\n  Unread: %d\n", len(messages))
-			for _, m := range messages {
-				fmt.Printf("  [%s → %s] %s\n", m.FromRole, m.ToRole, m.Content)
+			const maxInline = 5
+			preview := messages
+			truncated := 0
+			if len(messages) > maxInline {
+				preview = messages[:maxInline]
+				truncated = len(messages) - maxInline
+			}
+			for _, m := range preview {
+				content := m.Content
+				if len(content) > 100 {
+					content = content[:97] + "…"
+				}
+				fmt.Printf("  [%s → %s] %s\n", m.FromRole, m.ToRole, content)
+			}
+			if truncated > 0 {
+				fmt.Printf("  … and %d more (run `gg inbox` for full list)\n", truncated)
 			}
 			if len(messages) > 0 {
 				fmt.Println("  (run `gg inbox` to mark as read)")
