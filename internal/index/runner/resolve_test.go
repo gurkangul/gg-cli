@@ -119,3 +119,43 @@ func TestErrIndexerMissing_KnownHints(t *testing.T) {
 func containsPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
+
+// TestFilteredEnv_StripsSensitiveVars verifies that filteredEnv removes
+// MEMGRAPH_* and GG_SECRET_* vars but passes through regular vars.
+func TestFilteredEnv_StripsSensitiveVars(t *testing.T) {
+	// Inject test values into the current process env; clean up after.
+	toSet := map[string]string{
+		"MEMGRAPH_PASSWORD":  "secret123",
+		"MEMGRAPH_HOST":      "localhost",
+		"GG_SECRET_TOKEN":    "tok456",
+		"GG_API_KEY":         "apikey789",
+		"SAFE_VAR":           "keepme",
+		"PATH":               os.Getenv("PATH"), // already set, just confirm it survives
+	}
+	for k, v := range toSet {
+		t.Setenv(k, v)
+	}
+
+	env := filteredEnv()
+	envMap := make(map[string]string, len(env))
+	for _, kv := range env {
+		idx := len(kv)
+		for i, c := range kv {
+			if c == '=' {
+				idx = i
+				break
+			}
+		}
+		envMap[kv[:idx]] = kv[idx+1:]
+	}
+
+	stripped := []string{"MEMGRAPH_PASSWORD", "MEMGRAPH_HOST", "GG_SECRET_TOKEN", "GG_API_KEY"}
+	for _, k := range stripped {
+		if _, ok := envMap[k]; ok {
+			t.Errorf("sensitive var %q was not stripped from child env", k)
+		}
+	}
+	if _, ok := envMap["SAFE_VAR"]; !ok {
+		t.Error("safe var SAFE_VAR was incorrectly stripped")
+	}
+}

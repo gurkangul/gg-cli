@@ -19,13 +19,20 @@ package trace
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"time"
 )
+
+// traceDateFile matches exactly YYYY-MM-DD.jsonl — the only filenames that
+// ClearOlderThan should ever consider deleting. Anything that does not match
+// is silently skipped.
+var traceDateFile = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}\.jsonl$`)
 
 // Span is a single operation record written to the trace file.
 type Span struct {
@@ -202,20 +209,30 @@ func ClearOlderThan(ggDir string, cutoff time.Time) (int, error) {
 
 	cutoffDate := cutoff.UTC().Format("2006-01-02")
 	deleted := 0
+	var errs []error
 	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".jsonl" {
+		if e.IsDir() {
 			continue
 		}
-		// Filename format: YYYY-MM-DD.jsonl
+		// Only delete files whose name matches exactly YYYY-MM-DD.jsonl.
+		// Files like "backup.jsonl" or ".jsonl" must never be touched — an
+		// empty-prefix lex compare would delete them spuriously.
+		if !traceDateFile.MatchString(e.Name()) {
+			continue
+		}
+		// Safe to slice: regex guarantees at least 11 chars before ".jsonl".
 		date := e.Name()[:len(e.Name())-len(".jsonl")]
 		if date < cutoffDate {
 			if err := os.Remove(filepath.Join(traceDir, e.Name())); err != nil {
-				return deleted, err
+				// Accumulate removal errors so a single failure does not prevent
+				// cleaning up the rest of the matching files.
+				errs = append(errs, err)
+				continue
 			}
 			deleted++
 		}
 	}
-	return deleted, nil
+	return deleted, errors.Join(errs...)
 }
 
 // ggDir resolves the project-local .gg/ directory, preferring the GG_DIR

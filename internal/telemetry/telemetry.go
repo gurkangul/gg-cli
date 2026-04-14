@@ -82,7 +82,7 @@ func Record(ggDir, verb, fromFlag string) {
 	if err != nil {
 		return
 	}
-	f, err := os.OpenFile(filePath(ggDir), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(filePath(ggDir), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}

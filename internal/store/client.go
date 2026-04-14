@@ -158,10 +158,13 @@ func (c *Client) qdrantQuery(ctx context.Context, req *qdrant.QueryPoints) ([]*q
 	return results, err
 }
 
-// isConnectivityError reports whether err looks like a network-level failure
-// (connection refused, host unreachable, DNS failure, deadline exceeded on
-// connect). These are distinct from Qdrant-level errors (wrong collection,
-// bad vector dimension) which should still propagate as real errors.
+// isConnectivityError reports whether err looks like a true network-level
+// failure (connection refused, host unreachable, DNS failure, gRPC Unavailable).
+// These are distinct from:
+//   - Qdrant-level errors (wrong collection, bad vector dimension) — real errors
+//   - Context timeouts ("context deadline exceeded") — Qdrant is slow, not down;
+//     those should be surfaced separately so callers can ask the user to retry
+//     rather than silently serving stale cache data.
 func isConnectivityError(err error) bool {
 	if err == nil {
 		return false
@@ -172,7 +175,6 @@ func isConnectivityError(err error) bool {
 		"no such host",
 		"network is unreachable",
 		"dial tcp",
-		"context deadline exceeded",
 		"transport is closing",
 		"code = unavailable",
 		"failed to connect",
@@ -182,6 +184,18 @@ func isConnectivityError(err error) bool {
 		}
 	}
 	return false
+}
+
+// isTimeoutError reports whether err is a context deadline or timeout — Qdrant
+// is reachable but responding slowly. Callers should surface this distinctly
+// from a full connectivity failure rather than silently falling back to cache.
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "context deadline exceeded") ||
+		strings.Contains(msg, "deadline exceeded")
 }
 
 // DropAllCollections deletes all project collections from Qdrant.

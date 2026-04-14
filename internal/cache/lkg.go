@@ -1,8 +1,8 @@
 // Package cache provides a file-based last-known-good (LKG) cache for
 // search results. Entries are stored as JSON under <ggDir>/cache/search-lkg/,
-// keyed by a truncated SHA-256 of the normalised query. The cache is capped
-// at maxEntries; oldest entries (by mtime) are evicted when the cap is
-// exceeded.
+// keyed by a truncated SHA-256 of the normalised (kind, query) pair. The cache
+// is capped at maxEntries; oldest entries (by mtime) are evicted when the cap
+// is exceeded.
 package cache
 
 import (
@@ -19,6 +19,10 @@ import (
 const (
 	maxEntries = 100
 	subDir     = "cache/search-lkg"
+
+	// DefaultTTL is the maximum age of a cache entry before it is considered a
+	// miss. Entries older than this are silently deleted on the next Get.
+	DefaultTTL = 7 * 24 * time.Hour
 )
 
 // Entry is the on-disk envelope for a cached payload.
@@ -33,9 +37,12 @@ func Dir(ggDir string) string {
 	return filepath.Join(ggDir, subDir)
 }
 
-// Put serialises data as JSON and writes it to the cache under ggDir.
+// Put serialises data as JSON and writes it atomically to the cache under
+// ggDir, keyed by (kind, query). Using distinct kind values ("search",
+// "context", etc.) prevents collisions between callers that use the same
+// query string.
 // It evicts the oldest entries when the cap is exceeded.
-func Put(ggDir, query string, data any) error {
+func Put(ggDir, kind, query string, data any) error {
 	dir := Dir(ggDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("cache mkdir: %w", err)
@@ -56,9 +63,24 @@ func Put(ggDir, query string, data any) error {
 		return fmt.Errorf("cache marshal entry: %w", err)
 	}
 
-	path := filepath.Join(dir, keyFile(query))
-	if err := os.WriteFile(path, encoded, 0o600); err != nil {
-		return fmt.Errorf("cache write: %w", err)
+	// Atomic write: write to a temp file in the same directory, then rename.
+	// This prevents a partial write from permanently poisoning the cache.
+	tmp, err := os.CreateTemp(dir, ".lkg-tmp-*")
+	if err != nil {
+		return fmt.Errorf("cache tempfile: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }() // no-op if rename succeeded
+
+	if _, err := tmp.Write(encoded); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("cache write tmp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("cache close tmp: %w", err)
+	}
+	if err := os.Rename(tmpPath, filepath.Join(dir, keyFile(kind, query))); err != nil {
+		return fmt.Errorf("cache rename: %w", err)
 	}
 
 	// Best-effort eviction — don't fail the caller if this errors.
@@ -66,11 +88,19 @@ func Put(ggDir, query string, data any) error {
 	return nil
 }
 
-// Get reads a cached entry for query and unmarshals its data into out.
-// Returns the cache timestamp and true when found; returns false when the
-// entry does not exist. Any other error is returned verbatim.
-func Get(ggDir, query string, out any) (cachedAt time.Time, found bool, err error) {
-	path := filepath.Join(Dir(ggDir), keyFile(query))
+// Get reads a cached entry for (kind, query) and unmarshals its data into out.
+// Returns (cachedAt, true, nil) on a valid hit.
+// Returns (zero, false, nil) on miss, TTL expiry, or a corrupt file (which is
+// deleted so it does not poison future reads).
+// Any other I/O error is returned verbatim.
+func Get(ggDir, kind, query string, out any) (cachedAt time.Time, found bool, err error) {
+	return GetWithTTL(ggDir, kind, query, out, DefaultTTL)
+}
+
+// GetWithTTL is like Get but uses a caller-specified TTL instead of DefaultTTL.
+// A zero TTL disables expiry.
+func GetWithTTL(ggDir, kind, query string, out any, ttl time.Duration) (cachedAt time.Time, found bool, err error) {
+	path := filepath.Join(Dir(ggDir), keyFile(kind, query))
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return time.Time{}, false, nil
@@ -81,18 +111,33 @@ func Get(ggDir, query string, out any) (cachedAt time.Time, found bool, err erro
 
 	var entry Entry
 	if err := json.Unmarshal(raw, &entry); err != nil {
-		return time.Time{}, false, fmt.Errorf("cache decode: %w", err)
+		// Corrupt file — delete it so it does not block future writes.
+		_ = os.Remove(path)
+		return time.Time{}, false, nil
 	}
 	if err := json.Unmarshal(entry.Data, out); err != nil {
-		return time.Time{}, false, fmt.Errorf("cache decode data: %w", err)
+		_ = os.Remove(path)
+		return time.Time{}, false, nil
 	}
+
+	// TTL check: treat expired entries as misses and clean them up.
+	if ttl > 0 && time.Since(entry.CachedAt) > ttl {
+		_ = os.Remove(path)
+		return time.Time{}, false, nil
+	}
+
 	return entry.CachedAt, true, nil
 }
 
-// keyFile returns the filename for a query: first 16 hex chars of SHA-256
-// of the lowercased, trimmed query.
-func keyFile(query string) string {
-	h := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(query))))
+// keyFile returns the filename for a (kind, query) pair: first 16 hex chars
+// of SHA-256 of "<kind>:<lowercased, trimmed query>".
+//
+// Including kind in the hash prevents callers with different namespaces from
+// colliding. For example, search("ctx:auth") and context("auth") both normalise
+// to "ctx:auth" without namespacing — with kind they differ.
+func keyFile(kind, query string) string {
+	key := kind + ":" + strings.ToLower(strings.TrimSpace(query))
+	h := sha256.Sum256([]byte(key))
 	return fmt.Sprintf("%x.json", h[:8])
 }
 
@@ -114,7 +159,7 @@ func evict(dir string, max int) error {
 	}
 
 	type fileAge struct {
-		path string
+		path  string
 		mtime time.Time
 	}
 	ages := make([]fileAge, 0, len(files))

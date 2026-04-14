@@ -34,6 +34,7 @@ func (*TypeScriptRunner) Index(ctx context.Context, req *IndexRequest) (*IndexRe
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, bin, "index", "--output", outPath)
 	cmd.Dir = req.Root
+	cmd.Env = filteredEnv()
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {

@@ -102,8 +102,11 @@ func CollectVersions(ctx context.Context, binaries []string) (map[string]string,
 }
 
 // queryVersion runs `<binary> --version` and returns the trimmed output.
+// Sensitive env vars (MEMGRAPH_*, GG_SECRET_*, etc.) are stripped from the
+// child process environment to prevent credential leakage.
 func queryVersion(ctx context.Context, binary string) (string, error) {
 	cmd := exec.CommandContext(ctx, binary, "--version")
+	cmd.Env = filteredEnvCompat()
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = nil
@@ -111,6 +114,27 @@ func queryVersion(ctx context.Context, binary string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(out.String()), nil
+}
+
+// filteredEnvCompat mirrors runner.filteredEnv for the compat package.
+// Both packages strip the same sensitive prefixes from child process env.
+func filteredEnvCompat() []string {
+	sensitive := []string{"MEMGRAPH_", "GG_SECRET_", "GG_API_KEY"}
+	src := os.Environ()
+	out := make([]string, 0, len(src))
+	for _, kv := range src {
+		safe := true
+		for _, prefix := range sensitive {
+			if strings.HasPrefix(kv, prefix) {
+				safe = false
+				break
+			}
+		}
+		if safe {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 // Check compares the installed binary versions against the manifest.

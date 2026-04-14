@@ -40,7 +40,8 @@ func storeDownErr() error {
 type deps struct {
 	store       *store.Client
 	embedder    *embedding.Generator
-	qdrantDown  bool // true when Qdrant is unreachable; reads degrade, writes fail
+	qdrantDown  bool // true when Qdrant is unreachable (connection refused / DNS failure)
+	qdrantSlow  bool // true when Qdrant health check timed out — reachable but slow
 }
 
 func loadDeps(needEmbedding bool) (d *deps, err error) {
@@ -132,13 +133,29 @@ func loadDepsReadOnly(needEmbedding bool) (d *deps, err error) {
 	hctx, hcancel := context.WithTimeout(context.Background(), healthCheckTimeout)
 	defer hcancel()
 	if hErr := client.HealthCheck(hctx); hErr != nil {
-		d.qdrantDown = true
+		if isHealthTimeout(hErr) {
+			d.qdrantSlow = true
+		} else {
+			d.qdrantDown = true
+		}
 	}
 
 	if needEmbedding {
 		d.embedder = embedding.New(&cfg.Embedding, dim)
 	}
 	return d, nil
+}
+
+// isHealthTimeout reports whether a health-check error is a timeout rather
+// than a true connectivity failure. Timeouts mean Qdrant is reachable but slow;
+// connectivity failures mean Qdrant is down.
+func isHealthTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "context deadline exceeded") ||
+		strings.Contains(msg, "deadline exceeded")
 }
 
 func (d *deps) Close() {

@@ -434,7 +434,7 @@ func TestPrintContextBundle_WithErrors(t *testing.T) {
 	bundle := contextBundle{}
 	errs := []string{"qdrant search failed", "embedder timeout"}
 	// Must not panic and must return nil.
-	if err := printContextBundle(cmd, "test-query", bundle, errs); err != nil {
+	if err := printContextBundle(cmd, "test-query", bundle, errs, time.Time{}); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }

@@ -88,10 +88,16 @@ func TestIsConnectivityError_Unavailable(t *testing.T) {
 	}
 }
 
+// TestIsConnectivityError_ContextDeadline verifies that a context deadline is
+// NOT classified as a connectivity failure — Qdrant is reachable but slow,
+// which callers must signal differently from "unreachable".
 func TestIsConnectivityError_ContextDeadline(t *testing.T) {
 	err := errors.New("context deadline exceeded")
-	if !isConnectivityError(err) {
-		t.Errorf("expected true for deadline exceeded error, got false")
+	if isConnectivityError(err) {
+		t.Errorf("deadline exceeded must not be treated as connectivity error (Qdrant may just be slow)")
+	}
+	if !isTimeoutError(err) {
+		t.Errorf("expected isTimeoutError=true for deadline exceeded error")
 	}
 }
 

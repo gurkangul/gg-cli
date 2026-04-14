@@ -32,6 +32,7 @@ func (*PythonRunner) Index(ctx context.Context, req *IndexRequest) (*IndexResult
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, bin, "index", "--output", outPath, req.Root)
 	cmd.Dir = req.Root
+	cmd.Env = filteredEnv()
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {

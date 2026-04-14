@@ -119,7 +119,7 @@ When the user reaches a decision (explicit or implicit):
 
 As soon as you detect it:
 ```
-gg decide "short decision text" --reason "why" --tags "tag1,tag2"
+gg record "short decision text" --reason "why" --tags "tag1,tag2"
 ```
 Tell the user: "Recorded that decision."
 
@@ -203,9 +203,28 @@ gg task block TASK-XXX "reason"
 
 When an approach is considered but not chosen — always record it:
 ```
-gg reject "approach" --reason "why not"
+gg record "approach" --stance=reject --reason "why not"
 ```
 This prevents other agents from re-proposing the same rejected path.
+
+## DISCUSSION TURNS
+
+When contributing a deliberation turn to an open discussion (multi-agent review,
+design debate, deliberation transcript):
+```
+gg discuss note DISC-NNN "your contribution" --role developer
+```
+Roles: developer | architect | pm | ux | analyst | writer | user
+
+## TRACING
+
+When debugging or profiling is needed — GG_TRACE=1 enables span recording:
+```
+GG_TRACE=1 gg <command>        # records spans to .gg/traces/YYYY-MM-DD.jsonl
+gg trace show                   # display recent spans
+gg trace summary                # summary by operation
+gg trace clear --older-than 7d  # clean up old trace files
+```
 
 ## SUBAGENTS AND MULTI-AGENT ROUNDS
 
@@ -217,9 +236,9 @@ You, as the orchestrator, are responsible for **extracting gg-relevant actions
 from their output and executing the `gg` calls yourself** as soon as the round
 completes. Concretely:
 
-- A subagent says "we should reject X because Y" → you run `gg reject "X" --reason "Y"`
+- A subagent says "we should reject X because Y" → you run `gg record "X" --stance=reject --reason "Y"`
 - A subagent proposes action items / a punch list → you run `gg task create` for each
-- A subagent reaches a conclusion the user accepts → you run `gg decide`
+- A subagent reaches a conclusion the user accepts → you run `gg record "conclusion" --reason "why"`
 
 Do this BEFORE asking the user "should I save these?" — the AGENTS.md rule is
 to capture decisions automatically. Asking first violates the contract.

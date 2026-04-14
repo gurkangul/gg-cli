@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -56,7 +57,7 @@ type contextPayload struct {
 	Notes       []store.Note       `json:"notes"`
 }
 
-const contextCacheNS = "ctx:"
+const contextCacheKind = "context"
 
 func runContext(cmd *cobra.Command, args []string) error {
 	query, err := requireNonEmpty("topic", args[0])
@@ -70,6 +71,9 @@ func runContext(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
+	if d.qdrantSlow {
+		return fmt.Errorf("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status")
+	}
 	if d.qdrantDown {
 		return serveContextFromCache(cmd, query)
 	}
@@ -114,7 +118,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 	if bundle.decErr == nil && bundle.rejErr == nil && bundle.taskErr == nil &&
 		bundle.discErr == nil && bundle.noteErr == nil {
 		if ggDir, dirErr := config.GGDir(); dirErr == nil {
-			_ = cache.Put(ggDir, contextCacheNS+query, contextPayload{
+			_ = cache.Put(ggDir, contextCacheKind, query, contextPayload{
 				Decisions:   bundle.decisions,
 				Rejections:  bundle.rejections,
 				Tasks:       bundle.tasks,
@@ -147,12 +151,15 @@ func runContext(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("all searches failed:\n  %s", strings.Join(errs, "\n  "))
 	}
 
-	return printContextBundle(cmd, query, bundle, errs)
+	return printContextBundle(cmd, query, bundle, errs, time.Time{})
 }
 
 // printContextBundle renders a context bundle as human-readable text or JSON.
 // errs is a list of non-fatal collection errors to show as warnings.
-func printContextBundle(_ *cobra.Command, query string, bundle contextBundle, errs []string) error {
+// cachedAt, when non-zero, indicates the results are from the LKG cache and
+// adds "cached_at" and "stale_seconds" to the JSON output so agents know the
+// data may be stale.
+func printContextBundle(_ *cobra.Command, query string, bundle contextBundle, errs []string, cachedAt time.Time) error {
 	jsonPayload := map[string]any{
 		"query":       query,
 		"decisions":   bundle.decisions,
@@ -161,6 +168,10 @@ func printContextBundle(_ *cobra.Command, query string, bundle contextBundle, er
 		"discussions": bundle.discussions,
 		"notes":       bundle.notes,
 		"warnings":    errs,
+	}
+	if !cachedAt.IsZero() {
+		jsonPayload["cached_at"] = cachedAt.UTC().Format(time.RFC3339)
+		jsonPayload["stale_seconds"] = int(time.Since(cachedAt).Seconds())
 	}
 
 	return printJSON(jsonPayload, func() {
@@ -278,13 +289,13 @@ func serveContextFromCache(cmd *cobra.Command, query string) error {
 	}
 
 	var payload contextPayload
-	cachedAt, found, err := cache.Get(ggDir, contextCacheNS+query, &payload)
+	cachedAt, found, err := cache.Get(ggDir, contextCacheKind, query, &payload)
 	if err != nil || !found {
 		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached context available for this topic")
 		return nil
 	}
 
-	banner := fmt.Sprintf("⚠ Qdrant unreachable — showing cached context from %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
+	banner := fmt.Sprintf("⚠ Qdrant unreachable — cache may be stale; last update at %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
 	fmt.Fprintln(cmd.OutOrStderr(), banner)
 
 	bundle := contextBundle{
@@ -294,7 +305,8 @@ func serveContextFromCache(cmd *cobra.Command, query string) error {
 		discussions: payload.Discussions,
 		notes:       payload.Notes,
 	}
-	return printContextBundle(cmd, query, bundle, nil)
+	// Pass banner as a warning and cachedAt so --json consumers see the stale signal.
+	return printContextBundle(cmd, query, bundle, []string{banner}, cachedAt)
 }
 
 // shortDate returns the first 10 characters of an RFC3339 timestamp (YYYY-MM-DD).

@@ -34,6 +34,7 @@ func (*GoRunner) Index(ctx context.Context, req *IndexRequest) (*IndexResult, er
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, bin, "--output", outPath)
 	cmd.Dir = req.Root
+	cmd.Env = filteredEnv()
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {

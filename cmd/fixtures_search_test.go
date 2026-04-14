@@ -61,7 +61,7 @@ func TestSearch_CacheHit(t *testing.T) {
 			},
 		},
 	}
-	if err := cache.Put(ggDir, "authentication", payload); err != nil {
+	if err := cache.Put(ggDir, "search", "authentication", payload); err != nil {
 		t.Fatalf("cache.Put: %v", err)
 	}
 
@@ -77,7 +77,7 @@ func TestSearch_CacheHit_Empty(t *testing.T) {
 
 	// Empty cache entry exercises the "No results found." path.
 	payload := searchPayload{}
-	if err := cache.Put(ggDir, "empty-query", payload); err != nil {
+	if err := cache.Put(ggDir, "search", "empty-query", payload); err != nil {
 		t.Fatalf("cache.Put: %v", err)
 	}
 
@@ -138,7 +138,7 @@ func TestContext_CacheHit(t *testing.T) {
 			{Text: "consider token blacklist for logout"},
 		},
 	}
-	if err := cache.Put(ggDir, "ctx:authentication", payload); err != nil {
+	if err := cache.Put(ggDir, "context", "authentication", payload); err != nil {
 		t.Fatalf("cache.Put: %v", err)
 	}
 
@@ -168,7 +168,7 @@ func TestContext_CacheHit_FullTranscript(t *testing.T) {
 			},
 		},
 	}
-	if err := cache.Put(ggDir, "ctx:oauth-discussion", payload); err != nil {
+	if err := cache.Put(ggDir, "context", "oauth-discussion", payload); err != nil {
 		t.Fatalf("cache.Put: %v", err)
 	}
 
@@ -193,7 +193,7 @@ func TestContext_CacheHit_LongDetail(t *testing.T) {
 			{ID: "DISC-001", Topic: "long detail disc", Status: "open", Detail: longDetail},
 		},
 	}
-	if err := cache.Put(ggDir, "ctx:long-detail", payload); err != nil {
+	if err := cache.Put(ggDir, "context", "long-detail", payload); err != nil {
 		t.Fatalf("cache.Put: %v", err)
 	}
 

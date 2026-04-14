@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -43,6 +44,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
+	if d.qdrantSlow {
+		return fmt.Errorf("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status")
+	}
 	if d.qdrantDown {
 		return serveSearchFromCache(cmd, query)
 	}
@@ -67,10 +71,10 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	// Write results to the LKG cache for future offline use (best-effort).
 	if ggDir, dirErr := config.GGDir(); dirErr == nil {
-		_ = cache.Put(ggDir, query, searchPayload{Decisions: decisions, Rejections: rejections})
+		_ = cache.Put(ggDir, "search", query, searchPayload{Decisions: decisions, Rejections: rejections})
 	}
 
-	return printSearchResults(cmd, decisions, rejections, "")
+	return printSearchResults(cmd, decisions, rejections, "", time.Time{})
 }
 
 // serveSearchFromCache looks up the last-known-good cache entry for query
@@ -83,21 +87,29 @@ func serveSearchFromCache(cmd *cobra.Command, query string) error {
 	}
 
 	var payload searchPayload
-	cachedAt, found, err := cache.Get(ggDir, query, &payload)
+	cachedAt, found, err := cache.Get(ggDir, "search", query, &payload)
 	if err != nil || !found {
 		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached results available for this query")
 		return nil
 	}
 
-	banner := fmt.Sprintf("⚠ Qdrant unreachable — showing cached results from %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
-	return printSearchResults(cmd, payload.Decisions, payload.Rejections, banner)
+	banner := fmt.Sprintf("⚠ Qdrant unreachable — cache may be stale; last update at %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
+	return printSearchResults(cmd, payload.Decisions, payload.Rejections, banner, cachedAt)
 }
 
-func printSearchResults(cmd *cobra.Command, decisions []store.Decision, rejections []store.Rejection, banner string) error {
-	return printJSON(map[string]any{
+func printSearchResults(cmd *cobra.Command, decisions []store.Decision, rejections []store.Rejection, banner string, cachedAt time.Time) error {
+	jsonMap := map[string]any{
 		"decisions":  decisions,
 		"rejections": rejections,
-	}, func() {
+	}
+	if banner != "" {
+		jsonMap["warning"] = banner // include stale signal for agents parsing --json output
+		if !cachedAt.IsZero() {
+			jsonMap["cached_at"] = cachedAt.UTC().Format(time.RFC3339)
+			jsonMap["stale_seconds"] = int(time.Since(cachedAt).Seconds())
+		}
+	}
+	return printJSON(jsonMap, func() {
 		if banner != "" {
 			fmt.Fprintln(cmd.OutOrStderr(), banner)
 		}
