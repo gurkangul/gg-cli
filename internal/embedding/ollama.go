@@ -23,16 +23,23 @@ type embedResponse struct {
 }
 
 type Generator struct {
-	host   string
-	model  string
-	client *http.Client
+	host        string
+	model       string
+	client      *http.Client
+	expectedDim int // 0 = no validation
 }
 
-func New(cfg *config.EmbeddingConfig) *Generator {
+// New creates an embedding generator. expectedDim is the vector size the
+// caller expects (e.g. store.VectorSize = 768). If the model returns a vector
+// with a different dimension, Generate returns a descriptive error instead of
+// letting Qdrant surface a cryptic size-mismatch at upsert time.
+// Pass 0 to skip dimension validation.
+func New(cfg *config.EmbeddingConfig, expectedDim int) *Generator {
 	return &Generator{
-		host:   cfg.Host,
-		model:  cfg.Model,
-		client: &http.Client{Timeout: 30 * time.Second},
+		host:        cfg.Host,
+		model:       cfg.Model,
+		client:      &http.Client{Timeout: 30 * time.Second},
+		expectedDim: expectedDim,
 	}
 }
 
@@ -77,5 +84,12 @@ func (g *Generator) Generate(ctx context.Context, text string) ([]float32, error
 	if len(result.Embeddings) == 0 || len(result.Embeddings[0]) == 0 {
 		return nil, fmt.Errorf("no embedding returned from ollama")
 	}
-	return result.Embeddings[0], nil
+	vec := result.Embeddings[0]
+	if g.expectedDim > 0 && len(vec) != g.expectedDim {
+		return nil, fmt.Errorf(
+			"embedding dimension mismatch: model %q returned %d dimensions, expected %d — check that your embedding model matches the Qdrant collection size (hint: nomic-embed-text produces %d-dim vectors)",
+			g.model, len(vec), g.expectedDim, g.expectedDim,
+		)
+	}
+	return vec, nil
 }

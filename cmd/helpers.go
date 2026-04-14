@@ -48,7 +48,7 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 		}
 	}()
 	if needEmbedding {
-		d.embedder = embedding.New(&cfg.Embedding)
+		d.embedder = embedding.New(&cfg.Embedding, store.VectorSize)
 	}
 	return d, nil
 }
