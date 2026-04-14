@@ -1,4 +1,0 @@
-{"id":"77860db3-ffc4-4feb-82be-31cf7289aee1","ts":"2026-04-14T11:11:21.445Z","severity":"info","message":"Claude Code MCP prepared at /Users/gurkangul/my-projects/gg-cli/.mcp.json","source":"notify","read":false}
-{"id":"fc608370-607c-43cd-a63a-2afb4a18538c","ts":"2026-04-14T11:11:33.012Z","severity":"info","message":"Current version: v2.71.0\nChecking npm registry...","source":"notify","read":false}
-{"id":"4fa87668-b14a-43bd-a6d8-61a41ae34641","ts":"2026-04-14T11:11:33.276Z","severity":"info","message":"Updating: v2.71.0 → v2.73.1...","source":"notify","read":false}
-{"id":"f8a84a41-bc92-4b6d-b418-3fcd9dfae258","ts":"2026-04-14T11:11:52.241Z","severity":"info","message":"Updated to v2.73.1. Restart your GSD session to use the new version.","source":"notify","read":false}

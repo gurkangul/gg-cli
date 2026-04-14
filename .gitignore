@@ -1,3 +1,14 @@
 gg
 .gg/
 .claude/
+.bg-shell/
+# GSD runtime state (notifications, codebase notes, etc.)
+# Per GSD README, only .gsd/PREFERENCES.md should be checked in
+.gsd/notifications.jsonl
+.gsd/CODEBASE.md
+.gsd/activity/
+.gsd/runtime/
+.gsd/worktrees/
+.gsd/gsd.db*
+.gsd/STATE.md
+.gsd/auto.lock
