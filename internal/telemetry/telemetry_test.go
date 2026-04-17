@@ -155,8 +155,9 @@ func TestSummarize_FiltersOldEntries(t *testing.T) {
 
 func TestRecord_OriginHuman(t *testing.T) {
 	dir := t.TempDir()
-	// Ensure GG_ROLE is not set.
+	// Ensure neither GG_ROLE nor GG_AGENT is set so classify() returns "human".
 	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_AGENT", "")
 
 	Record(dir, "status", "")
 
