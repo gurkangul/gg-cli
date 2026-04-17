@@ -13,6 +13,9 @@ func TestString_Positive(t *testing.T) {
 		input string
 	}{
 		{"anthropic/openai key", "sk-" + strings.Repeat("a", 20)},
+		{"anthropic key with hyphens", "sk-ant-api03-" + strings.Repeat("a", 20)},
+		{"project-scoped key", "sk-proj-" + strings.Repeat("b", 20)},
+		{"test key", "sk-test-" + strings.Repeat("c", 20)},
 		{"github personal token", "ghp_" + strings.Repeat("A", 36)},
 		{"github oauth token", "gho_" + strings.Repeat("B", 10)},
 		{"github server-to-server", "ghs_" + strings.Repeat("C", 10)},
@@ -49,6 +52,7 @@ func TestString_Negative(t *testing.T) {
 	}{
 		{"plain text", "hello world"},
 		{"sk too short", "sk-abc"},
+		{"sk hyphenated too short", "sk-ant-" + strings.Repeat("a", 10)},
 		{"ghp too short", "ghp_" + strings.Repeat("A", 35)},
 		{"aws wrong prefix", "BKIA" + strings.Repeat("A", 16)},
 		{"pem public key", "-----BEGIN PUBLIC KEY-----"},

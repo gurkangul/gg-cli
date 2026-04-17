@@ -4,7 +4,7 @@ package store_test
 //
 // This test requires a live Qdrant instance. It is skipped unless the
 // environment variable GG_INTEGRATION_TEST=1 is set and Qdrant is reachable
-// at the default port (6333 on localhost).
+// at the gRPC port (6334 on localhost).
 //
 // Usage:
 //
@@ -42,7 +42,7 @@ func TestBrainRoundTrip(t *testing.T) {
 	projectID := "test-brain-rt-" + uuid.New().String()[:8]
 	ggDir := t.TempDir()
 
-	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 6333}
+	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 6334}
 	c, err := store.New(cfg, ggDir, projectID)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)

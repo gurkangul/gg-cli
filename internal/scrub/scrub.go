@@ -9,7 +9,7 @@ type secretPattern struct {
 }
 
 var patterns = []secretPattern{
-	{"Anthropic/OpenAI key", regexp.MustCompile(`sk-[A-Za-z0-9]{20,}`)},
+	{"Anthropic/OpenAI key", regexp.MustCompile(`sk-[A-Za-z0-9][A-Za-z0-9-]{19,}`)},
 	{"GitHub personal token", regexp.MustCompile(`ghp_[A-Za-z0-9]{36}`)},
 	{"GitHub OAuth token", regexp.MustCompile(`gho_[A-Za-z0-9]+`)},
 	{"GitHub server-to-server token", regexp.MustCompile(`ghs_[A-Za-z0-9]+`)},

@@ -56,3 +56,7 @@ gg init  # updates AGENTS.md in place
 ```
 
 GSD context injection automatically picks up the updated `AGENTS.md` on the next session start.
+
+## See Also
+
+- [`docs/integrations/bmad-gsd.md`](bmad-gsd.md) — using GSD together with BMAD skills and gg-cli in the same project
