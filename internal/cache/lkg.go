@@ -1,5 +1,6 @@
 // Package cache provides a file-based last-known-good (LKG) cache for
-// search results. Entries are stored as JSON under <ggDir>/cache/search-lkg/,
+// search results. Entries are stored as JSON under
+// ~/.gg/projects/<project_id>/cache/search-lkg/ (the per-project runtime dir),
 // keyed by a truncated SHA-256 of the normalised (kind, query) pair. The cache
 // is capped at maxEntries; oldest entries (by mtime) are evicted when the cap
 // is exceeded.
@@ -32,18 +33,18 @@ type Entry struct {
 	Data     json.RawMessage `json:"data"`
 }
 
-// Dir returns the cache directory under ggDir.
-func Dir(ggDir string) string {
-	return filepath.Join(ggDir, subDir)
+// Dir returns the cache directory under runtimeDir.
+func Dir(runtimeDir string) string {
+	return filepath.Join(runtimeDir, subDir)
 }
 
 // Put serialises data as JSON and writes it atomically to the cache under
-// ggDir, keyed by (kind, query). Using distinct kind values ("search",
+// runtimeDir, keyed by (kind, query). Using distinct kind values ("search",
 // "context", etc.) prevents collisions between callers that use the same
 // query string.
 // It evicts the oldest entries when the cap is exceeded.
-func Put(ggDir, kind, query string, data any) error {
-	dir := Dir(ggDir)
+func Put(runtimeDir, kind, query string, data any) error {
+	dir := Dir(runtimeDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("cache mkdir: %w", err)
 	}
@@ -93,14 +94,14 @@ func Put(ggDir, kind, query string, data any) error {
 // Returns (zero, false, nil) on miss, TTL expiry, or a corrupt file (which is
 // deleted so it does not poison future reads).
 // Any other I/O error is returned verbatim.
-func Get(ggDir, kind, query string, out any) (cachedAt time.Time, found bool, err error) {
-	return GetWithTTL(ggDir, kind, query, out, DefaultTTL)
+func Get(runtimeDir, kind, query string, out any) (cachedAt time.Time, found bool, err error) {
+	return GetWithTTL(runtimeDir, kind, query, out, DefaultTTL)
 }
 
 // GetWithTTL is like Get but uses a caller-specified TTL instead of DefaultTTL.
 // A zero TTL disables expiry.
-func GetWithTTL(ggDir, kind, query string, out any, ttl time.Duration) (cachedAt time.Time, found bool, err error) {
-	path := filepath.Join(Dir(ggDir), keyFile(kind, query))
+func GetWithTTL(runtimeDir, kind, query string, out any, ttl time.Duration) (cachedAt time.Time, found bool, err error) {
+	path := filepath.Join(Dir(runtimeDir), keyFile(kind, query))
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return time.Time{}, false, nil

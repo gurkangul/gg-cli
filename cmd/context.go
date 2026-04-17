@@ -121,14 +121,16 @@ func runContext(cmd *cobra.Command, args []string) error {
 	// Persist a full successful bundle to the LKG cache (best-effort).
 	if bundle.decErr == nil && bundle.rejErr == nil && bundle.taskErr == nil &&
 		bundle.discErr == nil && bundle.noteErr == nil {
-		if ggDir, dirErr := config.GGDir(); dirErr == nil {
-			_ = cache.Put(ggDir, contextCacheKind, query, contextPayload{
-				Decisions:   bundle.decisions,
-				Rejections:  bundle.rejections,
-				Tasks:       bundle.tasks,
-				Discussions: bundle.discussions,
-				Notes:       bundle.notes,
-			})
+		if cfg, cfgErr := config.Load(); cfgErr == nil {
+			if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
+				_ = cache.Put(rtDir, contextCacheKind, query, contextPayload{
+					Decisions:   bundle.decisions,
+					Rejections:  bundle.rejections,
+					Tasks:       bundle.tasks,
+					Discussions: bundle.discussions,
+					Notes:       bundle.notes,
+				})
+			}
 		}
 	}
 
@@ -284,14 +286,19 @@ func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs 
 // serveContextFromCache looks up the last-known-good cache entry for query
 // and prints stale results with an offline banner.
 func serveContextFromCache(cmd *cobra.Command, query string) error {
-	ggDir, err := config.GGDir()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached context available")
+		return nil
+	}
+	rtDir, err := cfg.RuntimeDir()
 	if err != nil {
 		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached context available")
 		return nil
 	}
 
 	var payload contextPayload
-	cachedAt, found, err := cache.Get(ggDir, contextCacheKind, query, &payload)
+	cachedAt, found, err := cache.Get(rtDir, contextCacheKind, query, &payload)
 	if err != nil || !found {
 		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached context available for this topic")
 		return nil

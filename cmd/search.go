@@ -74,8 +74,10 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	// Write results to the LKG cache for future offline use (best-effort).
-	if ggDir, dirErr := config.GGDir(); dirErr == nil {
-		_ = cache.Put(ggDir, "search", query, searchPayload{Decisions: decisions, Rejections: rejections})
+	if cfg, cfgErr := config.Load(); cfgErr == nil {
+		if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
+			_ = cache.Put(rtDir, "search", query, searchPayload{Decisions: decisions, Rejections: rejections})
+		}
 	}
 
 	return printSearchResults(cmd, decisions, rejections, "", time.Time{})
@@ -84,14 +86,19 @@ func runSearch(cmd *cobra.Command, args []string) error {
 // serveSearchFromCache looks up the last-known-good cache entry for query
 // and prints stale results with an offline banner.
 func serveSearchFromCache(cmd *cobra.Command, query string) error {
-	ggDir, err := config.GGDir()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached results available")
+		return nil
+	}
+	rtDir, err := cfg.RuntimeDir()
 	if err != nil {
 		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached results available")
 		return nil
 	}
 
 	var payload searchPayload
-	cachedAt, found, err := cache.Get(ggDir, "search", query, &payload)
+	cachedAt, found, err := cache.Get(rtDir, "search", query, &payload)
 	if err != nil || !found {
 		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached results available for this query")
 		return nil

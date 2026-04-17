@@ -37,7 +37,8 @@ func TestContext_StoreDown(t *testing.T) {
 // printContextBundle code paths.
 
 func TestSearch_CacheHit(t *testing.T) {
-	ggDir := setupGGDir(t)
+	setupGGDir(t)
+	rtDir := testRuntimeDir(t)
 
 	// Seed a comprehensive search cache entry so serveSearchFromCache hits it
 	// and printSearchResults exercises all branches (reason, tags, taskID, author).
@@ -61,7 +62,7 @@ func TestSearch_CacheHit(t *testing.T) {
 			},
 		},
 	}
-	if err := cache.Put(ggDir, "search", "authentication", payload); err != nil {
+	if err := cache.Put(rtDir, "search", "authentication", payload); err != nil {
 		t.Fatalf("cache.Put: %v", err)
 	}
 
@@ -73,11 +74,12 @@ func TestSearch_CacheHit(t *testing.T) {
 }
 
 func TestSearch_CacheHit_Empty(t *testing.T) {
-	ggDir := setupGGDir(t)
+	setupGGDir(t)
+	rtDir := testRuntimeDir(t)
 
 	// Empty cache entry exercises the "No results found." path.
 	payload := searchPayload{}
-	if err := cache.Put(ggDir, "search", "empty-query", payload); err != nil {
+	if err := cache.Put(rtDir, "search", "empty-query", payload); err != nil {
 		t.Fatalf("cache.Put: %v", err)
 	}
 
@@ -88,7 +90,8 @@ func TestSearch_CacheHit_Empty(t *testing.T) {
 }
 
 func TestContext_CacheHit(t *testing.T) {
-	ggDir := setupGGDir(t)
+	setupGGDir(t)
+	rtDir := testRuntimeDir(t)
 
 	// Seed a comprehensive context cache entry covering all printContextBundle
 	// branches: decisions with reason/tags/taskID, rejections, tasks with detail,
@@ -138,7 +141,7 @@ func TestContext_CacheHit(t *testing.T) {
 			{Text: "consider token blacklist for logout"},
 		},
 	}
-	if err := cache.Put(ggDir, "context", "authentication", payload); err != nil {
+	if err := cache.Put(rtDir, "context", "authentication", payload); err != nil {
 		t.Fatalf("cache.Put: %v", err)
 	}
 
@@ -150,7 +153,8 @@ func TestContext_CacheHit(t *testing.T) {
 }
 
 func TestContext_CacheHit_FullTranscript(t *testing.T) {
-	ggDir := setupGGDir(t)
+	setupGGDir(t)
+	rtDir := testRuntimeDir(t)
 
 	// Same payload as TestContext_CacheHit but tests the --full flag which
 	// renders all turns in the transcript (contextFullTranscript=true).
@@ -168,7 +172,7 @@ func TestContext_CacheHit_FullTranscript(t *testing.T) {
 			},
 		},
 	}
-	if err := cache.Put(ggDir, "context", "oauth-discussion", payload); err != nil {
+	if err := cache.Put(rtDir, "context", "oauth-discussion", payload); err != nil {
 		t.Fatalf("cache.Put: %v", err)
 	}
 
@@ -179,7 +183,8 @@ func TestContext_CacheHit_FullTranscript(t *testing.T) {
 }
 
 func TestContext_CacheHit_LongDetail(t *testing.T) {
-	ggDir := setupGGDir(t)
+	setupGGDir(t)
+	rtDir := testRuntimeDir(t)
 
 	// Use details longer than 120 chars to exercise the truncation paths
 	// in printContextBundle (lines 209-211 for tasks, 224-226 for discussions).
@@ -193,7 +198,7 @@ func TestContext_CacheHit_LongDetail(t *testing.T) {
 			{ID: "DISC-001", Topic: "long detail disc", Status: "open", Detail: longDetail},
 		},
 	}
-	if err := cache.Put(ggDir, "context", "long-detail", payload); err != nil {
+	if err := cache.Put(rtDir, "context", "long-detail", payload); err != nil {
 		t.Fatalf("cache.Put: %v", err)
 	}
 
