@@ -267,9 +267,16 @@ should treat this as "fix the failure and retry", not as a normal error.
   *compile-to-hooks* generator — it writes scripts into the same `.d/` dir and
   the executor stays unchanged. Same env contract is used for future task
   gates (`pre-review-approve.d`, etc.) so scripts stay portable across stages.
-- Example — block `done` when the build is broken:
+- Install the ready-made verify gate with `gg doctor --install-task-hooks` —
+  it auto-detects Go (`go.mod`) and/or Node/Bun (`package.json`) and drops the
+  matching starter script into `.gg/hooks/pre-task-done.d/` (and the Go lint
+  post-hook where applicable). Existing files are preserved; re-running the
+  installer never overwrites your edits. Commit the generated scripts so
+  every agent inherits the gate.
+- Manual override — any executable `*.sh` in the same directory works. The
+  simplest example that blocks `done` when the build is broken:
   `.gg/hooks/pre-task-done.d/10-build.sh` containing `#!/bin/sh` + your build
-  command. Commit the script so other agents inherit the gate.
+  command.
 
 **Rejection contract (for every agent, not just Claude):**
 

@@ -72,7 +72,7 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorWipeBrainYes, "yes", false,
 		"with --wipe-brain: skip interactive confirmation")
 	doctorCmd.Flags().BoolVar(&doctorInstallTaskHooks, "install-task-hooks", false,
-		"install a Go project task-done hook (go vet + go test + golangci-lint) in .gg/hooks/task-done.d/")
+		"install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -895,30 +895,105 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// runDoctorInstallTaskHooks writes the bundled Go project task-done hook into
-// .gg/hooks/task-done.d/10-go-quality.sh (executable, warn-only by default).
+// runDoctorInstallTaskHooks installs the verify-gate pre-task-done hooks and
+// the advisory post-done hook(s) for every language it detects in the project
+// root. Existing files are preserved so repeated runs are idempotent.
+//
+// Detection (lockfile / manifest presence, non-exclusive):
+//   - go.mod         → Go pre-hook (go build + vet + test)  +  legacy post hook
+//   - package.json   → Node/Bun/pnpm/Yarn pre-hook (install + typecheck + build + test)
+//
+// Nothing matches → print a copy-pasteable manual snippet and return without
+// error so the caller's exit code stays 0 (no-op is not a failure).
 func runDoctorInstallTaskHooks() error {
 	ggDir, err := config.GGDir()
 	if err != nil {
 		return err
 	}
-	hookDir := filepath.Join(ggDir, "hooks", "task-done.d")
-	if mkErr := os.MkdirAll(hookDir, 0o755); mkErr != nil {
-		return fmt.Errorf("create hook dir: %w", mkErr)
+	projectRoot, err := config.FindRoot()
+	if err != nil {
+		return err
 	}
-	target := filepath.Join(hookDir, "10-go-quality.sh")
-	if _, statErr := os.Stat(target); statErr == nil {
-		fmt.Printf("⚠ %s already exists — skipping (remove it manually to reinstall)\n", target)
+
+	preDir := filepath.Join(ggDir, "hooks", "pre-task-done.d")
+	postDir := filepath.Join(ggDir, "hooks", "task-done.d")
+	if mkErr := os.MkdirAll(preDir, 0o755); mkErr != nil {
+		return fmt.Errorf("create pre-hook dir: %w", mkErr)
+	}
+	if mkErr := os.MkdirAll(postDir, 0o755); mkErr != nil {
+		return fmt.Errorf("create post-hook dir: %w", mkErr)
+	}
+
+	installed := 0
+
+	if fileExists(filepath.Join(projectRoot, "go.mod")) {
+		if n, err := installHookIfAbsent(filepath.Join(preDir, "10-go-verify.sh"), templates.PreTaskDoneGoHook,
+			"verify gate: go build + go vet + go test ./... (blocking)"); err != nil {
+			return err
+		} else {
+			installed += n
+		}
+		if n, err := installHookIfAbsent(filepath.Join(postDir, "10-go-quality.sh"), templates.TaskDoneGoHook,
+			"post-done: go vet + go test + golangci-lint (advisory)"); err != nil {
+			return err
+		} else {
+			installed += n
+		}
+	}
+
+	if fileExists(filepath.Join(projectRoot, "package.json")) {
+		if n, err := installHookIfAbsent(filepath.Join(preDir, "10-node-verify.sh"), templates.PreTaskDoneNodeHook,
+			"verify gate: bun/pnpm/yarn/npm install + typecheck + build + test (blocking)"); err != nil {
+			return err
+		} else {
+			installed += n
+		}
+	}
+
+	if installed == 0 && !fileExists(filepath.Join(projectRoot, "go.mod")) && !fileExists(filepath.Join(projectRoot, "package.json")) {
+		fmt.Println("No go.mod or package.json found — no language-specific template to install.")
+		fmt.Println("Write your own verify gate at:")
+		fmt.Printf("  %s/10-custom-verify.sh\n", preDir)
+		fmt.Println("Env vars your script receives: GG_TASK_ID, GG_TASK_SUMMARY, GG_PROJECT_ID, GG_ACTOR.")
+		fmt.Println("Non-zero exit blocks `gg task done` with exit code 7.")
 		return nil
 	}
-	if writeErr := os.WriteFile(target, []byte(templates.TaskDoneGoHook), 0o755); writeErr != nil {
-		return fmt.Errorf("write hook: %w", writeErr)
+
+	if installed == 0 {
+		fmt.Println("All detected hooks already present — nothing to do (remove files manually to reinstall).")
+		return nil
 	}
-	fmt.Printf("✓ Installed Go task-done hook: %s\n", target)
-	fmt.Println("  Runs: go vet + go test ./... + golangci-lint (if installed)")
-	fmt.Println("  To enable strict mode (block task done on failure):")
-	fmt.Println("    .gg/config.yaml → hooks: { strict: true }")
+
+	fmt.Println()
+	fmt.Println("Verify gate is live. Next `gg task done` run will:")
+	fmt.Printf("  1. execute %s/*.sh in order (any non-zero exit → block, exit 7)\n", preDir)
+	fmt.Printf("  2. write the new state to the store on success\n")
+	fmt.Printf("  3. run %s/*.sh as advisory (warnings only unless hooks.strict=true)\n", postDir)
+	fmt.Println()
+	fmt.Println("Edit the scripts freely — they ship as starting points, not contracts.")
 	return nil
+}
+
+// fileExists reports whether path exists and is not a directory.
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// installHookIfAbsent writes body to path with 0755 permissions, unless a file
+// already exists there. Returns 1 if the file was written, 0 if skipped.
+// Prints a line for each outcome so the user can see what happened.
+func installHookIfAbsent(path, body, summary string) (int, error) {
+	if _, err := os.Stat(path); err == nil {
+		fmt.Printf("⚠ %s already exists — skipping (remove it manually to reinstall)\n", path)
+		return 0, nil
+	}
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		return 0, fmt.Errorf("write %s: %w", path, err)
+	}
+	fmt.Printf("✓ Installed %s\n", path)
+	fmt.Printf("  %s\n", summary)
+	return 1, nil
 }
 
 // runInstall executes the install command for the given spec.

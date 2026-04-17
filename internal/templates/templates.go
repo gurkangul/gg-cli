@@ -16,3 +16,9 @@ var ConfigYAML string
 
 //go:embed task-done-go.sh
 var TaskDoneGoHook string
+
+//go:embed pre-task-done-go.sh
+var PreTaskDoneGoHook string
+
+//go:embed pre-task-done-node.sh
+var PreTaskDoneNodeHook string
