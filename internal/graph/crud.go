@@ -3,6 +3,8 @@ package graph
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -339,6 +341,79 @@ func (c *Client) UpsertEdge(ctx context.Context, e *Edge) error {
 	)
 	if err != nil {
 		return fmt.Errorf("upsert edge %s: %w", e.Type, err)
+	}
+	cleanup()
+	return nil
+}
+
+// UpsertEdgeByKey merges a directed relationship between two nodes identified
+// by stable domain-key merge properties (not internal element IDs). Both nodes
+// must already exist in Memgraph for this project. The Cypher uses MATCH on the
+// merge-identity map for each endpoint, then MERGE for the relationship.
+//
+// srcIdentity and dstIdentity must contain the label-specific merge keys (e.g.
+// {"path": "..."} for File, {"source_file": "...", "name": "..."} for Symbol).
+// project_id is injected automatically.
+func (c *Client) UpsertEdgeByKey(
+	ctx context.Context,
+	srcLabel string, srcIdentity map[string]any,
+	dstLabel string, dstIdentity map[string]any,
+	edgeType string, edgeProps map[string]any,
+) error {
+	if srcLabel == "" || dstLabel == "" {
+		return fmt.Errorf("UpsertEdgeByKey: src and dst labels are required")
+	}
+	if edgeType == "" {
+		return fmt.Errorf("UpsertEdgeByKey: edgeType is required")
+	}
+
+	params := map[string]any{"pid": c.projectID}
+
+	// Build parameterised WHERE clauses for src and dst match conditions.
+	// Sorting the keys makes the generated Cypher deterministic.
+	srcKeys := make([]string, 0, len(srcIdentity))
+	for k := range srcIdentity {
+		srcKeys = append(srcKeys, k)
+	}
+	sort.Strings(srcKeys)
+	srcClauses := make([]string, 0, len(srcKeys))
+	for _, k := range srcKeys {
+		paramName := "src_" + k
+		srcClauses = append(srcClauses, fmt.Sprintf("a.%s = $%s", k, paramName))
+		params[paramName] = srcIdentity[k]
+	}
+
+	dstKeys := make([]string, 0, len(dstIdentity))
+	for k := range dstIdentity {
+		dstKeys = append(dstKeys, k)
+	}
+	sort.Strings(dstKeys)
+	dstClauses := make([]string, 0, len(dstKeys))
+	for _, k := range dstKeys {
+		paramName := "dst_" + k
+		dstClauses = append(dstClauses, fmt.Sprintf("b.%s = $%s", k, paramName))
+		params[paramName] = dstIdentity[k]
+	}
+
+	rProps := make(map[string]any, len(edgeProps)+1)
+	for k, v := range edgeProps {
+		rProps[k] = v
+	}
+	rProps["project_id"] = c.projectID
+	params["rprops"] = rProps
+
+	cypher := fmt.Sprintf(
+		"MATCH (a:%s {project_id: $pid}) WHERE %s\n"+
+			"MATCH (b:%s {project_id: $pid}) WHERE %s\n"+
+			"MERGE (a)-[r:%s]->(b) SET r += $rprops",
+		srcLabel, strings.Join(srcClauses, " AND "),
+		dstLabel, strings.Join(dstClauses, " AND "),
+		edgeType,
+	)
+
+	_, cleanup, err := c.runQuery(ctx, cypher, params)
+	if err != nil {
+		return fmt.Errorf("upsert edge by key %s: %w", edgeType, err)
 	}
 	cleanup()
 	return nil

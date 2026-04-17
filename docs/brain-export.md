@@ -139,22 +139,35 @@ Each line is a JSON object with exactly these top-level keys (alphabetical):
 ### Memgraph nodes (chunks.jsonl)
 
 ```json
-{"id": "<element-id>", "label": "Symbol", "properties": { ... }}
+{"id": "<domain-key>", "label": "Symbol", "properties": { ... }}
 ```
 
-- `id`: Memgraph internal element ID (string form of the integer).
+- `id`: **Stable domain-key composite** — machine-independent and Memgraph-restart-invariant (see below).
 - `label`: node label (e.g. `"Symbol"`, `"File"`, `"Package"`).
 - `properties`: node property map. The `project_id` property is included as-is (it will be rewritten to the target project ID on import).
+
+#### Node ID construction (stable domain keys)
+
+The `id` field is a composite of the node label and its merge keys, ensuring identical output regardless of Memgraph internal element IDs (which change across restarts and are meaningless on another machine):
+
+| Label | Format | Example |
+|---|---|---|
+| `File` | `file:<path>` | `file:internal/graph/client.go` |
+| `Symbol` | `symbol:<source_file>#<name>` | `symbol:cmd/main.go#Run` |
+| `Package` | `package:<import_path>` | `package:github.com/foo/bar` |
+| unknown | `node:<label>:<name>` | `node:Custom:singleton` |
+
+Nodes with no usable domain key (e.g. a File missing `path`) are silently skipped during export.
 
 ### Memgraph edges (edges.jsonl)
 
 ```json
-{"dst": "<element-id>", "properties": { ... }, "src": "<element-id>", "type": "CALLS"}
+{"dst": "<domain-key>", "properties": { ... }, "src": "<domain-key>", "type": "CALLS"}
 ```
 
 Keys are always alphabetical: `dst`, `properties`, `src`, `type`.
 
-- `src` / `dst`: Memgraph element IDs of the endpoints (as exported in `chunks.jsonl`).
+- `src` / `dst`: Stable domain keys of the endpoints (same format as `chunks.jsonl` `id`). Not Memgraph element IDs.
 - `type`: relationship type string (e.g. `"CALLS"`, `"IMPORTS"`, `"DEFINES"`).
 - `properties`: relationship property map (may be empty `{}`).
 
@@ -206,7 +219,7 @@ Payload timestamp fields (e.g. `created_at`, `updated_at`) are stored as strings
 
 - Import is a full-replace per project: sweep all existing nodes/edges for `project_id` first (`SweepProject`), then insert from `chunks.jsonl` and `edges.jsonl`.
 - Rewrite `project_id` property on every node to the **target** project's ID (not the source's).
-- Build an `oldID → newID` mapping as nodes are inserted (Memgraph assigns new element IDs); use this mapping when inserting edges.
+- Node IDs in `chunks.jsonl` are stable domain keys — no `oldID → newID` element-ID translation is required. Edge endpoints in `edges.jsonl` use the same domain keys and are resolved directly via MATCH on merge properties.
 - If `chunks.jsonl` is empty, skip the Memgraph import step entirely (graph may not exist on source).
 
 ### Idempotency

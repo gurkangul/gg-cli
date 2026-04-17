@@ -745,7 +745,7 @@ func runBrainImport(cmd *cobra.Command, _ []string) error {
 			totalChunks = chunkResult.Imported
 			skippedChunks = chunkResult.Skipped
 
-			imp, skip, edgeErr := gc.ImportEdges(ctx, edgesPath, chunkResult.OldToNew)
+			imp, skip, edgeErr := gc.ImportEdges(ctx, edgesPath)
 			if edgeErr != nil {
 				return fmt.Errorf("import edges: %w", edgeErr)
 			}

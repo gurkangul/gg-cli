@@ -23,11 +23,59 @@ type BrainEdge struct {
 	Type       string         `json:"type"`
 }
 
-// ExportNodes returns all nodes belonging to this project, sorted by ID.
-// Each node's label is the first label assigned (Memgraph nodes may have multiple labels).
+// stableDomainKey returns a byte-deterministic, machine-independent node ID
+// derived from the node's domain properties. The key encodes both label and
+// the merge-key values so it is meaningful on any machine that imports the graph.
+//
+// Format (mirrors mergeKeysForLabel):
+//   - File    → "file:<path>"
+//   - Symbol  → "symbol:<source_file>#<name>"
+//   - Package → "package:<import_path>"
+//   - unknown → "node:<label>:<name>"  (empty string if name is also missing)
+func stableDomainKey(label string, props map[string]any) string {
+	switch label {
+	case LabelFile:
+		if path, ok := props["path"].(string); ok && path != "" {
+			return "file:" + path
+		}
+		return "" // path required
+	case LabelSymbol:
+		srcFile, _ := props["source_file"].(string)
+		name, _ := props["name"].(string)
+		if srcFile != "" && name != "" {
+			return "symbol:" + srcFile + "#" + name
+		}
+		return "" // both source_file and name required
+	case LabelPackage:
+		if importPath, ok := props["import_path"].(string); ok && importPath != "" {
+			return "package:" + importPath
+		}
+		return "" // import_path required
+	default:
+		// Unknown label: fallback to "node:<label>:<name>"; skip if name is missing.
+		if name, ok := props["name"].(string); ok && name != "" {
+			return "node:" + label + ":" + name
+		}
+		return "" // no usable key — caller must skip this node
+	}
+}
+
+// firstLabel returns the first non-empty label from a Memgraph labels(n) result.
+func firstLabel(lbls []any) string {
+	for _, l := range lbls {
+		if s, ok := l.(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// ExportNodes returns all nodes belonging to this project, sorted by stable domain key ID.
+// Each node's ID is a domain-key composite (e.g. "file:internal/graph/client.go") that is
+// byte-identical across Memgraph restarts and machines — replacing the old internal element ID.
 func (c *Client) ExportNodes(ctx context.Context) ([]BrainNode, error) {
 	result, cleanup, err := c.runQuery(ctx,
-		"MATCH (n {project_id: $pid}) RETURN toString(id(n)) AS id, labels(n) AS lbls, properties(n) AS props",
+		"MATCH (n {project_id: $pid}) RETURN labels(n) AS lbls, properties(n) AS props",
 		map[string]any{"pid": c.projectID},
 	)
 	if err != nil {
@@ -38,23 +86,18 @@ func (c *Client) ExportNodes(ctx context.Context) ([]BrainNode, error) {
 	var nodes []BrainNode
 	for result.Next(ctx) {
 		record := result.Record()
-		id, _, _ := neo4j.GetRecordValue[string](record, "id")
 		props, _, _ := neo4j.GetRecordValue[map[string]any](record, "props")
 		lbls, _, _ := neo4j.GetRecordValue[[]any](record, "lbls")
+		label := firstLabel(lbls)
+		cleaned := cleanProps(props)
+		id := stableDomainKey(label, cleaned)
 		if id == "" {
-			continue
-		}
-		label := ""
-		for _, l := range lbls {
-			if s, ok := l.(string); ok && s != "" {
-				label = s
-				break
-			}
+			continue // skip nodes with no usable domain key
 		}
 		nodes = append(nodes, BrainNode{
 			ID:         id,
 			Label:      label,
-			Properties: cleanProps(props),
+			Properties: cleaned,
 		})
 	}
 	if err := result.Err(); err != nil {
@@ -66,12 +109,14 @@ func (c *Client) ExportNodes(ctx context.Context) ([]BrainNode, error) {
 }
 
 // ExportEdges returns all relationships where both endpoints belong to this
-// project, sorted by (src, dst, type).
+// project, sorted by (src, dst, type). src/dst are stable domain keys, not
+// internal Memgraph element IDs.
 func (c *Client) ExportEdges(ctx context.Context) ([]BrainEdge, error) {
 	result, cleanup, err := c.runQuery(ctx,
 		`MATCH (src {project_id: $pid})-[r]->(dst {project_id: $pid})
-		 RETURN toString(id(src)) AS src, toString(id(dst)) AS dst,
-		        type(r) AS rel_type, properties(r) AS props`,
+		 RETURN labels(src) AS src_lbls, properties(src) AS src_props,
+		        labels(dst) AS dst_lbls, properties(dst) AS dst_props,
+		        type(r) AS rel_type, properties(r) AS rel_props`,
 		map[string]any{"pid": c.projectID},
 	)
 	if err != nil {
@@ -82,18 +127,23 @@ func (c *Client) ExportEdges(ctx context.Context) ([]BrainEdge, error) {
 	var edges []BrainEdge
 	for result.Next(ctx) {
 		record := result.Record()
-		src, _, _ := neo4j.GetRecordValue[string](record, "src")
-		dst, _, _ := neo4j.GetRecordValue[string](record, "dst")
+		srcLbls, _, _ := neo4j.GetRecordValue[[]any](record, "src_lbls")
+		srcProps, _, _ := neo4j.GetRecordValue[map[string]any](record, "src_props")
+		dstLbls, _, _ := neo4j.GetRecordValue[[]any](record, "dst_lbls")
+		dstProps, _, _ := neo4j.GetRecordValue[map[string]any](record, "dst_props")
 		relType, _, _ := neo4j.GetRecordValue[string](record, "rel_type")
-		props, _, _ := neo4j.GetRecordValue[map[string]any](record, "props")
-		if src == "" || dst == "" {
+		relProps, _, _ := neo4j.GetRecordValue[map[string]any](record, "rel_props")
+
+		srcKey := stableDomainKey(firstLabel(srcLbls), cleanProps(srcProps))
+		dstKey := stableDomainKey(firstLabel(dstLbls), cleanProps(dstProps))
+		if srcKey == "" || dstKey == "" {
 			continue
 		}
 		edges = append(edges, BrainEdge{
-			Src:        src,
-			Dst:        dst,
+			Src:        srcKey,
+			Dst:        dstKey,
 			Type:       relType,
-			Properties: cleanProps(props),
+			Properties: cleanProps(relProps),
 		})
 	}
 	if err := result.Err(); err != nil {
