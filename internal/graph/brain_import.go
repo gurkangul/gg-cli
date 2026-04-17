@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -181,6 +182,11 @@ func readEdgesJSONL(path string) ([]rawEdgeRecord, error) {
 	return readJSONL[rawEdgeRecord](path)
 }
 
+// jsonlMaxLineBytes is the maximum size of a single JSONL line accepted by readJSONL.
+// Large symbol graphs can produce wide lines (many properties), so we allow 64 MiB.
+// Raising this is safe: it only allocates on demand when lines are long.
+const jsonlMaxLineBytes = 64 << 20 // 64 MiB
+
 func readJSONL[T any](path string) ([]T, error) {
 	f, err := os.Open(path) //nolint:gosec
 	if err != nil {
@@ -193,7 +199,7 @@ func readJSONL[T any](path string) ([]T, error) {
 
 	var records []T
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20)
+	scanner.Buffer(make([]byte, 4<<10), jsonlMaxLineBytes)
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
@@ -208,6 +214,9 @@ func readJSONL[T any](path string) ([]T, error) {
 		records = append(records, r)
 	}
 	if err := scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return nil, fmt.Errorf("%s: JSONL line exceeds %d MiB limit — snapshot may be corrupt; re-run 'gg brain export'", path, jsonlMaxLineBytes>>20)
+		}
 		return nil, fmt.Errorf("scan %s: %w", path, err)
 	}
 	return records, nil
