@@ -1,5 +1,11 @@
 # gg — One brain, any agent
 
+[![CI](https://github.com/gurkangul/gg-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/gurkangul/gg-cli/actions/workflows/ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/gurkangul/gg-cli)](https://github.com/gurkangul/gg-cli/releases/latest)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/gurkangul/gg-cli)](go.mod)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Status: Alpha](https://img.shields.io/badge/status-alpha-orange)](https://github.com/gurkangul/gg-cli/releases)
+
 > **Status: Alpha.** API and storage format may change between releases.
 > Suitable for personal projects and early adopters. Not recommended for
 > production multi-team environments yet.
@@ -15,6 +21,18 @@ When you run several AI agents in parallel (different terminals, different roles
 | Rejected approaches get retried | Rejections are first-class records, returned by `gg search` |
 
 **One brain. Any agent. Subprocess interface — no daemon, no REST.**
+
+---
+
+## Why this exists
+
+Running multiple AI agents in parallel is increasingly common — different terminals, different specializations, different tasks. The problem is that each agent starts with a blank slate every time. Three failure modes follow reliably:
+
+1. **Every agent re-derives the same context.** Agent A figures out the auth approach; Agent B spends 10 minutes reaching the same conclusion. Multiply by n agents and n sessions.
+2. **Impact-blind fixes create fix loops.** An agent patches a symptom without knowing what else calls the function. The next agent sees the symptom again and patches it again.
+3. **Rejected approaches keep getting re-proposed.** "What about using Redis for the session store?" — answered three times across three sessions because nothing remembered the rejection.
+
+gg is a shared brain. Agents call it as a subprocess. Decisions, rejections, tasks, and code-graph facts live in a local vector store that all agents query. A decision made by one is immediately visible to the others.
 
 ---
 
@@ -69,7 +87,7 @@ gg doctor
 gg index --lang go
 
 # 4. Record a decision
-gg decide "use JWT for auth" --reason "stateless, scales well" --tags "auth,api"
+gg record "use JWT for auth" --reason "stateless, scales well" --tags "auth,api"
 
 # 5. Search context before making a change
 gg context "authentication"
@@ -262,6 +280,33 @@ All agents write to the same Qdrant + Memgraph backend. A decision made by one i
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    subgraph agents["Agents (any terminal)"]
+        A1[Claude Code]
+        A2[Cursor]
+        A3[Aider / Codex]
+    end
+
+    subgraph gg["gg CLI (subprocess)"]
+        CMD[cobra commands]
+        OB[outbox\ncrash guard]
+    end
+
+    subgraph storage["Local storage (Docker)"]
+        QD[(Qdrant\nvector store)]
+        OL[Ollama\nnomic-embed-text]
+        MG[(Memgraph\ncode graph)]
+    end
+
+    A1 & A2 & A3 -->|gg record / search / context| CMD
+    CMD -->|decisions · tasks · notes · rejections| QD
+    CMD --> OL
+    OL -->|768-dim vectors| QD
+    CMD -->|index writes| OB
+    OB -->|symbols · calls · imports| MG
+```
+
 ```
 gg (CLI)
 ├── cmd/           — cobra commands
@@ -282,6 +327,43 @@ gg (CLI)
 **Isolation:** every Qdrant point and every Memgraph node carries a `project_id` property. Multiple projects can share the same backend without data leakage.
 
 **Crash safety:** `gg index` writes an outbox entry before touching Memgraph. On success the entry is deleted. If the process dies mid-write, `gg doctor --reconcile` surfaces the pending entry and shows the exact repair command.
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Why |
+|---|---|---|
+| CLI framework | [Cobra](https://github.com/spf13/cobra) | Idiomatic Go subcommand routing |
+| Language | Go 1.26.2 | Single-binary distribution, no runtime deps |
+| Vector store | [Qdrant](https://qdrant.tech) via gRPC | Semantic search on decisions, tasks, notes, rejections |
+| Code graph | [Memgraph](https://memgraph.com) via Bolt | Structural queries: `CALLS`, `IMPORTS`, `DEFINES` |
+| Embeddings | [Ollama](https://ollama.ai) — `nomic-embed-text` 768-dim | Local, no API key, runs in the same Docker stack |
+| Code indexers | SCIP (`scip-go`, `scip-typescript`, `scip-python`) | Language-agnostic symbol graph with cross-file resolution |
+
+---
+
+## Engineering Decisions
+
+Decisions that shaped the design — and why the alternatives lost.
+
+**No daemon, subprocess interface only.**
+A background daemon would require a service manager, a PID file, and crash recovery. Instead, `gg` is a stateless CLI: agents call it as a subprocess, Docker provides the stores. This eliminated an entire class of process-lifecycle bugs and kept the distribution a single binary. See [docs/architecture.md](docs/architecture.md).
+
+**Two-store architecture: Qdrant + Memgraph.**
+Decisions, tasks, and rejections need fuzzy semantic search (`gg search "auth"` should surface JWT discussions even if the query doesn't match exact words). Code impact queries need structural traversal (`gg impact src/auth.go` follows call chains). A single store forces a compromise in both. Two purpose-built stores, one per query type.
+
+**`gg record` with `--stance` flag instead of separate `decide`/`reject` verbs.**
+Early design had six command verbs. Five (record, note, task, bug, discuss) covers the full lifecycle with less surface area. `gg decide` and `gg reject` remain as aliases for agent compatibility, but `record --stance=accept|reject` is canonical. See the 6→5 verb taxonomy decision.
+
+**Outbox pattern for dual-store consistency.**
+When `gg index` writes to both Qdrant and Memgraph, a crash between the two writes leaves the stores out of sync. gg writes a `.gg/outbox/<id>.json` entry before the Memgraph write and deletes it on success. `gg doctor --reconcile` surfaces any dangling entries. No saga framework, no distributed transaction — just a file and a reconciler.
+
+**`project_id` as the isolation primitive.**
+Rejected: Memgraph 3.x multi-database feature (not broadly available, adds infra coupling). Chosen: every Qdrant point and every Memgraph node carries a `project_id` UUID injected at the `runQuery` level in `internal/graph/queries.go`. A new project gets a new UUID from `gg init`; shared infra at `~/.gg/` serves all projects without data leakage.
+
+**SCIP-first hybrid parser (SCIP + tree-sitter fallback).**
+Pure SCIP gives high-quality cross-file symbol resolution for supported languages (Go, TypeScript, Python via `scip-go`, `scip-typescript`, `scip-python`). Tree-sitter covers languages with no SCIP indexer. The spike showed scip-go at 0.97s for a real repo, 3.78ms ParseFile, 1365 symbols — production-ready. Rejected: writing a custom AST parser (maintenance surface); Docker-based SCIP fallback (day-1 complexity).
 
 ---
 
@@ -313,6 +395,26 @@ export GG_TELEMETRY=0   # also: false, no, off
 | [docs/adapters.md](docs/adapters.md) | Agent integrations, SCIP indexers, git hooks |
 | [docs/roadmap.md](docs/roadmap.md) | Phase plan and vision (historical) |
 | [AGENTS.md](AGENTS.md) | Agent behavior contract (runtime) |
+
+---
+
+## Roadmap
+
+| Phase | Status | Scope |
+|---|---|---|
+| Phase 1 — Core CLI | ✅ Done | Record/search/task/bug/discuss/note/tell, Qdrant store, AGENTS.md protocol |
+| Phase 2 — Code Intel | ✅ Done | `gg index`, `gg impact`, `gg context`, SCIP parsers, Memgraph graph, outbox crash safety |
+| Phase 3 — Adoption polish | 🚧 In progress | README/docs quality, multi-tenancy, agent hook enforcement, `gg session-start` |
+
+See [docs/roadmap.md](docs/roadmap.md) for the detailed phase plan.
+
+---
+
+## Contributing
+
+Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+For security issues, see [SECURITY.md](SECURITY.md) — please do not open a public issue.
 
 ---
 
