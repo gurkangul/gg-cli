@@ -1,12 +1,18 @@
 ## gg discuss
 
-Manage open discussions — topics raised but not yet concluded
+Manage open discussions (deprecated — use gg message or gg record)
 
 ### Synopsis
 
 Discussions track conversations that haven't reached a decision/task/rejection.
-Open them mid-conversation when a topic surfaces without a clear outcome; resolve
-them by linking to the artifact that concluded them, or dismiss if superseded.
+
+DEPRECATED: usage data shows discuss is underused (0 calls in dogfood).
+  - For deliberation across agents: use 'gg message send' / 'gg tell'
+  - For capturing a concluded outcome: use 'gg record' (decision) or 'gg task'
+  - For async coordination: use 'gg message' with --thread
+
+This command will be removed in a future release (v0.2+).
+TODO(v0.2): remove gg discuss
 
 ### Options
 

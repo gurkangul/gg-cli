@@ -9,7 +9,9 @@ gg task get TASK-ID [flags]
 ### Options
 
 ```
-  -h, --help   help for get
+      --compact        one line summary — drops detail/tags/author to preserve agent context window
+  -h, --help           help for get
+      --with-context   append === Related Context === block with top-3 semantically related items from the knowledge base
 ```
 
 ### Options inherited from parent commands

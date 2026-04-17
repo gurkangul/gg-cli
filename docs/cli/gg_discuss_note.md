@@ -27,5 +27,5 @@ gg discuss note DISC-ID "text" [flags]
 
 ### SEE ALSO
 
-* [gg discuss](gg_discuss.md)	 - Manage open discussions — topics raised but not yet concluded
+* [gg discuss](gg_discuss.md)	 - Manage open discussions (deprecated — use gg message or gg record)
 

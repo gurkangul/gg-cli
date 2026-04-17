@@ -21,5 +21,5 @@ gg note list [flags]
 
 ### SEE ALSO
 
-* [gg note](gg_note.md)	 - Record a free-form activity note
+* [gg note](gg_note.md)	 - Record a free-form note (deprecated — use gg record or commit message)
 

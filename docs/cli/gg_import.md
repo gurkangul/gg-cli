@@ -24,8 +24,10 @@ gg import <bundle.json.gz> [flags]
 ### Options
 
 ```
-      --as string   import under a different project ID (UUID)
-  -h, --help        help for import
+      --as string        import under a different project ID (UUID)
+      --from-gsd         import milestones, decisions, and slices from a GSD project's .gsd/gsd.db
+  -h, --help             help for import
+      --project string   path to GSD project root (default: current directory) (default ".")
 ```
 
 ### Options inherited from parent commands

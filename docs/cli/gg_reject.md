@@ -1,15 +1,17 @@
 ## gg reject
 
-Record a rejected approach (deprecated: use gg record --stance=reject)
+Record a rejected approach (deprecated: use gg record --decision-status=rejected)
 
 ### Synopsis
 
 Record a rejected approach.
 
-DEPRECATED: use 'gg record --stance=reject' instead.
+DEPRECATED: use 'gg record --decision-status=rejected' instead.
+Decision.status replaces the separate rejection primitive.
 This command will be removed in a future release.
 
-  gg record --stance=reject "approach" --reason "why"
+  gg record "approach" --decision-status=rejected --reason "why"
+  gg record "use PostgreSQL" --rejected-alternatives "MySQL,SQLite" --reason "..."
 
 ```
 gg reject "approach" [flags]

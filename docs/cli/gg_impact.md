@@ -21,6 +21,7 @@ gg impact <file> [flags]
 ### Options
 
 ```
+      --compact         one line per item — drops symbol kinds and reasons to preserve agent context window
   -h, --help            help for impact
       --kb-limit uint   max results per knowledge-base collection (default 5)
 ```

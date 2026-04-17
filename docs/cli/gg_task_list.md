@@ -9,7 +9,9 @@ gg task list [flags]
 ### Options
 
 ```
+      --blockers        show tasks that are blocking other tasks (have --blocks targets)
   -h, --help            help for list
+      --needs-review    show done tasks awaiting review (review_status=none or pending)
       --ready           show only pending tasks whose dependencies are all done
       --status string   filter by status: pending, in_progress, done, blocked
 ```

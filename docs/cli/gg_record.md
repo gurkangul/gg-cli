@@ -1,16 +1,23 @@
 ## gg record
 
-Record a decision or rejected approach
+Record that a decision was made (the canonical knowledge-capture verb)
 
 ### Synopsis
 
-Record a decision (default) or a rejected approach.
+Record an architectural decision, rejected approach, or design choice.
 
-  gg record "use JWT for auth"                         # accepted decision
-  gg record --stance=reject "store sessions in Redis"  # rejected approach
+WHEN TO USE: you've concluded something — chosen a library, rejected an approach,
+established a constraint. Anything that would appear in an ADR belongs here.
 
-This is the canonical verb. 'gg decide' and 'gg reject' still work but are
-deprecated and will be removed in a future major release.
+WHEN NOT TO USE: for in-progress deliberation use 'gg message send'; for task
+tracking use 'gg task create'; for progress notes use 'gg task done'.
+
+Examples:
+  gg record "use JWT for auth" --reason "stateless, scales horizontally" --tags "auth,security"
+  gg record "do NOT use Redis sessions" --decision-status=rejected --reason "ops burden"
+  gg record "switch to PostgreSQL" --rejected-alternatives "MySQL,SQLite" --implements TASK-003
+
+See also: gg task (track work), gg search (find context), gg status (overview)
 
 ```
 gg record "text" [flags]
@@ -19,12 +26,16 @@ gg record "text" [flags]
 ### Options
 
 ```
-      --from string     author/role recording this (defaults to $GG_ROLE)
-  -h, --help            help for record
-      --reason string   why this decision was made (or rejected)
-      --stance string   stance: "accept" (decision) or "reject" (rejection) (default "accept")
-      --tags string     comma-separated tags
-      --task string     related task ID
+      --decision-status string         decision lifecycle status: active, superseded, rejected (default "active")
+      --from string                    author/role recording this (defaults to $GG_ROLE)
+  -h, --help                           help for record
+      --implements string              TASK-X that implements this decision (writes Memgraph edge)
+      --reason string                  why this decision was made (or rejected)
+      --rejected-alternatives string   comma-separated approaches that were considered and rejected
+      --rejects string                 decision UUID superseded by this one (writes Memgraph edge)
+      --stance string                  stance: "accept" (decision) or "reject" (rejection) (default "accept")
+      --tags string                    comma-separated tags
+      --task string                    related task ID
 ```
 
 ### Options inherited from parent commands

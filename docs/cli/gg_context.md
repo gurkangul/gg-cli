@@ -16,6 +16,7 @@ gg context "topic" [flags]
 ### Options
 
 ```
+      --compact            emit one line per item — drops reasons/details/transcripts to preserve agent context window
       --full               print full deliberation transcript for each discussion
   -h, --help               help for context
       --include-resolved   include resolved/dismissed discussions and done/blocked tasks
