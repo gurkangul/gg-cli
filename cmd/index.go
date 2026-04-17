@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -270,30 +272,37 @@ func index(ctx context.Context, root string, lang runner.Lang, r runner.Runner, 
 
 // graphHandler implements parser.Handler, writing parsed nodes to Memgraph.
 type graphHandler struct {
-	gc         *graph.Client
-	root       string
-	headSHA    string          // stamped on every node as indexed_at_commit
-	fileFilter map[string]bool // if non-nil, only these file paths are written
-	files      int
-	symbols    int
-	refs       int
+	gc                *graph.Client
+	root              string
+	headSHA           string          // stamped on every node as indexed_at_commit
+	fileFilter        map[string]bool // if non-nil, only these relative paths are written
+	files             int
+	symbols           int
+	refs              int
+	skippedOutOfTree  int // files skipped because their path escaped project root (e.g. go-build cache)
 }
 
 func (h *graphHandler) OnFile(ctx context.Context, node *graph.Node) error {
-	relPath, _ := node.Properties["path"].(string)
-	absPath := absFilePath(h.root, relPath)
-	if h.fileFilter != nil && !h.fileFilter[absPath] {
+	rawPath, _ := node.Properties["path"].(string)
+	relPath, ok := normalizeProjectPath(h.root, rawPath)
+	if !ok {
+		// Path escapes project root (e.g. Go build-cache artefact like
+		// "../../Library/Caches/go-build/..") or is otherwise outside the tree.
+		// Skip silently — these aren't part of the project's source graph.
+		h.skippedOutOfTree++
 		return nil
 	}
-	// Overwrite path with absolute form and set source_file for idempotent reaping.
-	node.Properties["path"] = absPath
-	node.Properties["source_file"] = absPath
-	// Stamp the commit SHA so ghost-sweep queries can identify stale nodes.
+	if h.fileFilter != nil && !h.fileFilter[relPath] {
+		return nil
+	}
+	// Store project-relative paths for cross-machine portability (BUG-010 fix).
+	// CHANGED_CONTRACT.md §5 requires source_file on every node for reaping;
+	// relative form keeps the contract while making brain export git-safe.
+	node.Properties["path"] = relPath
+	node.Properties["source_file"] = relPath
 	if h.headSHA != "" {
 		node.Properties["indexed_at_commit"] = h.headSHA
 	}
-	// UpsertNode (MERGE on path+project_id) makes re-runs safe: re-indexing the
-	// same file updates the node rather than creating a duplicate.
 	if err := h.gc.UpsertNode(ctx, node, []string{"path"}); err != nil {
 		return err
 	}
@@ -302,25 +311,22 @@ func (h *graphHandler) OnFile(ctx context.Context, node *graph.Node) error {
 }
 
 func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNode *graph.Node) error {
-	// fileNode.Properties["path"] was already set to absolute by OnFile.
-	absPath, _ := fileNode.Properties["path"].(string)
-	if absPath == "" {
-		absPath = absFilePath(h.root, "")
-	}
-	if h.fileFilter != nil && !h.fileFilter[absPath] {
+	// fileNode.Properties["path"] was normalised to relative by OnFile.
+	relPath, _ := fileNode.Properties["path"].(string)
+	if relPath == "" {
+		// File was skipped (out-of-tree); skip its symbols too.
 		return nil
 	}
-	// source_file is mandatory (CHANGED_CONTRACT.md §5) so reaping can find this node.
-	symNode.Properties["source_file"] = absPath
-	// Stamp the commit SHA so ghost-sweep queries can identify stale nodes.
+	if h.fileFilter != nil && !h.fileFilter[relPath] {
+		return nil
+	}
+	symNode.Properties["source_file"] = relPath
 	if h.headSHA != "" {
 		symNode.Properties["indexed_at_commit"] = h.headSHA
 	}
-	// MERGE on (name, source_file, project_id) — a symbol name is unique per file.
 	if err := h.gc.UpsertNode(ctx, symNode, []string{"name", "source_file"}); err != nil {
 		return err
 	}
-	// Create DEFINES edge: (File)-[:DEFINES]->(Symbol)
 	if fileNode.ID != "" && symNode.ID != "" {
 		edge := &graph.Edge{
 			FromID: fileNode.ID,
@@ -328,7 +334,6 @@ func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNo
 			Type:   graph.RelDefines,
 		}
 		if err := h.gc.UpsertEdge(ctx, edge); err != nil {
-			// Non-fatal: log and continue.
 			fmt.Fprintf(os.Stderr, "warning: upsert DEFINES edge: %v\n", err)
 		}
 	}
@@ -344,12 +349,37 @@ func (h *graphHandler) OnReference(ctx context.Context, fromFileNode *graph.Node
 	return nil
 }
 
-// absFilePath converts a project-relative path to absolute using the project root.
-func absFilePath(root, rel string) string {
-	if rel == "" {
-		return root
+// normalizeProjectPath accepts whatever the SCIP parser emitted for a file and
+// returns a cleaned project-relative path. Returns ok=false when the path
+// escapes the project root (absolute paths outside root, or rel paths that
+// resolve via "..") — callers should skip such files.
+func normalizeProjectPath(root, raw string) (string, bool) {
+	if raw == "" {
+		return "", false
 	}
-	return root + "/" + rel
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", false
+	}
+	var candidate string
+	if filepath.IsAbs(raw) {
+		candidate = filepath.Clean(raw)
+	} else {
+		candidate = filepath.Clean(filepath.Join(absRoot, raw))
+	}
+	rel, err := filepath.Rel(absRoot, candidate)
+	if err != nil {
+		return "", false
+	}
+	// filepath.Rel can return "../.." when candidate escapes root.
+	if rel == "." || rel == "" {
+		return "", false
+	}
+	if strings.HasPrefix(rel, "..") {
+		return "", false
+	}
+	// Always use forward-slash paths — portable across OS.
+	return filepath.ToSlash(rel), true
 }
 
 // langExtensions maps a Lang to the file extensions its indexer handles.

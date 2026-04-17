@@ -87,13 +87,22 @@ After a successful incremental run:
 
 ## 5. `source_file` Property Contract
 
-Every node created by the indexer **must** carry `source_file: <absolute_path>`.
-This is what makes reaping possible. Nodes without `source_file` are orphans
-that can never be cleaned up — a hard bug.
+Every node created by the indexer **must** carry
+`source_file: <project-relative-forward-slash-path>`. Examples:
+
+- ✅ `cmd/brain.go`
+- ✅ `internal/store/client.go`
+- ❌ `/Users/alice/projects/gg-cli/cmd/brain.go` (absolute — not portable)
+- ❌ `../../Library/Caches/go-build/…` (escapes project root)
+
+Relative paths are mandatory so brain export / import travel across machines
+(BUG-010 fix). SCIP may emit absolute paths or paths traversing outside the
+project root; `cmd/index.go#normalizeProjectPath` cleans + rejects those.
+
+Nodes without `source_file` are orphans that can never be reaped — a hard bug.
 
 The parser is responsible for setting this on every `SymbolNode` and `FileNode`
-it creates. The runner must pass `root + document.relative_path` when calling
-parser callbacks.
+it creates. The graphHandler normalises it before writing to Memgraph.
 
 ---
 

@@ -56,10 +56,14 @@ func runImpact(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Resolve to absolute path for graph queries.
-	absPath, err := filepath.Abs(rawPath)
+	// Resolve to project-relative path — that's what the graph indexes (BUG-010).
+	projRoot, err := config.FindRoot()
 	if err != nil {
-		return fmt.Errorf("resolve path: %w", err)
+		return fmt.Errorf("find project root: %w", err)
+	}
+	relPath, ok := normalizeProjectPath(projRoot, rawPath)
+	if !ok {
+		return fmt.Errorf("path %q is outside project root %q", rawPath, projRoot)
 	}
 
 	// Load Qdrant deps (always needed for KB search).
@@ -72,7 +76,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	result := impactResult{File: absPath}
+	result := impactResult{File: relPath}
 
 	// ── Graph queries (optional — skipped if Memgraph not configured) ──────
 	cfg, _ := config.Load()
@@ -87,7 +91,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 			defer gcancel()
 
 			// 1. Downstream dependents.
-			deps, depErr := gc.DependentsOf(gctx, absPath)
+			deps, depErr := gc.DependentsOf(gctx, relPath)
 			if depErr != nil {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("dependents query: %v", depErr))
 			} else {
@@ -95,7 +99,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 			}
 
 			// 2. Exported symbols.
-			symbols, symErr := gc.FileSymbols(gctx, absPath)
+			symbols, symErr := gc.FileSymbols(gctx, relPath)
 			if symErr != nil {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("symbols query: %v", symErr))
 			} else {
@@ -110,7 +114,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 
 	// ── Knowledge-base search (semantic) ────────────────────────────────────
 	// Use the file basename + relative path as the search query.
-	searchQuery := filepath.Base(absPath)
+	searchQuery := filepath.Base(relPath)
 
 	vector, embErr := d.embedder.Generate(ctx, searchQuery)
 	if embErr != nil {
