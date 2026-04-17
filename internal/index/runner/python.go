@@ -20,12 +20,9 @@ func (*PythonRunner) Index(ctx context.Context, req *IndexRequest) (*IndexResult
 		return nil, err
 	}
 
-	outPath, cleanup, err := outputPath(req)
+	outPath, err := outputPath(req)
 	if err != nil {
 		return nil, err
-	}
-	if cleanup != nil {
-		defer cleanup()
 	}
 
 	// scip-python index --output <path> <project_root>

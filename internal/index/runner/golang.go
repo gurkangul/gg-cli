@@ -21,12 +21,9 @@ func (*GoRunner) Index(ctx context.Context, req *IndexRequest) (*IndexResult, er
 		return nil, err
 	}
 
-	outPath, cleanup, err := outputPath(req)
+	outPath, err := outputPath(req)
 	if err != nil {
 		return nil, err
-	}
-	if cleanup != nil {
-		defer cleanup()
 	}
 
 	// scip-go --output <path> -- runs inside the project root.
@@ -45,17 +42,16 @@ func (*GoRunner) Index(ctx context.Context, req *IndexRequest) (*IndexResult, er
 
 // outputPath resolves the output file path from the request.
 // If req.OutputPath is set, it uses that. Otherwise it creates a temp file.
-// Returns the path, an optional cleanup function (non-nil only for temp files), and any error.
-func outputPath(req *IndexRequest) (string, func(), error) {
+// The caller is responsible for removing the temp file when done.
+func outputPath(req *IndexRequest) (string, error) {
 	if req.OutputPath != "" {
-		return req.OutputPath, nil, nil
+		return req.OutputPath, nil
 	}
 	f, err := os.CreateTemp("", "gg-scip-*.scip")
 	if err != nil {
-		return "", nil, fmt.Errorf("create temp scip file: %w", err)
+		return "", fmt.Errorf("create temp scip file: %w", err)
 	}
 	path := filepath.Clean(f.Name())
 	_ = f.Close()
-	cleanup := func() { _ = os.Remove(path) }
-	return path, cleanup, nil
+	return path, nil
 }

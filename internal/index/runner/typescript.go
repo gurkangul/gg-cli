@@ -21,12 +21,9 @@ func (*TypeScriptRunner) Index(ctx context.Context, req *IndexRequest) (*IndexRe
 		return nil, err
 	}
 
-	outPath, cleanup, err := outputPath(req)
+	outPath, err := outputPath(req)
 	if err != nil {
 		return nil, err
-	}
-	if cleanup != nil {
-		defer cleanup()
 	}
 
 	// scip-typescript index --output <path>
