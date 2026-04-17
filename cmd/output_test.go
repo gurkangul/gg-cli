@@ -439,6 +439,234 @@ func TestPrintContextBundle_WithErrors(t *testing.T) {
 	}
 }
 
+// ── context.go: compactTrim ──────────────────────────────────────────────────
+
+func TestCompactTrim(t *testing.T) {
+	cases := []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"short", 10, "short"},
+		{"exactlyten", 10, "exactlyten"},
+		{"this is longer than ten characters", 10, "this is l…"},
+		{"çalışmayıılık", 5, "çalı…"}, // multibyte safety
+		{"", 5, ""},
+	}
+	for _, tc := range cases {
+		got := compactTrim(tc.in, tc.n)
+		if got != tc.want {
+			t.Errorf("compactTrim(%q, %d) = %q, want %q", tc.in, tc.n, got, tc.want)
+		}
+	}
+}
+
+// ── context.go: renderContextCompact ─────────────────────────────────────────
+
+func TestRenderContextCompact_Structure(t *testing.T) {
+	bundle := contextBundle{
+		decisions: []store.Decision{
+			{Text: "use JWT for auth", CreatedAt: "2026-04-10T12:00:00Z", TaskID: "TASK-001", Reason: "stateless"},
+		},
+		rejections: []store.Rejection{
+			{Approach: "session-based auth", CreatedAt: "2026-04-09T12:00:00Z", Reason: "scaling"},
+		},
+		tasks: []store.Task{
+			{ID: "TASK-042", Title: "JWT refresh endpoint", Status: "pending", Priority: "high", Detail: "this detail must NOT appear"},
+		},
+		discussions: []store.Discussion{
+			{ID: "DISC-008", Topic: "rotate secrets", Status: "open", Turns: []store.Turn{{By: "a"}, {By: "b"}}, Detail: "this detail must NOT appear"},
+		},
+		notes: []store.Note{
+			{Text: "saw X in logs", CreatedAt: "2026-04-08T12:00:00Z", TaskID: "TASK-042"},
+		},
+	}
+
+	var buf strings.Builder
+	renderContextCompact(&buf, "auth", bundle, nil)
+	out := buf.String()
+
+	// Header with counts.
+	if !strings.Contains(out, `context: "auth" — 1D 1R 1T 1? 1N`) {
+		t.Errorf("missing header with counts:\n%s", out)
+	}
+
+	// Body contents present.
+	for _, want := range []string{
+		"D  2026-04-10  use JWT for auth →TASK-001",
+		"R  2026-04-09  session-based auth",
+		"T ○ TASK-042  JWT refresh endpoint (high)",
+		"? ? DISC-008  rotate secrets (2 turns)",
+		"N  2026-04-08  (TASK-042)  saw X in logs",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing line %q in:\n%s", want, out)
+		}
+	}
+
+	// Suppressed bodies — Reason / Detail must be absent in compact view.
+	for _, forbidden := range []string{"stateless", "scaling", "this detail must NOT appear"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("compact output leaked suppressed body %q:\n%s", forbidden, out)
+		}
+	}
+
+	// One line per item + header (2 lines: header + blank) + 5 items = 7 lines total.
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 7 {
+		t.Errorf("expected 7 output lines (header, blank, 5 items), got %d:\n%s", len(lines), out)
+	}
+}
+
+func TestRenderContextCompact_Empty(t *testing.T) {
+	var buf strings.Builder
+	renderContextCompact(&buf, "nothing", contextBundle{}, nil)
+	out := buf.String()
+	if !strings.Contains(out, `context: "nothing" — 0D 0R 0T 0? 0N`) {
+		t.Errorf("empty bundle should still emit header, got:\n%s", out)
+	}
+}
+
+func TestRenderContextCompact_Errors(t *testing.T) {
+	var buf strings.Builder
+	renderContextCompact(&buf, "q", contextBundle{}, []string{"qdrant down", "embedder slow"})
+	out := buf.String()
+	if !strings.Contains(out, "! qdrant down; embedder slow") {
+		t.Errorf("errors should be rendered on a trailing ! line, got:\n%s", out)
+	}
+}
+
+// ── search.go: renderSearchCompact ───────────────────────────────────────────
+
+func TestRenderSearchCompact_Structure(t *testing.T) {
+	decisions := []store.Decision{
+		{Text: "use JWT", CreatedAt: "2026-04-10T12:00:00Z", TaskID: "TASK-001", Reason: "stateless"},
+	}
+	rejections := []store.Rejection{
+		{Approach: "sessions", CreatedAt: "2026-04-09T12:00:00Z", Reason: "scaling"},
+	}
+	var buf strings.Builder
+	renderSearchCompact(&buf, decisions, rejections)
+	out := buf.String()
+
+	if !strings.Contains(out, "search — 1D 1R") {
+		t.Errorf("missing header:\n%s", out)
+	}
+	if !strings.Contains(out, "D  2026-04-10  use JWT →TASK-001") {
+		t.Errorf("missing decision line:\n%s", out)
+	}
+	if !strings.Contains(out, "R  2026-04-09  sessions") {
+		t.Errorf("missing rejection line:\n%s", out)
+	}
+	for _, forbidden := range []string{"stateless", "scaling"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("leaked suppressed reason %q:\n%s", forbidden, out)
+		}
+	}
+}
+
+func TestRenderSearchCompact_Empty(t *testing.T) {
+	var buf strings.Builder
+	renderSearchCompact(&buf, nil, nil)
+	out := buf.String()
+	if !strings.Contains(out, "(no results)") {
+		t.Errorf("empty search should print (no results), got:\n%s", out)
+	}
+}
+
+// ── impact.go: renderImpactCompact ───────────────────────────────────────────
+
+// TestCompactSizeReduction measures the real byte-count delta between
+// default and compact rendering on a realistic bundle. Not an assertion —
+// the Log lines surface actual numbers when run with -v.
+func TestCompactSizeReduction_ContextBundle(t *testing.T) {
+	bundle := contextBundle{
+		decisions: []store.Decision{
+			{Text: "Use JWT for stateless authentication instead of server-side sessions", CreatedAt: "2026-04-10T12:00:00Z", TaskID: "TASK-001",
+				Reason: "Stateless tokens scale horizontally without session affinity; enables mobile apps, microservices, and easier cross-origin auth", Tags: []string{"auth", "backend", "mobile"}},
+			{Text: "Rotate JWT signing keys every 90 days", CreatedAt: "2026-04-08T09:30:00Z", TaskID: "TASK-015",
+				Reason: "Compromised keys have bounded blast radius; 90d aligns with SOC2 expectations and is short enough to catch key leaks before damage accumulates", Tags: []string{"auth", "security", "compliance"}},
+			{Text: "Access tokens 15 min, refresh tokens 7 days", CreatedAt: "2026-04-05T14:20:00Z", TaskID: "TASK-015",
+				Reason: "Short access tokens limit session theft damage; 7d refresh balances UX against revocation latency. Matches industry norm (Auth0, Okta defaults).", Tags: []string{"auth", "security"}},
+		},
+		rejections: []store.Rejection{
+			{Approach: "Session cookies with Redis-backed store", CreatedAt: "2026-04-10T11:00:00Z",
+				Reason: "Adds a stateful dependency in the hot path; session affinity required or Redis becomes a SPOF; cross-domain auth is painful", Tags: []string{"auth", "infra"}},
+		},
+		tasks: []store.Task{
+			{ID: "TASK-042", Title: "Implement JWT refresh token rotation endpoint", Status: "in_progress", Priority: "high",
+				Detail: "Add POST /auth/refresh that validates the current refresh token, issues a new access+refresh pair, and invalidates the old refresh token. Needs rate limiting and reuse detection.", Tags: []string{"auth", "api"}},
+			{ID: "TASK-007", Title: "Add JWT revocation list cache", Status: "pending", Priority: "medium",
+				Detail: "When a user logs out or admin revokes access, write the jti to a time-bounded revocation set (Redis, ttl = max-token-lifetime). Validate against it in the JWT middleware.", Tags: []string{"auth", "backend"}},
+		},
+		discussions: []store.Discussion{
+			{ID: "DISC-008", Topic: "Should we adopt FIDO2 / WebAuthn alongside password auth?", Status: "open",
+				Detail: "Security team flagged passwords-only as insufficient for admin accounts. WebAuthn would add phishing resistance but complicates account recovery flows.",
+				Turns: []store.Turn{{By: "sec-lead"}, {By: "platform"}, {By: "product"}}},
+		},
+		notes: []store.Note{
+			{Text: "Observed a 15% spike in refresh-token requests between 09:00-10:00 UTC — investigate whether a client is aggressively pre-refreshing.",
+				CreatedAt: "2026-04-08T10:15:00Z", TaskID: "TASK-042"},
+		},
+	}
+
+	var defaultBuf, compactBuf strings.Builder
+	// Default path writes via the closure in printContextBundle; we extract the
+	// same stdout-writing logic by invoking the fallback manually.
+	renderContextDefault(&defaultBuf, "auth", bundle, nil)
+	renderContextCompact(&compactBuf, "auth", bundle, nil)
+
+	def := defaultBuf.Len()
+	cmp := compactBuf.Len()
+	saved := def - cmp
+	pct := float64(saved) / float64(def) * 100
+	t.Logf("default render: %d bytes", def)
+	t.Logf("compact render: %d bytes", cmp)
+	t.Logf("reduction:      %d bytes (%.1f%%)", saved, pct)
+
+	if cmp >= def {
+		t.Fatalf("compact rendering (%d) was not smaller than default (%d)", cmp, def)
+	}
+}
+
+func TestRenderImpactCompact_Structure(t *testing.T) {
+	r := impactResult{
+		File:       "/abs/path/src/auth.go",
+		Dependents: []string{"/abs/path/src/api.go"},
+		Symbols:    []map[string]any{{"name": "HandleLogin", "kind": "func"}},
+		Decisions: []store.Decision{
+			{Text: "use bcrypt", CreatedAt: "2026-04-10T12:00:00Z", TaskID: "TASK-007", Reason: "must not appear"},
+		},
+		Tasks: []store.Task{
+			{ID: "TASK-042", Title: "rotate secrets", Status: "pending", Priority: "high", Detail: "must not appear"},
+		},
+		Rejections: []store.Rejection{
+			{Approach: "MD5", CreatedAt: "2026-04-09T12:00:00Z", Reason: "must not appear"},
+		},
+	}
+	var buf strings.Builder
+	renderImpactCompact(&buf, r)
+	out := buf.String()
+
+	if !strings.Contains(out, "impact: /abs/path/src/auth.go — 1 deps 1 sym 1D 1T 1R") {
+		t.Errorf("missing header:\n%s", out)
+	}
+	for _, want := range []string{
+		"→ /abs/path/src/api.go",
+		"S HandleLogin",
+		"D  2026-04-10  use bcrypt →TASK-007",
+		"T ○ TASK-042  rotate secrets (high)",
+		"R  2026-04-09  MD5",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing line %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "must not appear") {
+		t.Errorf("leaked suppressed body:\n%s", out)
+	}
+}
+
 // ── init.go: waitForHTTP ──────────────────────────────────────────────────────
 
 func TestWaitForHTTP_Success(t *testing.T) {

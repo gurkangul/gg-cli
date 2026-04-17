@@ -119,11 +119,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			if tsum, tErr := telemetry.Summarize(ggDir); tErr == nil {
 				agentPct := pct(tsum.AgentCalls, tsum.Total)
 				if tsum.Total > 0 {
-					fmt.Printf("North Star  Last 7d: %d calls, %d%% agent-initiated\n\n", tsum.Total, agentPct)
+					fmt.Printf("North Star  Last 7d: %d calls, %d%% agent-initiated\n", tsum.Total, agentPct)
 				} else {
 					fmt.Println("North Star  Last 7d: no calls recorded yet")
-					fmt.Println()
 				}
+				if tsum.CompactCalls > 0 && tsum.CompactBytesDefault > 0 {
+					saved := tsum.CompactBytesDefault - tsum.CompactBytesOut
+					pctSaved := float64(saved) / float64(tsum.CompactBytesDefault) * 100
+					fmt.Printf("Compact     %d calls, %s saved (avg %.0f%% reduction)\n",
+						tsum.CompactCalls, humanFileSize(int64(saved)), pctSaved)
+				}
+				fmt.Println()
 			}
 		}
 

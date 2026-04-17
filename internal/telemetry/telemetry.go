@@ -31,6 +31,12 @@ type Entry struct {
 	Verb      string `json:"verb"`
 	Origin    string `json:"origin"` // "agent" or "human"
 	Timestamp string `json:"ts"`     // RFC3339
+	// Compact-mode measurement fields (omitted for non-compact calls).
+	// BytesOut is what was actually printed; BytesDefault is what the
+	// non-compact renderer would have produced for the same data.
+	Compact      bool `json:"compact,omitempty"`
+	BytesOut     int  `json:"bytes_out,omitempty"`
+	BytesDefault int  `json:"bytes_default,omitempty"`
 }
 
 func filePath(ggDir string) string {
@@ -61,22 +67,43 @@ func IsDisabled() bool {
 //
 // Pass fromFlag = "" if the calling command has no --from flag.
 func Record(ggDir, verb, fromFlag string) {
-	if ggDir == "" || verb == "" || IsDisabled() {
-		return
-	}
-	origin := originHuman
+	recordEntry(ggDir, Entry{
+		Verb:      verb,
+		Origin:    classify(fromFlag),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// RecordCompact appends a telemetry entry with byte-count measurements for a
+// --compact invocation. bytesDefault is what the non-compact renderer would
+// have produced on the same data — callers must render both to compute the
+// baseline.
+func RecordCompact(ggDir, verb, fromFlag string, bytesOut, bytesDefault int) {
+	recordEntry(ggDir, Entry{
+		Verb:         verb,
+		Origin:       classify(fromFlag),
+		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+		Compact:      true,
+		BytesOut:     bytesOut,
+		BytesDefault: bytesDefault,
+	})
+}
+
+func classify(fromFlag string) string {
 	switch {
 	case strings.TrimSpace(os.Getenv("GG_ROLE")) != "":
-		origin = originAgent
+		return originAgent
 	case strings.TrimSpace(os.Getenv("GG_AGENT")) != "":
-		origin = originAgent
+		return originAgent
 	case strings.TrimSpace(fromFlag) != "":
-		origin = originAgent
+		return originAgent
 	}
-	e := Entry{
-		Verb:      verb,
-		Origin:    origin,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	return originHuman
+}
+
+func recordEntry(ggDir string, e Entry) {
+	if ggDir == "" || e.Verb == "" || IsDisabled() {
+		return
 	}
 	data, err := json.Marshal(e)
 	if err != nil {
@@ -93,10 +120,15 @@ func Record(ggDir, verb, fromFlag string) {
 // WeeklySummary reads the telemetry log and returns a breakdown of verb calls
 // in the last 7 days.
 type WeeklySummary struct {
-	Total       int            `json:"total"`
-	AgentCalls  int            `json:"agent_calls"`
-	HumanCalls  int            `json:"human_calls"`
-	VerbCounts  map[string]int `json:"verb_counts"`
+	Total      int            `json:"total"`
+	AgentCalls int            `json:"agent_calls"`
+	HumanCalls int            `json:"human_calls"`
+	VerbCounts map[string]int `json:"verb_counts"`
+	// CompactCalls counts entries with Compact=true. The two byte totals are
+	// summed across those entries; subtracting gives total bytes saved.
+	CompactCalls        int `json:"compact_calls"`
+	CompactBytesOut     int `json:"compact_bytes_out"`
+	CompactBytesDefault int `json:"compact_bytes_default"`
 }
 
 // Summarize reads the telemetry file and aggregates the last 7 days of data.
@@ -132,6 +164,11 @@ func Summarize(ggDir string) (*WeeklySummary, error) {
 			sum.AgentCalls++
 		} else {
 			sum.HumanCalls++
+		}
+		if e.Compact {
+			sum.CompactCalls++
+			sum.CompactBytesOut += e.BytesOut
+			sum.CompactBytesDefault += e.BytesDefault
 		}
 	}
 	return sum, nil

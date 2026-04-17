@@ -1,8 +1,15 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
 
 // jsonOutput is set by the root --json persistent flag.
@@ -62,4 +69,30 @@ func printJSON(v any, fallback func()) error {
 	}
 	fallback()
 	return nil
+}
+
+// emitCompact renders both default and compact views to measure the byte
+// savings, prints the compact view, and records a telemetry entry with both
+// sizes so `gg status` can surface the dogfood savings metric.
+//
+// Overhead: the default render runs into a buffer and is discarded — a few
+// hundred microseconds on realistic bundles. Only triggered when --compact
+// is active, so non-compact calls pay nothing.
+func emitCompact(cmd *cobra.Command, verb string, renderDefault, renderCompact func(io.Writer)) {
+	var baseline bytes.Buffer
+	renderDefault(&baseline)
+
+	var out bytes.Buffer
+	renderCompact(&out)
+	_, _ = os.Stdout.Write(out.Bytes())
+
+	ggDir, err := config.GGDir()
+	if err != nil {
+		return
+	}
+	fromFlag := ""
+	if f := cmd.Flags().Lookup("from"); f != nil {
+		fromFlag = f.Value.String()
+	}
+	telemetry.RecordCompact(ggDir, verb, fromFlag, out.Len(), baseline.Len())
 }

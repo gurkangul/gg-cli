@@ -180,3 +180,62 @@ func TestRecord_OriginAgent_GGAgentEnv(t *testing.T) {
 		t.Errorf("expected 1 agent call (via GG_AGENT), got human=%d agent=%d", sum.HumanCalls, sum.AgentCalls)
 	}
 }
+
+func TestRecordCompact_AggregatesSizes(t *testing.T) {
+	dir := t.TempDir()
+
+	RecordCompact(dir, "context", "", 200, 1000)
+	RecordCompact(dir, "search", "", 150, 500)
+	Record(dir, "status", "") // non-compact — must not pollute compact totals
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.Total != 3 {
+		t.Errorf("Total = %d, want 3", sum.Total)
+	}
+	if sum.CompactCalls != 2 {
+		t.Errorf("CompactCalls = %d, want 2", sum.CompactCalls)
+	}
+	if sum.CompactBytesOut != 350 {
+		t.Errorf("CompactBytesOut = %d, want 350", sum.CompactBytesOut)
+	}
+	if sum.CompactBytesDefault != 1500 {
+		t.Errorf("CompactBytesDefault = %d, want 1500", sum.CompactBytesDefault)
+	}
+	// Saved = 1150, 76.6% reduction — sanity check the ratio arithmetic
+	// that gg status will run on this data.
+	saved := sum.CompactBytesDefault - sum.CompactBytesOut
+	if saved != 1150 {
+		t.Errorf("bytes saved = %d, want 1150", saved)
+	}
+}
+
+func TestRecordCompact_OmittedOnNonCompact(t *testing.T) {
+	dir := t.TempDir()
+	Record(dir, "status", "")
+
+	data, err := os.ReadFile(filePath(dir))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	// The omitempty JSON tags must keep non-compact entries clean — agents
+	// parsing the log by hand shouldn't see noise fields on every row.
+	for _, field := range []string{`"compact"`, `"bytes_out"`, `"bytes_default"`} {
+		if contains := string(data); len(contains) == 0 {
+			t.Fatal("empty telemetry file")
+		} else if containsField(contains, field) {
+			t.Errorf("non-compact entry leaked %q into JSON: %s", field, contains)
+		}
+	}
+}
+
+func containsField(s, f string) bool {
+	for i := 0; i+len(f) <= len(s); i++ {
+		if s[i:i+len(f)] == f {
+			return true
+		}
+	}
+	return false
+}

@@ -158,6 +158,25 @@ gg index --lang python
 
 Supported indexers: `scip-go`, `scip-typescript`, `scip-python`.
 
+### Keeping agent context small
+
+gg output grows with the knowledge base; on mature projects a single `gg
+context` can span hundreds of lines. Two orthogonal options:
+
+- `--compact` on verbose commands — one line per item (IDs, titles, dates),
+  no reasons or detail bodies. The agent picks which items to fetch in full:
+
+  ```sh
+  gg context "auth" --compact
+  gg search "jwt" --compact
+  gg task get TASK-042 --compact
+  gg impact src/auth.go --compact
+  ```
+
+- A generic shell-output compressor like [RTK](https://github.com/rtk-ai/rtk)
+  transparently shrinks all tool output (git, tests, gg) before it reaches
+  the model's context. Independent of gg; optional.
+
 ### Observability (GG_TRACE=1)
 
 | Command | Description |

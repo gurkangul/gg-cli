@@ -29,7 +29,12 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output results as JSON")
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
-		// Record telemetry on every command invocation.
+		// Record telemetry on every command invocation. Compact-aware commands
+		// self-record post-render with byte counts — skip here to avoid double
+		// counting when --compact is active.
+		if f := cmd.Flags().Lookup("compact"); f != nil && f.Changed {
+			return
+		}
 		// Best-effort: silently skip if the .gg directory can't be located.
 		if ggDir, err := config.GGDir(); err == nil {
 			// Pass --from flag value if the command defines one — telemetry

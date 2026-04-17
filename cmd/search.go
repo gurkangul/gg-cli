@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -20,9 +22,11 @@ var searchCmd = &cobra.Command{
 }
 
 var searchLimit uint64
+var searchCompact bool
 
 func init() {
 	searchCmd.Flags().Uint64Var(&searchLimit, "limit", 5, "max results to return")
+	searchCmd.Flags().BoolVar(&searchCompact, "compact", false, "one line per item — drops reasons/tags/author to preserve agent context window")
 	rootCmd.AddCommand(searchCmd)
 }
 
@@ -113,45 +117,80 @@ func printSearchResults(cmd *cobra.Command, decisions []store.Decision, rejectio
 		if banner != "" {
 			fmt.Fprintln(cmd.OutOrStderr(), banner)
 		}
-		if len(decisions) == 0 && len(rejections) == 0 {
-			fmt.Println("No results found.")
+		if searchCompact {
+			emitCompact(cmd, "search",
+				func(w io.Writer) { renderSearchDefault(w, decisions, rejections) },
+				func(w io.Writer) { renderSearchCompact(w, decisions, rejections) },
+			)
 			return
 		}
-		if len(decisions) > 0 {
-			fmt.Println("DECISIONS:")
-			for _, dec := range decisions {
-				fmt.Printf("  • %s\n", dec.Text)
-				if dec.Reason != "" {
-					fmt.Printf("    Reason: %s\n", dec.Reason)
-				}
-				if len(dec.Tags) > 0 {
-					fmt.Printf("    Tags: %s\n", strings.Join(dec.Tags, ", "))
-				}
-				if dec.TaskID != "" {
-					fmt.Printf("    Task: %s\n", dec.TaskID)
-				}
-				if dec.Author != "" {
-					fmt.Printf("    By: %s\n", dec.Author)
-				}
-			}
-		}
-		if len(rejections) > 0 {
-			fmt.Println("REJECTIONS:")
-			for _, r := range rejections {
-				fmt.Printf("  ✗ %s\n", r.Approach)
-				if r.Reason != "" {
-					fmt.Printf("    Reason: %s\n", r.Reason)
-				}
-				if len(r.Tags) > 0 {
-					fmt.Printf("    Tags: %s\n", strings.Join(r.Tags, ", "))
-				}
-				if r.TaskID != "" {
-					fmt.Printf("    Task: %s\n", r.TaskID)
-				}
-				if r.Author != "" {
-					fmt.Printf("    By: %s\n", r.Author)
-				}
-			}
-		}
+		renderSearchDefault(os.Stdout, decisions, rejections)
 	})
+}
+
+func renderSearchDefault(w io.Writer, decisions []store.Decision, rejections []store.Rejection) {
+	if len(decisions) == 0 && len(rejections) == 0 {
+		fmt.Fprintln(w, "No results found.")
+		return
+	}
+	if len(decisions) > 0 {
+		fmt.Fprintln(w, "DECISIONS:")
+		for _, dec := range decisions {
+			fmt.Fprintf(w, "  • %s\n", dec.Text)
+			if dec.Reason != "" {
+				fmt.Fprintf(w, "    Reason: %s\n", dec.Reason)
+			}
+			if len(dec.Tags) > 0 {
+				fmt.Fprintf(w, "    Tags: %s\n", strings.Join(dec.Tags, ", "))
+			}
+			if dec.TaskID != "" {
+				fmt.Fprintf(w, "    Task: %s\n", dec.TaskID)
+			}
+			if dec.Author != "" {
+				fmt.Fprintf(w, "    By: %s\n", dec.Author)
+			}
+		}
+	}
+	if len(rejections) > 0 {
+		fmt.Fprintln(w, "REJECTIONS:")
+		for _, r := range rejections {
+			fmt.Fprintf(w, "  ✗ %s\n", r.Approach)
+			if r.Reason != "" {
+				fmt.Fprintf(w, "    Reason: %s\n", r.Reason)
+			}
+			if len(r.Tags) > 0 {
+				fmt.Fprintf(w, "    Tags: %s\n", strings.Join(r.Tags, ", "))
+			}
+			if r.TaskID != "" {
+				fmt.Fprintf(w, "    Task: %s\n", r.TaskID)
+			}
+			if r.Author != "" {
+				fmt.Fprintf(w, "    By: %s\n", r.Author)
+			}
+		}
+	}
+}
+
+func renderSearchCompact(w io.Writer, decisions []store.Decision, rejections []store.Rejection) {
+	fmt.Fprintf(w, "search — %dD %dR\n\n", len(decisions), len(rejections))
+	if len(decisions) == 0 && len(rejections) == 0 {
+		fmt.Fprintln(w, "(no results)")
+		return
+	}
+	for _, dec := range decisions {
+		suffix := ""
+		if dec.TaskID != "" {
+			suffix = " →" + dec.TaskID
+		}
+		fmt.Fprintf(w, "D  %s  %s%s\n",
+			shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth), suffix)
+	}
+	for _, r := range rejections {
+		suffix := ""
+		if r.TaskID != "" {
+			suffix = " →" + r.TaskID
+		}
+		fmt.Fprintf(w, "R  %s  %s%s\n",
+			shortDate(r.CreatedAt), compactTrim(r.Approach, compactLineWidth), suffix)
+	}
 }

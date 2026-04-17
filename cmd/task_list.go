@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -25,11 +27,13 @@ var taskGetCmd = &cobra.Command{
 var (
 	taskListStatus string
 	taskListReady  bool
+	taskGetCompact bool
 )
 
 func init() {
 	taskListCmd.Flags().StringVar(&taskListStatus, "status", "", "filter by status: pending, in_progress, done, blocked")
 	taskListCmd.Flags().BoolVar(&taskListReady, "ready", false, "show only pending tasks whose dependencies are all done")
+	taskGetCmd.Flags().BoolVar(&taskGetCompact, "compact", false, "one line summary — drops detail/tags/author to preserve agent context window")
 	taskCmd.AddCommand(taskListCmd)
 	taskCmd.AddCommand(taskGetCmd)
 }
@@ -128,25 +132,47 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 	}
 
 	return printJSON(t, func() {
-		fmt.Printf("%s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
-		if t.Detail != "" {
-			fmt.Printf("  Detail: %s\n", t.Detail)
+		if taskGetCompact {
+			emitCompact(cmd, "task",
+				func(w io.Writer) { renderTaskGetDefault(w, t) },
+				func(w io.Writer) { renderTaskGetCompact(w, t) },
+			)
+			return
 		}
-		if len(t.Tags) > 0 {
-			fmt.Printf("  Tags: %s\n", strings.Join(t.Tags, ", "))
-		}
-		if len(t.DependsOn) > 0 {
-			fmt.Printf("  Depends on: %s\n", strings.Join(t.DependsOn, ", "))
-		}
-		if t.BlockReason != "" {
-			fmt.Printf("  ⚠ Blocked: %s\n", t.BlockReason)
-		}
-		if t.DoneSummary != "" {
-			fmt.Printf("  ✓ Done: %s\n", t.DoneSummary)
-		}
-		if t.Author != "" {
-			fmt.Printf("  By: %s\n", t.Author)
-		}
-		fmt.Printf("  Created: %s\n", t.CreatedAt)
+		renderTaskGetDefault(os.Stdout, t)
 	})
+}
+
+func renderTaskGetDefault(w io.Writer, t *store.Task) {
+	fmt.Fprintf(w, "%s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
+	if t.Detail != "" {
+		fmt.Fprintf(w, "  Detail: %s\n", t.Detail)
+	}
+	if len(t.Tags) > 0 {
+		fmt.Fprintf(w, "  Tags: %s\n", strings.Join(t.Tags, ", "))
+	}
+	if len(t.DependsOn) > 0 {
+		fmt.Fprintf(w, "  Depends on: %s\n", strings.Join(t.DependsOn, ", "))
+	}
+	if t.BlockReason != "" {
+		fmt.Fprintf(w, "  ⚠ Blocked: %s\n", t.BlockReason)
+	}
+	if t.DoneSummary != "" {
+		fmt.Fprintf(w, "  ✓ Done: %s\n", t.DoneSummary)
+	}
+	if t.Author != "" {
+		fmt.Fprintf(w, "  By: %s\n", t.Author)
+	}
+	fmt.Fprintf(w, "  Created: %s\n", t.CreatedAt)
+}
+
+func renderTaskGetCompact(w io.Writer, t *store.Task) {
+	suffix := ""
+	if t.Status == "blocked" && t.BlockReason != "" {
+		suffix = " ⚠" + compactTrim(t.BlockReason, 60)
+	} else if t.Status == "done" && t.DoneSummary != "" {
+		suffix = " ✓" + compactTrim(t.DoneSummary, 60)
+	}
+	fmt.Fprintf(w, "%s %s [%s] %s%s\n",
+		statusIcon(t.Status), t.ID, t.Priority, compactTrim(t.Title, compactLineWidth), suffix)
 }

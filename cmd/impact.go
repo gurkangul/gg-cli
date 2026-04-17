@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -30,9 +32,11 @@ works even without Memgraph.`,
 }
 
 var impactKBLimit uint64
+var impactCompact bool
 
 func init() {
 	impactCmd.Flags().Uint64Var(&impactKBLimit, "kb-limit", 5, "max results per knowledge-base collection")
+	impactCmd.Flags().BoolVar(&impactCompact, "compact", false, "one line per item — drops symbol kinds and reasons to preserve agent context window")
 	rootCmd.AddCommand(impactCmd)
 }
 
@@ -142,65 +146,114 @@ func runImpact(cmd *cobra.Command, args []string) error {
 	}
 
 	return printJSON(result, func() {
-		fmt.Printf("Impact: %s\n", absPath)
-		fmt.Println(strings.Repeat("─", 60))
-
-		fmt.Printf("\nDownstream Dependents (%d):\n", len(result.Dependents))
-		if len(result.Dependents) == 0 {
-			fmt.Println("  (none — or graph not indexed)")
-		} else {
-			for _, dep := range result.Dependents {
-				fmt.Printf("  → %s\n", dep)
-			}
+		if impactCompact {
+			emitCompact(cmd, "impact",
+				func(w io.Writer) { renderImpactDefault(w, result) },
+				func(w io.Writer) { renderImpactCompact(w, result) },
+			)
+			return
 		}
-
-		fmt.Printf("\nExported Symbols (%d):\n", len(result.Symbols))
-		if len(result.Symbols) == 0 {
-			fmt.Println("  (none — or graph not indexed)")
-		} else {
-			for _, s := range result.Symbols {
-				name, _ := s["name"].(string)
-				kind, _ := s["kind"].(string)
-				if kind != "" {
-					fmt.Printf("  %-10s %s\n", kind, name)
-				} else {
-					fmt.Printf("  %s\n", name)
-				}
-			}
-		}
-
-		if len(result.Decisions) > 0 {
-			fmt.Printf("\nRelated Decisions (%d):\n", len(result.Decisions))
-			for _, dec := range result.Decisions {
-				fmt.Printf("  • %s\n", dec.Text)
-				if dec.Reason != "" {
-					fmt.Printf("    Reason: %s\n", dec.Reason)
-				}
-			}
-		}
-
-		if len(result.Tasks) > 0 {
-			fmt.Printf("\nRelated Tasks (%d):\n", len(result.Tasks))
-			for _, t := range result.Tasks {
-				fmt.Printf("  %s [%s] %s\n", taskStatusIcon(t.Status), t.ID, t.Title)
-			}
-		}
-
-		if len(result.Rejections) > 0 {
-			fmt.Printf("\nRelated Rejections (%d):\n", len(result.Rejections))
-			for _, r := range result.Rejections {
-				fmt.Printf("  ✗ %s\n", r.Approach)
-				if r.Reason != "" {
-					fmt.Printf("    Reason: %s\n", r.Reason)
-				}
-			}
-		}
-
-		if len(result.Warnings) > 0 {
-			fmt.Printf("\nWarnings:\n")
-			for _, w := range result.Warnings {
-				fmt.Printf("  ~ %s\n", w)
-			}
-		}
+		renderImpactDefault(os.Stdout, result)
 	})
+}
+
+func renderImpactDefault(w io.Writer, result impactResult) {
+	fmt.Fprintf(w, "Impact: %s\n", result.File)
+	fmt.Fprintln(w, strings.Repeat("─", 60))
+
+	fmt.Fprintf(w, "\nDownstream Dependents (%d):\n", len(result.Dependents))
+	if len(result.Dependents) == 0 {
+		fmt.Fprintln(w, "  (none — or graph not indexed)")
+	} else {
+		for _, dep := range result.Dependents {
+			fmt.Fprintf(w, "  → %s\n", dep)
+		}
+	}
+
+	fmt.Fprintf(w, "\nExported Symbols (%d):\n", len(result.Symbols))
+	if len(result.Symbols) == 0 {
+		fmt.Fprintln(w, "  (none — or graph not indexed)")
+	} else {
+		for _, s := range result.Symbols {
+			name, _ := s["name"].(string)
+			kind, _ := s["kind"].(string)
+			if kind != "" {
+				fmt.Fprintf(w, "  %-10s %s\n", kind, name)
+			} else {
+				fmt.Fprintf(w, "  %s\n", name)
+			}
+		}
+	}
+
+	if len(result.Decisions) > 0 {
+		fmt.Fprintf(w, "\nRelated Decisions (%d):\n", len(result.Decisions))
+		for _, dec := range result.Decisions {
+			fmt.Fprintf(w, "  • %s\n", dec.Text)
+			if dec.Reason != "" {
+				fmt.Fprintf(w, "    Reason: %s\n", dec.Reason)
+			}
+		}
+	}
+
+	if len(result.Tasks) > 0 {
+		fmt.Fprintf(w, "\nRelated Tasks (%d):\n", len(result.Tasks))
+		for _, t := range result.Tasks {
+			fmt.Fprintf(w, "  %s [%s] %s\n", taskStatusIcon(t.Status), t.ID, t.Title)
+		}
+	}
+
+	if len(result.Rejections) > 0 {
+		fmt.Fprintf(w, "\nRelated Rejections (%d):\n", len(result.Rejections))
+		for _, r := range result.Rejections {
+			fmt.Fprintf(w, "  ✗ %s\n", r.Approach)
+			if r.Reason != "" {
+				fmt.Fprintf(w, "    Reason: %s\n", r.Reason)
+			}
+		}
+	}
+
+	if len(result.Warnings) > 0 {
+		fmt.Fprintln(w, "\nWarnings:")
+		for _, warn := range result.Warnings {
+			fmt.Fprintf(w, "  ~ %s\n", warn)
+		}
+	}
+}
+
+func renderImpactCompact(w io.Writer, r impactResult) {
+	fmt.Fprintf(w, "impact: %s — %d deps %d sym %dD %dT %dR\n\n",
+		r.File, len(r.Dependents), len(r.Symbols),
+		len(r.Decisions), len(r.Tasks), len(r.Rejections))
+	for _, dep := range r.Dependents {
+		fmt.Fprintf(w, "→ %s\n", dep)
+	}
+	for _, s := range r.Symbols {
+		name, _ := s["name"].(string)
+		if name != "" {
+			fmt.Fprintf(w, "S %s\n", name)
+		}
+	}
+	for _, dec := range r.Decisions {
+		suffix := ""
+		if dec.TaskID != "" {
+			suffix = " →" + dec.TaskID
+		}
+		fmt.Fprintf(w, "D  %s  %s%s\n",
+			shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth), suffix)
+	}
+	for _, t := range r.Tasks {
+		fmt.Fprintf(w, "T %s %s  %s (%s)\n",
+			taskStatusIcon(t.Status), t.ID, compactTrim(t.Title, compactLineWidth), t.Priority)
+	}
+	for _, rej := range r.Rejections {
+		suffix := ""
+		if rej.TaskID != "" {
+			suffix = " →" + rej.TaskID
+		}
+		fmt.Fprintf(w, "R  %s  %s%s\n",
+			shortDate(rej.CreatedAt), compactTrim(rej.Approach, compactLineWidth), suffix)
+	}
+	if len(r.Warnings) > 0 {
+		fmt.Fprintf(w, "\n! %s\n", strings.Join(r.Warnings, "; "))
+	}
 }
