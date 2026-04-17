@@ -47,6 +47,8 @@ var (
 	doctorHooksDryRun       bool
 	doctorHooksForce        bool
 	doctorHeal              bool
+	doctorWipeBrain         bool
+	doctorWipeBrainYes      bool
 )
 
 func init() {
@@ -64,6 +66,10 @@ func init() {
 		"migrate legacy .gg/telemetry.jsonl and .gg/cache/ to ~/.gg/projects/<id>/ (idempotent)")
 	doctorCmd.Flags().BoolVar(&doctorHooksForce, "force", false,
 		"with --install-agent-hooks: bypass detection and install for the named agent(s)")
+	doctorCmd.Flags().BoolVar(&doctorWipeBrain, "wipe-brain", false,
+		"drop all Qdrant collections and Memgraph nodes for this project (destructive — use for testing)")
+	doctorCmd.Flags().BoolVar(&doctorWipeBrainYes, "yes", false,
+		"with --wipe-brain: skip interactive confirmation")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -124,6 +130,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// --heal: migrate legacy .gg/ runtime state to ~/.gg/projects/<id>/.
 	if doctorHeal {
 		return runDoctorHeal()
+	}
+	// --wipe-brain: destructive reset of Qdrant + Memgraph for this project.
+	if doctorWipeBrain {
+		return runDoctorWipeBrain(cmd)
 	}
 
 	fmt.Println("GG Doctor")
@@ -751,6 +761,68 @@ func runDoctorHeal() error {
 		fmt.Println()
 		fmt.Println("(gg does not commit for you — run the command above manually.)")
 	}
+	return nil
+}
+
+// runDoctorWipeBrain drops all Qdrant collections and Memgraph nodes for
+// this project. Intended for round-trip testing (TASK-139, TASK-140).
+// Requires --yes to skip the interactive prompt.
+func runDoctorWipeBrain(cmd *cobra.Command) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return configErr("run `gg init` first: " + err.Error())
+	}
+	ggDir, err := config.GGDir()
+	if err != nil {
+		return configErr("run `gg init` first: " + err.Error())
+	}
+
+	if !doctorWipeBrainYes {
+		fmt.Fprintf(os.Stderr,
+			"⚠ --wipe-brain will DELETE all Qdrant collections and Memgraph nodes for project %s.\n"+
+				"  This cannot be undone. Re-run with --yes to confirm.\n", cfg.ProjectID)
+		return fmt.Errorf("--wipe-brain requires --yes")
+	}
+
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	fmt.Println("GG Doctor — wipe brain")
+	fmt.Println(strings.Repeat("─", 50))
+
+	// Wipe Qdrant.
+	sc, storeErr := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	if storeErr != nil {
+		return fmt.Errorf("store init: %w", storeErr)
+	}
+	defer func() { _ = sc.Close() }()
+
+	hctx, hcancel := context.WithTimeout(ctx, healthCheckTimeout)
+	defer hcancel()
+	if hErr := sc.HealthCheck(hctx); hErr != nil {
+		return storeDownErr()
+	}
+
+	if dropErr := sc.DropAllCollections(ctx); dropErr != nil {
+		return fmt.Errorf("drop qdrant collections: %w", dropErr)
+	}
+	fmt.Println("  ✓ Qdrant collections dropped")
+
+	// Wipe Memgraph (optional — skip when not configured).
+	if cfg.Memgraph.URI != "" {
+		gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID)
+		if gcErr != nil {
+			fmt.Fprintf(os.Stderr, "  ⚠ Memgraph init failed (%v) — skipped\n", gcErr)
+		} else {
+			defer func() { _ = gc.Close(ctx) }()
+			if sweepErr := gc.SweepProject(ctx); sweepErr != nil {
+				return fmt.Errorf("sweep memgraph: %w", sweepErr)
+			}
+			fmt.Println("  ✓ Memgraph project nodes swept")
+		}
+	}
+
+	fmt.Printf("\nProject %s brain wiped. Run 'gg brain import' to restore from snapshot.\n", cfg.ProjectID)
 	return nil
 }
 
