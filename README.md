@@ -369,7 +369,7 @@ Pure SCIP gives high-quality cross-file symbol resolution for supported language
 
 ## Telemetry (local-only, opt-out)
 
-`gg` writes a single JSON line per command to `<project>/.gg/telemetry.jsonl`
+`gg` writes a single JSON line per command to `~/.gg/projects/<project_id>/telemetry.jsonl`
 recording verb usage (which `gg` commands ran, agent vs human). This data is
 **strictly local — never sent anywhere over the network** — and powers gg's
 own dogfood metric (DISC-008): are agents actually following AGENTS.md rules?

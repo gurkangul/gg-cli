@@ -23,6 +23,28 @@ gg (CLI, Go)
     └── nomic-embed-text (768-dim) semantic search vectors
 ```
 
+## Directory layout
+
+```
+~/.gg/                             shared infra (one per machine)
+├── docker-compose.yaml
+└── projects/
+    └── <project_id>/              per-project runtime state (never committed)
+        ├── telemetry.jsonl
+        └── cache/
+            └── search-lkg/
+
+<project_root>/
+└── .gg/                           per-project metadata (committed to git)
+    ├── config.yaml                project_id + service endpoints
+    ├── RULES.md
+    ├── AGENTS.md (optional)
+    ├── .gitignore                 excludes runtime state if written locally
+    └── outbox/                    crash-safety queue for index writes
+```
+
+`gg doctor --heal` migrates any legacy `.gg/telemetry.jsonl` or `.gg/cache/` entries to the runtime dir.
+
 ## Project isolation
 
 Every Qdrant point and every Memgraph node carries a `project_id` field. Multiple projects can share the same backend without data leakage. The project ID is set in `.gg/config.yaml` and injected automatically by all store/graph writes.

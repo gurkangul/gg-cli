@@ -46,6 +46,7 @@ var (
 	doctorHooksAgent        string
 	doctorHooksDryRun       bool
 	doctorHooksForce        bool
+	doctorHeal              bool
 )
 
 func init() {
@@ -59,6 +60,8 @@ func init() {
 		"restrict --install-agent-hooks to a single agent (claude, cursor, aider, codex, zai)")
 	doctorCmd.Flags().BoolVar(&doctorHooksDryRun, "dry-run", false,
 		"with --install-agent-hooks: report what would change without writing anything")
+	doctorCmd.Flags().BoolVar(&doctorHeal, "heal", false,
+		"migrate legacy .gg/telemetry.jsonl and .gg/cache/ to ~/.gg/projects/<id>/ (idempotent)")
 	doctorCmd.Flags().BoolVar(&doctorHooksForce, "force", false,
 		"with --install-agent-hooks: bypass detection and install for the named agent(s)")
 	rootCmd.AddCommand(doctorCmd)
@@ -117,6 +120,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// diagnostics and runs the agenthooks package against the project.
 	if doctorInstallAgentHooks {
 		return runDoctorInstallAgentHooks(cmd)
+	}
+	// --heal: migrate legacy .gg/ runtime state to ~/.gg/projects/<id>/.
+	if doctorHeal {
+		return runDoctorHeal()
 	}
 
 	fmt.Println("GG Doctor")
@@ -576,6 +583,126 @@ func checkIndexers(cmd *cobra.Command, report *doctorReport) {
 			}
 		}
 	}
+}
+
+// runDoctorHeal migrates legacy runtime state from .gg/ to the per-project
+// runtime directory (~/.gg/projects/<project_id>/). It is safe to run multiple
+// times — each step is idempotent:
+//
+//   - .gg/telemetry.jsonl → appended to runtimeDir/telemetry.jsonl, then removed.
+//   - .gg/cache/          → moved to runtimeDir/cache/, then removed.
+//
+// The function prints git rm --cached suggestions but never runs git itself.
+func runDoctorHeal() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return configErr("run `gg init` first: " + err.Error())
+	}
+	ggDir, err := config.GGDir()
+	if err != nil {
+		return configErr("run `gg init` first: " + err.Error())
+	}
+	rtDir, err := cfg.RuntimeDir()
+	if err != nil {
+		return fmt.Errorf("create runtime dir: %w", err)
+	}
+
+	fmt.Println("GG Doctor — heal (runtime state migration)")
+	fmt.Println(strings.Repeat("─", 50))
+
+	migrated := false
+	var gitRmTargets []string
+
+	// ── Telemetry migration ──────────────────────────────────────────────────
+	srcTelemetry := filepath.Join(ggDir, "telemetry.jsonl")
+	if info, statErr := os.Stat(srcTelemetry); statErr == nil && !info.IsDir() {
+		dstTelemetry := filepath.Join(rtDir, "telemetry.jsonl")
+		if appendErr := appendFile(dstTelemetry, srcTelemetry); appendErr != nil {
+			fmt.Printf("  ✗ telemetry.jsonl: append failed: %v\n", appendErr)
+		} else if rmErr := os.Remove(srcTelemetry); rmErr != nil {
+			fmt.Printf("  ~ telemetry.jsonl: appended but could not remove source: %v\n", rmErr)
+		} else {
+			fmt.Printf("  ✓ telemetry.jsonl → %s\n", dstTelemetry)
+			gitRmTargets = append(gitRmTargets, ".gg/telemetry.jsonl")
+			migrated = true
+		}
+	} else {
+		fmt.Println("  ✓ telemetry.jsonl  (not in .gg/ — nothing to migrate)")
+	}
+
+	// ── Cache migration ──────────────────────────────────────────────────────
+	srcCache := filepath.Join(ggDir, "cache")
+	if info, statErr := os.Stat(srcCache); statErr == nil && info.IsDir() {
+		dstCache := filepath.Join(rtDir, "cache")
+		if renameErr := os.Rename(srcCache, dstCache); renameErr != nil {
+			// Cross-device rename can fail — fall back to copy-then-remove.
+			if copyErr := copyDir(srcCache, dstCache); copyErr != nil {
+				fmt.Printf("  ✗ cache/: migration failed: %v\n", copyErr)
+			} else if rmErr := os.RemoveAll(srcCache); rmErr != nil {
+				fmt.Printf("  ~ cache/: copied but could not remove source: %v\n", rmErr)
+			} else {
+				fmt.Printf("  ✓ cache/ → %s\n", dstCache)
+				gitRmTargets = append(gitRmTargets, ".gg/cache/")
+				migrated = true
+			}
+		} else {
+			fmt.Printf("  ✓ cache/ → %s\n", dstCache)
+			gitRmTargets = append(gitRmTargets, ".gg/cache/")
+			migrated = true
+		}
+	} else {
+		fmt.Println("  ✓ cache/           (not in .gg/ — nothing to migrate)")
+	}
+
+	fmt.Println()
+	if !migrated {
+		fmt.Println("Nothing to migrate — runtime state is already in the correct location.")
+		return nil
+	}
+
+	fmt.Println("Migration complete.")
+	if len(gitRmTargets) > 0 {
+		fmt.Println()
+		fmt.Println("If these paths were tracked by git, un-track them now:")
+		fmt.Printf("  git rm --cached %s\n", strings.Join(gitRmTargets, " "))
+		fmt.Println()
+		fmt.Println("(gg does not commit for you — run the command above manually.)")
+	}
+	return nil
+}
+
+// appendFile reads src and appends its contents to dst (creating dst if needed).
+func appendFile(dst, src string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(dst, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	_, err = f.Write(data)
+	return err
+}
+
+// copyDir copies a directory tree from src to dst.
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, path)
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o700)
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		return os.WriteFile(target, data, 0o600)
+	})
 }
 
 // runInstall executes the install command for the given spec.

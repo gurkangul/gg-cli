@@ -31,8 +31,10 @@ keep hitting the same three pains:
 in two stores: Qdrant (decisions, tasks, messages, rejections, discussions,
 notes, bugs — vector + payload) and Memgraph (Symbol/File/Package code
 graph for `gg impact`). Local infra is provisioned by `gg init` via
-docker-compose at `~/.gg/`. Each project's `.gg/` holds only metadata
-(config.yaml, sequence files, RULES.md). Outbox pattern in
+docker-compose at `~/.gg/`. Each project's `.gg/` holds only committed
+metadata (config.yaml, sequence files, RULES.md, .gitignore). Runtime state
+(telemetry, cache) lives at `~/.gg/projects/<project_id>/` and is never
+committed. Outbox pattern in
 `internal/outbox/` guards dual-store consistency for index operations.
 
 **Look these up before suggesting changes:**
