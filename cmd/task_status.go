@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/hooks"
+	"github.com/gurkangul/gg-cli/internal/store"
 )
 
 var taskDoneCmd = &cobra.Command{
@@ -68,8 +71,13 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	// the store. Always strict by design — a gate that passes on failure is
 	// not a gate. If any hook fails, the task stays in its current state and
 	// we return ExitVerifyFailed so agents can detect the blocked transition.
-	if hookErr := runPreTaskDoneHooks(cmd, taskID, summary); hookErr != nil {
-		return hookErr
+	if rej := runPreTaskDoneHooks(cmd, taskID, summary); rej != nil {
+		emitVerifyFailedEvent(cmd.ErrOrStderr(), rej)
+		notifyVerifyFailure(cmd, rej) // best-effort: no-op if store unreachable or opted out
+		return &ExitError{
+			Code:    ExitVerifyFailed,
+			Message: fmt.Sprintf("pre-task-done hook rejected %s: %s exited %d (task state unchanged)", rej.TaskID, rej.Hook, rej.ExitCode),
+		}
 	}
 
 	d, err := loadDeps(false)
@@ -113,28 +121,130 @@ func taskHookEnv(taskID, summary, projectID string) map[string]string {
 	}
 }
 
+// verifyRejection describes a pre-task-done hook failure with enough detail
+// to emit a structured stderr event and a cross-agent notification. Every
+// field must be stable — agents program against it.
+type verifyRejection struct {
+	TaskID   string
+	Hook     string
+	ExitCode int
+	Stderr   string // trimmed hook output, capped
+}
+
 // runPreTaskDoneHooks runs .gg/hooks/pre-task-done.d/*.sh BEFORE the task state
 // is updated. Strict is hardcoded true — this is a gate, not an advisory. On
-// failure returns an ExitError with code ExitVerifyFailed so the store write
-// is skipped and callers can distinguish "hook blocked" from "store down".
-func runPreTaskDoneHooks(cmd *cobra.Command, taskID, summary string) error {
+// success returns nil. On failure returns a *verifyRejection carrying the
+// first failing hook's name, exit code, and (trimmed) output. Caller is
+// responsible for emitting the NDJSON event, notifying other agents, and
+// returning the ExitVerifyFailed ExitError.
+func runPreTaskDoneHooks(cmd *cobra.Command, taskID, summary string) *verifyRejection {
 	ggDir, err := config.GGDir()
 	if err != nil {
-		return nil // no .gg — can't run hooks, fall through to store (will also fail on config)
+		return nil // no .gg — no gate, fall through (caller will hit a config error anyway)
 	}
 	cfg, err := config.Load()
 	if err != nil {
 		return nil
 	}
 
-	_, hookErr := hooks.RunHooks(ggDir, "pre-task-done", taskHookEnv(taskID, summary, cfg.ProjectID), true, cmd.ErrOrStderr())
-	if hookErr != nil {
-		return &ExitError{
-			Code:    ExitVerifyFailed,
-			Message: fmt.Sprintf("pre-task-done hook rejected %s: %v (task state unchanged)", taskID, hookErr),
+	results, hookErr := hooks.RunHooks(ggDir, "pre-task-done", taskHookEnv(taskID, summary, cfg.ProjectID), true, cmd.ErrOrStderr())
+	if hookErr == nil {
+		return nil
+	}
+
+	// Strict mode guarantees the failing hook is the last (and only failing)
+	// entry. Fall back to the final result defensively.
+	var failed hooks.Result
+	for _, r := range results {
+		if r.Err != nil || r.ExitCode != 0 {
+			failed = r
+			break
 		}
 	}
-	return nil
+	if failed.Script == "" && len(results) > 0 {
+		failed = results[len(results)-1]
+	}
+
+	return &verifyRejection{
+		TaskID:   taskID,
+		Hook:     failed.Script,
+		ExitCode: failed.ExitCode,
+		Stderr:   truncateHookOutput(failed.Output, 400),
+	}
+}
+
+// emitVerifyFailedEvent writes a single NDJSON line to stderr describing the
+// rejection. The contract is deliberately boring: one line, stable keys, no
+// wrapping struct — any agent can parse it with `tail -1` + `jq`. Human text
+// continues to print alongside via hooks.RunHooks itself and the caller's
+// ExitError message; this line is purely for machine consumption.
+func emitVerifyFailedEvent(w io.Writer, rej *verifyRejection) {
+	payload := map[string]any{
+		"event":    "verify_failed",
+		"task":     rej.TaskID,
+		"hook":     rej.Hook,
+		"exit":     rej.ExitCode,
+		"ts":       time.Now().UTC().Format(time.RFC3339),
+		"detail":   rej.Stderr,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return // should never happen with these field types
+	}
+	fmt.Fprintln(w, string(b))
+}
+
+// notifyVerifyFailure broadcasts a "verify-gate" message so parallel agents
+// and the next session's `gg status` surface the rejection. Best-effort: any
+// error (store down, config missing) is swallowed — a failed notification
+// must never mask the underlying verify failure. Skipped when
+// GG_NO_AUTO_NOTIFY=1 (useful in CI / tests / reentrant hook scripts).
+func notifyVerifyFailure(cmd *cobra.Command, rej *verifyRejection) {
+	if os.Getenv("GG_NO_AUTO_NOTIFY") == "1" {
+		return
+	}
+
+	d, err := loadDeps(false)
+	if err != nil {
+		return
+	}
+	defer d.Close()
+
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	content := fmt.Sprintf("%s blocked at verify: %s (exit %d)", rej.TaskID, rej.Hook, rej.ExitCode)
+	if rej.Stderr != "" {
+		content += " — " + firstLine(rej.Stderr)
+	}
+
+	_ = d.store.SendMessage(ctx, store.Message{
+		FromRole: "verify-gate",
+		ToRole:   "all",
+		Content:  content,
+		TaskID:   rej.TaskID,
+	})
+}
+
+// truncateHookOutput trims a hook's combined stdout+stderr to at most n bytes,
+// keeping the tail (most recent output usually carries the error) and adding a
+// leading ellipsis when truncation occurred.
+func truncateHookOutput(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return "…" + s[len(s)-n:]
+}
+
+// firstLine returns the first non-empty line of s, trimmed.
+func firstLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			return t
+		}
+	}
+	return ""
 }
 
 // runTaskDoneHooks runs .gg/hooks/task-done.d/*.sh scripts after a task is

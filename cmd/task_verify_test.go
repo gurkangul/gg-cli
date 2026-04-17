@@ -2,8 +2,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,5 +75,110 @@ func TestTaskDone_PreHookPasses_FallsThroughToStore(t *testing.T) {
 	}
 	if ee.Code != ExitStoreDown {
 		t.Errorf("expected ExitStoreDown(%d) after pre-hook pass, got %d", ExitStoreDown, ee.Code)
+	}
+}
+
+// (d) On rejection, stderr MUST include a single NDJSON line describing the
+// failure so any agent (Claude / Codex / Cursor / CI) can parse it without
+// scraping human-readable text. Contract: line with event=verify_failed,
+// task=TASK-ID, hook=<script>, exit=<code>, ts=<rfc3339>.
+func TestTaskDone_PreHookFails_EmitsNDJSONEvent(t *testing.T) {
+	ggDir := setupGGDir(t)
+	writePreTaskDoneHook(t, ggDir, "07-broken.sh", "echo 'compile error' >&2\nexit 3")
+	// GG_NO_AUTO_NOTIFY so the test does not depend on the (unreachable) store.
+	t.Setenv("GG_NO_AUTO_NOTIFY", "1")
+
+	_, stderr, err := execCmd(t, "task", "done", "TASK-001", "attempt with broken build")
+	if err == nil {
+		t.Fatal("expected error from pre-hook rejection")
+	}
+
+	// Find the NDJSON event line — strict contract: at least one stderr line
+	// must parse as JSON with event=verify_failed.
+	var found map[string]any
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var payload map[string]any
+		if json.Unmarshal([]byte(line), &payload) == nil {
+			if ev, _ := payload["event"].(string); ev == "verify_failed" {
+				found = payload
+				break
+			}
+		}
+	}
+	if found == nil {
+		t.Fatalf("no NDJSON verify_failed event in stderr:\n%s", stderr)
+	}
+
+	// Stable field contract — agents program against these keys.
+	if got, _ := found["task"].(string); got != "TASK-001" {
+		t.Errorf("event.task: got %q, want TASK-001", got)
+	}
+	if got, _ := found["hook"].(string); got != "07-broken.sh" {
+		t.Errorf("event.hook: got %q, want 07-broken.sh", got)
+	}
+	// JSON numbers decode to float64.
+	if got, _ := found["exit"].(float64); int(got) != 3 {
+		t.Errorf("event.exit: got %v, want 3", found["exit"])
+	}
+	if _, ok := found["ts"].(string); !ok {
+		t.Errorf("event.ts missing or not a string: %v", found["ts"])
+	}
+}
+
+// (e) GG_NO_AUTO_NOTIFY=1 MUST suppress the cross-agent broadcast but MUST NOT
+// alter the gate's primary contract — the exit code and the NDJSON event still
+// fire. This is the CI / reentrant-hook escape valve.
+func TestTaskDone_PreHookFails_NoAutoNotifyStillRejects(t *testing.T) {
+	ggDir := setupGGDir(t)
+	writePreTaskDoneHook(t, ggDir, "01-fail.sh", "exit 1")
+	t.Setenv("GG_NO_AUTO_NOTIFY", "1")
+
+	_, _, err := execCmd(t, "task", "done", "TASK-001", "attempt with notifications disabled")
+	ee, ok := err.(*ExitError)
+	if !ok {
+		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	}
+	if ee.Code != ExitVerifyFailed {
+		t.Errorf("GG_NO_AUTO_NOTIFY must not alter exit code: got %d, want %d", ee.Code, ExitVerifyFailed)
+	}
+}
+
+func TestTruncateHookOutput(t *testing.T) {
+	cases := []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"short", 100, "short"},
+		{"  trimmed  ", 100, "trimmed"},
+		{strings.Repeat("a", 50), 10, "…aaaaaaaaaa"},
+		{"", 10, ""},
+	}
+	for _, tc := range cases {
+		got := truncateHookOutput(tc.in, tc.n)
+		if got != tc.want {
+			t.Errorf("truncateHookOutput(%q, %d) = %q, want %q", tc.in, tc.n, got, tc.want)
+		}
+	}
+}
+
+func TestFirstLine(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"hello\nworld", "hello"},
+		{"\n\n  first real line  \nsecond", "first real line"},
+		{"", ""},
+		{"only one", "only one"},
+	}
+	for _, tc := range cases {
+		if got := firstLine(tc.in); got != tc.want {
+			t.Errorf("firstLine(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
