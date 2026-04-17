@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "gg_version": "v0.1.0-alpha",
+  "project_id": "",
+  "exported_at": "2026-01-16T12:00:00Z",
+  "embedding_model": "",
+  "embedding_dim": 0,
+  "counts": {
+    "bugs": 0,
+    "chunks": 0,
+    "decisions": 8,
+    "discussions": 0,
+    "edges": 0,
+    "messages": 3,
+    "notes": 0,
+    "rejections": 0,
+    "tasks": 7
+  },
+  "sha256": {
+    "bugs.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "chunks.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "decisions.jsonl": "23d29a73e33fd7c8e358a11abd59920e356e7020d3cd538467bfe91ea3bb1f11",
+    "discussions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "edges.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "messages.jsonl": "e605256ce113f84ddffdb1905e823fe4260bf622832ed1a6edf12eae4841d9ea",
+    "notes.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "rejections.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tasks.jsonl": "0aa431ef6594598bb887afc59b09579bbbdce5c07d91d511e267bb99ecb9b585"
+  },
+  "scrubbed": 0
+}

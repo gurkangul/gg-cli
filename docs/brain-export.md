@@ -404,6 +404,54 @@ $ go test ./cmd/ -run CheckManifestProjectID -v
 `gg brain import` refuses to write when `manifest.project_id ≠ current
 project_id` unless `--force-project-mismatch` is passed.
 
+### Live CLI round-trip against gg-cli itself (2026-04-17)
+
+Full seed → export → wipe → import → reindex against the production gg-cli
+project (8213 Memgraph nodes, 8048 edges, 433 Qdrant records):
+
+```
+$ gg brain export
+Project: 65af2aa9-3ba2-4d31-817b-f2dd881bc199
+✓ Brain exported → .gg/brain (16694 records)
+  decisions        42
+  tasks            167
+  messages         172
+  rejections       22
+  discussions      12
+  notes            9
+  bugs             9
+  chunks (graph)   8213
+  edges (graph)    8048
+
+$ gg brain import --wipe --yes
+Project: 65af2aa9-3ba2-4d31-817b-f2dd881bc199
+✓ Qdrant collections wiped and recreated
+✓ Memgraph project swept
+Generating missing vectors…
+  [433 records embedded]
+✓ Brain imported from .gg/brain
+  Qdrant:  433 records
+  Nodes:   8213 imported, 0 skipped
+  Edges:   8048 imported, 0 skipped
+  Vectors: 433 embedded
+
+$ gg brain status
+Brain snapshot: present
+  Exported at:  2026-04-17T19:13:14Z
+  Schema:       v1
+  Embedding:    nomic-embed-text (dim 768)
+  Snapshot:     42 decisions · 167 tasks · 172 messages · 22 rejections
+                · 12 discussions · 9 notes · 9 bugs · 8213 chunks · 8048 edges
+  Checksums:    ✓ all match
+  Drift:        ✓ in sync with live stores
+```
+
+Zero data loss across the full wipe → reimport cycle at production scale.
+
+**Incidental fix:** `gg brain import` used `cmdTimeout = 10s` (the global
+CLI timeout), which caused silent failures on large graphs. Fixed to use a
+30-minute context in the import path (`cmd/brain.go`).
+
 ### Secrets scrubber (TASK-137)
 
 `manifest.scrubbed` records the number of patterns redacted each run. In

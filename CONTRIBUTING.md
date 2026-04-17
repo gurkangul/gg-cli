@@ -124,7 +124,7 @@ test(graph): add cross-project isolation integration test
 - New store methods: add a unit test in `internal/store/`.
 - New CLI commands: add a cobra `ExecuteC` integration test in `cmd/cmd_test.go`.
 - Bug fixes: reproduce the failure in a test before fixing it.
-- Cross-project isolation: any new Qdrant or Memgraph writes must go through the choke-point wrappers (`store.qdrantUpsert`/`qdrantQuery` and `graph.runQuery`).
+- Cross-project isolation: any new Qdrant or Memgraph writes must go through the choke-point wrappers (`store.qdrantUpsert`/`qdrantQuery` and `graph.runQuery`). Adding a new caller to the `runQueryNoPID` allowlist (in `internal/graph/chokepoint_test.go`) requires explicit PR review — that function bypasses automatic `project_id` injection and is reserved for DDL / schema-level queries only.
 
 ## Code style
 

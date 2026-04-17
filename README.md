@@ -26,6 +26,10 @@ When you run several AI agents in parallel (different terminals, different roles
 
 ![gg demo](docs/demo.svg)
 
+<!-- 90s demo embed placeholder — generated from docs/demo/record.sh -->
+<!-- TODO: replace with docs/demo/demo.svg once recorded -->
+<!-- See docs/demo/STORYBOARD.md for the recording script -->
+
 ---
 
 ## Why this exists
