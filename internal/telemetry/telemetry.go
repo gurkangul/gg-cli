@@ -1,7 +1,8 @@
 // Package telemetry records per-call usage data for gg verbs — strictly
 // LOCAL (no network), used by gg's own dogfood metrics (DISC-008).
 //
-// Each call appends a single JSON line to <ggDir>/telemetry.jsonl.
+// Each call appends a single JSON line to
+// ~/.gg/projects/<project_id>/telemetry.jsonl (the per-project runtime dir).
 // The file is append-only and never truncated by gg itself; callers can
 // rotate or delete it freely.
 //
@@ -42,8 +43,8 @@ type Entry struct {
 	ContextBlockBytes int  `json:"context_block_bytes,omitempty"`
 }
 
-func filePath(ggDir string) string {
-	return filepath.Join(ggDir, fileName)
+func filePath(runtimeDir string) string {
+	return filepath.Join(runtimeDir, fileName)
 }
 
 // IsDisabled reports whether the user has opted out via GG_TELEMETRY=0/false/no/off.
@@ -69,8 +70,8 @@ func IsDisabled() bool {
 //   - Otherwise                                       → human
 //
 // Pass fromFlag = "" if the calling command has no --from flag.
-func Record(ggDir, verb, fromFlag string) {
-	recordEntry(ggDir, Entry{
+func Record(runtimeDir, verb, fromFlag string) {
+	recordEntry(runtimeDir, Entry{
 		Verb:      verb,
 		Origin:    classify(fromFlag),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -81,8 +82,8 @@ func Record(ggDir, verb, fromFlag string) {
 // --compact invocation. bytesDefault is what the non-compact renderer would
 // have produced on the same data — callers must render both to compute the
 // baseline.
-func RecordCompact(ggDir, verb, fromFlag string, bytesOut, bytesDefault int) {
-	recordEntry(ggDir, Entry{
+func RecordCompact(runtimeDir, verb, fromFlag string, bytesOut, bytesDefault int) {
+	recordEntry(runtimeDir, Entry{
 		Verb:         verb,
 		Origin:       classify(fromFlag),
 		Timestamp:    time.Now().UTC().Format(time.RFC3339),
@@ -94,8 +95,8 @@ func RecordCompact(ggDir, verb, fromFlag string, bytesOut, bytesDefault int) {
 
 // RecordWithContext appends a telemetry entry for a --with-context invocation.
 // contextBlockBytes is the size in bytes of the appended === Related Context === block.
-func RecordWithContext(ggDir, verb, fromFlag string, contextBlockBytes int) {
-	recordEntry(ggDir, Entry{
+func RecordWithContext(runtimeDir, verb, fromFlag string, contextBlockBytes int) {
+	recordEntry(runtimeDir, Entry{
 		Verb:              verb,
 		Origin:            classify(fromFlag),
 		Timestamp:         time.Now().UTC().Format(time.RFC3339),
@@ -116,15 +117,15 @@ func classify(fromFlag string) string {
 	return originHuman
 }
 
-func recordEntry(ggDir string, e Entry) {
-	if ggDir == "" || e.Verb == "" || IsDisabled() {
+func recordEntry(runtimeDir string, e Entry) {
+	if runtimeDir == "" || e.Verb == "" || IsDisabled() {
 		return
 	}
 	data, err := json.Marshal(e)
 	if err != nil {
 		return
 	}
-	f, err := os.OpenFile(filePath(ggDir), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(filePath(runtimeDir), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}
@@ -151,8 +152,8 @@ type WeeklySummary struct {
 
 // Summarize reads the telemetry file and aggregates the last 7 days of data.
 // Returns an empty summary (not an error) when the file doesn't exist.
-func Summarize(ggDir string) (*WeeklySummary, error) {
-	data, err := os.ReadFile(filePath(ggDir))
+func Summarize(runtimeDir string) (*WeeklySummary, error) {
+	data, err := os.ReadFile(filePath(runtimeDir))
 	if os.IsNotExist(err) {
 		return &WeeklySummary{VerbCounts: map[string]int{}}, nil
 	}

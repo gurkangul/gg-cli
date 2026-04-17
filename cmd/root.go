@@ -35,15 +35,17 @@ func init() {
 		if f := cmd.Flags().Lookup("compact"); f != nil && f.Changed {
 			return
 		}
-		// Best-effort: silently skip if the .gg directory can't be located.
-		if ggDir, err := config.GGDir(); err == nil {
-			// Pass --from flag value if the command defines one — telemetry
-			// uses it as a "this is an agent" signal alongside GG_ROLE/GG_AGENT.
-			fromFlag := ""
-			if f := cmd.Flags().Lookup("from"); f != nil {
-				fromFlag = f.Value.String()
+		// Best-effort: silently skip if config can't be loaded.
+		if cfg, err := config.Load(); err == nil {
+			if runtimeDir, err := cfg.RuntimeDir(); err == nil {
+				// Pass --from flag value if the command defines one — telemetry
+				// uses it as a "this is an agent" signal alongside GG_ROLE/GG_AGENT.
+				fromFlag := ""
+				if f := cmd.Flags().Lookup("from"); f != nil {
+					fromFlag = f.Value.String()
+				}
+				telemetry.Record(runtimeDir, cmd.Name(), fromFlag)
 			}
-			telemetry.Record(ggDir, cmd.Name(), fromFlag)
 		}
 	}
 }

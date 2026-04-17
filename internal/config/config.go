@@ -126,6 +126,22 @@ func SharedDir() (string, error) {
 	return filepath.Join(home, SharedDirName), nil
 }
 
+// RuntimeDir returns the per-project runtime directory
+// ~/.gg/projects/<ProjectID>/, creating it when absent. Runtime state
+// (telemetry, cache) lives here so that .gg/ contains only repo-committed
+// metadata.
+func (c *Config) RuntimeDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, SharedDirName, "projects", c.ProjectID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("failed to create runtime dir: %w", err)
+	}
+	return dir, nil
+}
+
 // SamePath reports whether two paths resolve to the same filesystem entry.
 // It canonicalises via filepath.Abs and filepath.EvalSymlinks when possible;
 // paths that don't yet exist fall back to lexical comparison.

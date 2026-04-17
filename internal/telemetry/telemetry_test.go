@@ -239,3 +239,28 @@ func containsField(s, f string) bool {
 	}
 	return false
 }
+
+// TestPathResolver verifies that filePath appends telemetry.jsonl to the
+// provided runtimeDir — this is the contract callers rely on when they pass
+// config.RuntimeDir() instead of ggDir.
+func TestPathResolver_UsesRuntimeDir(t *testing.T) {
+	dir := t.TempDir()
+	got := filePath(dir)
+	want := dir + "/" + fileName
+	if got != want {
+		t.Errorf("filePath(%q) = %q, want %q", dir, got, want)
+	}
+}
+
+func TestRecord_WritesToRuntimeDir(t *testing.T) {
+	runtimeDir := t.TempDir()
+	Record(runtimeDir, "status", "")
+
+	data, err := os.ReadFile(filePath(runtimeDir))
+	if err != nil {
+		t.Fatalf("telemetry file not found in runtimeDir: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("telemetry file empty")
+	}
+}

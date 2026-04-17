@@ -86,7 +86,11 @@ func emitCompact(cmd *cobra.Command, verb string, renderDefault, renderCompact f
 	renderCompact(&out)
 	_, _ = os.Stdout.Write(out.Bytes())
 
-	ggDir, err := config.GGDir()
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	runtimeDir, err := cfg.RuntimeDir()
 	if err != nil {
 		return
 	}
@@ -94,5 +98,5 @@ func emitCompact(cmd *cobra.Command, verb string, renderDefault, renderCompact f
 	if f := cmd.Flags().Lookup("from"); f != nil {
 		fromFlag = f.Value.String()
 	}
-	telemetry.RecordCompact(ggDir, verb, fromFlag, out.Len(), baseline.Len())
+	telemetry.RecordCompact(runtimeDir, verb, fromFlag, out.Len(), baseline.Len())
 }

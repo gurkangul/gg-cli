@@ -115,21 +115,23 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	return printJSON(payload, func() {
 		// North Star metric — one-liner at the very top so agents and humans
 		// can instantly gauge dogfood adoption without scrolling.
-		if ggDir, dirErr := config.GGDir(); dirErr == nil {
-			if tsum, tErr := telemetry.Summarize(ggDir); tErr == nil {
-				agentPct := pct(tsum.AgentCalls, tsum.Total)
-				if tsum.Total > 0 {
-					fmt.Printf("North Star  Last 7d: %d calls, %d%% agent-initiated\n", tsum.Total, agentPct)
-				} else {
-					fmt.Println("North Star  Last 7d: no calls recorded yet")
+		if cfg, cfgErr := config.Load(); cfgErr == nil {
+			if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
+				if tsum, tErr := telemetry.Summarize(rtDir); tErr == nil {
+					agentPct := pct(tsum.AgentCalls, tsum.Total)
+					if tsum.Total > 0 {
+						fmt.Printf("North Star  Last 7d: %d calls, %d%% agent-initiated\n", tsum.Total, agentPct)
+					} else {
+						fmt.Println("North Star  Last 7d: no calls recorded yet")
+					}
+					if tsum.CompactCalls > 0 && tsum.CompactBytesDefault > 0 {
+						saved := tsum.CompactBytesDefault - tsum.CompactBytesOut
+						pctSaved := float64(saved) / float64(tsum.CompactBytesDefault) * 100
+						fmt.Printf("Compact     %d calls, %s saved (avg %.0f%% reduction)\n",
+							tsum.CompactCalls, humanFileSize(int64(saved)), pctSaved)
+					}
+					fmt.Println()
 				}
-				if tsum.CompactCalls > 0 && tsum.CompactBytesDefault > 0 {
-					saved := tsum.CompactBytesDefault - tsum.CompactBytesOut
-					pctSaved := float64(saved) / float64(tsum.CompactBytesDefault) * 100
-					fmt.Printf("Compact     %d calls, %s saved (avg %.0f%% reduction)\n",
-						tsum.CompactCalls, humanFileSize(int64(saved)), pctSaved)
-				}
-				fmt.Println()
 			}
 		}
 
@@ -212,27 +214,29 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 
 		// Telemetry — best-effort weekly summary.
-		if ggDir, dirErr := config.GGDir(); dirErr == nil {
-			if tsum, tErr := telemetry.Summarize(ggDir); tErr == nil && tsum.Total > 0 {
-				fmt.Printf("\nTELEMETRY (last 7 days — %d calls, %d%% agent-initiated):\n",
-					tsum.Total, pct(tsum.AgentCalls, tsum.Total))
-				// Print verb breakdown sorted by count desc.
-				type kv struct {
-					verb  string
-					count int
-				}
-				var verbs []kv
-				for v, c := range tsum.VerbCounts {
-					verbs = append(verbs, kv{v, c})
-				}
-				sort.Slice(verbs, func(i, j int) bool {
-					if verbs[i].count != verbs[j].count {
-						return verbs[i].count > verbs[j].count
+		if cfg2, cfgErr2 := config.Load(); cfgErr2 == nil {
+			if rtDir2, rtErr2 := cfg2.RuntimeDir(); rtErr2 == nil {
+				if tsum, tErr := telemetry.Summarize(rtDir2); tErr == nil && tsum.Total > 0 {
+					fmt.Printf("\nTELEMETRY (last 7 days — %d calls, %d%% agent-initiated):\n",
+						tsum.Total, pct(tsum.AgentCalls, tsum.Total))
+					// Print verb breakdown sorted by count desc.
+					type kv struct {
+						verb  string
+						count int
 					}
-					return verbs[i].verb < verbs[j].verb
-				})
-				for _, v := range verbs {
-					fmt.Printf("  %-16s %d\n", v.verb, v.count)
+					var verbs []kv
+					for v, c := range tsum.VerbCounts {
+						verbs = append(verbs, kv{v, c})
+					}
+					sort.Slice(verbs, func(i, j int) bool {
+						if verbs[i].count != verbs[j].count {
+							return verbs[i].count > verbs[j].count
+						}
+						return verbs[i].verb < verbs[j].verb
+					})
+					for _, v := range verbs {
+						fmt.Printf("  %-16s %d\n", v.verb, v.count)
+					}
 				}
 			}
 		}

@@ -156,8 +156,10 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 			var block bytes.Buffer
 			renderRelatedContext(&block, relCtx)
 			os.Stdout.Write(block.Bytes())
-			if ggDir, dirErr := config.GGDir(); dirErr == nil {
-				telemetry.RecordWithContext(ggDir, "task", "", block.Len())
+			if cfg, cfgErr := config.Load(); cfgErr == nil {
+				if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
+					telemetry.RecordWithContext(rtDir, "task", "", block.Len())
+				}
 			}
 		}
 	})
