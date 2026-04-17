@@ -7,9 +7,15 @@ agents_schema: "2.1"
 ## Project Context — gg-cli
 
 **What this project does:** A CLI (`gg`) that gives multiple AI agents a
-shared brain. Every agent (Claude Code, GSD, Codex, Cursor, Aider, …) reads
+shared brain. Every agent (Claude Code, Codex, Cursor, Aider, …) reads
 the same decisions, tasks, rejections, discussions, notes, and code graph
 through gg — no agent starts from a blank slate.
+
+> **Note on GSD:** GSD is a workflow/skill (`mcp__gsd-workflow__*` MCP tools,
+> the `bmad-quick-dev` style, `.gsd/` state), NOT a separate agent. When this
+> repo's user says "route it to GSD" they mean "do it yourself, you are the
+> GSD implementer in this session." Never spawn a nested GSD session against
+> your own project dir — execute directly via Edit/Write/Bash.
 
 **Who it's for:** Developers running 2+ AI agents in parallel terminals who
 keep hitting the same three pains:
@@ -66,13 +72,18 @@ visible to the others through shared memory.
 
 The very first thing to do at the start of any conversation:
 ```
-export GG_AGENT="claude-code"   # or "gsd", "cursor", "aider", etc.
+export GG_AGENT="claude-code"   # or "codex", "cursor", "aider", etc.
 gg status
 ```
 
 The `GG_AGENT` export tags every subsequent gg call as agent-initiated in
 telemetry — without it the dogfood metric undercounts and gives false signals
 about adoption. Set it once per shell.
+
+**Do not set `GG_AGENT=gsd`:** GSD is a workflow layered on top of Claude Code
+in this repo, not a peer agent. Use `claude-code` as your agent tag even when
+following a GSD milestone/slice — telemetry should reflect the runtime, not
+the workflow.
 
 After `gg status`, summarize the open tasks, unread messages, and recent
 decisions for the user.
