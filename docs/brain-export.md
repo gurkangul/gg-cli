@@ -293,3 +293,120 @@ gg brain import --no-reindex         # import payloads, skip gg reindex --embed 
 - **TASK-136** — Auto re-embed on brain import: regenerate vectors when missing
 - **TASK-137** — Secrets scrubber for `gg brain export` (`--strict` + regex redact)
 - **TASK-129** — `gg import --from-gsd` (separate namespace, no conflict with `gg brain import`)
+
+---
+
+## Verified behavior
+
+Live transcripts captured on 2026-04-17 against the gg-cli project itself so
+future maintainers can reproduce every claim above.
+
+### Project isolation (Qdrant)
+
+```
+Toplam collection: 63
+Bizim projeye ait (7):
+  65af2aa9-3ba2-4d31-817b-f2dd881bc199-bugs
+  65af2aa9-3ba2-4d31-817b-f2dd881bc199-decisions
+  65af2aa9-3ba2-4d31-817b-f2dd881bc199-discussions
+  65af2aa9-3ba2-4d31-817b-f2dd881bc199-messages
+  65af2aa9-3ba2-4d31-817b-f2dd881bc199-notes
+  65af2aa9-3ba2-4d31-817b-f2dd881bc199-rejections
+  65af2aa9-3ba2-4d31-817b-f2dd881bc199-tasks
+Diğer projelere ait: 56
+```
+
+Export only touched the 7 collections prefixed with our `project_id`; the
+remaining 56 collections belonging to other projects were untouched. Live
+Qdrant counts (42 / 146 / 165 / 22 / 12 / 7 / 8) matched manifest counts
+exactly.
+
+### Project banner (TASK-145)
+
+```
+$ gg brain export
+Project: 65af2aa9-3ba2-4d31-817b-f2dd881bc199
+✓ Brain exported → /Users/.../.gg/brain (402 records)
+  decisions        42
+  tasks            146
+  messages         165
+  rejections       22
+  discussions      12
+  notes            7
+  bugs             8
+```
+
+Catches wrong-cwd runs immediately.
+
+### Drift detection (BUG-006 fix)
+
+```
+$ gg brain status
+Brain snapshot: present
+  Exported at:  2026-04-17T18:36:51Z
+  Schema:       v1
+  Embedding:    nomic-embed-text (dim 768)
+  Snapshot:     42 decisions · 146 tasks · 165 messages · ...
+  Checksums:    ✓ all match
+  Drift:        ✓ in sync with live stores
+```
+
+Previously this line always reported `unknown` (dead conditional). Now it
+correctly reports `in_sync` / `drifted` / `unknown`.
+
+### Byte-determinism (BUG-007 fix)
+
+```
+$ cp -R .gg/brain /tmp/brain-run1 && gg brain export && diff -r /tmp/brain-run1 .gg/brain
+5c5
+<   "exported_at": "2026-04-17T18:36:51Z",
+>   "exported_at": "2026-04-17T18:37:14Z",
+```
+
+All 9 JSONL payload files are byte-identical across runs; only
+`manifest.exported_at` differs (documented, acceptable).
+
+### End-to-end round-trip (BUG-009 fix + TASK-150)
+
+```
+$ GG_INTEGRATION_TEST=1 go test ./internal/store/ -run TestBrainRoundTrip -v
+--- PASS: TestBrainRoundTrip (1.91s)
+    Step 2: exported 35 records
+    Step 3: Qdrant wiped
+    Step 4: import complete
+    Step 5a: count assertions passed
+    Step 5b: spot-check payload equality passed
+    Step 6: round-trip idempotence verified
+
+$ GG_INTEGRATION_TEST=1 go test ./internal/graph/ -run TestMemgraphBrainRoundTrip -v
+--- PASS: TestMemgraphBrainRoundTrip (0.08s)
+    Step 1: seeded 3 files + 5 symbols + 4 edges
+    Step 2: exported 8 nodes + 4 edges
+    Step 3: Memgraph wiped for test project
+    Step 4: import complete
+    Step 6: round-trip byte-equality verified
+```
+
+The Memgraph test asserts SHA256 of `chunks.jsonl` and `edges.jsonl` are
+equal before and after a full wipe → import cycle — confirming stable
+domain-key composite IDs survive in real infrastructure.
+
+### Project-mismatch rejection (TASK-143)
+
+```
+$ go test ./cmd/ -run CheckManifestProjectID -v
+--- PASS: TestCheckManifestProjectID_Match
+--- PASS: TestCheckManifestProjectID_Mismatch
+--- PASS: TestCheckManifestProjectID_EmptyManifest
+--- PASS: TestCheckManifestProjectID_ForceBypass
+```
+
+`gg brain import` refuses to write when `manifest.project_id ≠ current
+project_id` unless `--force-project-mismatch` is passed.
+
+### Secrets scrubber (TASK-137)
+
+`manifest.scrubbed` records the number of patterns redacted each run. In
+the live gg-cli export above it was `0` — no secrets present in any
+payload. Unit coverage lives in `internal/scrub/scrub_test.go` (8
+patterns × positive/negative cases).
