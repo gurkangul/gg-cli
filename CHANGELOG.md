@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Non-ancestor detection: if HEAD is not a descendant of the last indexed commit, triggers a full re-index
 
 **Code Indexing**
-- SCIP-based indexing pipeline: `scip-go`, `scip-typescript`, `scip-python` (pip-installed)
+- SCIP-based indexing pipeline: `scip-go`, `scip-typescript`, `scip-python` (npm-installed)
 - Version skew compat-matrix for SCIP indexers (`internal/index/compat`)
 - `--changed` invalidation contract spec (`internal/index/CHANGED_CONTRACT.md`)
 - `ErrIndexerMissing` typed error for missing indexer binaries

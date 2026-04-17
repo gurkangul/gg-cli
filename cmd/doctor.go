@@ -88,8 +88,8 @@ var indexers = []indexerSpec{
 	},
 	{
 		Binary:  "scip-python",
-		Install: []string{"pip", "install", "scip-python"},
-		Note:    "requires Python 3.9+",
+		Install: []string{"npm", "install", "-g", "@sourcegraph/scip-python"},
+		Note:    "requires Node.js 18+",
 	},
 }
 

@@ -40,9 +40,9 @@ gg task list --json
 |---|---|---|
 | Go | `scip-go` | `go install github.com/sourcegraph/scip-go/cmd/scip-go@latest` |
 | TypeScript | `scip-typescript` | `npm install -g @sourcegraph/scip-typescript` |
-| Python | `scip-python` | `pip install scip-python` |
+| Python | `scip-python` | `npm install -g @sourcegraph/scip-python` |
 
-Requires Go 1.21+, Node.js 18+, or Python 3.9+ respectively.
+Requires Go 1.21+ for scip-go, Node.js 18+ for scip-typescript and scip-python.
 
 ## Git hooks
 

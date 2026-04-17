@@ -93,7 +93,7 @@ func TestErrIndexerMissing_KnownHints(t *testing.T) {
 	cases := map[string]string{
 		"scip-go":         "go install",
 		"scip-typescript": "npm install",
-		"scip-python":     "pip install",
+		"scip-python":     "npm install",
 	}
 
 	// Ensure none of these are on PATH for the test to be meaningful.

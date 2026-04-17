@@ -9,7 +9,7 @@ import (
 
 // PythonRunner runs scip-python to produce a SCIP index for a Python project.
 // Binary: scip-python (https://github.com/sourcegraph/scip-python)
-// scip-python is installed as a Python package: pip install scip-python
+// scip-python is installed as an npm package: npm install -g @sourcegraph/scip-python
 type PythonRunner struct{}
 
 func (*PythonRunner) Lang() Lang { return LangPython }

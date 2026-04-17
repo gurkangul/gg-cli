@@ -35,7 +35,7 @@ func IsIndexerMissing(err error) bool {
 var indexerHints = map[string]string{
 	"scip-go":         "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest",
 	"scip-typescript": "npm install -g @sourcegraph/scip-typescript",
-	"scip-python":     "pip install scip-python",
+	"scip-python":     "npm install -g @sourcegraph/scip-python",
 }
 
 // resolveChain is the ordered list of strategies tried when locating a binary.
