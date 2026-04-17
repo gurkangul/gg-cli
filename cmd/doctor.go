@@ -654,6 +654,33 @@ func runDoctorHeal() error {
 		fmt.Println("  ✓ cache/           (not in .gg/ — nothing to migrate)")
 	}
 
+	// ── RULES.md template-drift check ──────────────────────────────────────
+	rulesPath := filepath.Join(ggDir, "RULES.md")
+	rulesStale, rulesErr := isTemplateDrifted(rulesPath, templates.RulesMD)
+	if rulesErr != nil {
+		fmt.Printf("  ⚠ RULES.md: could not read file: %v\n", rulesErr)
+	} else if rulesStale {
+		migrated = true
+		fmt.Println()
+		fmt.Println("RULES.md template drift detected:")
+		fmt.Printf("  Current file: %s\n", rulesPath)
+		fmt.Printf("  Template:     embedded (internal/templates/rules.md)\n")
+		fmt.Println()
+		fmt.Print("Re-render .gg/RULES.md from current template? [y/N] ")
+		var answer string
+		if _, scanErr := fmt.Scanln(&answer); scanErr != nil || strings.ToLower(strings.TrimSpace(answer)) != "y" {
+			fmt.Println("Skipped.")
+		} else {
+			if healErr := healRulesFromTemplate(rulesPath, templates.RulesMD); healErr != nil {
+				fmt.Printf("  ✗ RULES.md: re-render failed: %v\n", healErr)
+			} else {
+				fmt.Printf("  ✓ RULES.md re-rendered from template (backup: %s.bak)\n", rulesPath)
+			}
+		}
+	} else {
+		fmt.Println("  ✓ RULES.md         (matches current template — nothing to do)")
+	}
+
 	fmt.Println()
 	if !migrated {
 		fmt.Println("Nothing to migrate — runtime state is already in the correct location.")
@@ -667,6 +694,34 @@ func runDoctorHeal() error {
 		fmt.Printf("  git rm --cached %s\n", strings.Join(gitRmTargets, " "))
 		fmt.Println()
 		fmt.Println("(gg does not commit for you — run the command above manually.)")
+	}
+	return nil
+}
+
+// isTemplateDrifted reports whether the file at path differs from the given
+// expected content. Returns false (no drift) when the file doesn't exist.
+func isTemplateDrifted(path, expected string) (bool, error) {
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return string(raw) != expected, nil
+}
+
+// healRulesFromTemplate backs up path to path+".bak" (overwriting any previous
+// backup) then writes expected verbatim.
+func healRulesFromTemplate(path, expected string) error {
+	bak := path + ".bak"
+	if err := os.Rename(path, bak); err != nil {
+		return fmt.Errorf("backup %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, []byte(expected), 0o644); err != nil {
+		// Try to restore backup before propagating error.
+		_ = os.Rename(bak, path)
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
 }

@@ -8,6 +8,54 @@ import (
 	"strings"
 )
 
+// claudeGlobalSignalsFromHomeWithEnv reports whether Claude Code appears to
+// be installed globally using the given home directory and env lookup function.
+// Returns true if ANY of the following are true:
+//
+//  1. <home>/.claude/settings.json exists and is non-empty
+//  2. env var CLAUDECODE == "1"
+//  3. env var CLAUDE_CODE_ENTRYPOINT is set (non-empty)
+//  4. <home>/.claude/plugins/ is a directory
+func claudeGlobalSignalsFromHomeWithEnv(home string, getenv func(string) string) bool {
+	// Signal 1: ~/.claude/settings.json non-empty
+	raw, readErr := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	if readErr == nil && len(strings.TrimSpace(string(raw))) > 0 {
+		return true
+	}
+	// Signal 2: CLAUDECODE env var
+	if getenv("CLAUDECODE") == "1" {
+		return true
+	}
+	// Signal 3: CLAUDE_CODE_ENTRYPOINT env var
+	if getenv("CLAUDE_CODE_ENTRYPOINT") != "" {
+		return true
+	}
+	// Signal 4: ~/.claude/plugins/ directory
+	if info, statErr := os.Stat(filepath.Join(home, ".claude", "plugins")); statErr == nil && info.IsDir() {
+		return true
+	}
+	return false
+}
+
+// globalSignals calls claudeGlobalSignalsFromHome with the installer's home
+// (testHome if set, otherwise os.UserHomeDir()), and uses testEnv for env
+// lookup (os.Getenv if nil).
+func (c *claudeInstaller) globalSignals() bool {
+	home := c.testHome
+	if home == "" {
+		var err error
+		home, err = os.UserHomeDir()
+		if err != nil {
+			return false
+		}
+	}
+	getenv := c.testEnv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	return claudeGlobalSignalsFromHomeWithEnv(home, getenv)
+}
+
 // Claude Code hooks schema (as of 2026-04):
 //
 //	{
@@ -37,21 +85,53 @@ const (
 	claudeCommandMarker = "gg session-start"
 )
 
-type claudeInstaller struct{}
+type claudeInstaller struct {
+	// testHome overrides os.UserHomeDir() in unit tests so global-signal
+	// detection doesn't depend on the test machine's actual Claude install.
+	// Empty string (the zero value) means "use the real home directory".
+	testHome string
+	// testEnv overrides os.Getenv in unit tests so env-var signals can be
+	// controlled without setting real environment variables. nil = os.Getenv.
+	testEnv func(string) string
+}
 
 func (c *claudeInstaller) Name() string { return "claude" }
 func (c *claudeInstaller) Tier() Tier   { return TierHard }
 
-func (c *claudeInstaller) Detect(projectRoot string) bool {
-	// Presence of .claude/ (a project-local settings/agent config dir)
-	// is a reliable signal the user is running Claude Code in this repo.
+// hasProjectClaudeDir reports whether this project has a .claude/ directory,
+// the primary signal that the project-level hook is (or can be) installed.
+func (c *claudeInstaller) hasProjectClaudeDir(projectRoot string) bool {
 	info, err := os.Stat(filepath.Join(projectRoot, ".claude"))
 	return err == nil && info.IsDir()
+}
+
+func (c *claudeInstaller) Detect(projectRoot string) bool {
+	// Project-level signal: .claude/ directory exists in the project root.
+	if c.hasProjectClaudeDir(projectRoot) {
+		return true
+	}
+	// Global signals: Claude Code is installed on this machine even if this
+	// particular project doesn't have a .claude/ directory yet. We still
+	// return true so Install can produce an inline suggestion.
+	return c.globalSignals()
 }
 
 func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, error) {
 	path := pathIn(projectRoot, ".claude", "settings.json")
 	res := Result{Path: path}
+
+	// Global install detected but no project-level .claude/ directory — print
+	// an inline suggestion rather than auto-creating files the user didn't ask for.
+	// Skipped when Force=true: the user explicitly asked us to install.
+	if !opts.Force && !c.hasProjectClaudeDir(projectRoot) && c.globalSignals() {
+		res.Path = ""
+		res.Action = ActionSuggested
+		res.Notes = append(res.Notes,
+			"global install detected — project hook not yet installed",
+			"Run: gg doctor --install-agent-hooks --force --agent claude",
+		)
+		return res, nil
+	}
 
 	data, existed, err := loadJSONFile(path)
 	if err != nil {

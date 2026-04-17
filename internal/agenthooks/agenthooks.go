@@ -59,6 +59,7 @@ const (
 	ActionNotDetected Action = "not-detected" // agent not present in project, skipped
 	ActionFailed      Action = "failed"       // install raised an error (see Result.Err)
 	ActionDryRun      Action = "dry-run"      // --dry-run: would have applied
+	ActionSuggested   Action = "suggested"    // global install detected, project hook missing — suggestion printed
 )
 
 // Options controls installer side-effects.
@@ -74,8 +75,11 @@ type Options struct {
 // Result is one installer outcome.
 type Result struct {
 	AgentName string
-	Tier      Tier
-	Action    Action
+	// DisplayName overrides AgentName in report output. Used when the logical
+	// display label differs from the registry key (e.g. "AGENTS.md" for codex).
+	DisplayName string
+	Tier        Tier
+	Action      Action
 	// Path is the config file the installer wrote or would have written.
 	// Empty for ActionNotDetected.
 	Path string
@@ -165,7 +169,12 @@ func findInstaller(name string) Installer {
 // or errors into an ActionFailed result so one bad installer cannot tank
 // the whole report.
 func runOne(inst Installer, projectRoot string, opts Options, forceDetect bool) Result {
-	if !forceDetect && !opts.Force && !inst.Detect(projectRoot) {
+	if forceDetect {
+		// User explicitly named this agent — treat as Force so Install can
+		// skip suggestion logic and write unconditionally.
+		opts.Force = true
+	}
+	if !opts.Force && !inst.Detect(projectRoot) {
 		return Result{
 			AgentName: inst.Name(),
 			Tier:      inst.Tier(),

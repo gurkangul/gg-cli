@@ -39,6 +39,7 @@ func init() {
 }
 
 func runRecord(cmd *cobra.Command, args []string) error {
+	printProjectBanner()
 	text, err := requireNonEmpty("text", args[0])
 	if err != nil {
 		return err

@@ -28,6 +28,7 @@ func init() {
 }
 
 func runTell(cmd *cobra.Command, args []string) error {
+	printProjectBanner()
 	toRole, err := requireNonEmpty("role", args[0])
 	if err != nil {
 		return err

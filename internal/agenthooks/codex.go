@@ -57,7 +57,7 @@ func (c *codexInstaller) Detect(projectRoot string) bool {
 
 func (c *codexInstaller) Install(projectRoot string, opts Options) (Result, error) {
 	path := pathIn(projectRoot, codexFile)
-	res := Result{Path: path}
+	res := Result{Path: path, DisplayName: "AGENTS.md"}
 
 	raw, err := os.ReadFile(path)
 	if err != nil {

@@ -11,13 +11,17 @@ import (
 // follow indented under their owner.
 func RenderReport(w io.Writer, results []Result) {
 	for _, r := range results {
-		icon := icon(r.Action)
+		ic := icon(r.Action)
+		label := r.DisplayName
+		if label == "" {
+			label = r.AgentName
+		}
 		path := r.Path
 		if path == "" {
 			path = "—"
 		}
-		fmt.Fprintf(w, "  %s %-8s %-12s %-40s [%s]\n",
-			icon, r.AgentName, string(r.Action), path, r.Tier)
+		fmt.Fprintf(w, "  %s %-10s %-12s %-40s [%s]\n",
+			ic, label, string(r.Action), path, r.Tier)
 		if r.Err != nil {
 			fmt.Fprintf(w, "      error: %v\n", r.Err)
 		}
@@ -70,6 +74,8 @@ func icon(a Action) string {
 		return "?"
 	case ActionFailed:
 		return "✗"
+	case ActionSuggested:
+		return "⚠"
 	}
 	return " "
 }

@@ -13,12 +13,16 @@ func TestInstallDetected_ReportsEveryAgent(t *testing.T) {
 		t.Fatalf("results len = %d, want %d (one per registered agent)",
 			len(results), len(AllNames()))
 	}
-	// In an empty tempdir, every detected-installer should report
-	// not-detected. Zai is always not-detected. Codex needs AGENTS.md.
+	// In an empty project dir every agent should be either not-detected or,
+	// for claude, suggested (when the host machine has Claude Code installed
+	// globally). Both are valid "not installed in project" outcomes.
 	for _, r := range results {
-		if r.Action != ActionNotDetected {
-			t.Errorf("agent %s action = %q, want %q in empty dir",
-				r.AgentName, r.Action, ActionNotDetected)
+		switch r.Action {
+		case ActionNotDetected, ActionSuggested:
+			// OK — agent not active in this project
+		default:
+			t.Errorf("agent %s action = %q in empty dir, want %q or %q",
+				r.AgentName, r.Action, ActionNotDetected, ActionSuggested)
 		}
 	}
 }

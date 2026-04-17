@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -226,6 +227,29 @@ func resolveAuthor(cmd *cobra.Command) string {
 func addFromFlag(cmd *cobra.Command) {
 	defaultRole := strings.TrimSpace(os.Getenv("GG_ROLE"))
 	cmd.Flags().String("from", defaultRole, "author/role recording this (defaults to $GG_ROLE)")
+}
+
+// printProjectBanner prints a single-line "Recording to project: <name> (<uuid8>)"
+// banner before write operations so users always know which project is receiving
+// the data. Gated by GG_QUIET=1 for scripting / CI contexts.
+func printProjectBanner() {
+	if os.Getenv("GG_QUIET") == "1" {
+		return
+	}
+	root, err := config.FindRoot()
+	if err != nil {
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	name := filepath.Base(root)
+	uuid8 := cfg.ProjectID
+	if len(uuid8) > 8 {
+		uuid8 = uuid8[:8]
+	}
+	fmt.Printf("→ Recording to project: %s (%s)\n", name, uuid8)
 }
 
 func requireTaskID(raw string) (string, error) {

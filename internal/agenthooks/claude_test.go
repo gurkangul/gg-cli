@@ -18,18 +18,88 @@ func TestClaude_Detect_PresentDir(t *testing.T) {
 	}
 }
 
+// TestClaude_GlobalSignals_AllFiveSignals verifies each of the 5 detection
+// signals independently using isolated home dirs and controlled env lookups.
+func TestClaude_GlobalSignals_AllFiveSignals(t *testing.T) {
+	noEnv := func(string) string { return "" }
+
+	t.Run("signal1_settings_json", func(t *testing.T) {
+		home := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(`{"x":1}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if !claudeGlobalSignalsFromHomeWithEnv(home, noEnv) {
+			t.Error("signal 1 (settings.json non-empty) should fire")
+		}
+	})
+
+	t.Run("signal2_CLAUDECODE_env", func(t *testing.T) {
+		home := t.TempDir()
+		getenv := func(k string) string {
+			if k == "CLAUDECODE" {
+				return "1"
+			}
+			return ""
+		}
+		if !claudeGlobalSignalsFromHomeWithEnv(home, getenv) {
+			t.Error("signal 2 (CLAUDECODE=1) should fire")
+		}
+	})
+
+	t.Run("signal3_CLAUDE_CODE_ENTRYPOINT_env", func(t *testing.T) {
+		home := t.TempDir()
+		getenv := func(k string) string {
+			if k == "CLAUDE_CODE_ENTRYPOINT" {
+				return "sdk-ts"
+			}
+			return ""
+		}
+		if !claudeGlobalSignalsFromHomeWithEnv(home, getenv) {
+			t.Error("signal 3 (CLAUDE_CODE_ENTRYPOINT set) should fire")
+		}
+	})
+
+	t.Run("signal4_plugins_dir", func(t *testing.T) {
+		home := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(home, ".claude", "plugins"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if !claudeGlobalSignalsFromHomeWithEnv(home, noEnv) {
+			t.Error("signal 4 (~/.claude/plugins/ dir) should fire")
+		}
+	})
+
+	t.Run("no_signals_absent", func(t *testing.T) {
+		home := t.TempDir()
+		if claudeGlobalSignalsFromHomeWithEnv(home, noEnv) {
+			t.Error("no signals should fire in an empty home with no env vars")
+		}
+	})
+}
+
 func TestClaude_Detect_MissingDir(t *testing.T) {
 	root := t.TempDir()
-	if (&claudeInstaller{}).Detect(root) {
-		t.Error("expected Detect to return false when .claude/ missing")
+	// Use an isolated testHome and a no-op env getter so global Claude signals
+	// from the host machine (env vars, ~/.claude) don't bleed into this test.
+	inst := &claudeInstaller{
+		testHome: t.TempDir(),
+		testEnv:  func(string) string { return "" },
+	}
+	if inst.Detect(root) {
+		t.Error("expected Detect to return false when .claude/ missing and no global signals")
 	}
 }
 
 func TestClaude_Install_FreshCreate(t *testing.T) {
 	root := t.TempDir()
+	// Use Force so the installer writes unconditionally regardless of whether
+	// the host machine has a global Claude install.
 	inst := &claudeInstaller{}
 
-	res, err := inst.Install(root, Options{})
+	res, err := inst.Install(root, Options{Force: true})
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
@@ -52,13 +122,80 @@ func TestClaude_Install_FreshCreate(t *testing.T) {
 	}
 }
 
+// TestClaude_Install_GlobalOnlySuggests verifies that when Claude Code is
+// installed globally (simulated via testHome) but the project has no .claude/
+// directory, Install returns ActionSuggested with an inline advisory.
+func TestClaude_Install_GlobalOnlySuggests(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	// Simulate a non-empty ~/.claude/settings.json (signal 1).
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(`{"theme":"dark"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	inst := &claudeInstaller{testHome: home, testEnv: func(string) string { return "" }}
+	res, err := inst.Install(root, Options{})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if res.Action != ActionSuggested {
+		t.Errorf("Action = %q, want %q", res.Action, ActionSuggested)
+	}
+	if res.Path != "" {
+		t.Errorf("Path should be empty for suggestion, got %q", res.Path)
+	}
+	found := false
+	for _, n := range res.Notes {
+		if strings.Contains(n, "gg doctor") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected gg doctor suggestion in Notes, got %v", res.Notes)
+	}
+	// Nothing should have been written to disk.
+	if _, statErr := os.Stat(filepath.Join(root, ".claude")); statErr == nil {
+		t.Error("Install should not have created .claude/ for a suggestion-only result")
+	}
+}
+
+// TestClaude_Install_GlobalOnlyForceInstalls verifies that Force=true bypasses
+// the suggestion and writes the project hook directly.
+func TestClaude_Install_GlobalOnlyForceInstalls(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(`{"theme":"dark"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	inst := &claudeInstaller{testHome: home, testEnv: func(string) string { return "" }}
+	res, err := inst.Install(root, Options{Force: true})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if res.Action != ActionCreated {
+		t.Errorf("Action = %q, want %q", res.Action, ActionCreated)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".claude", "settings.json")); statErr != nil {
+		t.Errorf("Force install should have written settings.json: %v", statErr)
+	}
+}
+
 func TestClaude_Install_IdempotentReRun(t *testing.T) {
 	root := t.TempDir()
 	inst := &claudeInstaller{}
 
-	if _, err := inst.Install(root, Options{}); err != nil {
+	if _, err := inst.Install(root, Options{Force: true}); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
+	// After the first install .claude/ exists, so subsequent runs without Force
+	// should detect the project dir and report up-to-date.
 	res, err := inst.Install(root, Options{})
 	if err != nil {
 		t.Fatalf("second install: %v", err)
@@ -144,7 +281,10 @@ func TestClaude_Install_MergesIntoExistingStartupMatcher(t *testing.T) {
 
 func TestClaude_Install_DryRun(t *testing.T) {
 	root := t.TempDir()
-	res, err := (&claudeInstaller{}).Install(root, Options{DryRun: true})
+	// Force=true ensures we exercise the dry-run path rather than the
+	// suggestion path (which fires when global signals are present but no
+	// project .claude/ exists).
+	res, err := (&claudeInstaller{}).Install(root, Options{DryRun: true, Force: true})
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}

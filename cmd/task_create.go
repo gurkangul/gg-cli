@@ -33,6 +33,7 @@ func init() {
 }
 
 func runTaskCreate(cmd *cobra.Command, args []string) error {
+	printProjectBanner()
 	title, err := requireNonEmpty("title", args[0])
 	if err != nil {
 		return err

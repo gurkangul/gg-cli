@@ -143,6 +143,7 @@ func normalizeDiscID(raw string) (string, error) {
 }
 
 func runDiscussOpen(cmd *cobra.Command, args []string) error {
+	printProjectBanner()
 	topic, err := requireNonEmpty("topic", args[0])
 	if err != nil {
 		return err
