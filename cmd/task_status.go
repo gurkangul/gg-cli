@@ -12,20 +12,33 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/hooks"
 )
 
 var taskDoneCmd = &cobra.Command{
 	Use:   `done TASK-ID "summary"`,
-	Short: "Mark a task as done",
-	Args:  cobra.ExactArgs(2),
-	RunE:  runTaskDone,
+	Short: "Mark a task done — include a one-sentence summary of what was accomplished",
+	Long: `Close a task and record a completion summary in the shared brain.
+
+WHEN TO USE: you have finished the work described in the task. The summary is stored
+and surfaced in 'gg status' and 'gg search' — write it for the next agent that reads it.
+
+See also: gg task review (request peer review), gg record (capture design decisions made during the work)`,
+	Args: cobra.ExactArgs(2),
+	RunE: runTaskDone,
 }
 
 var taskBlockCmd = &cobra.Command{
 	Use:   `block TASK-ID "reason"`,
-	Short: "Mark a task as blocked",
-	Args:  cobra.ExactArgs(2),
-	RunE:  runTaskBlock,
+	Short: "Mark a task blocked — state what specific dependency is missing",
+	Long: `Signal that work is stalled because of an external dependency or unresolved question.
+
+WHEN TO USE: you cannot make progress without input from another agent or an external
+resource. The reason is stored and shown in 'gg status --blocked'.
+
+WHEN NOT TO USE: for long-term deprioritization, update priority instead.`,
+	Args: cobra.ExactArgs(2),
+	RunE: runTaskBlock,
 }
 
 var taskDepsCmd = &cobra.Command{
@@ -64,11 +77,38 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Run post-done hooks from .gg/hooks/task-done.d/*.sh (warn-only unless hooks.strict=true).
+	if hookErr := runTaskDoneHooks(cmd, taskID, summary); hookErr != nil {
+		return hookErr // only non-nil when strict mode is enabled and a hook failed
+	}
+
 	warnBinaryStale()
 
 	return printJSON(map[string]any{"id": taskID, "status": "done", "summary": summary}, func() {
 		fmt.Printf("✓ %s marked as done\n", taskID)
 	})
+}
+
+// runTaskDoneHooks runs .gg/hooks/task-done.d/*.sh scripts after a task is
+// marked done. Returns a non-nil error only in strict mode when a hook fails.
+func runTaskDoneHooks(cmd *cobra.Command, taskID, summary string) error {
+	ggDir, err := config.GGDir()
+	if err != nil {
+		return nil // can't find .gg — skip silently
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return nil
+	}
+
+	env := map[string]string{
+		"GG_TASK_ID":      taskID,
+		"GG_TASK_SUMMARY": summary,
+		"GG_PROJECT_ID":   cfg.ProjectID,
+	}
+
+	_, hookErr := hooks.RunHooks(ggDir, "task-done", env, cfg.Hooks.Strict, cmd.ErrOrStderr())
+	return hookErr
 }
 
 // warnBinaryStale prints an advisory when the most recently committed Go

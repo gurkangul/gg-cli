@@ -11,9 +11,18 @@ import (
 
 var taskCreateCmd = &cobra.Command{
 	Use:   `create "title"`,
-	Short: "Create a new task",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runTaskCreate,
+	Short: "Create a task to track a discrete unit of work",
+	Long: `Create a task in the shared brain. Tasks coordinate work across agents.
+
+WHEN TO USE: you have a concrete action item — something that can be done, verified,
+and marked done. Use --priority to signal urgency and --depends-on to declare ordering.
+
+WHEN NOT TO USE: for open-ended exploration use 'gg record'; for async questions to
+another agent use 'gg message send'.
+
+See also: gg task list (view tasks), gg task done (close a task), gg task deps (check blockers)`,
+	Args: cobra.ExactArgs(1),
+	RunE: runTaskCreate,
 }
 
 var (
@@ -21,13 +30,17 @@ var (
 	taskPriority  string
 	taskTags      string
 	taskDependsOn string
+	taskBlocks    string
+	taskDeadline  string
 )
 
 func init() {
 	taskCreateCmd.Flags().StringVar(&taskDetail, "detail", "", "task description")
-	taskCreateCmd.Flags().StringVar(&taskPriority, "priority", "medium", "priority: high, medium, low")
+	taskCreateCmd.Flags().StringVar(&taskPriority, "priority", "", "priority: high, medium, low (omit to leave unset)")
 	taskCreateCmd.Flags().StringVar(&taskTags, "tags", "", "comma-separated tags")
 	taskCreateCmd.Flags().StringVar(&taskDependsOn, "depends-on", "", "comma-separated task IDs this task depends on (e.g. TASK-001,TASK-002)")
+	taskCreateCmd.Flags().StringVar(&taskBlocks, "blocks", "", "comma-separated task IDs that this task is blocking")
+	taskCreateCmd.Flags().StringVar(&taskDeadline, "deadline", "", "deadline date (YYYY-MM-DD)")
 	addFromFlag(taskCreateCmd)
 	taskCmd.AddCommand(taskCreateCmd)
 }
@@ -38,14 +51,19 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if !validPriorities[taskPriority] {
-		return fmt.Errorf("invalid priority %q — use high, medium, or low", taskPriority)
+	if taskPriority != "" && !validPriorities[taskPriority] {
+		return fmt.Errorf("invalid priority %q — use high, medium, or low (or omit to leave unset)", taskPriority)
 	}
 
 	// Validate and normalise depends-on task IDs.
 	deps, err := parseTaskIDList(taskDependsOn)
 	if err != nil {
 		return fmt.Errorf("--depends-on: %w", err)
+	}
+
+	blocks, err := parseTaskIDList(taskBlocks)
+	if err != nil {
+		return fmt.Errorf("--blocks: %w", err)
 	}
 
 	d, err := loadDeps(true)
@@ -77,6 +95,8 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		Priority:  taskPriority,
 		Tags:      parseTags(taskTags),
 		DependsOn: deps,
+		Blocks:    blocks,
+		Deadline:  strings.TrimSpace(taskDeadline),
 		Author:    resolveAuthor(cmd),
 	}
 

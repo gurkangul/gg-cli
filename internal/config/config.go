@@ -38,6 +38,20 @@ type MemgraphConfig struct {
 	Password string `yaml:"password"` // empty string = no auth
 }
 
+// HooksConfig controls post-action hook execution.
+type HooksConfig struct {
+	// Strict controls whether hook failures block the triggering command.
+	// Default false (warn-only). Set to true in CI for enforcement.
+	Strict bool `yaml:"strict"`
+}
+
+// TelemetryConfig controls local-only usage telemetry.
+type TelemetryConfig struct {
+	// Enabled must be explicitly set to true to activate telemetry (opt-in).
+	// Override at runtime with GG_TELEMETRY=1 (enable) or GG_TELEMETRY=0 (disable).
+	Enabled bool `yaml:"enabled"`
+}
+
 type Config struct {
 	// ProjectID is a unique per-project UUID used to namespace Qdrant
 	// collections. Multiple projects share the same Qdrant instance but see
@@ -46,6 +60,8 @@ type Config struct {
 	Qdrant    QdrantConfig    `yaml:"qdrant"`
 	Embedding EmbeddingConfig `yaml:"embedding"`
 	Memgraph  MemgraphConfig  `yaml:"memgraph"`
+	Hooks     HooksConfig     `yaml:"hooks"`
+	Telemetry TelemetryConfig `yaml:"telemetry"`
 }
 
 func DefaultConfig() *Config {

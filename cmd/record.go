@@ -4,29 +4,43 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/spf13/cobra"
 )
 
 var recordCmd = &cobra.Command{
 	Use:   `record "text"`,
-	Short: "Record a decision or rejected approach",
-	Long: `Record a decision (default) or a rejected approach.
+	Short: "Record that a decision was made (the canonical knowledge-capture verb)",
+	Long: `Record an architectural decision, rejected approach, or design choice.
 
-  gg record "use JWT for auth"                         # accepted decision
-  gg record --stance=reject "store sessions in Redis"  # rejected approach
+WHEN TO USE: you've concluded something — chosen a library, rejected an approach,
+established a constraint. Anything that would appear in an ADR belongs here.
 
-This is the canonical verb. 'gg decide' and 'gg reject' still work but are
-deprecated and will be removed in a future major release.`,
+WHEN NOT TO USE: for in-progress deliberation use 'gg message send'; for task
+tracking use 'gg task create'; for progress notes use 'gg task done'.
+
+Examples:
+  gg record "use JWT for auth" --reason "stateless, scales horizontally" --tags "auth,security"
+  gg record "do NOT use Redis sessions" --decision-status=rejected --reason "ops burden"
+  gg record "switch to PostgreSQL" --rejected-alternatives "MySQL,SQLite" --implements TASK-003
+
+See also: gg task (track work), gg search (find context), gg status (overview)`,
 	Args: cobra.ExactArgs(1),
 	RunE: runRecord,
 }
 
 var (
-	recordReason string
-	recordTags   string
-	recordTask   string
-	recordStance string
+	recordReason     string
+	recordTags                string
+	recordTask                string
+	recordStance              string
+	recordDecisionStatus      string
+	recordRejectedAlternatives string
+	recordImplements          string // TASK-X that implements this decision → (Decision)-[:DECIDES]->(Task)
+	recordRejects             string // DEC-UUID that this decision supersedes → (Decision)-[:REJECTS]->(Decision)
 )
 
 func init() {
@@ -34,6 +48,10 @@ func init() {
 	recordCmd.Flags().StringVar(&recordTags, "tags", "", "comma-separated tags")
 	recordCmd.Flags().StringVar(&recordTask, "task", "", "related task ID")
 	recordCmd.Flags().StringVar(&recordStance, "stance", "accept", `stance: "accept" (decision) or "reject" (rejection)`)
+	recordCmd.Flags().StringVar(&recordDecisionStatus, "decision-status", "active", "decision lifecycle status: active, superseded, rejected")
+	recordCmd.Flags().StringVar(&recordRejectedAlternatives, "rejected-alternatives", "", "comma-separated approaches that were considered and rejected")
+	recordCmd.Flags().StringVar(&recordImplements, "implements", "", "TASK-X that implements this decision (writes Memgraph edge)")
+	recordCmd.Flags().StringVar(&recordRejects, "rejects", "", "decision UUID superseded by this one (writes Memgraph edge)")
 	addFromFlag(recordCmd)
 	rootCmd.AddCommand(recordCmd)
 }
@@ -105,16 +123,35 @@ func runRecord(cmd *cobra.Command, args []string) error {
 		})
 	}
 
+	decStatus := strings.TrimSpace(recordDecisionStatus)
+	if decStatus == "" {
+		decStatus = "active"
+	}
+	if !store.ValidDecisionStatuses[decStatus] {
+		return fmt.Errorf("--decision-status must be active, superseded, or rejected — got %q", decStatus)
+	}
+
 	dec := store.Decision{
-		Text:   text,
-		Reason: reason,
-		Tags:   parseTags(recordTags),
-		TaskID: taskRef,
-		Author: resolveAuthor(cmd),
+		ID:                   uuid.New().String(), // pre-assign so we can reference it in Memgraph edges
+		Text:                 text,
+		Reason:               reason,
+		Status:               decStatus,
+		RejectedAlternatives: parseTags(recordRejectedAlternatives),
+		Tags:                 parseTags(recordTags),
+		TaskID:               taskRef,
+		Author:               resolveAuthor(cmd),
 	}
 	if err := d.store.AddDecision(ctx, dec, vector); err != nil {
 		return fmt.Errorf("store decision: %w", err)
 	}
+
+	// Optional Memgraph edge writes — best-effort, warn but don't fail on graph errors.
+	implementsRef := strings.TrimSpace(recordImplements)
+	rejectsRef := strings.TrimSpace(recordRejects)
+	if implementsRef != "" || rejectsRef != "" {
+		writeGraphEdges(cmd, ctx, dec, implementsRef, rejectsRef)
+	}
+
 	return printJSON(dec, func() {
 		fmt.Printf("✓ Decision recorded: %s\n", text)
 		if dec.Reason != "" {
@@ -124,4 +161,53 @@ func runRecord(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  Tags: %s\n", strings.Join(dec.Tags, ", "))
 		}
 	})
+}
+
+// writeGraphEdges writes optional Memgraph cross-link edges after a decision is stored in Qdrant.
+// Failures are non-fatal: we warn to stderr but let the command succeed so Qdrant is always
+// the source of truth. Memgraph is a derived view that can be rebuilt from the export.
+func writeGraphEdges(cmd *cobra.Command, ctx interface{ Done() <-chan struct{} }, dec store.Decision, implementsRef, rejectsRef string) {
+	cfg, err := config.Load()
+	if err != nil || cfg.Memgraph.URI == "" {
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Memgraph unavailable — skipping graph edge write (Qdrant record is intact)")
+		return
+	}
+
+	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph init failed (%v) — skipping graph edges\n", err)
+		return
+	}
+	defer func() { _ = gc.Close(cmd.Context()) }()
+
+	// Upsert the Decision node itself.
+	if uErr := gc.UpsertDecisionNode(cmd.Context(), dec.ID, dec.Text); uErr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph Decision node upsert failed: %v\n", uErr)
+		return
+	}
+
+	if implementsRef != "" {
+		taskRef, normErr := normalizeTaskRef(implementsRef)
+		if normErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ --implements: %v\n", normErr)
+		} else {
+			if uErr := gc.UpsertTaskNode(cmd.Context(), taskRef, taskRef); uErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph Task node upsert failed: %v\n", uErr)
+			} else if eErr := gc.UpsertDecidesEdge(cmd.Context(), dec.ID, taskRef); eErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph DECIDES edge failed: %v\n", eErr)
+			} else {
+				fmt.Fprintf(cmd.ErrOrStderr(), "  Graph: (Decision)-[:DECIDES]->(%s)\n", taskRef)
+			}
+		}
+	}
+
+	if rejectsRef != "" {
+		if uErr := gc.UpsertDecisionNode(cmd.Context(), rejectsRef, rejectsRef); uErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph rejected Decision node upsert failed: %v\n", uErr)
+		} else if eErr := gc.UpsertRejectsEdge(cmd.Context(), dec.ID, rejectsRef); eErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph REJECTS edge failed: %v\n", eErr)
+		} else {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  Graph: (Decision)-[:REJECTS]->(Decision %s)\n", rejectsRef)
+		}
+	}
 }

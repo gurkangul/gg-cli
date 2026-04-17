@@ -29,15 +29,19 @@ var taskGetCmd = &cobra.Command{
 }
 
 var (
-	taskListStatus  string
-	taskListReady   bool
-	taskGetCompact  bool
-	taskGetWithCtx  bool
+	taskListStatus      string
+	taskListReady       bool
+	taskListNeedsReview bool
+	taskListBlockers    bool
+	taskGetCompact      bool
+	taskGetWithCtx      bool
 )
 
 func init() {
 	taskListCmd.Flags().StringVar(&taskListStatus, "status", "", "filter by status: pending, in_progress, done, blocked")
 	taskListCmd.Flags().BoolVar(&taskListReady, "ready", false, "show only pending tasks whose dependencies are all done")
+	taskListCmd.Flags().BoolVar(&taskListNeedsReview, "needs-review", false, "show done tasks awaiting review (review_status=none or pending)")
+	taskListCmd.Flags().BoolVar(&taskListBlockers, "blockers", false, "show tasks that are blocking other tasks (have --blocks targets)")
 	taskGetCmd.Flags().BoolVar(&taskGetCompact, "compact", false, "one line summary — drops detail/tags/author to preserve agent context window")
 	taskGetCmd.Flags().BoolVar(&taskGetWithCtx, "with-context", false, "append === Related Context === block with top-3 semantically related items from the knowledge base")
 	taskCmd.AddCommand(taskListCmd)
@@ -57,6 +61,44 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
+
+	if taskListNeedsReview {
+		tasks, err := d.store.ListTasksNeedsReview(ctx)
+		if err != nil {
+			return fmt.Errorf("list tasks needing review: %w", err)
+		}
+		return printJSON(tasks, func() {
+			if len(tasks) == 0 {
+				fmt.Println("No tasks awaiting review.")
+				return
+			}
+			for _, t := range tasks {
+				fmt.Printf("○ %s [review_status=%s] %s\n", t.ID, t.ReviewStatus, t.Title)
+			}
+		})
+	}
+
+	if taskListBlockers {
+		all, err := d.store.ListTasks(ctx, "")
+		if err != nil {
+			return fmt.Errorf("list tasks: %w", err)
+		}
+		var blockers []store.Task
+		for _, t := range all {
+			if len(t.Blocks) > 0 && t.Status != "done" {
+				blockers = append(blockers, t)
+			}
+		}
+		return printJSON(blockers, func() {
+			if len(blockers) == 0 {
+				fmt.Println("No active blocker tasks.")
+				return
+			}
+			for _, t := range blockers {
+				fmt.Printf("⚠ %s [%s] %s → blocks: %s\n", t.ID, t.Priority, t.Title, strings.Join(t.Blocks, ", "))
+			}
+		})
+	}
 
 	// --ready implicitly filters to pending tasks.
 	statusFilter := taskListStatus

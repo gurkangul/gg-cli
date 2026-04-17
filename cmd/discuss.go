@@ -10,10 +10,16 @@ import (
 
 var discussCmd = &cobra.Command{
 	Use:   "discuss",
-	Short: "Manage open discussions — topics raised but not yet concluded",
-	Long: "Discussions track conversations that haven't reached a decision/task/rejection.\n" +
-		"Open them mid-conversation when a topic surfaces without a clear outcome; resolve\n" +
-		"them by linking to the artifact that concluded them, or dismiss if superseded.",
+	Short: "Manage open discussions (deprecated — use gg message or gg record)",
+	Long: `Discussions track conversations that haven't reached a decision/task/rejection.
+
+DEPRECATED: usage data shows discuss is underused (0 calls in dogfood).
+  - For deliberation across agents: use 'gg message send' / 'gg tell'
+  - For capturing a concluded outcome: use 'gg record' (decision) or 'gg task'
+  - For async coordination: use 'gg message' with --thread
+
+This command will be removed in a future release (v0.2+).
+TODO(v0.2): remove gg discuss`,
 }
 
 // --- discuss open ---
@@ -143,6 +149,7 @@ func normalizeDiscID(raw string) (string, error) {
 }
 
 func runDiscussOpen(cmd *cobra.Command, args []string) error {
+	fmt.Fprintln(cmd.ErrOrStderr(), "warning: 'gg discuss' is deprecated — use 'gg message send' for deliberation or 'gg record' for decisions")
 	printProjectBanner()
 	topic, err := requireNonEmpty("topic", args[0])
 	if err != nil {

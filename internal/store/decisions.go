@@ -11,13 +11,15 @@ import (
 )
 
 type Decision struct {
-	ID        string
-	Text      string
-	Reason    string
-	Tags      []string
-	TaskID    string
-	Author    string // agent role or user that recorded this decision (e.g. "developer")
-	CreatedAt string
+	ID                   string
+	Text                 string
+	Reason               string
+	Status               string   // active|superseded|rejected (default active)
+	RejectedAlternatives []string // approaches that were considered and rejected
+	Tags                 []string
+	TaskID               string
+	Author               string // agent role or user that recorded this decision (e.g. "developer")
+	CreatedAt            string
 }
 
 func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) error {
@@ -28,13 +30,19 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 		d.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
+	if d.Status == "" {
+		d.Status = "active"
+	}
+
 	payload, err := qdrant.TryValueMap(map[string]any{
-		"text":       d.Text,
-		"reason":     d.Reason,
-		"tags":       toAnySlice(d.Tags),
-		"task_id":    d.TaskID,
-		"author":     d.Author,
-		"created_at": d.CreatedAt,
+		"text":                  d.Text,
+		"reason":                d.Reason,
+		"status":                d.Status,
+		"rejected_alternatives": toAnySlice(d.RejectedAlternatives),
+		"tags":                  toAnySlice(d.Tags),
+		"task_id":               d.TaskID,
+		"author":                d.Author,
+		"created_at":            d.CreatedAt,
 	})
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
@@ -102,15 +110,47 @@ func sortDecisionsDesc(ds []Decision) {
 }
 
 func decisionFromPayload(id string, pay map[string]*qdrant.Value) Decision {
-	return Decision{
-		ID:        id,
-		Text:      pay["text"].GetStringValue(),
-		Reason:    pay["reason"].GetStringValue(),
-		Tags:      extractStringList(pay["tags"]),
-		TaskID:    pay["task_id"].GetStringValue(),
-		Author:    pay["author"].GetStringValue(),
-		CreatedAt: pay["created_at"].GetStringValue(),
+	status := pay["status"].GetStringValue()
+	if status == "" {
+		status = "active"
 	}
+	return Decision{
+		ID:                   id,
+		Text:                 pay["text"].GetStringValue(),
+		Reason:               pay["reason"].GetStringValue(),
+		Status:               status,
+		RejectedAlternatives: extractStringList(pay["rejected_alternatives"]),
+		Tags:                 extractStringList(pay["tags"]),
+		TaskID:               pay["task_id"].GetStringValue(),
+		Author:               pay["author"].GetStringValue(),
+		CreatedAt:            pay["created_at"].GetStringValue(),
+	}
+}
+
+// ValidDecisionStatuses is the allowed set of Decision.Status values.
+var ValidDecisionStatuses = map[string]bool{
+	"active":     true,
+	"superseded": true,
+	"rejected":   true,
+}
+
+// UpdateDecisionStatus sets the status field on an existing decision point.
+func (c *Client) UpdateDecisionStatus(ctx context.Context, decisionID, status string) error {
+	if !ValidDecisionStatuses[status] {
+		return fmt.Errorf("invalid decision status %q — use active, superseded, or rejected", status)
+	}
+	payload, err := qdrant.TryValueMap(map[string]any{"status": status})
+	if err != nil {
+		return fmt.Errorf("build payload: %w", err)
+	}
+	wait := true
+	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+		CollectionName: c.collDecisions(),
+		Wait:           &wait,
+		Payload:        payload,
+		PointsSelector: qdrant.NewPointsSelector(qdrant.NewID(decisionID)),
+	})
+	return err
 }
 
 func toAnySlice(ss []string) []any {

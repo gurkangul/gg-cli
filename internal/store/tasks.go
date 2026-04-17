@@ -20,17 +20,23 @@ var taskIDNamespace = uuid.MustParse("c0c0c0c0-1a5c-4d0d-bab0-000000000001")
 var taskIDRegex = regexp.MustCompile(`^TASK-\d{3,}$`)
 
 type Task struct {
-	ID          string
-	Title       string
-	Detail      string
-	Status      string
-	Priority    string
-	DependsOn   []string
-	Tags        []string
-	BlockReason string
-	DoneSummary string
-	Author      string // agent role or user that created this task
-	CreatedAt   string
+	ID           string
+	Title        string
+	Detail       string
+	Status       string
+	Priority     string
+	DependsOn    []string
+	Blocks       []string // task IDs this task is blocking
+	Deadline     string   // RFC3339 date (YYYY-MM-DD)
+	Tags         []string
+	BlockReason  string
+	DoneSummary  string
+	Author       string // agent role or user that created this task
+	CreatedAt    string
+	ReviewStatus string // none|pending|approved|rejected — orthogonal to Status lifecycle
+	ReviewedBy   string // reviewer role or agent name
+	ReviewedAt   string // RFC3339 timestamp
+	ReviewNotes  string // optional reviewer notes
 }
 
 // scrollAll paginates through every point matching the given request template.
@@ -102,9 +108,6 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 	if t.Status == "" {
 		t.Status = "pending"
 	}
-	if t.Priority == "" {
-		t.Priority = "medium"
-	}
 	if t.CreatedAt == "" {
 		t.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
@@ -116,6 +119,8 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 		"status":       t.Status,
 		"priority":     t.Priority,
 		"depends_on":   toAnySlice(t.DependsOn),
+		"blocks":       toAnySlice(t.Blocks),
+		"deadline":     t.Deadline,
 		"tags":         toAnySlice(t.Tags),
 		"block_reason": t.BlockReason,
 		"done_summary": t.DoneSummary,
@@ -147,16 +152,29 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 }
 
 func (c *Client) ListTasks(ctx context.Context, statusFilter string) ([]Task, error) {
+	return c.listTasksFiltered(ctx, statusFilter, false)
+}
+
+// ListTasksNeedsReview returns tasks that are done but have not been reviewed
+// (review_status == "none" or "pending"). This is the --needs-review filter.
+func (c *Client) ListTasksNeedsReview(ctx context.Context) ([]Task, error) {
+	return c.listTasksFiltered(ctx, "done", true)
+}
+
+func (c *Client) listTasksFiltered(ctx context.Context, statusFilter string, needsReview bool) ([]Task, error) {
 	req := &qdrant.ScrollPoints{
 		CollectionName: c.collTasks(),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	}
+	var conditions []*qdrant.Condition
 	if statusFilter != "" {
-		req.Filter = &qdrant.Filter{
-			Must: []*qdrant.Condition{
-				qdrant.NewMatchKeyword("status", statusFilter),
-			},
-		}
+		conditions = append(conditions, qdrant.NewMatchKeyword("status", statusFilter))
+	}
+	if needsReview {
+		conditions = append(conditions, qdrant.NewMatchKeywords("review_status", "none", "pending", ""))
+	}
+	if len(conditions) > 0 {
+		req.Filter = &qdrant.Filter{Must: conditions}
 	}
 	points, err := c.scrollAll(ctx, req)
 	if err != nil {
@@ -245,6 +263,53 @@ func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra str
 	return err
 }
 
+// ValidReviewStatuses lists the allowed values for review_status.
+var ValidReviewStatuses = map[string]bool{
+	"none": true, "pending": true, "approved": true, "rejected": true,
+}
+
+// UpdateReviewStatus updates the review_status, reviewed_by, reviewed_at, and
+// review_notes fields of a task without touching its lifecycle status. The review
+// state is orthogonal to the work lifecycle (pending → in_progress → done).
+func (c *Client) UpdateReviewStatus(ctx context.Context, taskID, reviewStatus, reviewedBy, reviewNotes string) error {
+	if !ValidReviewStatuses[reviewStatus] {
+		return fmt.Errorf("review_status must be one of: none, pending, approved, rejected")
+	}
+	pointID := qdrant.NewID(pointUUIDForTaskID(taskID))
+
+	// Verify the task exists first.
+	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
+		CollectionName: c.collTasks(),
+		Ids:            []*qdrant.PointId{pointID},
+		WithPayload:    qdrant.NewWithPayloadInclude("task_id"),
+	})
+	if err != nil {
+		return err
+	}
+	if len(existing) == 0 {
+		return fmt.Errorf("task %s not found", taskID)
+	}
+
+	rsVal, _ := qdrant.NewValue(reviewStatus)
+	rbVal, _ := qdrant.NewValue(reviewedBy)
+	raVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
+	rnVal, _ := qdrant.NewValue(reviewNotes)
+
+	wait := true
+	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+		CollectionName: c.collTasks(),
+		Wait:           &wait,
+		Payload: map[string]*qdrant.Value{
+			"review_status": rsVal,
+			"reviewed_by":   rbVal,
+			"reviewed_at":   raVal,
+			"review_notes":  rnVal,
+		},
+		PointsSelector: qdrant.NewPointsSelector(pointID),
+	})
+	return err
+}
+
 // ActiveTasksFilter returns the Qdrant filter that restricts results to tasks
 // in an active state (pending or in_progress). Exported as a helper so tests
 // can verify it directly.
@@ -282,18 +347,28 @@ func (c *Client) SearchTasks(ctx context.Context, vector []float32, limit uint64
 }
 
 func taskFromPayload(pay map[string]*qdrant.Value) Task {
+	rs := pay["review_status"].GetStringValue()
+	if rs == "" {
+		rs = "none"
+	}
 	return Task{
-		ID:          pay["task_id"].GetStringValue(),
-		Title:       pay["title"].GetStringValue(),
-		Detail:      pay["detail"].GetStringValue(),
-		Status:      pay["status"].GetStringValue(),
-		Priority:    pay["priority"].GetStringValue(),
-		DependsOn:   extractStringList(pay["depends_on"]),
-		Tags:        extractStringList(pay["tags"]),
-		BlockReason: pay["block_reason"].GetStringValue(),
-		DoneSummary: pay["done_summary"].GetStringValue(),
-		Author:      pay["author"].GetStringValue(),
-		CreatedAt:   pay["created_at"].GetStringValue(),
+		ID:           pay["task_id"].GetStringValue(),
+		Title:        pay["title"].GetStringValue(),
+		Detail:       pay["detail"].GetStringValue(),
+		Status:       pay["status"].GetStringValue(),
+		Priority:     pay["priority"].GetStringValue(),
+		DependsOn:    extractStringList(pay["depends_on"]),
+		Blocks:       extractStringList(pay["blocks"]),
+		Deadline:     pay["deadline"].GetStringValue(),
+		Tags:         extractStringList(pay["tags"]),
+		BlockReason:  pay["block_reason"].GetStringValue(),
+		DoneSummary:  pay["done_summary"].GetStringValue(),
+		Author:       pay["author"].GetStringValue(),
+		CreatedAt:    pay["created_at"].GetStringValue(),
+		ReviewStatus: rs,
+		ReviewedBy:   pay["reviewed_by"].GetStringValue(),
+		ReviewedAt:   pay["reviewed_at"].GetStringValue(),
+		ReviewNotes:  pay["review_notes"].GetStringValue(),
 	}
 }
 

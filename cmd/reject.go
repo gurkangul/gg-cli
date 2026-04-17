@@ -10,13 +10,15 @@ import (
 
 var rejectCmd = &cobra.Command{
 	Use:   `reject "approach"`,
-	Short: "Record a rejected approach (deprecated: use gg record --stance=reject)",
+	Short: "Record a rejected approach (deprecated: use gg record --decision-status=rejected)",
 	Long: `Record a rejected approach.
 
-DEPRECATED: use 'gg record --stance=reject' instead.
+DEPRECATED: use 'gg record --decision-status=rejected' instead.
+Decision.status replaces the separate rejection primitive.
 This command will be removed in a future release.
 
-  gg record --stance=reject "approach" --reason "why"`,
+  gg record "approach" --decision-status=rejected --reason "why"
+  gg record "use PostgreSQL" --rejected-alternatives "MySQL,SQLite" --reason "..."`,
 	Args: cobra.ExactArgs(1),
 	RunE: runReject,
 }
@@ -36,7 +38,8 @@ func init() {
 }
 
 func runReject(cmd *cobra.Command, args []string) error {
-	fmt.Fprintln(cmd.ErrOrStderr(), "warning: 'gg reject' is deprecated — use 'gg record --stance=reject' instead")
+	fmt.Fprintln(cmd.ErrOrStderr(), "warning: 'gg reject' is deprecated — use 'gg record --decision-status=rejected' instead")
+	fmt.Fprintln(cmd.ErrOrStderr(), "  example: gg record \"approach\" --decision-status=rejected --reason \"why\"")
 
 	approach, err := requireNonEmpty("approach", args[0])
 	if err != nil {

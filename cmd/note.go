@@ -11,10 +11,16 @@ import (
 
 var noteCmd = &cobra.Command{
 	Use:   `note "text"`,
-	Short: "Record a free-form activity note",
-	Long: `Stores a timestamped note in the activity log. Notes are embedded and
-searchable via 'gg note search'. Use them to capture observations, progress
-context, or anything that doesn't fit a decision, rejection, or task.`,
+	Short: "Record a free-form note (deprecated — use gg record or commit message)",
+	Long: `Stores a timestamped note in the activity log.
+
+DEPRECATED: usage data shows note is underused (1 call in dogfood).
+  - For decisions and rationale: use 'gg record "text" --reason "why"'
+  - For progress context: use a git commit message or 'gg task done TASK-X "summary"'
+  - For search: 'gg search' covers decisions, tasks, and messages
+
+This command will be removed in a future release (v0.2+).
+TODO(v0.2): remove gg note`,
 	Args: cobra.ExactArgs(1),
 	RunE: runNote,
 }
@@ -51,6 +57,7 @@ func init() {
 }
 
 func runNote(cmd *cobra.Command, args []string) error {
+	fmt.Fprintln(cmd.ErrOrStderr(), "warning: 'gg note' is deprecated — use 'gg record' for decisions or 'gg task done' for progress notes")
 	printProjectBanner()
 	text, err := requireNonEmpty("text", args[0])
 	if err != nil {
