@@ -290,6 +290,33 @@ type brainStatusReport struct {
 	Counts     map[string]int    `json:"counts,omitempty"`
 }
 
+// brainLiveCounter is the minimal interface needed by computeDrift.
+// *store.Client satisfies it; tests can inject a fake.
+type brainLiveCounter interface {
+	ExportBrainCollection(ctx context.Context, kind string) ([]store.BrainRecord, error)
+}
+
+// computeDrift compares live Qdrant counts against the snapshot manifest.
+// Returns ("in_sync", delta), ("drifted", delta), or ("unknown", nil) on scroll error.
+func computeDrift(ctx context.Context, counter brainLiveCounter, manifest brainManifest) (string, map[string]int) {
+	delta := make(map[string]int)
+	hasDrift := false
+	for _, kind := range store.BrainKind {
+		live, err := counter.ExportBrainCollection(ctx, kind)
+		if err != nil {
+			return "unknown", nil
+		}
+		if d := len(live) - manifest.Counts[kind]; d != 0 {
+			delta[kind] = d
+			hasDrift = true
+		}
+	}
+	if hasDrift {
+		return "drifted", delta
+	}
+	return "in_sync", delta
+}
+
 func runBrainStatus(cmd *cobra.Command, _ []string) error {
 	ggDir, err := config.GGDir()
 	if err != nil {
@@ -339,27 +366,7 @@ func runBrainStatus(cmd *cobra.Command, _ []string) error {
 		if scErr == nil {
 			defer func() { _ = sc.Close() }()
 			if hErr := sc.HealthCheck(liveCtx); hErr == nil {
-				hasDrift := false
-				for _, kind := range store.BrainKind {
-					live, scrollErr := sc.ExportBrainCollection(liveCtx, kind)
-					if scrollErr != nil {
-						driftStatus = "unknown"
-						hasDrift = false
-						break
-					}
-					delta := len(live) - manifest.Counts[kind]
-					if delta != 0 {
-						driftDelta[kind] = delta
-						hasDrift = true
-					}
-				}
-				if driftStatus != "unknown" {
-					if hasDrift {
-						driftStatus = "drifted"
-					} else {
-						driftStatus = "in_sync"
-					}
-				}
+				driftStatus, driftDelta = computeDrift(liveCtx, sc, manifest)
 			}
 		}
 	}
