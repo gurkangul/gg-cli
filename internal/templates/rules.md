@@ -82,7 +82,7 @@ User says "continue"/"devam et"/"keep going" → pick next work autonomously:
 3. Skip tasks already claimed in recent inbox broadcasts
 4. Pick highest-priority unclaimed pending task
 5. Claim: `gg tell "all" "TASK-XXX picked up" --from <role>`
-6. `gg task get TASK-XXX`
+6. `gg task get TASK-XXX --with-context`
 7. Write code, test, commit
 8. `gg task done TASK-XXX "summary"` + broadcast: `gg tell "all" "TASK-XXX done: ..."`
 

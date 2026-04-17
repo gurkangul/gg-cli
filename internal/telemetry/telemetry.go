@@ -37,6 +37,9 @@ type Entry struct {
 	Compact      bool `json:"compact,omitempty"`
 	BytesOut     int  `json:"bytes_out,omitempty"`
 	BytesDefault int  `json:"bytes_default,omitempty"`
+	// --with-context fields (omitted when flag is not used).
+	WithContext       bool `json:"with_context,omitempty"`
+	ContextBlockBytes int  `json:"context_block_bytes,omitempty"`
 }
 
 func filePath(ggDir string) string {
@@ -89,6 +92,18 @@ func RecordCompact(ggDir, verb, fromFlag string, bytesOut, bytesDefault int) {
 	})
 }
 
+// RecordWithContext appends a telemetry entry for a --with-context invocation.
+// contextBlockBytes is the size in bytes of the appended === Related Context === block.
+func RecordWithContext(ggDir, verb, fromFlag string, contextBlockBytes int) {
+	recordEntry(ggDir, Entry{
+		Verb:              verb,
+		Origin:            classify(fromFlag),
+		Timestamp:         time.Now().UTC().Format(time.RFC3339),
+		WithContext:       true,
+		ContextBlockBytes: contextBlockBytes,
+	})
+}
+
 func classify(fromFlag string) string {
 	switch {
 	case strings.TrimSpace(os.Getenv("GG_ROLE")) != "":
@@ -129,6 +144,9 @@ type WeeklySummary struct {
 	CompactCalls        int `json:"compact_calls"`
 	CompactBytesOut     int `json:"compact_bytes_out"`
 	CompactBytesDefault int `json:"compact_bytes_default"`
+	// WithContextCalls counts gg get --with-context invocations.
+	WithContextCalls      int `json:"with_context_calls"`
+	WithContextBytesTotal int `json:"with_context_bytes_total"`
 }
 
 // Summarize reads the telemetry file and aggregates the last 7 days of data.
@@ -169,6 +187,10 @@ func Summarize(ggDir string) (*WeeklySummary, error) {
 			sum.CompactCalls++
 			sum.CompactBytesOut += e.BytesOut
 			sum.CompactBytesDefault += e.BytesDefault
+		}
+		if e.WithContext {
+			sum.WithContextCalls++
+			sum.WithContextBytesTotal += e.ContextBlockBytes
 		}
 	}
 	return sum, nil

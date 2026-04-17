@@ -1,14 +1,18 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
+	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
 
 var taskListCmd = &cobra.Command{
@@ -25,15 +29,17 @@ var taskGetCmd = &cobra.Command{
 }
 
 var (
-	taskListStatus string
-	taskListReady  bool
-	taskGetCompact bool
+	taskListStatus  string
+	taskListReady   bool
+	taskGetCompact  bool
+	taskGetWithCtx  bool
 )
 
 func init() {
 	taskListCmd.Flags().StringVar(&taskListStatus, "status", "", "filter by status: pending, in_progress, done, blocked")
 	taskListCmd.Flags().BoolVar(&taskListReady, "ready", false, "show only pending tasks whose dependencies are all done")
 	taskGetCmd.Flags().BoolVar(&taskGetCompact, "compact", false, "one line summary — drops detail/tags/author to preserve agent context window")
+	taskGetCmd.Flags().BoolVar(&taskGetWithCtx, "with-context", false, "append === Related Context === block with top-3 semantically related items from the knowledge base")
 	taskCmd.AddCommand(taskListCmd)
 	taskCmd.AddCommand(taskGetCmd)
 }
@@ -117,7 +123,7 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	d, err := loadDeps(false)
+	d, err := loadDeps(taskGetWithCtx)
 	if err != nil {
 		return err
 	}
@@ -131,16 +137,75 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 		return notFound(err.Error())
 	}
 
+	// Fetch related context when --with-context is set and embedder is available.
+	var relCtx *relatedContext
+	if taskGetWithCtx && d.embedder != nil {
+		relCtx = fetchRelatedContext(d, t)
+	}
+
 	return printJSON(t, func() {
 		if taskGetCompact {
 			emitCompact(cmd, "task",
 				func(w io.Writer) { renderTaskGetDefault(w, t) },
 				func(w io.Writer) { renderTaskGetCompact(w, t) },
 			)
-			return
+		} else {
+			renderTaskGetDefault(os.Stdout, t)
 		}
-		renderTaskGetDefault(os.Stdout, t)
+		if taskGetWithCtx {
+			var block bytes.Buffer
+			renderRelatedContext(&block, relCtx)
+			os.Stdout.Write(block.Bytes())
+			if ggDir, dirErr := config.GGDir(); dirErr == nil {
+				telemetry.RecordWithContext(ggDir, "task", "", block.Len())
+			}
+		}
 	})
+}
+
+// relatedContext holds the top-3 semantically related items for a task.
+type relatedContext struct {
+	decisions  []store.Decision
+	rejections []store.Rejection
+	notes      []store.Note
+}
+
+const withContextLimit uint64 = 3
+const withContextMaxBytes = 3072 // ~800 tokens hard cap
+
+// fetchRelatedContext embeds the task title+detail and searches Qdrant for top-3 items.
+func fetchRelatedContext(d *deps, t *store.Task) *relatedContext {
+	query := t.Title
+	if t.Detail != "" {
+		query = t.Title + " " + t.Detail
+	}
+
+	// Use a fresh timeout so we don't share the parent's deadline.
+	ctx, cancel := withTimeout(nil)
+	defer cancel()
+
+	vector, err := d.embedder.Generate(ctx, query)
+	if err != nil {
+		return nil
+	}
+
+	rc := &relatedContext{}
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		rc.decisions, _ = d.store.SearchDecisions(ctx, vector, withContextLimit)
+	}()
+	go func() {
+		defer wg.Done()
+		rc.rejections, _ = d.store.SearchRejections(ctx, vector, withContextLimit)
+	}()
+	go func() {
+		defer wg.Done()
+		rc.notes, _ = d.store.SearchNotes(ctx, vector, withContextLimit)
+	}()
+	wg.Wait()
+	return rc
 }
 
 func renderTaskGetDefault(w io.Writer, t *store.Task) {
@@ -175,4 +240,51 @@ func renderTaskGetCompact(w io.Writer, t *store.Task) {
 	}
 	fmt.Fprintf(w, "%s %s [%s] %s%s\n",
 		statusIcon(t.Status), t.ID, t.Priority, compactTrim(t.Title, compactLineWidth), suffix)
+}
+
+// renderRelatedContext writes the === Related Context === block to w.
+// Each item is a single line (ID/date + 1-sentence summary). The block is
+// capped at withContextMaxBytes to enforce the ≤800-token hard cap.
+// When rc is nil (Qdrant unavailable or embed failed), writes a brief notice.
+func renderRelatedContext(w *bytes.Buffer, rc *relatedContext) {
+	fmt.Fprintln(w, "\n=== Related Context ===")
+
+	if rc == nil {
+		fmt.Fprintln(w, "  (unavailable — Qdrant unreachable or embedding failed)")
+		return
+	}
+
+	total := len(rc.decisions) + len(rc.rejections) + len(rc.notes)
+	if total == 0 {
+		fmt.Fprintln(w, "  (no related items found)")
+		return
+	}
+
+	var lines []string
+	for _, dec := range rc.decisions {
+		lines = append(lines, fmt.Sprintf("D  %s  %s", shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth)))
+	}
+	for _, r := range rc.rejections {
+		lines = append(lines, fmt.Sprintf("R  %s  %s", shortDate(r.CreatedAt), compactTrim(r.Approach, compactLineWidth)))
+	}
+	for _, n := range rc.notes {
+		ref := ""
+		if n.TaskID != "" {
+			ref = " (" + n.TaskID + ")"
+		}
+		lines = append(lines, fmt.Sprintf("N  %s%s  %s", shortDate(n.CreatedAt), ref, compactTrim(n.Text, compactLineWidth)))
+	}
+
+	// Enforce byte cap — stop adding lines once we'd exceed the limit.
+	// Header already written; budget from current buffer length.
+	budget := withContextMaxBytes - w.Len()
+	for _, line := range lines {
+		entry := "  " + line + "\n"
+		if budget-len(entry) < 0 {
+			fmt.Fprintln(w, "  … (truncated — context block size limit reached)")
+			break
+		}
+		fmt.Fprint(w, entry)
+		budget -= len(entry)
+	}
 }
