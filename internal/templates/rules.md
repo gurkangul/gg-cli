@@ -18,10 +18,22 @@ While discussing a topic with the user:
 
 1. Check for prior decisions on the topic:
    ```
-   gg search "topic"
+   gg search "topic" --compact
    ```
 2. The same command surfaces rejections as well.
-3. If any match, inform the user.
+3. If any match, inform the user. Drop `--compact` (or run `gg task get`)
+   when you need the full reason/detail body.
+
+## CONTEXT HYGIENE
+
+Use `--compact` by default on survey-style calls: `gg context`,
+`gg search`, `gg task get`, `gg impact`. Drops Reason/Detail/Tags
+bodies to preserve the context window (60-85% reduction).
+
+Drop the flag only when you need the full body — e.g. reading a
+decision's reason, or working on a task and needing its detail.
+
+`gg status` shows `Compact  N calls, X KB saved`.
 
 ## OPEN DISCUSSIONS
 

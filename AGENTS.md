@@ -1,5 +1,5 @@
 ---
-agents_schema: "2.0"
+agents_schema: "2.1"
 ---
 
 # Agent Guidance
@@ -38,8 +38,8 @@ docker-compose at `~/.gg/`. Each project's `.gg/` holds only metadata
 **Look these up before suggesting changes:**
 - `README.md` — public-facing overview + install
 - `docs/architecture.md` — detailed package layout, isolation, crash safety
-- `gg search "<topic>"` — past decisions and rejections on the subject
-- `gg context "<topic>"` — unified bundle (decisions + tasks + code impact)
+- `gg search "<topic>" --compact` — past decisions and rejections on the subject
+- `gg context "<topic>" --compact` — unified bundle (decisions + tasks + code impact)
 
 ---
 
@@ -81,10 +81,34 @@ When discussing a topic with the user:
 
 1. Check if the topic already has a decision:
    ```
-   gg search "topic"
+   gg search "topic" --compact
    ```
 2. The same command also returns prior rejections for that topic.
 3. If any exist, surface them: "X was already decided" / "Y was previously rejected".
+4. If an entry looks relevant, fetch its full body: drop `--compact`, or
+   run `gg task get TASK-XX` for detail.
+
+## CONTEXT HYGIENE (--compact by default)
+
+`gg context`, `gg search`, `gg task get`, and `gg impact` all accept
+`--compact` — one line per item (ID, date, title), no Reason/Detail/Tags
+bodies. Typical 60-85% byte reduction on populated bundles.
+
+**Default to `--compact` when scanning:**
+```
+gg context "auth" --compact      # what do we know about auth?
+gg search "jwt" --compact        # has JWT come up before?
+gg impact src/auth.go --compact  # what breaks if I change this?
+```
+
+**Drop `--compact` only when you need the body:**
+- Reading a decision's *reason* before citing or contradicting it
+- Fetching the *full detail* of a task you're about to work on:
+  `gg task get TASK-042` (no flag → full output)
+
+`gg status` surfaces compact adoption (`Compact  N calls, X KB saved`).
+Skipping `--compact` on scans inflates the agent's context spend and
+shows up in the dogfood metric — use it on every survey-style call.
 
 ## OPEN DISCUSSIONS (unresolved topics)
 
