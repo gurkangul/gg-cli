@@ -2,8 +2,16 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg-cli/internal/config"
 )
 
 var taskDoneCmd = &cobra.Command{
@@ -56,9 +64,63 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	warnBinaryStale()
+
 	return printJSON(map[string]any{"id": taskID, "status": "done", "summary": summary}, func() {
 		fmt.Printf("✓ %s marked as done\n", taskID)
 	})
+}
+
+// warnBinaryStale prints an advisory when the most recently committed Go
+// source file in the project is newer than the installed gg binary. This
+// catches the "gg task done while binary is stale" workflow problem.
+//
+// The check is entirely advisory: it never fails the command. Silence it
+// with GG_SKIP_SHIP_CHECK=1.
+func warnBinaryStale() {
+	if os.Getenv("GG_SKIP_SHIP_CHECK") == "1" {
+		return
+	}
+
+	projectRoot, err := config.FindRoot()
+	if err != nil {
+		return // not in a gg project — skip
+	}
+
+	// Only warn in Go repos (go.mod present) to avoid false positives in
+	// Python/JS projects where .go sources don't map to the gg binary.
+	if _, statErr := os.Stat(filepath.Join(projectRoot, "go.mod")); statErr != nil {
+		return
+	}
+
+	// Last commit timestamp touching any *.go file (Unix seconds, empty = no Go files).
+	out, runErr := exec.Command("git", "-C", projectRoot, "log", "-1", "--format=%ct", "--", "*.go").Output()
+	if runErr != nil || len(strings.TrimSpace(string(out))) == 0 {
+		return
+	}
+	srcTS, convErr := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+	if convErr != nil {
+		return
+	}
+	srcTime := time.Unix(srcTS, 0)
+
+	// Find installed binary.
+	binPath, lookErr := exec.LookPath("gg")
+	if lookErr != nil {
+		return
+	}
+	info, statErr := os.Stat(binPath)
+	if statErr != nil {
+		return
+	}
+
+	if srcTime.After(info.ModTime()) {
+		fmt.Fprintf(os.Stderr, "\n⚠  Source files modified after installed binary mtime.\n")
+		fmt.Fprintf(os.Stderr, "   Binary: %s (built %s)\n", binPath, info.ModTime().Format("2006-01-02 15:04"))
+		fmt.Fprintf(os.Stderr, "   Source: last commit %s\n", srcTime.Format("2006-01-02 15:04"))
+		fmt.Fprintf(os.Stderr, "   Run: go install ./... (or your install path) then re-test.\n")
+		fmt.Fprintf(os.Stderr, "   This task is marked done but may not be live in your shell.\n\n")
+	}
 }
 
 func runTaskBlock(cmd *cobra.Command, args []string) error {
