@@ -39,7 +39,12 @@ import (
 //
 // All data-plane queries (MATCH, CREATE, MERGE, DELETE) must use this method.
 // Do not call sess.Run directly — use runQuery or runQueryNoPID.
+//
+// project_id isolation: runQuery automatically injects {"pid": c.projectID}
+// into every query so callers never need to pass it manually. Cypher strings
+// that filter on project scope should reference $pid in their WHERE / pattern.
 func (c *Client) runQuery(ctx context.Context, cypher string, params map[string]any) (neo4j.ResultWithContext, func(), error) {
+	params = c.injectPID(params)
 	start := time.Now()
 	sess := c.session(ctx)
 	result, err := sess.Run(ctx, cypher, params)
@@ -50,6 +55,17 @@ func (c *Client) runQuery(ctx context.Context, cypher string, params map[string]
 		return nil, func() {}, err
 	}
 	return result, cleanup, nil
+}
+
+// injectPID returns a shallow copy of params with "pid" set to c.projectID.
+// If params is nil a new map is allocated. The original map is never mutated.
+func (c *Client) injectPID(params map[string]any) map[string]any {
+	out := make(map[string]any, len(params)+1)
+	for k, v := range params {
+		out[k] = v
+	}
+	out["pid"] = c.projectID
+	return out
 }
 
 // runQueryNoPID executes a Cypher query that legitimately has no project_id

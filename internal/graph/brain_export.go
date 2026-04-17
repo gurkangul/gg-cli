@@ -76,7 +76,7 @@ func firstLabel(lbls []any) string {
 func (c *Client) ExportNodes(ctx context.Context) ([]BrainNode, error) {
 	result, cleanup, err := c.runQuery(ctx,
 		"MATCH (n {project_id: $pid}) RETURN labels(n) AS lbls, properties(n) AS props",
-		map[string]any{"pid": c.projectID},
+		nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("brain export nodes: %w", err)
@@ -117,7 +117,7 @@ func (c *Client) ExportEdges(ctx context.Context) ([]BrainEdge, error) {
 		 RETURN labels(src) AS src_lbls, properties(src) AS src_props,
 		        labels(dst) AS dst_lbls, properties(dst) AS dst_props,
 		        type(r) AS rel_type, properties(r) AS rel_props`,
-		map[string]any{"pid": c.projectID},
+		nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("brain export edges: %w", err)

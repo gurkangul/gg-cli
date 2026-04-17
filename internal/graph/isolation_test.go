@@ -109,6 +109,47 @@ func TestPackageNode_NoProjectID(t *testing.T) {
 	}
 }
 
+// TestInjectPID verifies that injectPID always adds "pid" = projectID to the
+// returned map without mutating the original and handles a nil input.
+func TestInjectPID(t *testing.T) {
+	cfg := &config.MemgraphConfig{URI: "bolt://localhost:19999"}
+	c, err := New(cfg, "test-proj-abc")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	t.Run("nil params", func(t *testing.T) {
+		out := c.injectPID(nil)
+		if out["pid"] != "test-proj-abc" {
+			t.Errorf("expected pid=test-proj-abc, got %v", out["pid"])
+		}
+	})
+
+	t.Run("existing params not mutated", func(t *testing.T) {
+		original := map[string]any{"key": "val"}
+		out := c.injectPID(original)
+		if out["pid"] != "test-proj-abc" {
+			t.Errorf("expected pid=test-proj-abc, got %v", out["pid"])
+		}
+		if out["key"] != "val" {
+			t.Errorf("existing key lost")
+		}
+		if _, ok := original["pid"]; ok {
+			t.Error("injectPID must not mutate the original map")
+		}
+	})
+
+	t.Run("caller pid overwritten", func(t *testing.T) {
+		// If a caller accidentally passes "pid", injectPID normalises it to the
+		// client's own projectID — no cross-project escalation possible.
+		original := map[string]any{"pid": "attacker-project"}
+		out := c.injectPID(original)
+		if out["pid"] != "test-proj-abc" {
+			t.Errorf("expected client projectID to win, got %v", out["pid"])
+		}
+	})
+}
+
 // Cross-project sess.Run choke-point enforcement is covered by
 // TestNoRawSessRunOutsideQueriesGo in chokepoint_test.go (AST-based, no
 // Memgraph required). See that file for the static enforcement logic.

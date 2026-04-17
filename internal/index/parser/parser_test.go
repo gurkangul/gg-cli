@@ -44,13 +44,10 @@ func TestScipSymbolName(t *testing.T) {
 }
 
 func TestSymbolNodeVisibility(t *testing.T) {
-	// Local symbol → private
-	priv := symbolNode("local abc123", "go", symbolMeta{})
-	if priv.Properties["visibility"] != string(graph.VisPrivate) {
-		t.Errorf("local symbol should be private, got %v", priv.Properties["visibility"])
-	}
-	if priv.Properties["boundary"] != false {
-		t.Errorf("local symbol should have boundary=false")
+	// Local symbol → skipped (nil); locals are anonymous and not indexed.
+	local := symbolNode("local abc123", "go", symbolMeta{})
+	if local != nil {
+		t.Errorf("local symbol should be skipped (nil), got %+v", local)
 	}
 
 	// Package-level symbol → public
@@ -69,7 +66,7 @@ func TestScipKindMapping(t *testing.T) {
 		want graph.SymbolKind
 	}{
 		{scippb.SymbolInformation_Function, graph.KindFunction},
-		{scippb.SymbolInformation_Method, graph.KindFunction},
+		{scippb.SymbolInformation_Method, graph.KindMethod},
 		{scippb.SymbolInformation_Class, graph.KindType},
 		{scippb.SymbolInformation_Struct, graph.KindType},
 		{scippb.SymbolInformation_Interface, graph.KindInterface},
@@ -79,7 +76,7 @@ func TestScipKindMapping(t *testing.T) {
 		{scippb.SymbolInformation_UnspecifiedKind, graph.KindFunction}, // fallback
 	}
 	for _, c := range cases {
-		got := scipKindToGraphKind(c.kind)
+		got := scipKindToGraphKind(c.kind, "")
 		if got != c.want {
 			t.Errorf("scipKindToGraphKind(%v) = %v, want %v", c.kind, got, c.want)
 		}

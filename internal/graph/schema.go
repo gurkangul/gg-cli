@@ -13,6 +13,16 @@ const (
 	LabelSymbol  = "Symbol"
 	LabelFile    = "File"
 	LabelPackage = "Package"
+
+	// Knowledge-graph labels — mirror the Qdrant record types so cross-links
+	// between code and decisions can be expressed as first-class graph edges.
+	LabelDecision = "Decision"
+	LabelTask     = "Task"
+
+	// LabelWave is a calendar-bucket milestone node. Wave nodes live in Memgraph
+	// only (no Qdrant collection) — they group tasks by time period, not by
+	// semantic content.
+	LabelWave = "Wave"
 )
 
 // Relationship types between nodes.
@@ -21,6 +31,12 @@ const (
 	RelContains = "CONTAINS" // (Package)-[:CONTAINS]->(File)
 	RelCalls    = "CALLS"    // (Symbol)-[:CALLS]->(Symbol)
 	RelImports  = "IMPORTS"  // (Symbol|File)-[:IMPORTS]->(Package)
+
+	// Knowledge-graph relationship types.
+	RelDecides    = "DECIDES"    // (Decision)-[:DECIDES]->(Task)
+	RelImplements = "IMPLEMENTS" // (Task)-[:IMPLEMENTS]->(Decision)
+	RelRejects    = "REJECTS"    // (Decision)-[:REJECTS]->(Decision)
+	RelInWave     = "IN_WAVE"    // (Task)-[:IN_WAVE]->(Wave)
 )
 
 // ResolutionTier records how a graph node was produced.
@@ -124,6 +140,45 @@ func PackageNode(name, lang, importPath string) *Node {
 	}
 }
 
+// DecisionNode creates a Node mirroring a Qdrant decision record.
+// id is the Qdrant UUID; title is a short human-readable label.
+func DecisionNode(id, title string) *Node {
+	return &Node{
+		Label: LabelDecision,
+		Properties: map[string]any{
+			"qdrant_id": id,
+			"title":     title,
+		},
+	}
+}
+
+// TaskNode creates a Node mirroring a Qdrant task record.
+func TaskNode(id, title string) *Node {
+	return &Node{
+		Label: LabelTask,
+		Properties: map[string]any{
+			"qdrant_id": id,
+			"title":     title,
+		},
+	}
+}
+
+// WaveNode creates a Node for a wave/milestone calendar bucket.
+// id is a short slug (e.g. "wave1"), status is "active" or "closed".
+func WaveNode(id, name, goal, startDate, endDate, status string) *Node {
+	return &Node{
+		Label: LabelWave,
+		Properties: map[string]any{
+			"id":         id,
+			"name":       name,
+			"goal":       goal,
+			"start_date": startDate,
+			"end_date":   endDate,
+			"status":     status,
+		},
+	}
+}
+
 // SchemaInit creates Memgraph indexes required for efficient graph queries.
 // Safe to call on an already-initialised schema — Memgraph CREATE INDEX IF NOT EXISTS.
 //
@@ -144,6 +199,12 @@ func (c *Client) SchemaInit(ctx context.Context) error {
 		"CREATE INDEX ON :File(path)",
 		"CREATE INDEX ON :File(resolution)", // tier filter for --changed scoping
 		"CREATE INDEX ON :Package(import_path)",
+		"CREATE INDEX ON :Decision(project_id)",
+		"CREATE INDEX ON :Decision(qdrant_id)",
+		"CREATE INDEX ON :Task(project_id)",
+		"CREATE INDEX ON :Task(qdrant_id)",
+		"CREATE INDEX ON :Wave(project_id)",
+		"CREATE INDEX ON :Wave(id)",
 	}
 
 	// DDL queries carry no project scope — use runQueryNoPID.
@@ -166,7 +227,7 @@ func (c *Client) BoundarySymbols(ctx context.Context) ([]*Node, error) {
 	result, cleanup, err := c.runQuery(ctx,
 		"MATCH (n:Symbol {boundary: true, project_id: $pid, resolution: $tier}) "+
 			"RETURN toString(id(n)) AS id, properties(n) AS props",
-		map[string]any{"pid": c.projectID, "tier": string(ResolutionSemantic)},
+		map[string]any{"tier": string(ResolutionSemantic)},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("boundary symbols query: %w", err)

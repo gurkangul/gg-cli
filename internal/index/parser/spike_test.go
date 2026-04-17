@@ -35,7 +35,7 @@ func (h *spikeHandler) OnFile(_ context.Context, node *graph.Node) error {
 	return nil
 }
 
-func (h *spikeHandler) OnSymbol(_ context.Context, _ *graph.Node, symNode *graph.Node) error {
+func (h *spikeHandler) OnSymbol(_ context.Context, _ *graph.Node, symNode *graph.Node, _ string) error {
 	n := h.symbols.Add(1)
 	if n <= 5 {
 		h.samples = append(h.samples, symNode.Properties["name"].(string))

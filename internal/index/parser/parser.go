@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	scippb "github.com/scip-code/scip/bindings/go/scip"
 
@@ -26,7 +27,8 @@ type Handler interface {
 	// OnFile is called once per SCIP Document before its symbols are processed.
 	OnFile(ctx context.Context, node *graph.Node) error
 	// OnSymbol is called for every Definition occurrence within a document.
-	OnSymbol(ctx context.Context, fileNode *graph.Node, symNode *graph.Node) error
+	// scipSymbol is the raw SCIP symbol string (e.g. "scip-go gomod ... `pkg`/Name#").
+	OnSymbol(ctx context.Context, fileNode *graph.Node, symNode *graph.Node, scipSymbol string) error
 	// OnReference is called for every non-Definition occurrence that refers to
 	// a known symbol. fromFileNode is the file containing the reference.
 	OnReference(ctx context.Context, fromFileNode *graph.Node, scipSymbol string) error
@@ -82,7 +84,11 @@ func visitDocument(ctx context.Context, doc *scippb.Document, lang string, h Han
 		if isDefinition(occ) {
 			meta := symMeta[sym]
 			symNode := symbolNode(sym, lang, meta)
-			if err := h.OnSymbol(ctx, fileNode, symNode); err != nil {
+			if symNode == nil {
+				// local/anonymous symbol — skip, not worth indexing
+				continue
+			}
+			if err := h.OnSymbol(ctx, fileNode, symNode, sym); err != nil {
 				return fmt.Errorf("OnSymbol %s: %w", sym, err)
 			}
 		} else {
@@ -115,17 +121,17 @@ func indexSymbolMeta(syms []*scippb.SymbolInformation) map[string]symbolMeta {
 }
 
 // symbolNode creates a graph.Node for a SCIP symbol occurrence.
-// Visibility is inferred from the symbol string: SCIP local symbols (starting
-// with "local ") are private; everything else is treated as potentially public.
-// Full visibility determination requires language-specific rules and is
-// refined by downstream callers (TASK-007 boundary logic).
+// Returns nil for local/anonymous symbols (e.g. "local 192") — callers must
+// check for nil and skip. All non-local symbols are treated as potentially
+// public; visibility is inferred from the symbol string.
 func symbolNode(scipSymbol, lang string, meta symbolMeta) *graph.Node {
-	vis := graph.VisPublic
-	if len(scipSymbol) > 6 && scipSymbol[:6] == "local " {
-		vis = graph.VisPrivate
+	// local N symbols are anonymous locals — not worth indexing.
+	if strings.HasPrefix(scipSymbol, "local ") {
+		return nil
 	}
 
-	kind := scipKindToGraphKind(meta.kind)
+	vis := graph.VisPublic
+	kind := scipKindToGraphKind(meta.kind, scipSymbol)
 	// Use the last segment of the SCIP symbol as the display name.
 	name := scipSymbolName(scipSymbol)
 
@@ -134,11 +140,14 @@ func symbolNode(scipSymbol, lang string, meta symbolMeta) *graph.Node {
 }
 
 // scipKindToGraphKind maps SCIP SymbolInformation_Kind to graph.SymbolKind.
-// Unknown/unmapped kinds default to KindFunction as a safe fallback.
-func scipKindToGraphKind(k scippb.SymbolInformation_Kind) graph.SymbolKind {
+// When the kind is unspecified (scip-go often omits it), falls back to
+// inferKindFromSCIPSymbol which parses the descriptor suffix.
+func scipKindToGraphKind(k scippb.SymbolInformation_Kind, sym string) graph.SymbolKind {
 	switch k {
-	case scippb.SymbolInformation_Function, scippb.SymbolInformation_Method:
+	case scippb.SymbolInformation_Function:
 		return graph.KindFunction
+	case scippb.SymbolInformation_Method:
+		return graph.KindMethod
 	case scippb.SymbolInformation_Class, scippb.SymbolInformation_Struct:
 		return graph.KindType
 	case scippb.SymbolInformation_Interface:
@@ -148,8 +157,50 @@ func scipKindToGraphKind(k scippb.SymbolInformation_Kind) graph.SymbolKind {
 	case scippb.SymbolInformation_Constant, scippb.SymbolInformation_EnumMember:
 		return graph.KindConstant
 	default:
+		return inferKindFromSCIPSymbol(sym)
+	}
+}
+
+// inferKindFromSCIPSymbol infers graph.SymbolKind from the SCIP descriptor suffix.
+//
+// scip-go symbol format: "scip-go gomod <module> <version> `<pkg>`/<descriptors>"
+//
+// Descriptor suffix conventions:
+//   - ends "#"    → type (struct or interface definition)
+//   - ends "()."  → function; method if '#' appears in the final descriptor segment
+//   - ends "."    → variable or struct field (no parameter list)
+//   - ends ":"    → constant / term (less common in Go)
+func inferKindFromSCIPSymbol(sym string) graph.SymbolKind {
+	if sym == "" {
 		return graph.KindFunction
 	}
+
+	// Method/function: ends with ")."
+	if strings.HasSuffix(sym, ").") {
+		// Method if there's a '#' after the last '/' (receiver type is in the descriptor)
+		lastSlash := strings.LastIndex(sym, "/")
+		if lastSlash >= 0 && strings.Contains(sym[lastSlash+1:], "#") {
+			return graph.KindMethod
+		}
+		return graph.KindFunction
+	}
+
+	// Type definition: ends with '#'
+	if strings.HasSuffix(sym, "#") {
+		return graph.KindType
+	}
+
+	// Variable, struct field, or package-level term: ends with '.'
+	if strings.HasSuffix(sym, ".") {
+		return graph.KindVariable
+	}
+
+	// Term/constant: ends with ':'
+	if strings.HasSuffix(sym, ":") {
+		return graph.KindConstant
+	}
+
+	return graph.KindFunction
 }
 
 // scipSymbolName extracts the human-readable name from a SCIP symbol string.

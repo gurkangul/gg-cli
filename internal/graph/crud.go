@@ -91,12 +91,29 @@ func (c *Client) UpsertNode(ctx context.Context, n *Node, mergeKeys []string) er
 		identity[k] = v
 	}
 
-	// MERGE: project_id is in $identity (the merge key). runQuery is used; the
-	// isolation guarantee is in the identity map, not a separate $pid param.
-	result, cleanup, err := c.runQuery(ctx,
-		fmt.Sprintf("MERGE (n:%s $identity) SET n += $props RETURN toString(id(n)) AS id", n.Label),
-		map[string]any{"identity": identity, "props": props},
+	// Build the MERGE clause with explicit property matching — Memgraph does not
+	// support map-literal matching in MERGE (e.g. MERGE (n:L $map)).
+	// Sort keys for deterministic Cypher output.
+	idKeys := make([]string, 0, len(identity))
+	for k := range identity {
+		idKeys = append(idKeys, k)
+	}
+	sort.Strings(idKeys)
+	mergeParams := make(map[string]any, len(idKeys)+1)
+	mergeParams["props"] = props
+	idParts := make([]string, 0, len(idKeys))
+	for _, k := range idKeys {
+		paramName := "id_" + k
+		idParts = append(idParts, fmt.Sprintf("%s: $%s", k, paramName))
+		mergeParams[paramName] = identity[k]
+	}
+	cypher := fmt.Sprintf(
+		"MERGE (n:%s {%s}) SET n += $props RETURN toString(id(n)) AS id",
+		n.Label, strings.Join(idParts, ", "),
 	)
+
+	// runQuery is used; project_id is in the MERGE identity keys above.
+	result, cleanup, err := c.runQuery(ctx, cypher, mergeParams)
 	if err != nil {
 		return fmt.Errorf("upsert node %s: %w", n.Label, err)
 	}
@@ -123,7 +140,7 @@ func (c *Client) FindNodeByProperty(ctx context.Context, label, key string, valu
 			"MATCH (n:%s {%s: $val, project_id: $pid}) RETURN toString(id(n)) AS id, properties(n) AS props LIMIT 1",
 			label, key,
 		),
-		map[string]any{"val": value, "pid": c.projectID},
+		map[string]any{"val": value},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find node %s.%s: %w", label, key, err)
@@ -150,7 +167,7 @@ func (c *Client) DeleteNode(ctx context.Context, elementID string) error {
 	}
 	_, cleanup, err := c.runQuery(ctx,
 		"MATCH (n) WHERE toString(id(n)) = $id AND n.project_id = $pid DETACH DELETE n",
-		map[string]any{"id": elementID, "pid": c.projectID},
+		map[string]any{"id": elementID},
 	)
 	if err != nil {
 		return fmt.Errorf("delete node %s: %w", elementID, err)
@@ -170,7 +187,7 @@ func (c *Client) InvalidateFile(ctx context.Context, filePath string) error {
 	// Step 1: delete all Symbol nodes produced from this file.
 	_, cleanup1, err := c.runQuery(ctx,
 		"MATCH (n:Symbol {source_file: $path, project_id: $pid}) DETACH DELETE n",
-		map[string]any{"path": filePath, "pid": c.projectID},
+		map[string]any{"path": filePath},
 	)
 	if err != nil {
 		return fmt.Errorf("invalidate symbols for %s: %w", filePath, err)
@@ -180,7 +197,7 @@ func (c *Client) InvalidateFile(ctx context.Context, filePath string) error {
 	// Step 2: delete the File node itself.
 	_, cleanup2, err := c.runQuery(ctx,
 		"MATCH (f:File {path: $path, project_id: $pid}) DETACH DELETE f",
-		map[string]any{"path": filePath, "pid": c.projectID},
+		map[string]any{"path": filePath},
 	)
 	if err != nil {
 		return fmt.Errorf("invalidate file node for %s: %w", filePath, err)
@@ -195,7 +212,7 @@ func (c *Client) InvalidateFile(ctx context.Context, filePath string) error {
 func (c *Client) DependentsOf(ctx context.Context, filePath string) ([]string, error) {
 	result, cleanup, err := c.runQuery(ctx,
 		"MATCH (d:File {project_id: $pid})-[:IMPORTS]->(f:File {path: $path, project_id: $pid}) RETURN d.path AS dep",
-		map[string]any{"path": filePath, "pid": c.projectID},
+		map[string]any{"path": filePath},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dependents of %s: %w", filePath, err)
@@ -221,7 +238,7 @@ func (c *Client) DependentsOf(ctx context.Context, filePath string) ([]string, e
 func (c *Client) FileSymbols(ctx context.Context, filePath string) ([]*Node, error) {
 	result, cleanup, err := c.runQuery(ctx,
 		"MATCH (n:Symbol {source_file: $path, project_id: $pid}) RETURN toString(id(n)) AS id, properties(n) AS props",
-		map[string]any{"path": filePath, "pid": c.projectID},
+		map[string]any{"path": filePath},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("file symbols %s: %w", filePath, err)
@@ -249,7 +266,7 @@ func (c *Client) FileSymbols(ctx context.Context, filePath string) ([]*Node, err
 func (c *Client) SweepProject(ctx context.Context) error {
 	_, cleanup, err := c.runQuery(ctx,
 		"MATCH (n {project_id: $pid}) DETACH DELETE n",
-		map[string]any{"pid": c.projectID},
+		nil,
 	)
 	if err != nil {
 		return fmt.Errorf("sweep project: %w", err)
@@ -295,7 +312,6 @@ func (c *Client) CreateEdge(ctx context.Context, e *Edge) error {
 		map[string]any{
 			"from":  e.FromID,
 			"to":    e.ToID,
-			"pid":   c.projectID,
 			"props": props,
 		},
 	)
@@ -335,7 +351,6 @@ func (c *Client) UpsertEdge(ctx context.Context, e *Edge) error {
 		map[string]any{
 			"from":  e.FromID,
 			"to":    e.ToID,
-			"pid":   c.projectID,
 			"props": props,
 		},
 	)
@@ -367,7 +382,7 @@ func (c *Client) UpsertEdgeByKey(
 		return fmt.Errorf("UpsertEdgeByKey: edgeType is required")
 	}
 
-	params := map[string]any{"pid": c.projectID}
+	params := map[string]any{}
 
 	// Build parameterised WHERE clauses for src and dst match conditions.
 	// Sorting the keys makes the generated Cypher deterministic.

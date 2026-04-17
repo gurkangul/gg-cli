@@ -261,25 +261,70 @@ func index(ctx context.Context, root string, lang runner.Lang, r runner.Runner, 
 
 	fmt.Printf("parsing %s ...\n", result.IndexPath)
 
-	h := &graphHandler{gc: gc, root: root, fileFilter: fileFilter, headSHA: headSHA}
+	h := &graphHandler{
+		gc:              gc,
+		root:            root,
+		fileFilter:      fileFilter,
+		headSHA:         headSHA,
+		modulePath:      readModulePath(root),
+		fileNodeByPath:  make(map[string]*graph.Node),
+		scipToFile:      make(map[string]string),
+		seenImportEdges: make(map[string]bool),
+		seenPackages:    make(map[string]string),
+	}
 	if err := parser.ParseFile(ctx, result.IndexPath, string(lang), h); err != nil {
 		return fmt.Errorf("parse scip: %w", err)
 	}
 
-	fmt.Printf("indexed %d files, %d symbols, %d references\n", h.files, h.symbols, h.refs)
+	// BUG-013: resolve cross-file references and write IMPORTS edges now that
+	// all definitions are in scipToFile.
+	h.flushRefs(ctx)
+
+	fmt.Printf("indexed %d files, %d symbols, %d references → %d import edges, %d packages\n",
+		h.files, h.symbols, h.refs, h.imports, len(h.seenPackages))
 	return nil
+}
+
+// readModulePath reads the Go module path from go.mod in the project root.
+// Returns "" if go.mod is absent or the module line is not found.
+func readModulePath(root string) string {
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.SplitN(string(data), "\n", 20) {
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		}
+	}
+	return ""
 }
 
 // graphHandler implements parser.Handler, writing parsed nodes to Memgraph.
 type graphHandler struct {
-	gc                *graph.Client
-	root              string
-	headSHA           string          // stamped on every node as indexed_at_commit
-	fileFilter        map[string]bool // if non-nil, only these relative paths are written
-	files             int
-	symbols           int
-	refs              int
-	skippedOutOfTree  int // files skipped because their path escaped project root (e.g. go-build cache)
+	gc               *graph.Client
+	root             string
+	headSHA          string          // stamped on every node as indexed_at_commit
+	fileFilter       map[string]bool // if non-nil, only these relative paths are written
+	modulePath       string          // go module path read from go.mod (used for Package import_path)
+	files            int
+	symbols          int
+	refs             int
+	imports          int
+	skippedOutOfTree int // files skipped because their path escaped project root (e.g. go-build cache)
+
+	// BUG-013/014: per-run lookup tables built during indexing.
+	fileNodeByPath  map[string]*graph.Node // relPath → file node (with ID)
+	scipToFile      map[string]string      // scip symbol string → source relPath (for ref resolution)
+	seenImportEdges map[string]bool        // "fromID|toID" → written (dedup)
+	seenPackages    map[string]string      // import_path → package node ID
+	pendingRefs     []pendingRef
+}
+
+// pendingRef is a cross-file reference collected during OnReference and resolved after ParseFile.
+type pendingRef struct {
+	fromFileID string
+	scipSymbol string
 }
 
 func (h *graphHandler) OnFile(ctx context.Context, node *graph.Node) error {
@@ -306,11 +351,27 @@ func (h *graphHandler) OnFile(ctx context.Context, node *graph.Node) error {
 	if err := h.gc.UpsertNode(ctx, node, []string{"path"}); err != nil {
 		return err
 	}
+	h.fileNodeByPath[relPath] = node
 	h.files++
+
+	// BUG-014: create Package node and CONTAINS edge for this file.
+	lang, _ := node.Properties["lang"].(string)
+	pkgImportPath := derivePackagePath(h.modulePath, lang, relPath)
+	if pkgImportPath != "" {
+		pkgNode, err := h.upsertPackage(ctx, lang, pkgImportPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: upsert package %s: %v\n", pkgImportPath, err)
+		} else if pkgNode != nil && pkgNode.ID != "" && node.ID != "" {
+			edge := &graph.Edge{FromID: pkgNode.ID, ToID: node.ID, Type: graph.RelContains}
+			if err := h.gc.UpsertEdge(ctx, edge); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: upsert CONTAINS edge: %v\n", err)
+			}
+		}
+	}
 	return nil
 }
 
-func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNode *graph.Node) error {
+func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNode *graph.Node, scipSymbol string) error {
 	// fileNode.Properties["path"] was normalised to relative by OnFile.
 	relPath, _ := fileNode.Properties["path"].(string)
 	if relPath == "" {
@@ -326,6 +387,10 @@ func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNo
 	}
 	if err := h.gc.UpsertNode(ctx, symNode, []string{"name", "source_file"}); err != nil {
 		return err
+	}
+	// BUG-013: record scip→file mapping for cross-file reference resolution.
+	if scipSymbol != "" {
+		h.scipToFile[scipSymbol] = relPath
 	}
 	if fileNode.ID != "" && symNode.ID != "" {
 		edge := &graph.Edge{
@@ -343,10 +408,82 @@ func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNo
 
 func (h *graphHandler) OnReference(ctx context.Context, fromFileNode *graph.Node, scipSymbol string) error {
 	h.refs++
-	// Cross-file reference edges are day-2 — requires symbol-to-node lookup.
-	// Counted here for metrics but not persisted yet.
-	_ = scipSymbol
+	// BUG-013: collect pending cross-file refs; flushed after ParseFile completes
+	// so all definitions are guaranteed to be in scipToFile before resolution.
+	if fromFileNode.ID != "" && scipSymbol != "" {
+		h.pendingRefs = append(h.pendingRefs, pendingRef{
+			fromFileID: fromFileNode.ID,
+			scipSymbol: scipSymbol,
+		})
+	}
 	return nil
+}
+
+// flushRefs resolves collected pending references and writes IMPORTS edges.
+// Must be called after ParseFile — at that point all definitions are in scipToFile.
+func (h *graphHandler) flushRefs(ctx context.Context) {
+	for _, ref := range h.pendingRefs {
+		targetFile := h.scipToFile[ref.scipSymbol]
+		if targetFile == "" {
+			continue // external/stdlib symbol — no node in this project's graph
+		}
+		targetNode := h.fileNodeByPath[targetFile]
+		if targetNode == nil || targetNode.ID == "" || targetNode.ID == ref.fromFileID {
+			continue // target not indexed or self-reference
+		}
+		edgeKey := ref.fromFileID + "|" + targetNode.ID
+		if h.seenImportEdges[edgeKey] {
+			continue
+		}
+		h.seenImportEdges[edgeKey] = true
+		edge := &graph.Edge{FromID: ref.fromFileID, ToID: targetNode.ID, Type: graph.RelImports}
+		if err := h.gc.UpsertEdge(ctx, edge); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: upsert IMPORTS edge: %v\n", err)
+		} else {
+			h.imports++
+		}
+	}
+}
+
+// upsertPackage creates or retrieves a Package node for the given import path.
+// Returns the node (with ID set) on success, nil if already seen this run.
+func (h *graphHandler) upsertPackage(ctx context.Context, lang, importPath string) (*graph.Node, error) {
+	if id, ok := h.seenPackages[importPath]; ok {
+		return &graph.Node{ID: id, Label: graph.LabelPackage}, nil
+	}
+	pkgName := importPath
+	if idx := strings.LastIndex(importPath, "/"); idx >= 0 {
+		pkgName = importPath[idx+1:]
+	}
+	node := graph.PackageNode(pkgName, lang, importPath)
+	if err := h.gc.UpsertNode(ctx, node, []string{"import_path"}); err != nil {
+		return nil, err
+	}
+	h.seenPackages[importPath] = node.ID
+	return node, nil
+}
+
+// derivePackagePath returns the canonical package import path for a source file.
+// For Go, it combines the module path with the file's directory segment.
+func derivePackagePath(modulePath, lang, relFilePath string) string {
+	dir := ""
+	if idx := strings.LastIndex(relFilePath, "/"); idx >= 0 {
+		dir = relFilePath[:idx]
+	}
+	if lang == "go" {
+		if modulePath == "" {
+			return dir
+		}
+		if dir == "" {
+			return modulePath // root package
+		}
+		return modulePath + "/" + dir
+	}
+	// TypeScript / Python: use directory path as package identifier.
+	if dir == "" {
+		return "."
+	}
+	return dir
 }
 
 // normalizeProjectPath accepts whatever the SCIP parser emitted for a file and
