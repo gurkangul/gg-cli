@@ -111,6 +111,8 @@ var registry = []Installer{
 	&cursorInstaller{},
 	&aiderInstaller{},
 	&codexInstaller{},
+	&bmadInstaller{},
+	&gsdInstaller{},
 	&zaiInstaller{},
 }
 

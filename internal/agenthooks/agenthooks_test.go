@@ -117,7 +117,7 @@ func TestTierString(t *testing.T) {
 
 func TestAllNames_CoversAllInstallers(t *testing.T) {
 	names := AllNames()
-	want := []string{"claude", "cursor", "aider", "codex", "zai"}
+	want := []string{"claude", "cursor", "aider", "codex", "bmad", "gsd", "zai"}
 	if len(names) != len(want) {
 		t.Fatalf("got %v, want %v", names, want)
 	}
