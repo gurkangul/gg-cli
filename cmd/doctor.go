@@ -457,6 +457,26 @@ func doctorCheckProjectStructure(report *doctorReport) {
 	} else if err == nil {
 		report.ok("index-state.json", "present")
 	}
+
+	// .gg/.gitignore alignment check.
+	gitignorePath := filepath.Join(root, config.DirName, ".gitignore")
+	if data, readErr := os.ReadFile(gitignorePath); readErr != nil { //nolint:gosec
+		report.warn(".gg/.gitignore", "missing — run `gg init` or `gg doctor --heal` to create")
+	} else {
+		content := string(data)
+		var missing []string
+		for _, line := range gitignoreRequiredLines {
+			if !strings.Contains(content, line) {
+				missing = append(missing, line)
+			}
+		}
+		if len(missing) > 0 {
+			report.warn(".gg/.gitignore",
+				fmt.Sprintf("stale — missing entries: %s (run `gg doctor --heal` to fix)", strings.Join(missing, ", ")))
+		} else {
+			report.ok(".gg/.gitignore", "aligned")
+		}
+	}
 }
 
 // doctorCheckAgentsSchema parses agents_schema from the project's AGENTS.md frontmatter
@@ -652,6 +672,42 @@ func runDoctorHeal() error {
 		}
 	} else {
 		fmt.Println("  ✓ cache/           (not in .gg/ — nothing to migrate)")
+	}
+
+	// ── .gitignore alignment ────────────────────────────────────────────────
+	gitignorePath := filepath.Join(ggDir, ".gitignore")
+	if data, readErr := os.ReadFile(gitignorePath); readErr != nil { //nolint:gosec
+		// File missing — write from canonical template.
+		if writeErr := os.WriteFile(gitignorePath, []byte(ggGitignoreContent), 0644); writeErr != nil {
+			fmt.Printf("  ✗ .gitignore: could not create: %v\n", writeErr)
+		} else {
+			fmt.Printf("  ✓ .gg/.gitignore created\n")
+			migrated = true
+		}
+	} else {
+		content := string(data)
+		var missing []string
+		for _, line := range gitignoreRequiredLines {
+			if !strings.Contains(content, line) {
+				missing = append(missing, line)
+			}
+		}
+		if len(missing) > 0 {
+			// Append missing entries — preserve existing content.
+			f, appendErr := os.OpenFile(gitignorePath, os.O_APPEND|os.O_WRONLY, 0644) //nolint:gosec
+			if appendErr != nil {
+				fmt.Printf("  ✗ .gitignore: could not update: %v\n", appendErr)
+			} else {
+				for _, line := range missing {
+					_, _ = fmt.Fprintln(f, line)
+				}
+				_ = f.Close()
+				fmt.Printf("  ✓ .gg/.gitignore updated (added: %s)\n", strings.Join(missing, ", "))
+				migrated = true
+			}
+		} else {
+			fmt.Println("  ✓ .gg/.gitignore   (aligned — nothing to do)")
+		}
 	}
 
 	// ── RULES.md template-drift check ──────────────────────────────────────
