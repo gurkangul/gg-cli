@@ -23,15 +23,17 @@ var jsonOutput bool
 //   3   config / init error (run `gg init`)
 //   4   service unreachable (Qdrant / Ollama / Memgraph)
 //   6   store down — writes blocked, reads served from cache
+//   7   verify gate failed — a pre-task-done hook blocked the state transition
 //   130 interrupted (Ctrl+C)
 const (
-	ExitOK         = 0
-	ExitGeneral    = 1
-	ExitNotFound   = 2
-	ExitConfig     = 3
-	ExitService    = 4
-	ExitStoreDown  = 6  // Qdrant unreachable: write commands fail, read commands serve cached results
-	ExitSignal     = 130
+	ExitOK           = 0
+	ExitGeneral      = 1
+	ExitNotFound     = 2
+	ExitConfig       = 3
+	ExitService      = 4
+	ExitStoreDown    = 6 // Qdrant unreachable: write commands fail, read commands serve cached results
+	ExitVerifyFailed = 7 // pre-task-done hook rejected the transition; store state unchanged
+	ExitSignal       = 130
 )
 
 // ExitError is a sentinel that carries a structured exit code alongside the

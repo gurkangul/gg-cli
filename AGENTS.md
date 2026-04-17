@@ -250,6 +250,27 @@ autonomously:
 
 When the user says "do TASK-XXX" specifically, skip selection and go to step 6.
 
+## PRE-DONE VERIFY GATE
+
+`gg task done` runs `.gg/hooks/pre-task-done.d/*.sh` **before** writing the new
+state to the store. If any script exits non-zero the command aborts with exit
+code `7` (`ExitVerifyFailed`) and the task stays in its current state — agents
+should treat this as "fix the failure and retry", not as a normal error.
+
+- Pre-hooks are **always strict**. A gate that passes on failure is not a gate.
+  The `hooks.strict` config in `.gg/config.yaml` only governs the post-done
+  `task-done.d` hooks (quality telemetry, advisory by default).
+- Pre-hook contract: executable `*.sh` in `.gg/hooks/pre-task-done.d/`, run in
+  lexicographic order. Env vars available: `GG_TASK_ID`, `GG_TASK_SUMMARY`,
+  `GG_PROJECT_ID`, `GG_ACTOR` (your role or agent tag).
+- Runtime is the hook directory; any future `verify.yml` schema is a
+  *compile-to-hooks* generator — it writes scripts into the same `.d/` dir and
+  the executor stays unchanged. Same env contract is used for future task
+  gates (`pre-review-approve.d`, etc.) so scripts stay portable across stages.
+- Example — block `done` when the build is broken:
+  `.gg/hooks/pre-task-done.d/10-build.sh` containing `#!/bin/sh` + your build
+  command. Commit the script so other agents inherit the gate.
+
 ## MESSAGING ANOTHER AGENT
 
 When some work belongs to a different role (e.g. architect decided, developer

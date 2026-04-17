@@ -64,6 +64,14 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Pre-done verify gate: run .gg/hooks/pre-task-done.d/*.sh BEFORE touching
+	// the store. Always strict by design — a gate that passes on failure is
+	// not a gate. If any hook fails, the task stays in its current state and
+	// we return ExitVerifyFailed so agents can detect the blocked transition.
+	if hookErr := runPreTaskDoneHooks(cmd, taskID, summary); hookErr != nil {
+		return hookErr
+	}
+
 	d, err := loadDeps(false)
 	if err != nil {
 		return err
@@ -89,6 +97,46 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	})
 }
 
+// taskHookEnv builds the env map passed to every task-lifecycle hook. The same
+// contract is intended for future gates (pre-review-approve.d, etc.) so agents
+// only learn one env shape.
+func taskHookEnv(taskID, summary, projectID string) map[string]string {
+	actor := os.Getenv("GG_ROLE")
+	if actor == "" {
+		actor = os.Getenv("GG_AGENT")
+	}
+	return map[string]string{
+		"GG_TASK_ID":      taskID,
+		"GG_TASK_SUMMARY": summary,
+		"GG_PROJECT_ID":   projectID,
+		"GG_ACTOR":        actor,
+	}
+}
+
+// runPreTaskDoneHooks runs .gg/hooks/pre-task-done.d/*.sh BEFORE the task state
+// is updated. Strict is hardcoded true — this is a gate, not an advisory. On
+// failure returns an ExitError with code ExitVerifyFailed so the store write
+// is skipped and callers can distinguish "hook blocked" from "store down".
+func runPreTaskDoneHooks(cmd *cobra.Command, taskID, summary string) error {
+	ggDir, err := config.GGDir()
+	if err != nil {
+		return nil // no .gg — can't run hooks, fall through to store (will also fail on config)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return nil
+	}
+
+	_, hookErr := hooks.RunHooks(ggDir, "pre-task-done", taskHookEnv(taskID, summary, cfg.ProjectID), true, cmd.ErrOrStderr())
+	if hookErr != nil {
+		return &ExitError{
+			Code:    ExitVerifyFailed,
+			Message: fmt.Sprintf("pre-task-done hook rejected %s: %v (task state unchanged)", taskID, hookErr),
+		}
+	}
+	return nil
+}
+
 // runTaskDoneHooks runs .gg/hooks/task-done.d/*.sh scripts after a task is
 // marked done. Returns a non-nil error only in strict mode when a hook fails.
 func runTaskDoneHooks(cmd *cobra.Command, taskID, summary string) error {
@@ -101,13 +149,7 @@ func runTaskDoneHooks(cmd *cobra.Command, taskID, summary string) error {
 		return nil
 	}
 
-	env := map[string]string{
-		"GG_TASK_ID":      taskID,
-		"GG_TASK_SUMMARY": summary,
-		"GG_PROJECT_ID":   cfg.ProjectID,
-	}
-
-	_, hookErr := hooks.RunHooks(ggDir, "task-done", env, cfg.Hooks.Strict, cmd.ErrOrStderr())
+	_, hookErr := hooks.RunHooks(ggDir, "task-done", taskHookEnv(taskID, summary, cfg.ProjectID), cfg.Hooks.Strict, cmd.ErrOrStderr())
 	return hookErr
 }
 

@@ -97,6 +97,7 @@ func TestExitCodeValues(t *testing.T) {
 		{"Config", ExitConfig, 3},
 		{"Service", ExitService, 4},
 		{"StoreDown", ExitStoreDown, 6},
+		{"VerifyFailed", ExitVerifyFailed, 7},
 		{"Signal", ExitSignal, 130},
 	}
 	for _, tc := range cases {
