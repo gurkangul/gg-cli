@@ -4,11 +4,17 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/qdrant/go-client/qdrant"
 )
+
+// brainScanMaxBytes is the per-line limit for the JSONL scanner.
+// Declared as a variable (not a constant) so package-level tests can reduce
+// it without allocating 65 MB to exercise the oversize error path.
+var brainScanMaxBytes = 64 << 20 // 64 MB
 
 // UpsertBrainRecords writes a slice of BrainRecords into the named collection
 // (by kind suffix). Vectors are not set — the points are imported payload-only.
@@ -64,7 +70,11 @@ func ReadBrainJSONL(path string) ([]BrainRecord, error) {
 
 	var records []BrainRecord
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1 MB per line max
+	initBuf := 64 << 10
+	if initBuf > brainScanMaxBytes {
+		initBuf = brainScanMaxBytes
+	}
+	scanner.Buffer(make([]byte, initBuf), brainScanMaxBytes)
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
@@ -82,6 +92,9 @@ func ReadBrainJSONL(path string) ([]BrainRecord, error) {
 		records = append(records, r)
 	}
 	if err := scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return nil, fmt.Errorf("scan %s line %d: exceeds 64 MB — payload too large for current buffer", path, lineNum+1)
+		}
 		return nil, fmt.Errorf("scan %s: %w", path, err)
 	}
 	return records, nil

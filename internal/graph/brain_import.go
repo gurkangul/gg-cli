@@ -185,7 +185,9 @@ func readEdgesJSONL(path string) ([]rawEdgeRecord, error) {
 // jsonlMaxLineBytes is the maximum size of a single JSONL line accepted by readJSONL.
 // Large symbol graphs can produce wide lines (many properties), so we allow 64 MiB.
 // Raising this is safe: it only allocates on demand when lines are long.
-const jsonlMaxLineBytes = 64 << 20 // 64 MiB
+// Declared as a variable (not a constant) so package-level tests can reduce it
+// without allocating 65 MiB to exercise the oversize error path.
+var jsonlMaxLineBytes = 64 << 20 // 64 MiB
 
 func readJSONL[T any](path string) ([]T, error) {
 	f, err := os.Open(path) //nolint:gosec
@@ -199,7 +201,11 @@ func readJSONL[T any](path string) ([]T, error) {
 
 	var records []T
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 4<<10), jsonlMaxLineBytes)
+	initBuf := 4 << 10
+	if initBuf > jsonlMaxLineBytes {
+		initBuf = jsonlMaxLineBytes
+	}
+	scanner.Buffer(make([]byte, initBuf), jsonlMaxLineBytes)
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
