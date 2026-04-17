@@ -71,11 +71,12 @@ Use --wipe to drop all data before importing (destructive, requires --yes).`,
 }
 
 var (
-	brainImportDryRun        bool
-	brainImportSkipEmbedCheck bool
-	brainImportNoReindex     bool
-	brainImportWipe          bool
-	brainImportYes           bool
+	brainImportDryRun              bool
+	brainImportSkipEmbedCheck      bool
+	brainImportNoReindex           bool
+	brainImportWipe                bool
+	brainImportYes                 bool
+	brainImportForceProjectMismatch bool
 )
 
 func init() {
@@ -87,6 +88,7 @@ func init() {
 	brainImportCmd.Flags().BoolVar(&brainImportNoReindex, "no-reindex", false, "skip gg reindex --embed trigger after import")
 	brainImportCmd.Flags().BoolVar(&brainImportWipe, "wipe", false, "drop all project data before importing (destructive)")
 	brainImportCmd.Flags().BoolVar(&brainImportYes, "yes", false, "confirm destructive --wipe without interactive prompt")
+	brainImportCmd.Flags().BoolVar(&brainImportForceProjectMismatch, "force-project-mismatch", false, "allow importing a snapshot from a different project_id")
 
 	brainCmd.AddCommand(brainExportCmd, brainImportCmd, brainStatusCmd)
 	rootCmd.AddCommand(brainCmd)
@@ -105,6 +107,20 @@ type brainManifest struct {
 	Scrubbed       int               `json:"scrubbed"`
 }
 
+// checkManifestProjectID returns an error when the snapshot project_id does not
+// match the current project's ID, unless force is true. An empty manifestPID
+// (old snapshot without the field) is always accepted.
+func checkManifestProjectID(manifestPID, currentPID string, force bool) error {
+	if manifestPID == "" || manifestPID == currentPID || force {
+		return nil
+	}
+	return fmt.Errorf(
+		"brain import: project_id mismatch\n  snapshot: %s\n  current:  %s\n"+
+			"  Use --force-project-mismatch to import across projects.",
+		manifestPID, currentPID,
+	)
+}
+
 func runBrainExport(cmd *cobra.Command, _ []string) error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -113,6 +129,10 @@ func runBrainExport(cmd *cobra.Command, _ []string) error {
 	ggDir, err := config.GGDir()
 	if err != nil {
 		return err
+	}
+
+	if !jsonOutput {
+		fmt.Fprintf(os.Stderr, "Project: %s\n", cfg.ProjectID)
 	}
 
 	// Read embedding meta for manifest.
@@ -611,6 +631,11 @@ func runBrainImport(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+
+	if !jsonOutput {
+		fmt.Fprintf(os.Stderr, "Project: %s\n", cfg.ProjectID)
+	}
+
 	brainDir := filepath.Join(ggDir, brainDirName)
 
 	// 1. Read and validate manifest.
@@ -625,6 +650,11 @@ func runBrainImport(cmd *cobra.Command, _ []string) error {
 	var manifest brainManifest
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		return fmt.Errorf("parse manifest: %w", err)
+	}
+
+	// Project isolation check — reject cross-project imports unless forced.
+	if err := checkManifestProjectID(manifest.ProjectID, cfg.ProjectID, brainImportForceProjectMismatch); err != nil {
+		return err
 	}
 
 	// Schema version check.

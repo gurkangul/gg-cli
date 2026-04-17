@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gurkangul/gg-cli/internal/store"
@@ -25,6 +26,36 @@ func (f *fakeLiveCounter) ExportBrainCollection(_ context.Context, kind string) 
 		records[i] = store.BrainRecord{ID: fmt.Sprintf("%s-%d", kind, i)}
 	}
 	return records, nil
+}
+
+func TestCheckManifestProjectID_Match(t *testing.T) {
+	if err := checkManifestProjectID("pid-abc", "pid-abc", false); err != nil {
+		t.Errorf("expected nil for matching project_ids, got %v", err)
+	}
+}
+
+func TestCheckManifestProjectID_Mismatch(t *testing.T) {
+	err := checkManifestProjectID("pid-src", "pid-dst", false)
+	if err == nil {
+		t.Fatal("expected error for project_id mismatch, got nil")
+	}
+	if !strings.Contains(err.Error(), "pid-src") || !strings.Contains(err.Error(), "pid-dst") {
+		t.Errorf("error should name both project_ids, got: %v", err)
+	}
+}
+
+func TestCheckManifestProjectID_EmptyManifestPID(t *testing.T) {
+	// Old snapshots without project_id must always be accepted.
+	if err := checkManifestProjectID("", "pid-current", false); err != nil {
+		t.Errorf("expected nil for empty manifest project_id, got %v", err)
+	}
+}
+
+func TestCheckManifestProjectID_ForceFlag(t *testing.T) {
+	// --force-project-mismatch bypasses the check even when PIDs differ.
+	if err := checkManifestProjectID("pid-a", "pid-b", true); err != nil {
+		t.Errorf("expected nil with force=true, got %v", err)
+	}
 }
 
 func TestBrainStatus_ComputeDrift_InSync(t *testing.T) {
