@@ -163,3 +163,72 @@ func TestInstallTaskHooks_UnknownProject_PrintsManualInstructionsAndExitsClean(t
 		t.Errorf("installer should no-op cleanly on unknown project, got: %v", err)
 	}
 }
+
+// Monorepo: go.mod lives in lift-cli/, not the repo root. Installer must
+// walk into the subdir, write a disambiguated filename, and inject the
+// subdir path into the template body via the __GG_SUBDIR__ placeholder.
+func TestInstallTaskHooks_MonorepoGoInSubdir_InstallsSubdirHook(t *testing.T) {
+	f := newHookInstallFixture(t, false /* root has no go.mod */, false)
+	subDir := filepath.Join(f.root, "lift-cli")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatalf("mkdir subdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module lift\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatalf("write subdir go.mod: %v", err)
+	}
+
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+
+	// Filename must be disambiguated so a second subdir can also land without
+	// collision — base + '-' + slugified subpath.
+	prePath := filepath.Join(f.preDir, "10-go-verify-lift-cli.sh")
+	body, err := os.ReadFile(prePath)
+	if err != nil {
+		t.Fatalf("expected pre-hook at %s: %v", prePath, err)
+	}
+	s := string(body)
+	if !strings.Contains(s, `cd "lift-cli"`) {
+		t.Errorf("template must cd into lift-cli; got:\n%s", s)
+	}
+	if strings.Contains(s, "__GG_SUBDIR__") {
+		t.Error("placeholder __GG_SUBDIR__ was not substituted")
+	}
+	// The post-hook wrapper should also land for the legacy advisory hook.
+	postPath := filepath.Join(f.postDir, "10-go-quality-lift-cli.sh")
+	if _, err := os.Stat(postPath); err != nil {
+		t.Errorf("expected wrapped post-hook at %s, got: %v", postPath, err)
+	}
+	// The root-level bare filename must NOT exist — that would imply the
+	// installer falsely detected a root manifest.
+	if _, err := os.Stat(filepath.Join(f.preDir, "10-go-verify.sh")); err == nil {
+		t.Error("unexpected root-level 10-go-verify.sh in a subdir-only project")
+	}
+}
+
+// Skip-dir pruning: a go.mod placed inside node_modules (or similar) must be
+// invisible to the installer. Otherwise every dep would add a verify gate.
+func TestInstallTaskHooks_SkipsNodeModulesAndBuildArtifacts(t *testing.T) {
+	f := newHookInstallFixture(t, false, false)
+	for _, skip := range []string{"node_modules", ".git", "vendor", "dist"} {
+		dir := filepath.Join(f.root, skip, "fake-pkg")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", skip, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module fake\n"), 0o644); err != nil {
+			t.Fatalf("write fake go.mod: %v", err)
+		}
+	}
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+	// No Go hook should have been installed — the only go.mod files live in
+	// skipped directories.
+	entries, _ := os.ReadDir(f.preDir)
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "go-verify") {
+			t.Errorf("installer picked up a go.mod inside a skipped directory: %s", e.Name())
+		}
+	}
+}

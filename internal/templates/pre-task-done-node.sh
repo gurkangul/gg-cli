@@ -14,6 +14,11 @@
 
 set -e
 
+# Run from the directory containing package.json (injected by the installer).
+# Path is relative to the repo root; "." means package.json sits at the root.
+cd "$(dirname "$0")/../../.."
+cd "__GG_SUBDIR__"
+
 # Pick the package manager by lockfile presence. First match wins.
 if [ -f bun.lockb ] || [ -f bun.lock ]; then
     PM="bun"

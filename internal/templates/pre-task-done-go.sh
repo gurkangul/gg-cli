@@ -13,13 +13,18 @@
 
 set -e
 
-echo "[verify] go build ./..."
+# Run from the directory containing go.mod (injected by the installer). This
+# path is relative to the repo root; "." means go.mod sits at the root.
+cd "$(dirname "$0")/../../.."
+cd "__GG_SUBDIR__"
+
+echo "[verify] (__GG_SUBDIR__) go build ./..."
 go build ./...
 
-echo "[verify] go vet ./..."
+echo "[verify] (__GG_SUBDIR__) go vet ./..."
 go vet ./...
 
-echo "[verify] go test ./..."
+echo "[verify] (__GG_SUBDIR__) go test ./..."
 go test ./... -count=1 -timeout 120s
 
 echo "[verify] ✓ all checks passed for $GG_TASK_ID"

@@ -895,13 +895,38 @@ func copyDir(src, dst string) error {
 	})
 }
 
+// hookInstallMaxDepth caps how deep the installer walks when hunting for
+// manifests. 3 covers the common monorepo patterns (packages/<x>/package.json,
+// services/<x>/go.mod) without paying the price of a full tree walk.
+const hookInstallMaxDepth = 3
+
+// hookInstallSkipDirs are directories the manifest walk never descends into.
+// Either expensive (node_modules), irrelevant (tool state), or protected
+// from accidental scan (the user's own VCS).
+var hookInstallSkipDirs = map[string]bool{
+	".git":         true,
+	".gg":          true,
+	".gsd":         true,
+	"node_modules": true,
+	"vendor":       true,
+	"dist":         true,
+	"build":        true,
+	"_bmad":        true,
+	"_bmad-output": true,
+}
+
 // runDoctorInstallTaskHooks installs the verify-gate pre-task-done hooks and
-// the advisory post-done hook(s) for every language it detects in the project
-// root. Existing files are preserved so repeated runs are idempotent.
+// the advisory post-done hook(s) for every language/manifest it finds inside
+// the project — including nested monorepo packages. Existing files are
+// preserved so repeated runs are idempotent.
 //
-// Detection (lockfile / manifest presence, non-exclusive):
-//   - go.mod         → Go pre-hook (go build + vet + test)  +  legacy post hook
+// Detection (relative paths up to hookInstallMaxDepth deep):
+//   - go.mod         → Go pre-hook (blocking: build + vet + test) + legacy post hook
 //   - package.json   → Node/Bun/pnpm/Yarn pre-hook (install + typecheck + build + test)
+//
+// Scripts are named per detected location so a monorepo with `api/go.mod` and
+// `cli/go.mod` produces two separate gate scripts that each cd into their
+// own directory before running the checks.
 //
 // Nothing matches → print a copy-pasteable manual snippet and return without
 // error so the caller's exit code stays 0 (no-op is not a failure).
@@ -924,34 +949,54 @@ func runDoctorInstallTaskHooks() error {
 		return fmt.Errorf("create post-hook dir: %w", mkErr)
 	}
 
+	goDirs, err := findManifestDirs(projectRoot, "go.mod")
+	if err != nil {
+		return fmt.Errorf("walk for go.mod: %w", err)
+	}
+	nodeDirs, err := findManifestDirs(projectRoot, "package.json")
+	if err != nil {
+		return fmt.Errorf("walk for package.json: %w", err)
+	}
+
 	installed := 0
 
-	if fileExists(filepath.Join(projectRoot, "go.mod")) {
-		if n, err := installHookIfAbsent(filepath.Join(preDir, "10-go-verify.sh"), templates.PreTaskDoneGoHook,
-			"verify gate: go build + go vet + go test ./... (blocking)"); err != nil {
+	for _, sub := range goDirs {
+		prePath := filepath.Join(preDir, hookFileName("10-go-verify", sub))
+		postPath := filepath.Join(postDir, hookFileName("10-go-quality", sub))
+
+		preBody := strings.ReplaceAll(templates.PreTaskDoneGoHook, "__GG_SUBDIR__", sub)
+		// Advisory post-hook is the legacy inline template — rewrite its shell
+		// block with the cd prefix if it's running in a subdirectory. For now
+		// the template assumes root; wrap it inside a cd subshell when needed.
+		postBody := wrapLegacyPostHook(templates.TaskDoneGoHook, sub)
+
+		if n, err := installHookIfAbsent(prePath, preBody,
+			fmt.Sprintf("Go verify gate at %s — blocking (build + vet + test)", sub)); err != nil {
 			return err
 		} else {
 			installed += n
 		}
-		if n, err := installHookIfAbsent(filepath.Join(postDir, "10-go-quality.sh"), templates.TaskDoneGoHook,
-			"post-done: go vet + go test + golangci-lint (advisory)"); err != nil {
+		if n, err := installHookIfAbsent(postPath, postBody,
+			fmt.Sprintf("Go post-done at %s — advisory (vet + test + lint)", sub)); err != nil {
 			return err
 		} else {
 			installed += n
 		}
 	}
 
-	if fileExists(filepath.Join(projectRoot, "package.json")) {
-		if n, err := installHookIfAbsent(filepath.Join(preDir, "10-node-verify.sh"), templates.PreTaskDoneNodeHook,
-			"verify gate: bun/pnpm/yarn/npm install + typecheck + build + test (blocking)"); err != nil {
+	for _, sub := range nodeDirs {
+		prePath := filepath.Join(preDir, hookFileName("10-node-verify", sub))
+		preBody := strings.ReplaceAll(templates.PreTaskDoneNodeHook, "__GG_SUBDIR__", sub)
+		if n, err := installHookIfAbsent(prePath, preBody,
+			fmt.Sprintf("Node verify gate at %s — blocking (install + typecheck + build + test)", sub)); err != nil {
 			return err
 		} else {
 			installed += n
 		}
 	}
 
-	if installed == 0 && !fileExists(filepath.Join(projectRoot, "go.mod")) && !fileExists(filepath.Join(projectRoot, "package.json")) {
-		fmt.Println("No go.mod or package.json found — no language-specific template to install.")
+	if len(goDirs) == 0 && len(nodeDirs) == 0 {
+		fmt.Println("No go.mod or package.json found in the project (walked up to depth", hookInstallMaxDepth, ").")
 		fmt.Println("Write your own verify gate at:")
 		fmt.Printf("  %s/10-custom-verify.sh\n", preDir)
 		fmt.Println("Env vars your script receives: GG_TASK_ID, GG_TASK_SUMMARY, GG_PROJECT_ID, GG_ACTOR.")
@@ -972,6 +1017,88 @@ func runDoctorInstallTaskHooks() error {
 	fmt.Println()
 	fmt.Println("Edit the scripts freely — they ship as starting points, not contracts.")
 	return nil
+}
+
+// findManifestDirs walks root up to hookInstallMaxDepth and returns the list
+// of directories (relative to root, using '/' as separator) that contain a
+// file named manifestName. Slash-delimited "." represents the root.
+// Directories listed in hookInstallSkipDirs are pruned from the walk.
+func findManifestDirs(root, manifestName string) ([]string, error) {
+	var out []string
+	rootClean := filepath.Clean(root)
+
+	err := filepath.WalkDir(rootClean, func(path string, de os.DirEntry, err error) error {
+		if err != nil {
+			// Permission denied on a subtree should not abort the whole walk;
+			// skip it and continue so the user still gets partial results.
+			if de != nil && de.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if de.IsDir() {
+			if path == rootClean {
+				return nil
+			}
+			rel, relErr := filepath.Rel(rootClean, path)
+			if relErr != nil {
+				return nil
+			}
+			// Prune expensive / irrelevant directories by name.
+			if hookInstallSkipDirs[de.Name()] {
+				return filepath.SkipDir
+			}
+			depth := len(strings.Split(filepath.ToSlash(rel), "/"))
+			if depth > hookInstallMaxDepth {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if de.Name() != manifestName {
+			return nil
+		}
+		rel, relErr := filepath.Rel(rootClean, filepath.Dir(path))
+		if relErr != nil {
+			return nil
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// hookFileName builds the target script filename for a given relative dir.
+// Root (".") keeps the bare base name so existing installs don't churn;
+// nested paths get a slug suffix so two Go modules land in distinct files.
+func hookFileName(base, sub string) string {
+	if sub == "." || sub == "" {
+		return base + ".sh"
+	}
+	slug := strings.ReplaceAll(sub, "/", "-")
+	return base + "-" + slug + ".sh"
+}
+
+// wrapLegacyPostHook returns the post-hook body adjusted so commands run from
+// the manifest directory. The legacy template (task-done-go.sh) assumes root;
+// if the manifest lives in a subdir we wrap the body with a cd line so the
+// same template keeps working without churn.
+func wrapLegacyPostHook(body, sub string) string {
+	if sub == "." || sub == "" {
+		return body
+	}
+	header := "#!/bin/sh\n# Auto-wrapped by gg installer — original body runs inside " + sub + "\nset -e\ncd \"$(dirname \"$0\")/../../..\"\ncd \"" + sub + "\"\n\n"
+	// Drop the original shebang and any leading blank so the wrapped script
+	// has exactly one shebang line.
+	trimmed := body
+	if strings.HasPrefix(trimmed, "#!/") {
+		if idx := strings.Index(trimmed, "\n"); idx >= 0 {
+			trimmed = trimmed[idx+1:]
+		}
+	}
+	return header + trimmed
 }
 
 // fileExists reports whether path exists and is not a directory.
