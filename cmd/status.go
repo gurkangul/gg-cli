@@ -16,8 +16,14 @@ import (
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show open tasks, pending messages, and recent decisions",
-	RunE:  runStatus,
+	Short: "Orient yourself — show open tasks, pending messages, and recent decisions",
+	Long: `Run at the start of every session to orient yourself in the project.
+
+Shows: active tasks (by priority), blocked items, unread messages, recent decisions,
+and a 7-day telemetry summary (if enabled).
+
+See also: gg status render (write STATUS.md for CI), gg search (find specific context)`,
+	RunE: runStatus,
 }
 
 func init() {

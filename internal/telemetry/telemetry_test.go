@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+// TestMain enables telemetry for the entire test package so tests that call
+// Record() and expect writes don't need individual setup. Tests that verify
+// disabled behaviour override with t.Setenv("GG_TELEMETRY", "0").
+func TestMain(m *testing.M) {
+	SetEnabled(true)
+	os.Exit(m.Run())
+}
+
 func TestRecord_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
 	Record(dir, "status", "")
@@ -35,15 +43,48 @@ func TestRecord_DisabledViaEnv(t *testing.T) {
 	}
 }
 
-func TestRecord_EnabledByDefault(t *testing.T) {
+func TestRecord_DisabledByDefault(t *testing.T) {
+	// Reset to default-off state: no env override, no config opt-in.
 	t.Setenv("GG_TELEMETRY", "")
+	SetEnabled(false)
+	t.Cleanup(func() { SetEnabled(true) }) // restore for other tests
+
+	if !IsDisabled() {
+		t.Fatal("IsDisabled() = false, want true when env unset and config disabled")
+	}
+	dir := t.TempDir()
+	Record(dir, "status", "")
+	if _, err := os.ReadFile(filePath(dir)); !os.IsNotExist(err) {
+		t.Errorf("telemetry file should not be created when disabled by default: err=%v", err)
+	}
+}
+
+func TestRecord_EnabledViaEnv(t *testing.T) {
+	t.Setenv("GG_TELEMETRY", "1")
+	SetEnabled(false) // config says off — env should override
+	t.Cleanup(func() { SetEnabled(true) })
+
 	if IsDisabled() {
-		t.Fatal("IsDisabled() = true, want false when env unset")
+		t.Fatal("IsDisabled() = true, want false when GG_TELEMETRY=1")
 	}
 	dir := t.TempDir()
 	Record(dir, "status", "")
 	if _, err := os.ReadFile(filePath(dir)); err != nil {
-		t.Errorf("telemetry file should be created when enabled: %v", err)
+		t.Errorf("telemetry file should be created when GG_TELEMETRY=1: %v", err)
+	}
+}
+
+func TestRecord_EnabledViaConfig(t *testing.T) {
+	t.Setenv("GG_TELEMETRY", "") // env unset — rely on config
+	// SetEnabled(true) is already set by TestMain
+
+	if IsDisabled() {
+		t.Fatal("IsDisabled() = true, want false when config enabled=true")
+	}
+	dir := t.TempDir()
+	Record(dir, "status", "")
+	if _, err := os.ReadFile(filePath(dir)); err != nil {
+		t.Errorf("telemetry file should be created when config enables it: %v", err)
 	}
 }
 

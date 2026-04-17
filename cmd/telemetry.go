@@ -1,0 +1,114 @@
+package cmd
+
+import (
+	"fmt"
+	"sort"
+
+	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/telemetry"
+)
+
+var telemetryCmd = &cobra.Command{
+	Use:   "telemetry",
+	Short: "Manage local usage telemetry",
+	Long: `Local-only, PII-free usage telemetry. Opt-in — disabled by default.
+
+Enable in your project config:
+  gg config set telemetry.enabled true
+
+Or via environment variable (temporary):
+  GG_TELEMETRY=1 gg status
+
+Disable permanently:
+  gg config set telemetry.enabled false`,
+}
+
+var telemetrySummaryCmd = &cobra.Command{
+	Use:   "summary",
+	Short: "Show command usage summary for the last 7 days",
+	RunE:  runTelemetrySummary,
+}
+
+func init() {
+	telemetryCmd.AddCommand(telemetrySummaryCmd)
+	rootCmd.AddCommand(telemetryCmd)
+}
+
+func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	runtimeDir, err := cfg.RuntimeDir()
+	if err != nil {
+		return fmt.Errorf("runtime dir: %w", err)
+	}
+
+	sum, err := telemetry.Summarize(runtimeDir)
+	if err != nil {
+		return fmt.Errorf("summarize: %w", err)
+	}
+
+	if !cfg.Telemetry.Enabled && telemetry.IsDisabled() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Telemetry is disabled — no data collected.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "  Enable with: gg config set telemetry.enabled true")
+		return nil
+	}
+
+	return printJSON(map[string]any{
+		"total":       sum.Total,
+		"agent_calls": sum.AgentCalls,
+		"human_calls": sum.HumanCalls,
+		"verb_counts": sum.VerbCounts,
+	}, func() {
+		if sum.Total == 0 {
+			fmt.Println("No telemetry recorded in the last 7 days.")
+			return
+		}
+
+		fmt.Printf("Last 7 days: %d calls (%d human, %d agent)\n\n",
+			sum.Total, sum.HumanCalls, sum.AgentCalls)
+
+		// Sort verbs by count descending.
+		type vc struct {
+			verb  string
+			count int
+		}
+		var verbs []vc
+		for v, c := range sum.VerbCounts {
+			verbs = append(verbs, vc{v, c})
+		}
+		sort.Slice(verbs, func(i, j int) bool {
+			if verbs[i].count != verbs[j].count {
+				return verbs[i].count > verbs[j].count
+			}
+			return verbs[i].verb < verbs[j].verb
+		})
+
+		fmt.Println("Command usage:")
+		for _, v := range verbs {
+			bar := ""
+			for i := 0; i < v.count && i < 20; i++ {
+				bar += "█"
+			}
+			fmt.Printf("  %-16s %3d  %s\n", v.verb, v.count, bar)
+		}
+
+		if sum.CompactCalls > 0 {
+			saved := sum.CompactBytesDefault - sum.CompactBytesOut
+			pct := 0
+			if sum.CompactBytesDefault > 0 {
+				pct = 100 * saved / sum.CompactBytesDefault
+			}
+			fmt.Printf("\n--compact: %d calls saved %d bytes (%d%%)\n",
+				sum.CompactCalls, saved, pct)
+		}
+		if sum.WithContextCalls > 0 {
+			fmt.Printf("--with-context: %d calls, %d bytes total context\n",
+				sum.WithContextCalls, sum.WithContextBytesTotal)
+		}
+	})
+}

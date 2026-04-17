@@ -18,14 +18,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 const (
-	fileName      = "telemetry.jsonl"
-	originAgent   = "agent"
-	originHuman   = "human"
+	fileName    = "telemetry.jsonl"
+	originAgent = "agent"
+	originHuman = "human"
 )
+
+// configEnabled holds the opt-in value loaded from config at startup.
+// 0 = disabled (default), 1 = enabled. Set via SetEnabled before first use.
+var configEnabled atomic.Int32
 
 // Entry is a single telemetry record.
 type Entry struct {
@@ -47,16 +52,32 @@ func filePath(runtimeDir string) string {
 	return filepath.Join(runtimeDir, fileName)
 }
 
-// IsDisabled reports whether the user has opted out via GG_TELEMETRY=0/false/no/off.
-// Telemetry is local-only, but users may still disable it for any reason
-// (CI noise reduction, simple preference). Default: enabled.
+// SetEnabled sets the config-based telemetry opt-in. Call this once at
+// startup after loading .gg/config.yaml (telemetry.enabled field).
+// The GG_TELEMETRY env var always takes precedence over this setting.
+func SetEnabled(enabled bool) {
+	if enabled {
+		configEnabled.Store(1)
+	} else {
+		configEnabled.Store(0)
+	}
+}
+
+// IsDisabled reports whether telemetry is off. Telemetry is opt-in (default
+// OFF). Priority order:
+//
+//  1. GG_TELEMETRY=0/false/no/off → always disabled
+//  2. GG_TELEMETRY=1/true/yes/on  → always enabled
+//  3. config telemetry.enabled: true (via SetEnabled) → enabled
+//  4. otherwise → disabled
 func IsDisabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("GG_TELEMETRY"))) {
 	case "0", "false", "no", "off":
 		return true
-	default:
+	case "1", "true", "yes", "on":
 		return false
 	}
+	return configEnabled.Load() == 0
 }
 
 // Record appends one entry to the telemetry log. Errors are silently ignored
