@@ -10,6 +10,8 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/trace"
 	"github.com/qdrant/go-client/qdrant"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // ErrQdrantDown is returned by read operations (Query, Scroll) when Qdrant
@@ -30,10 +32,17 @@ const (
 	VectorSize = 768 // nomic-embed-text dimension
 )
 
+// scrollerIface is the minimal Qdrant scroll interface used by ExportBrainCollection
+// and embedMissingInCollection. It exists so unit tests can inject a fake.
+type scrollerIface interface {
+	ScrollAndOffset(ctx context.Context, req *qdrant.ScrollPoints) ([]*qdrant.RetrievedPoint, *qdrant.PointId, error)
+}
+
 type Client struct {
 	qc        *qdrant.Client
-	dataDir   string // absolute path to project-local .gg/ — used for file-locked counters
-	projectID string // per-project namespace prefix for Qdrant collections
+	scroller  scrollerIface // defaults to qc; overridable in tests
+	dataDir   string        // absolute path to project-local .gg/ — used for file-locked counters
+	projectID string        // per-project namespace prefix for Qdrant collections
 }
 
 // New creates a store client bound to a specific project. All Qdrant
@@ -51,7 +60,7 @@ func New(cfg *config.QdrantConfig, dataDir, projectID string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("qdrant connect failed: %w", err)
 	}
-	return &Client{qc: qc, dataDir: dataDir, projectID: projectID}, nil
+	return &Client{qc: qc, scroller: qc, dataDir: dataDir, projectID: projectID}, nil
 }
 
 func (c *Client) Close() error {
@@ -196,6 +205,21 @@ func isTimeoutError(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "context deadline exceeded") ||
 		strings.Contains(msg, "deadline exceeded")
+}
+
+// isCollectionNotFoundError reports whether err (or any cause in its chain)
+// carries gRPC status code NotFound. Qdrant returns NotFound when the collection
+// does not exist (expected on a fresh install). Every other error code is
+// either transient (Unavailable, DeadlineExceeded) or fatal (InvalidArgument,
+// PermissionDenied) and must not be silently swallowed.
+func isCollectionNotFoundError(err error) bool {
+	for err != nil {
+		if st, ok := status.FromError(err); ok && st.Code() == codes.NotFound {
+			return true
+		}
+		err = errors.Unwrap(err)
+	}
+	return false
 }
 
 // DropAllCollections deletes all project collections from Qdrant.

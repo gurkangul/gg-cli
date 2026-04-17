@@ -27,18 +27,28 @@ import to rebuild the code intelligence graph.
 Examples:
   gg import gg-export-2026-01-01.json.gz
   gg import gg-export-2026-01-01.json.gz --as new-project-uuid`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.RangeArgs(0, 1),
 	RunE: runImport,
 }
 
 var importAs string
+var importFromGSD bool
+var importGSDProject string
 
 func init() {
 	importCmd.Flags().StringVar(&importAs, "as", "", "import under a different project ID (UUID)")
+	importCmd.Flags().BoolVar(&importFromGSD, "from-gsd", false, "import milestones, decisions, and slices from a GSD project's .gsd/gsd.db")
+	importCmd.Flags().StringVar(&importGSDProject, "project", ".", "path to GSD project root (default: current directory)")
 	rootCmd.AddCommand(importCmd)
 }
 
 func runImport(cmd *cobra.Command, args []string) error {
+	if importFromGSD {
+		return runImportFromGSD(cmd, importGSDProject)
+	}
+	if len(args) == 0 {
+		return fmt.Errorf("usage: gg import <bundle.json.gz>  (or use --from-gsd to import from a GSD project)")
+	}
 	bundlePath := args[0]
 
 	f, err := os.Open(bundlePath) //nolint:gosec // path comes from user CLI argument

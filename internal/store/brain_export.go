@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"sort"
 	"strconv"
 
@@ -39,7 +40,7 @@ func (c *Client) ExportBrainCollection(ctx context.Context, kind string) ([]Brai
 	var all []BrainRecord
 	var offset *qdrant.PointId
 	for {
-		page, next, err := c.qc.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
+		page, next, err := c.scroller.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
 			CollectionName: coll,
 			Limit:          &pageSize,
 			Offset:         offset,
@@ -47,8 +48,12 @@ func (c *Client) ExportBrainCollection(ctx context.Context, kind string) ([]Brai
 			WithVectors:    withVecs,
 		})
 		if err != nil {
-			// Collection missing on fresh install — treat as empty.
-			return nil, nil //nolint:nilerr
+			if isCollectionNotFoundError(err) {
+				// Collection missing on fresh install — legitimate empty.
+				return nil, nil
+			}
+			fmt.Fprintf(os.Stderr, "gg: brain export: transient scroll error for %q: %v\n", coll, err)
+			return nil, fmt.Errorf("scroll %s: %w", coll, err)
 		}
 		for _, p := range page {
 			id := p.GetId().GetUuid()

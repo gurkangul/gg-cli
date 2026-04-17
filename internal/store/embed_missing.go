@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/qdrant/go-client/qdrant"
 )
@@ -58,7 +59,7 @@ func (c *Client) embedMissingInCollection(
 
 	var offset *qdrant.PointId
 	for {
-		page, next, err := c.qc.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
+		page, next, err := c.scroller.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
 			CollectionName: coll,
 			Limit:          &pageSize,
 			Offset:         offset,
@@ -66,8 +67,12 @@ func (c *Client) embedMissingInCollection(
 			WithVectors:    withVecs,
 		})
 		if err != nil {
-			// Collection missing — treat as empty.
-			return res, nil //nolint:nilerr
+			if isCollectionNotFoundError(err) {
+				// Collection missing on fresh install — legitimate empty.
+				return res, nil
+			}
+			fmt.Fprintf(os.Stderr, "gg: embed-missing: transient scroll error for %q: %v\n", coll, err)
+			return res, fmt.Errorf("scroll %s: %w", coll, err)
 		}
 
 		for _, p := range page {

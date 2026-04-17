@@ -1,8 +1,15 @@
 package store
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/qdrant/go-client/qdrant"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestCanonicalJSON_primitives(t *testing.T) {
@@ -111,6 +118,85 @@ func TestCanonicalJSON_floatPrecision(t *testing.T) {
 		if string(got) != tc.want {
 			t.Errorf("float %v: got %s, want %s", tc.f, got, tc.want)
 		}
+	}
+}
+
+// ── BUG-005: error discrimination unit tests ───────────────────────────────
+
+// fakeScroller implements scrollerIface for unit tests.
+// Each call returns the configured err (and a nil page + nil next).
+type fakeScroller struct {
+	err error
+}
+
+func (f *fakeScroller) ScrollAndOffset(_ context.Context, _ *qdrant.ScrollPoints) ([]*qdrant.RetrievedPoint, *qdrant.PointId, error) {
+	return nil, nil, f.err
+}
+
+// newTestClient builds a minimal Client with a fake scroller — no live Qdrant needed.
+func newTestClient(t *testing.T, s scrollerIface) *Client {
+	t.Helper()
+	return &Client{
+		scroller:  s,
+		projectID: "test-proj",
+		dataDir:   t.TempDir(),
+	}
+}
+
+// grpcNotFoundErr wraps a raw gRPC NotFound status inside a QdrantError-shaped
+// chain so isCollectionNotFoundError can unwrap it the same way the real client does.
+func grpcNotFoundErr() error {
+	raw := status.Error(codes.NotFound, "collection not found")
+	// Wrap it one level to mimic qdrant.QdrantError.Unwrap() pattern.
+	return fmt.Errorf("ScrollAndOffset() failed: test-coll: %w", raw)
+}
+
+// grpcUnavailableErr mimics a transient connection error.
+func grpcUnavailableErr() error {
+	raw := status.Error(codes.Unavailable, "transport is closing")
+	return fmt.Errorf("ScrollAndOffset() failed: test-coll: %w", raw)
+}
+
+func TestBrainExportCollection_NotFound_ReturnsEmpty(t *testing.T) {
+	c := newTestClient(t, &fakeScroller{err: grpcNotFoundErr()})
+	records, err := c.ExportBrainCollection(context.Background(), "decisions")
+	if err != nil {
+		t.Fatalf("NotFound should yield nil error, got: %v", err)
+	}
+	if records != nil {
+		t.Fatalf("NotFound should yield nil records, got %v", records)
+	}
+}
+
+func TestBrainExportCollection_Unavailable_ReturnsError(t *testing.T) {
+	c := newTestClient(t, &fakeScroller{err: grpcUnavailableErr()})
+	_, err := c.ExportBrainCollection(context.Background(), "decisions")
+	if err == nil {
+		t.Fatal("Unavailable error must propagate, got nil")
+	}
+	if !strings.Contains(err.Error(), "scroll") {
+		t.Errorf("expected 'scroll' in error message, got: %v", err)
+	}
+}
+
+func TestIsCollectionNotFoundError(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"raw NotFound", status.Error(codes.NotFound, "not found"), true},
+		{"wrapped NotFound", fmt.Errorf("op: %w", status.Error(codes.NotFound, "not found")), true},
+		{"Unavailable", status.Error(codes.Unavailable, "unavailable"), false},
+		{"plain error", errors.New("some error"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isCollectionNotFoundError(tc.err); got != tc.want {
+				t.Errorf("isCollectionNotFoundError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }
 

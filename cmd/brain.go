@@ -18,6 +18,7 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/embedding"
 	"github.com/gurkangul/gg-cli/internal/graph"
+	"github.com/gurkangul/gg-cli/internal/scrub"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -52,7 +53,10 @@ var brainStatusCmd = &cobra.Command{
 	RunE:  runBrainStatus,
 }
 
-var brainExportDryRun bool
+var (
+	brainExportDryRun bool
+	brainExportStrict bool
+)
 
 var brainImportCmd = &cobra.Command{
 	Use:   "import",
@@ -76,6 +80,7 @@ var (
 
 func init() {
 	brainExportCmd.Flags().BoolVar(&brainExportDryRun, "dry-run", false, "print what would be written without writing")
+	brainExportCmd.Flags().BoolVar(&brainExportStrict, "strict", false, "exit 1 if any secret pattern is found, write nothing")
 
 	brainImportCmd.Flags().BoolVar(&brainImportDryRun, "dry-run", false, "report counts without writing")
 	brainImportCmd.Flags().BoolVar(&brainImportSkipEmbedCheck, "skip-embed-check", false, "bypass embedding model mismatch check")
@@ -89,14 +94,15 @@ func init() {
 
 // brainManifest is the manifest.json schema (v1).
 type brainManifest struct {
-	SchemaVersion  int            `json:"schema_version"`
-	GGVersion      string         `json:"gg_version"`
-	ProjectID      string         `json:"project_id"`
-	ExportedAt     string         `json:"exported_at"`
-	EmbeddingModel string         `json:"embedding_model"`
-	EmbeddingDim   int            `json:"embedding_dim"`
-	Counts         map[string]int `json:"counts"`
+	SchemaVersion  int               `json:"schema_version"`
+	GGVersion      string            `json:"gg_version"`
+	ProjectID      string            `json:"project_id"`
+	ExportedAt     string            `json:"exported_at"`
+	EmbeddingModel string            `json:"embedding_model"`
+	EmbeddingDim   int               `json:"embedding_dim"`
+	Counts         map[string]int    `json:"counts"`
 	SHA256         map[string]string `json:"sha256"`
+	Scrubbed       int               `json:"scrubbed"`
 }
 
 func runBrainExport(cmd *cobra.Command, _ []string) error {
@@ -135,6 +141,39 @@ func runBrainExport(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(os.Stderr, "⚠ Memgraph unavailable (%v) — exporting Qdrant only\n", err)
 		graphNodes = nil
 		graphEdges = nil
+	}
+
+	// Scrub secrets from all collected payloads.
+	totalScrubbed := 0
+	for kind, items := range qdrantData {
+		for i, item := range items {
+			scrubbed, n := scrub.Any(item)
+			if n > 0 {
+				items[i] = scrubbed
+				totalScrubbed += n
+				fmt.Fprintf(os.Stderr, "⚠ secrets scrubbed from %s record %d (%d match(es))\n", kind, i, n)
+			}
+		}
+		qdrantData[kind] = items
+	}
+	for i, node := range graphNodes {
+		scrubbed, n := scrub.Any(node)
+		if n > 0 {
+			graphNodes[i] = scrubbed
+			totalScrubbed += n
+			fmt.Fprintf(os.Stderr, "⚠ secrets scrubbed from graph node %d (%d match(es))\n", i, n)
+		}
+	}
+	for i, edge := range graphEdges {
+		scrubbed, n := scrub.Any(edge)
+		if n > 0 {
+			graphEdges[i] = scrubbed
+			totalScrubbed += n
+			fmt.Fprintf(os.Stderr, "⚠ secrets scrubbed from graph edge %d (%d match(es))\n", i, n)
+		}
+	}
+	if brainExportStrict && totalScrubbed > 0 {
+		return fmt.Errorf("brain export --strict: %d secret pattern(s) detected — export aborted", totalScrubbed)
 	}
 
 	if brainExportDryRun {
@@ -198,6 +237,7 @@ func runBrainExport(cmd *cobra.Command, _ []string) error {
 		EmbeddingDim:   embDim,
 		Counts:         counts,
 		SHA256:         checksums,
+		Scrubbed:       totalScrubbed,
 	}
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
