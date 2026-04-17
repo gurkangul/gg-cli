@@ -713,7 +713,8 @@ func runBrainImport(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--wipe requires --yes confirmation")
 	}
 
-	ctx, cancel := withTimeout(cmd.Context())
+	// Brain import can process thousands of graph nodes — use a generous timeout.
+	ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Minute)
 	defer cancel()
 
 	// 5. Qdrant import.

@@ -37,6 +37,7 @@ func init() {
 		}
 		// Best-effort: silently skip if config can't be loaded.
 		if cfg, err := config.Load(); err == nil {
+			telemetry.SetEnabled(cfg.Telemetry.Enabled)
 			if runtimeDir, err := cfg.RuntimeDir(); err == nil {
 				// Pass --from flag value if the command defines one — telemetry
 				// uses it as a "this is an agent" signal alongside GG_ROLE/GG_AGENT.

@@ -16,9 +16,17 @@ import (
 
 var searchCmd = &cobra.Command{
 	Use:   `search "query"`,
-	Short: "Semantic search across decisions and rejections",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runSearch,
+	Short: "Find relevant context — semantic search across decisions, tasks, and messages",
+	Long: `Retrieve the most relevant brain records for a query using vector similarity.
+
+WHEN TO USE: before starting work — ask 'has this been decided before?' or 'what context
+exists around this area?'. Use --compact when passing results into an agent context window.
+
+WHEN NOT TO USE: for exact-match lookups (task IDs, tag filters) use 'gg task list'.
+
+See also: gg status (project overview), gg task get (task details)`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSearch,
 }
 
 var searchLimit uint64

@@ -49,6 +49,7 @@ var (
 	doctorHeal              bool
 	doctorWipeBrain         bool
 	doctorWipeBrainYes      bool
+	doctorInstallTaskHooks  bool
 )
 
 func init() {
@@ -70,6 +71,8 @@ func init() {
 		"drop all Qdrant collections and Memgraph nodes for this project (destructive — use for testing)")
 	doctorCmd.Flags().BoolVar(&doctorWipeBrainYes, "yes", false,
 		"with --wipe-brain: skip interactive confirmation")
+	doctorCmd.Flags().BoolVar(&doctorInstallTaskHooks, "install-task-hooks", false,
+		"install a Go project task-done hook (go vet + go test + golangci-lint) in .gg/hooks/task-done.d/")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -134,6 +137,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// --wipe-brain: destructive reset of Qdrant + Memgraph for this project.
 	if doctorWipeBrain {
 		return runDoctorWipeBrain(cmd)
+	}
+	// --install-task-hooks: write Go project task-done hook.
+	if doctorInstallTaskHooks {
+		return runDoctorInstallTaskHooks()
 	}
 
 	fmt.Println("GG Doctor")
@@ -886,6 +893,32 @@ func copyDir(src, dst string) error {
 		}
 		return os.WriteFile(target, data, 0o600)
 	})
+}
+
+// runDoctorInstallTaskHooks writes the bundled Go project task-done hook into
+// .gg/hooks/task-done.d/10-go-quality.sh (executable, warn-only by default).
+func runDoctorInstallTaskHooks() error {
+	ggDir, err := config.GGDir()
+	if err != nil {
+		return err
+	}
+	hookDir := filepath.Join(ggDir, "hooks", "task-done.d")
+	if mkErr := os.MkdirAll(hookDir, 0o755); mkErr != nil {
+		return fmt.Errorf("create hook dir: %w", mkErr)
+	}
+	target := filepath.Join(hookDir, "10-go-quality.sh")
+	if _, statErr := os.Stat(target); statErr == nil {
+		fmt.Printf("⚠ %s already exists — skipping (remove it manually to reinstall)\n", target)
+		return nil
+	}
+	if writeErr := os.WriteFile(target, []byte(templates.TaskDoneGoHook), 0o755); writeErr != nil {
+		return fmt.Errorf("write hook: %w", writeErr)
+	}
+	fmt.Printf("✓ Installed Go task-done hook: %s\n", target)
+	fmt.Println("  Runs: go vet + go test ./... + golangci-lint (if installed)")
+	fmt.Println("  To enable strict mode (block task done on failure):")
+	fmt.Println("    .gg/config.yaml → hooks: { strict: true }")
+	return nil
 }
 
 // runInstall executes the install command for the given spec.

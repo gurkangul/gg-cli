@@ -28,6 +28,7 @@ import (
 	"github.com/qdrant/go-client/qdrant"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/scrub"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -327,6 +328,83 @@ func writeBrainJSONLTest(dir, filename string, records []store.BrainRecord) (str
 		return "", 0, err
 	}
 	return hex.EncodeToString(h.Sum(nil)), len(records), nil
+}
+
+// TestBrainScrubberSmoke verifies that secret patterns are redacted when
+// scrub.Any is applied to exported brain records, and that the raw secret
+// does not appear in the resulting JSON — matching the behaviour of
+// `gg brain export` (which calls scrub.Any on every record).
+//
+// Strict-mode behaviour: if scrubbed > 0, the CLI exits non-zero. This test
+// directly validates that the scrub count is > 0, which is the condition that
+// triggers the strict-mode error in cmd/brain.go.
+func TestBrainScrubberSmoke(t *testing.T) {
+	if os.Getenv("GG_INTEGRATION_TEST") != "1" {
+		t.Skip("set GG_INTEGRATION_TEST=1 to run scrubber smoke integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	projectID := "test-scrub-" + uuid.New().String()[:8]
+	ggDir := t.TempDir()
+
+	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 6334}
+	c, err := store.New(cfg, ggDir, projectID)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	hctx, hcancel := context.WithTimeout(ctx, 5*time.Second)
+	defer hcancel()
+	if err := c.HealthCheck(hctx); err != nil {
+		t.Skipf("Qdrant not reachable: %v", err)
+	}
+
+	if err := c.EnsureCollections(ctx, uint64(store.VectorSize)); err != nil {
+		t.Fatalf("EnsureCollections: %v", err)
+	}
+	t.Cleanup(func() { _ = c.DropAllCollections(ctx) })
+
+	const fakeSecret = "sk-testAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	pointID := uuid.New().String()
+	payload := map[string]*qdrant.Value{
+		"text":       {Kind: &qdrant.Value_StringValue{StringValue: "api key is " + fakeSecret}},
+		"project_id": {Kind: &qdrant.Value_StringValue{StringValue: projectID}},
+	}
+	if err := seedPoint(ctx, c, "decisions", pointID, payload, true); err != nil {
+		t.Fatalf("seedPoint: %v", err)
+	}
+
+	records, err := c.ExportBrainCollection(ctx, "decisions")
+	if err != nil {
+		t.Fatalf("ExportBrainCollection: %v", err)
+	}
+
+	var scrubCount int
+	for i, r := range records {
+		scrubbed, n := scrub.Any(r.Payload)
+		if n > 0 {
+			records[i].Payload = scrubbed.(map[string]any)
+			scrubCount += n
+		}
+	}
+
+	if scrubCount == 0 {
+		t.Error("scrub.Any fired 0 times — expected at least 1 redaction")
+	}
+
+	raw, _ := json.Marshal(records)
+	out := string(raw)
+	if strings.Contains(out, fakeSecret) {
+		t.Error("raw secret still present in scrubbed output")
+	}
+	if !strings.Contains(out, scrub.Redacted) {
+		t.Errorf("expected %q in scrubbed output, not found", scrub.Redacted)
+	}
+
+	t.Logf("scrubber smoke: %d replacement(s); secret absent, [REDACTED] present ✓", scrubCount)
 }
 
 // loadJSONLByID reads a JSONL file and returns a map of id → payload.

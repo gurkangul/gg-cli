@@ -13,3 +13,6 @@ var AgentsMD string
 
 //go:embed config.yaml
 var ConfigYAML string
+
+//go:embed task-done-go.sh
+var TaskDoneGoHook string
