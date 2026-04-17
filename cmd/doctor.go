@@ -15,11 +15,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/agenthooks"
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/embedding"
 	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/index/runner"
 	"github.com/gurkangul/gg-cli/internal/outbox"
+	"github.com/gurkangul/gg-cli/internal/session"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/templates"
 )
@@ -38,8 +40,12 @@ Exit codes:
 }
 
 var (
-	doctorInstallIndexers bool
-	doctorReconcile       bool
+	doctorInstallIndexers   bool
+	doctorReconcile         bool
+	doctorInstallAgentHooks bool
+	doctorHooksAgent        string
+	doctorHooksDryRun       bool
+	doctorHooksForce        bool
 )
 
 func init() {
@@ -47,6 +53,14 @@ func init() {
 		"install missing SCIP indexer binaries (scip-go, scip-typescript, scip-python)")
 	doctorCmd.Flags().BoolVar(&doctorReconcile, "reconcile", false,
 		"scan the outbox for incomplete dual-store writes and report what needs repair")
+	doctorCmd.Flags().BoolVar(&doctorInstallAgentHooks, "install-agent-hooks", false,
+		"write agent-side config (SessionStart hook / alwaysApply rule / read-preload) to enforce gg usage")
+	doctorCmd.Flags().StringVar(&doctorHooksAgent, "agent", "",
+		"restrict --install-agent-hooks to a single agent (claude, cursor, aider, codex, zai)")
+	doctorCmd.Flags().BoolVar(&doctorHooksDryRun, "dry-run", false,
+		"with --install-agent-hooks: report what would change without writing anything")
+	doctorCmd.Flags().BoolVar(&doctorHooksForce, "force", false,
+		"with --install-agent-hooks: bypass detection and install for the named agent(s)")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -99,6 +113,11 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	if doctorReconcile {
 		return runDoctorReconcile(cmd)
 	}
+	// --install-agent-hooks: agent-config installer mode. Skips the normal
+	// diagnostics and runs the agenthooks package against the project.
+	if doctorInstallAgentHooks {
+		return runDoctorInstallAgentHooks(cmd)
+	}
 
 	fmt.Println("GG Doctor")
 	fmt.Println(strings.Repeat("─", 50))
@@ -139,16 +158,62 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	if report.problems == 0 {
 		fmt.Println("All checks passed.")
 		fmt.Println()
-		fmt.Println("Agent handoff prompt (paste into your AI agent's chat):")
+		fmt.Println("Paste this into your AI agent's chat (works for any agent):")
 		fmt.Println()
-		fmt.Println("    Read AGENTS.md and follow the gg protocol from now on.")
+		fmt.Println("────────────────────────────────────────────────────────────")
+		fmt.Print(session.PasteBlock("claude-code"))
+		fmt.Println("────────────────────────────────────────────────────────────")
 		fmt.Println()
-		fmt.Println("Works with any agent that can read files (Claude Code, GSD,")
-		fmt.Println("Codex, Cursor, Aider, …). The agent will run gg status, search")
-		fmt.Println("prior decisions, and persist new ones automatically.")
+		fmt.Println("Install agent hooks: `gg doctor --install-agent-hooks`")
 		return nil
 	}
 	return fmt.Errorf("%d problem(s) found — fix the issues above and re-run `gg doctor`", report.problems)
+}
+
+// runDoctorInstallAgentHooks is the subcommand dispatched by
+// `gg doctor --install-agent-hooks`. It runs the agenthooks package against
+// the project root and prints a report. --agent restricts the run to a
+// single installer; without it, auto-detect installs all present agents.
+func runDoctorInstallAgentHooks(_ *cobra.Command) error {
+	root, err := config.FindRoot()
+	if err != nil {
+		return configErr("run `gg init` first: " + err.Error())
+	}
+
+	opts := agenthooks.Options{DryRun: doctorHooksDryRun, Force: doctorHooksForce}
+
+	var results []agenthooks.Result
+	switch {
+	case strings.TrimSpace(doctorHooksAgent) != "":
+		names := splitCSV(doctorHooksAgent)
+		results = agenthooks.InstallNamed(root, names, opts)
+	default:
+		results = agenthooks.InstallDetected(root, opts)
+	}
+
+	fmt.Println("Agent Hooks")
+	fmt.Println(strings.Repeat("─", 50))
+	agenthooks.RenderReport(os.Stdout, results)
+	fmt.Println(strings.Repeat("─", 50))
+	fmt.Println(agenthooks.Summary(results))
+
+	if agenthooks.HasProblems(results) {
+		return fmt.Errorf("one or more installers failed — see report above")
+	}
+	return nil
+}
+
+// splitCSV parses a comma-separated flag value into a cleaned slice.
+// Empty tokens are dropped so --agent="claude,," still yields ["claude"].
+func splitCSV(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // runDoctorReconcile scans the outbox for incomplete dual-store writes and

@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gurkangul/gg-cli/internal/agenthooks"
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/session"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/templates"
 	"github.com/spf13/cobra"
@@ -132,29 +134,66 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("  AGENTS.md already exists, skipping (merge gg rules manually if needed)")
 	}
 
-	if !composeOK {
+	if composeOK {
+		// Wait for Qdrant and create this project's collections.
+		if err := setupProjectCollections(parentCtx, projectID, ggDir); err != nil {
+			return err
+		}
+		fmt.Printf("\nGG ready. Project %s is registered in shared Qdrant.\n", projectID)
+	} else {
 		fmt.Println("\n⚠ Docker services not running. Project registered with ID", projectID)
 		fmt.Println("  Start services manually: docker compose -f ~/.gg/docker-compose.yaml up -d")
-		return nil
 	}
 
-	// Wait for Qdrant and create this project's collections.
-	if err := setupProjectCollections(parentCtx, projectID, ggDir); err != nil {
-		return err
-	}
+	// Install agent-side hooks so subsequent sessions of any detected agent
+	// self-enforce the gg protocol without the user having to remember.
+	// Runs regardless of Docker status — hooks only depend on files, and
+	// users with Docker down still need the paste prompt to bootstrap.
+	installResults := agenthooks.InstallDetected(cwd, agenthooks.Options{})
+	fmt.Println()
+	fmt.Println("Agent Hooks:")
+	agenthooks.RenderReport(os.Stdout, installResults)
 
-	fmt.Printf("\nGG ready. Project %s is registered in shared Qdrant.\n", projectID)
+	printBootstrapPrompt(detectAgentHint(installResults))
+	return nil
+}
+
+// detectAgentHint picks the most likely "current runtime agent" from the
+// install report so the paste-block example uses the right GG_AGENT value.
+// First successful HARD-tier install wins; falls back to claude-code.
+func detectAgentHint(results []agenthooks.Result) string {
+	for _, r := range results {
+		if r.Tier != agenthooks.TierHard {
+			continue
+		}
+		if r.Action == agenthooks.ActionCreated || r.Action == agenthooks.ActionUpdated {
+			switch r.AgentName {
+			case "claude":
+				return "claude-code"
+			case "cursor":
+				return "cursor"
+			case "aider":
+				return "aider"
+			}
+		}
+	}
+	return "claude-code"
+}
+
+// printBootstrapPrompt emits the paste-block users copy into their agent's
+// chat to trigger gg protocol compliance on first use. When a SessionStart
+// hook is also installed, the block is reinforcement; for agents without a
+// hook surface (Codex, Zai), it is the primary handoff.
+func printBootstrapPrompt(agentHint string) {
 	fmt.Println()
-	fmt.Println("Next: open your AI agent in this directory and say:")
+	fmt.Println("Paste this into your AI agent's chat (works for any agent):")
 	fmt.Println()
-	fmt.Println("    Read AGENTS.md and follow the gg protocol from now on.")
-	fmt.Println()
-	fmt.Println("That's it — the agent will run `gg status`, search prior decisions,")
-	fmt.Println("and persist new ones automatically. Works with any agent that can")
-	fmt.Println("read files (Claude Code, GSD, Codex, Cursor, Aider, …).")
+	fmt.Println("────────────────────────────────────────────────────────────")
+	fmt.Print(session.PasteBlock(agentHint))
+	fmt.Println("────────────────────────────────────────────────────────────")
 	fmt.Println()
 	fmt.Println("Forgot the prompt? Run `gg doctor` — it shows it again.")
-	return nil
+	fmt.Println("Re-install hooks later: `gg doctor --install-agent-hooks`.")
 }
 
 // ensureProjectConfig creates .gg/config.yaml if missing, generating a fresh

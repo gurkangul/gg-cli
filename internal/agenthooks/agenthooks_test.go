@@ -1,0 +1,125 @@
+package agenthooks
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestInstallDetected_ReportsEveryAgent(t *testing.T) {
+	root := t.TempDir()
+	results := InstallDetected(root, Options{})
+	if len(results) != len(AllNames()) {
+		t.Fatalf("results len = %d, want %d (one per registered agent)",
+			len(results), len(AllNames()))
+	}
+	// In an empty tempdir, every detected-installer should report
+	// not-detected. Zai is always not-detected. Codex needs AGENTS.md.
+	for _, r := range results {
+		if r.Action != ActionNotDetected {
+			t.Errorf("agent %s action = %q, want %q in empty dir",
+				r.AgentName, r.Action, ActionNotDetected)
+		}
+	}
+}
+
+func TestInstallDetected_ClaudeOnlyWhenPresent(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	results := InstallDetected(root, Options{})
+	var claudeRes *Result
+	for i := range results {
+		if results[i].AgentName == "claude" {
+			claudeRes = &results[i]
+		}
+	}
+	if claudeRes == nil {
+		t.Fatal("claude result missing from report")
+	}
+	if claudeRes.Action != ActionCreated {
+		t.Errorf("claude action = %q, want %q", claudeRes.Action, ActionCreated)
+	}
+}
+
+func TestInstallNamed_UnknownAgentErrors(t *testing.T) {
+	root := t.TempDir()
+	results := InstallNamed(root, []string{"nope"}, Options{})
+	if len(results) != 1 {
+		t.Fatalf("results len = %d, want 1", len(results))
+	}
+	if results[0].Action != ActionFailed {
+		t.Errorf("action = %q, want %q", results[0].Action, ActionFailed)
+	}
+	if results[0].Err == nil {
+		t.Error("err should be non-nil for unknown agent")
+	}
+}
+
+func TestInstallNamed_ForceBypassesDetection(t *testing.T) {
+	root := t.TempDir()
+	// No .claude/ dir exists — Detect() returns false — but InstallNamed
+	// is used when the user explicitly asks, so it should install anyway.
+	results := InstallNamed(root, []string{"claude"}, Options{})
+	if len(results) != 1 {
+		t.Fatalf("results len = %d, want 1", len(results))
+	}
+	if results[0].Action != ActionCreated {
+		t.Errorf("action = %q, want %q", results[0].Action, ActionCreated)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".claude", "settings.json")); err != nil {
+		t.Errorf("settings.json not written: %v", err)
+	}
+}
+
+func TestZai_InstallAlwaysAdvisory(t *testing.T) {
+	root := t.TempDir()
+	// Zai via InstallNamed (force-invoked since Detect always false).
+	results := InstallNamed(root, []string{"zai"}, Options{})
+	if len(results) != 1 {
+		t.Fatal("expected 1 result")
+	}
+	r := results[0]
+	if r.Action != ActionUpToDate {
+		t.Errorf("zai action = %q, want %q (advisory-only)", r.Action, ActionUpToDate)
+	}
+	if len(r.Notes) == 0 {
+		t.Error("zai should return a non-empty advisory in Notes")
+	}
+	// Nothing should have been written to disk.
+	entries, _ := os.ReadDir(root)
+	if len(entries) != 0 {
+		t.Errorf("zai installer wrote files: %v", entries)
+	}
+}
+
+func TestTierString(t *testing.T) {
+	cases := []struct {
+		tier Tier
+		want string
+	}{
+		{TierHard, "hard"},
+		{TierSoft, "soft"},
+		{TierFallback, "fallback"},
+		{TierUnknown, "unknown"},
+	}
+	for _, c := range cases {
+		if got := c.tier.String(); got != c.want {
+			t.Errorf("%d.String() = %q, want %q", c.tier, got, c.want)
+		}
+	}
+}
+
+func TestAllNames_CoversAllInstallers(t *testing.T) {
+	names := AllNames()
+	want := []string{"claude", "cursor", "aider", "codex", "zai"}
+	if len(names) != len(want) {
+		t.Fatalf("got %v, want %v", names, want)
+	}
+	for i, w := range want {
+		if names[i] != w {
+			t.Errorf("names[%d] = %q, want %q", i, names[i], w)
+		}
+	}
+}

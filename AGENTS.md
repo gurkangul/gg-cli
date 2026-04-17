@@ -275,3 +275,15 @@ to capture decisions automatically. Asking first violates the contract.
 - Ask the user to run `gg` commands — you run them
 - Finish a subagent round without persisting its decisions/tasks/rejections to `gg`
 - Broadcast every step — only broadcast moments other agents genuinely need
+
+<!-- gg-managed:start -->
+## Mandatory gg-cli Protocol (managed by gg — do not edit this block)
+
+Before acting in this project:
+
+1. Read this entire AGENTS.md file.
+2. Run `gg search --compact <topic>` before proposing anything new.
+3. Record every decision/task/rejection with gg — no exceptions.
+4. Broadcast substantive work via `gg tell all --from <role>`.
+
+<!-- gg-managed:end -->
