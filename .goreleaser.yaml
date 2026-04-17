@@ -9,7 +9,7 @@ before:
 
 builds:
   - id: gg
-    main: ./main.go
+    main: ./cmd/gg/main.go
     binary: gg
     env:
       - CGO_ENABLED=0
@@ -25,7 +25,7 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
-      - -X github.com/gurkangul/gg/cmd.version={{.Version}}
+      - -X github.com/gurkangul/gg-cli/cmd.version={{.Version}}
 
 archives:
   - id: gg-archive
@@ -46,7 +46,7 @@ checksum:
 release:
   github:
     owner: gurkangul
-    name: gg
+    name: gg-cli
   draft: false
   prerelease: auto
   name_template: "v{{.Version}}"
@@ -54,12 +54,12 @@ release:
     ## Install
 
     ```sh
-    go install github.com/gurkangul/gg@v{{.Version}}
+    go install github.com/gurkangul/gg-cli/cmd/gg@v{{.Version}}
     ```
 
     Or download the binary for your platform from the assets above.
 
-    **Full Changelog**: [CHANGELOG.md](https://github.com/gurkangul/gg/blob/main/CHANGELOG.md)
+    **Full Changelog**: [CHANGELOG.md](https://github.com/gurkangul/gg-cli/blob/main/CHANGELOG.md)
 
 changelog:
   use: github
