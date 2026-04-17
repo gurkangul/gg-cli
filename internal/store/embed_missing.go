@@ -9,6 +9,17 @@ import (
 	"github.com/qdrant/go-client/qdrant"
 )
 
+// isZeroVector reports whether every component of v is exactly zero.
+// Used to detect placeholder vectors seeded by brain import.
+func isZeroVector(v []float32) bool {
+	for _, x := range v {
+		if x != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // EmbedMissingResult summarises one collection's embed-missing pass.
 type EmbedMissingResult struct {
 	Collection string
@@ -81,9 +92,12 @@ func (c *Client) embedMissingInCollection(
 				continue
 			}
 
-			// Check if this point already has a vector.
+			// Check if this point already has a REAL vector.
+			// Brain import seeds zero-vector placeholders (Qdrant mandates a
+			// vector on first create); those count as "missing" and must be
+			// re-embedded here.
 			vec := extractVector(p.GetVectors())
-			if len(vec) > 0 {
+			if len(vec) > 0 && !isZeroVector(vec) {
 				res.AlreadyHad++
 				continue
 			}

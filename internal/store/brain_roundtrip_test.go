@@ -288,15 +288,15 @@ func TestBrainRoundTrip(t *testing.T) {
 	_ = c.DropAllCollections(ctx)
 }
 
-// seedPoint upserts a single point into the named collection suffix.
+// seedPoint upserts a single point with a deterministic zero-vector into the
+// named collection. Qdrant requires a vector on create; the brain import path
+// supports payload-only upserts onto existing points, but seeding a fresh
+// collection needs a real vector. We use a zero-vector of the project's
+// embedding dimension — deterministic and sufficient for round-trip assertions
+// (content equality is checked via payload, not cosine similarity).
 func seedPoint(ctx context.Context, c *store.Client, kind, id string, payload map[string]*qdrant.Value, wait bool) error {
-	// Use ExportBrainCollection indirectly by upsert API — call UpsertBrainRecords.
-	// For seeding we reconstruct a BrainRecord from the raw payload.
-	rawPay := make(map[string]any, len(payload))
-	for k, v := range payload {
-		rawPay[k] = v.GetStringValue() // simplified — enough for test payloads
-	}
-	return c.UpsertBrainRecords(ctx, kind, []store.BrainRecord{{ID: id, Payload: rawPay}})
+	vec := make([]float32, store.VectorSize)
+	return c.UpsertWithVector(ctx, kind, id, vec, payload, wait)
 }
 
 // writeBrainJSONLTest writes sorted BrainRecords as canonical JSONL to dir/filename.
