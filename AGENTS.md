@@ -68,6 +68,65 @@ visible to the others through shared memory.
 
 # GG RULES
 
+## PROCESS RULES — non-negotiable
+
+These rules exist because every single brain-sprint bug (BUG-005 through
+BUG-014) traces back to one pattern: **"seen correct" was assumed equal to
+"actually correct"**. Test output looked green but tests were skipping. A
+task was marked done but the code wasn't committed. Spec promised X but
+code delivered Y. Isolation was trusted but paths were absolute.
+
+**Meta-rule: "Sanma, doğrula." (Don't assume — verify.)**
+Every claim — "done", "CI passing", "spec compliant", "works across
+machines", "data is isolated" — is invalid until proven by automation
+output or a human-readable transcript. The only question is: *how was
+this verified?* No answer = claim is treated as false.
+
+The seven enforceable rules derived from that meta-rule:
+
+1. **Done = reviewer-verified.** The agent that writes the code cannot
+   also mark its task `done`. A separate reviewer measures acceptance
+   criteria against the commit diff and closes the task. Unilateral
+   `gg task done` / `gg bug fix` from the implementer is forbidden.
+
+2. **Integration tests mandatory for I/O.** Any code path that reads or
+   writes Qdrant, Memgraph, HTTP, or the filesystem needs at least one
+   integration test against real services (not mocks). Gate it behind
+   `GG_INTEGRATION_TEST=1`, but the test must actually run somewhere
+   before the task can close.
+
+3. **Live smoke test at every Wave/sprint end.** Unit + integration
+   green ≠ ship-ready. Run the real CLI commands against the real
+   project, read the output, query the stores directly, verify the
+   claims byte-for-byte. BUG-010/011/012/013/014 all escaped unit
+   coverage; only the live run exposed them.
+
+4. **Error swallow forbidden.** `if err != nil { return nil, nil }`
+   is banned. Every error either (a) is propagated with a wrapped
+   message, or (b) is discriminated by an explicit predicate and
+   handled with a short stderr warning. No silent empty results.
+
+5. **Interactive-only prompts forbidden.** Every destructive or
+   state-changing command accepts `--yes` or `GG_YES=1` so it can
+   run from CI or a script. Interactive confirmation is the opt-in
+   path, not the default.
+
+6. **Spec ↔ code traceability enforced at review.** Every claim in a
+   spec doc must be localisable to a file:line in code. If the spec
+   says "byte-deterministic output" but the code uses Memgraph
+   internal element IDs, the review fails. Update the spec OR fix
+   the code — silent drift is banned.
+
+7. **Verify the CI/test pipeline actually runs.** A `PASS` line isn't
+   proof. Confirm for each gate: (a) is it enabled, (b) is it
+   triggered, (c) did the expected assertions execute, (d) does the
+   exit code reflect real failures. TestBrainRoundTrip sat as SKIP
+   for weeks while people assumed it was green.
+
+These rules are individually recorded via `gg record` (tags:
+`process`, `discipline`) so they appear in `gg search --compact
+"process discipline"` and cannot be quietly ignored.
+
 ## SESSION START
 
 The very first thing to do at the start of any conversation:
