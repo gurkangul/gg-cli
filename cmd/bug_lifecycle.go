@@ -4,6 +4,9 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/graph"
 )
 
 var bugFixCmd = &cobra.Command{
@@ -27,10 +30,16 @@ var bugWontFixCmd = &cobra.Command{
 	RunE:  runBugWontFix,
 }
 
-var bugRootCause string
+var (
+	bugRootCause  string
+	bugFixFiles   string
+	bugFixSymbols string
+)
 
 func init() {
 	bugFixCmd.Flags().StringVar(&bugRootCause, "root-cause", "", "root cause identified during fix")
+	bugFixCmd.Flags().StringVar(&bugFixFiles, "files", "", "comma-separated source file paths affected by this fix")
+	bugFixCmd.Flags().StringVar(&bugFixSymbols, "symbols", "", "comma-separated symbol names affected by this fix")
 	bugCmd.AddCommand(bugFixCmd)
 	bugCmd.AddCommand(bugStartCmd)
 	bugCmd.AddCommand(bugWontFixCmd)
@@ -61,6 +70,28 @@ func runBugFix(cmd *cobra.Command, args []string) error {
 
 	if err := d.store.FixBug(ctx, bugID, rootCause, summary); err != nil {
 		return err
+	}
+
+	// Update/add Bug→File and Bug→Symbol edges in Memgraph when provided.
+	fixFiles := parseTags(bugFixFiles)
+	fixSymbols := parseTags(bugFixSymbols)
+	if len(fixFiles) > 0 || len(fixSymbols) > 0 {
+		if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Memgraph.URI != "" {
+			if gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID); gcErr == nil {
+				gctx, gcancel := withTimeout(cmd.Context())
+				defer gcancel()
+				// Fetch the bug title for the node label.
+				bug, getErr := d.store.GetBug(ctx, bugID)
+				title := bugID
+				if getErr == nil && bug != nil {
+					title = bug.Title
+				}
+				if mergeErr := gc.MergeBugAffects(gctx, bugID, title, fixFiles, fixSymbols); mergeErr != nil {
+					fmt.Printf("~ graph edges skipped: %v\n", mergeErr)
+				}
+				_ = gc.Close(gctx)
+			}
+		}
 	}
 
 	return printJSON(map[string]any{"id": bugID, "status": "fixed", "summary": summary, "root_cause": rootCause}, func() {

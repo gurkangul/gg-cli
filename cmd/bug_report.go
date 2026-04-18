@@ -6,6 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -21,6 +23,8 @@ var (
 	bugSeverity string
 	bugTags     string
 	bugTaskID   string
+	bugFiles    string
+	bugSymbols  string
 )
 
 func init() {
@@ -28,6 +32,8 @@ func init() {
 	bugReportCmd.Flags().StringVar(&bugSeverity, "severity", "medium", "severity: critical, high, medium, low")
 	bugReportCmd.Flags().StringVar(&bugTags, "tags", "", "comma-separated tags")
 	bugReportCmd.Flags().StringVar(&bugTaskID, "task", "", "link to a task (e.g. TASK-042)")
+	bugReportCmd.Flags().StringVar(&bugFiles, "files", "", "comma-separated source file paths this bug affects")
+	bugReportCmd.Flags().StringVar(&bugSymbols, "symbols", "", "comma-separated symbol names this bug affects")
 	bugCmd.AddCommand(bugReportCmd)
 }
 
@@ -68,17 +74,36 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	affectedFiles := parseTags(bugFiles)
+	affectedSymbols := parseTags(bugSymbols)
+
 	b := store.Bug{
-		Title:    title,
-		Detail:   strings.TrimSpace(bugDetail),
-		Severity: bugSeverity,
-		Tags:     parseTags(bugTags),
-		TaskID:   taskID,
+		Title:           title,
+		Detail:          strings.TrimSpace(bugDetail),
+		Severity:        bugSeverity,
+		Tags:            parseTags(bugTags),
+		TaskID:          taskID,
+		AffectedFiles:   affectedFiles,
+		AffectedSymbols: affectedSymbols,
 	}
 
 	id, err := d.store.ReportBug(ctx, b, vector)
 	if err != nil {
 		return fmt.Errorf("report bug: %w", err)
+	}
+
+	// Write Bug node + AFFECTS edges to Memgraph when configured.
+	if len(affectedFiles) > 0 || len(affectedSymbols) > 0 {
+		if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Memgraph.URI != "" {
+			if gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID); gcErr == nil {
+				gctx, gcancel := withTimeout(cmd.Context())
+				defer gcancel()
+				if mergeErr := gc.MergeBugAffects(gctx, id, title, affectedFiles, affectedSymbols); mergeErr != nil {
+					fmt.Printf("~ graph edges skipped: %v\n", mergeErr)
+				}
+				_ = gc.Close(gctx)
+			}
+		}
 	}
 
 	return printJSON(map[string]any{"id": id, "title": title, "severity": bugSeverity}, func() {

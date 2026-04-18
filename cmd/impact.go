@@ -16,14 +16,19 @@ import (
 )
 
 var impactCmd = &cobra.Command{
-	Use:   "impact <file>",
-	Short: "Show downstream impact of changing a source file",
-	Long: `Show what a change to the given source file affects.
+	Use:   "impact <file|BUG-NNN>",
+	Short: "Show downstream impact of changing a source file, or blast radius of a bug",
+	Long: `Show what a change to the given source file affects, or what a bug touches.
 
-Reports:
+File mode (default):
   - Files that directly import it (1-hop dependents from the code graph)
   - Symbols the file exports (boundary symbols)
   - Decisions, tasks, and rejections related to the file (semantic search)
+  - Historical bugs that have affected this file (Bug→File graph edges)
+
+Bug mode (BUG-NNN argument):
+  - Files and symbols the bug affects (Bug→File/Symbol graph edges)
+  - Decisions, tasks, and rejections related to the bug (semantic search)
 
 Requires Memgraph (gg index must have been run). The knowledge-store search
 works even without Memgraph.`,
@@ -41,19 +46,25 @@ func init() {
 }
 
 type impactResult struct {
-	File       string             `json:"file"`
-	Dependents []string           `json:"dependents"`
-	Symbols    []map[string]any   `json:"symbols"`
-	Decisions  []store.Decision   `json:"decisions"`
-	Tasks      []store.Task       `json:"tasks"`
-	Rejections []store.Rejection  `json:"rejections"`
-	Warnings   []string           `json:"warnings,omitempty"`
+	File            string            `json:"file"`
+	Dependents      []string          `json:"dependents"`
+	Symbols         []map[string]any  `json:"symbols"`
+	Decisions       []store.Decision  `json:"decisions"`
+	Tasks           []store.Task      `json:"tasks"`
+	Rejections      []store.Rejection `json:"rejections"`
+	HistoricalBugs  []graph.BugRef    `json:"historical_bugs,omitempty"`
+	Warnings        []string          `json:"warnings,omitempty"`
 }
 
 func runImpact(cmd *cobra.Command, args []string) error {
-	rawPath, err := requireNonEmpty("file", args[0])
+	rawArg, err := requireNonEmpty("file", args[0])
 	if err != nil {
 		return err
+	}
+
+	// Detect BUG-NNN mode vs file mode.
+	if _, parseErr := store.ParseBugID(rawArg); parseErr == nil {
+		return runImpactBug(cmd, rawArg)
 	}
 
 	// Resolve to project-relative path — that's what the graph indexes (BUG-010).
@@ -61,9 +72,9 @@ func runImpact(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("find project root: %w", err)
 	}
-	relPath, ok := normalizeProjectPath(projRoot, rawPath)
+	relPath, ok := normalizeProjectPath(projRoot, rawArg)
 	if !ok {
-		return fmt.Errorf("path %q is outside project root %q", rawPath, projRoot)
+		return fmt.Errorf("path %q is outside project root %q", rawArg, projRoot)
 	}
 
 	// Load Qdrant deps (always needed for KB search).
@@ -106,6 +117,14 @@ func runImpact(cmd *cobra.Command, args []string) error {
 				for _, n := range symbols {
 					result.Symbols = append(result.Symbols, n.Properties)
 				}
+			}
+
+			// 3. Historical bugs that have affected this file.
+			bugs, bugErr := gc.BugsAffectingFile(gctx, relPath)
+			if bugErr != nil {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("historical bugs query: %v", bugErr))
+			} else {
+				result.HistoricalBugs = bugs
 			}
 		}
 	} else {
@@ -216,6 +235,13 @@ func renderImpactDefault(w io.Writer, result impactResult) {
 		}
 	}
 
+	if len(result.HistoricalBugs) > 0 {
+		fmt.Fprintf(w, "\nHistorical Bugs (%d):\n", len(result.HistoricalBugs))
+		for _, b := range result.HistoricalBugs {
+			fmt.Fprintf(w, "  %s %s\n", b.BugID, b.Title)
+		}
+	}
+
 	if len(result.Warnings) > 0 {
 		fmt.Fprintln(w, "\nWarnings:")
 		for _, warn := range result.Warnings {
@@ -225,9 +251,9 @@ func renderImpactDefault(w io.Writer, result impactResult) {
 }
 
 func renderImpactCompact(w io.Writer, r impactResult) {
-	fmt.Fprintf(w, "impact: %s — %d deps %d sym %dD %dT %dR\n\n",
+	fmt.Fprintf(w, "impact: %s — %d deps %d sym %dD %dT %dR %dB\n\n",
 		r.File, len(r.Dependents), len(r.Symbols),
-		len(r.Decisions), len(r.Tasks), len(r.Rejections))
+		len(r.Decisions), len(r.Tasks), len(r.Rejections), len(r.HistoricalBugs))
 	for _, dep := range r.Dependents {
 		fmt.Fprintf(w, "→ %s\n", dep)
 	}
@@ -257,7 +283,120 @@ func renderImpactCompact(w io.Writer, r impactResult) {
 		fmt.Fprintf(w, "R  %s  %s%s\n",
 			shortDate(rej.CreatedAt), compactTrim(rej.Approach, compactLineWidth), suffix)
 	}
+	for _, b := range r.HistoricalBugs {
+		fmt.Fprintf(w, "B  %s  %s\n", b.BugID, compactTrim(b.Title, compactLineWidth))
+	}
 	if len(r.Warnings) > 0 {
 		fmt.Fprintf(w, "\n! %s\n", strings.Join(r.Warnings, "; "))
 	}
+}
+
+// runImpactBug handles `gg impact BUG-NNN` — shows what files/symbols a bug affects.
+func runImpactBug(cmd *cobra.Command, bugID string) error {
+	d, err := loadDeps(true)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	type bugImpactResult struct {
+		BugID      string            `json:"bug_id"`
+		Files      []string          `json:"files"`
+		Symbols    []string          `json:"symbols"`
+		Decisions  []store.Decision  `json:"decisions"`
+		Tasks      []store.Task      `json:"tasks"`
+		Rejections []store.Rejection `json:"rejections"`
+		Warnings   []string          `json:"warnings,omitempty"`
+	}
+
+	result := bugImpactResult{BugID: bugID}
+
+	// Graph: get affected files + symbols.
+	cfg, _ := config.Load()
+	if cfg != nil && cfg.Memgraph.URI != "" {
+		gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID)
+		if gcErr != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("graph client init: %v", gcErr))
+		} else {
+			defer func() { _ = gc.Close(ctx) }()
+			gctx, gcancel := withTimeout(cmd.Context())
+			defer gcancel()
+			files, symbols, affErr := gc.BugAffects(gctx, bugID)
+			if affErr != nil {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("bug affects query: %v", affErr))
+			} else {
+				result.Files = files
+				result.Symbols = symbols
+			}
+		}
+	} else {
+		result.Warnings = append(result.Warnings, "Memgraph not configured — graph data unavailable")
+	}
+
+	// Semantic KB search for decisions/tasks/rejections related to this bug ID.
+	vector, embErr := d.embedder.Generate(ctx, bugID)
+	if embErr != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("embedding: %v", embErr))
+	} else {
+		var wg sync.WaitGroup
+		var decErr, taskErr, rejErr error
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			result.Decisions, decErr = d.store.SearchDecisions(ctx, vector, impactKBLimit)
+		}()
+		go func() {
+			defer wg.Done()
+			result.Tasks, taskErr = d.store.SearchTasks(ctx, vector, impactKBLimit, true)
+		}()
+		go func() {
+			defer wg.Done()
+			result.Rejections, rejErr = d.store.SearchRejections(ctx, vector, impactKBLimit)
+		}()
+		wg.Wait()
+		if decErr != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("decisions search: %v", decErr))
+		}
+		if taskErr != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("tasks search: %v", taskErr))
+		}
+		if rejErr != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("rejections search: %v", rejErr))
+		}
+	}
+
+	return printJSON(result, func() {
+		fmt.Printf("Impact: %s\n", bugID)
+		fmt.Fprintln(os.Stdout, strings.Repeat("─", 60))
+		fmt.Fprintf(os.Stdout, "\nAffected Files (%d):\n", len(result.Files))
+		if len(result.Files) == 0 {
+			fmt.Fprintln(os.Stdout, "  (none recorded — use gg bug report --files or gg bug fix --files)")
+		} else {
+			for _, f := range result.Files {
+				fmt.Fprintf(os.Stdout, "  → %s\n", f)
+			}
+		}
+		fmt.Fprintf(os.Stdout, "\nAffected Symbols (%d):\n", len(result.Symbols))
+		if len(result.Symbols) == 0 {
+			fmt.Fprintln(os.Stdout, "  (none recorded)")
+		} else {
+			for _, s := range result.Symbols {
+				fmt.Fprintf(os.Stdout, "  S %s\n", s)
+			}
+		}
+		if impactCompact {
+			fmt.Fprintf(os.Stdout, "\n%s — %d files %d sym %dD %dT %dR\n",
+				bugID, len(result.Files), len(result.Symbols),
+				len(result.Decisions), len(result.Tasks), len(result.Rejections))
+		}
+		if len(result.Warnings) > 0 {
+			fmt.Fprintln(os.Stdout, "\nWarnings:")
+			for _, w := range result.Warnings {
+				fmt.Fprintf(os.Stdout, "  ~ %s\n", w)
+			}
+		}
+	})
 }

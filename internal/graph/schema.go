@@ -23,6 +23,10 @@ const (
 	// only (no Qdrant collection) — they group tasks by time period, not by
 	// semantic content.
 	LabelWave = "Wave"
+
+	// LabelBug mirrors a Qdrant bug record as a graph node so that
+	// (Bug)-[:AFFECTS]->(File|Symbol) edges can be queried during gg impact.
+	LabelBug = "Bug"
 )
 
 // Relationship types between nodes.
@@ -37,6 +41,7 @@ const (
 	RelImplements = "IMPLEMENTS" // (Task)-[:IMPLEMENTS]->(Decision)
 	RelRejects    = "REJECTS"    // (Decision)-[:REJECTS]->(Decision)
 	RelInWave     = "IN_WAVE"    // (Task)-[:IN_WAVE]->(Wave)
+	RelAffects    = "AFFECTS"    // (Bug)-[:AFFECTS]->(File|Symbol)
 )
 
 // ResolutionTier records how a graph node was produced.
@@ -163,6 +168,18 @@ func TaskNode(id, title string) *Node {
 	}
 }
 
+// BugNode creates a Node mirroring a Qdrant bug record.
+// bugID is the human-readable ID (e.g. "BUG-042"); title is the short label.
+func BugNode(bugID, title string) *Node {
+	return &Node{
+		Label: LabelBug,
+		Properties: map[string]any{
+			"bug_id": bugID,
+			"title":  title,
+		},
+	}
+}
+
 // WaveNode creates a Node for a wave/milestone calendar bucket.
 // id is a short slug (e.g. "wave1"), status is "active" or "closed".
 func WaveNode(id, name, goal, startDate, endDate, status string) *Node {
@@ -205,6 +222,8 @@ func (c *Client) SchemaInit(ctx context.Context) error {
 		"CREATE INDEX ON :Task(qdrant_id)",
 		"CREATE INDEX ON :Wave(project_id)",
 		"CREATE INDEX ON :Wave(id)",
+		"CREATE INDEX ON :Bug(project_id)",
+		"CREATE INDEX ON :Bug(bug_id)",
 	}
 
 	// DDL queries carry no project scope — use runQueryNoPID.

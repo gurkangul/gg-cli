@@ -18,17 +18,19 @@ var bugIDRegex = regexp.MustCompile(`^BUG-\d{3,}$`)
 // Bug represents a structured defect report with lifecycle tracking.
 // Lifecycle: open → fixing → fixed | wontfix
 type Bug struct {
-	ID         string
-	Title      string
-	Detail     string
-	Severity   string // critical | high | medium | low
-	Status     string // open | fixing | fixed | wontfix
-	RootCause  string // filled on fix
-	FixSummary string // short description of the fix
-	TaskID     string // optional linked task
-	Tags       []string
-	CreatedAt  string
-	UpdatedAt  string
+	ID              string
+	Title           string
+	Detail          string
+	Severity        string // critical | high | medium | low
+	Status          string // open | fixing | fixed | wontfix
+	RootCause       string // filled on fix
+	FixSummary      string // short description of the fix
+	TaskID          string // optional linked task
+	Tags            []string
+	AffectedFiles   []string // source file paths this bug touches (mirrors Memgraph AFFECTS edges)
+	AffectedSymbols []string // symbol names this bug touches (mirrors Memgraph AFFECTS edges)
+	CreatedAt       string
+	UpdatedAt       string
 }
 
 func pointUUIDForBugID(id string) string {
@@ -71,17 +73,19 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 	b.UpdatedAt = now
 
 	payload, err := qdrant.TryValueMap(map[string]any{
-		"bug_id":      b.ID,
-		"title":       b.Title,
-		"detail":      b.Detail,
-		"severity":    b.Severity,
-		"status":      b.Status,
-		"root_cause":  b.RootCause,
-		"fix_summary": b.FixSummary,
-		"task_id":     b.TaskID,
-		"tags":        toAnySlice(b.Tags),
-		"created_at":  b.CreatedAt,
-		"updated_at":  b.UpdatedAt,
+		"bug_id":           b.ID,
+		"title":            b.Title,
+		"detail":           b.Detail,
+		"severity":         b.Severity,
+		"status":           b.Status,
+		"root_cause":       b.RootCause,
+		"fix_summary":      b.FixSummary,
+		"task_id":          b.TaskID,
+		"tags":             toAnySlice(b.Tags),
+		"affected_files":   toAnySlice(b.AffectedFiles),
+		"affected_symbols": toAnySlice(b.AffectedSymbols),
+		"created_at":       b.CreatedAt,
+		"updated_at":       b.UpdatedAt,
 	})
 	if err != nil {
 		return "", fmt.Errorf("build payload: %w", err)
@@ -221,17 +225,19 @@ func (c *Client) SearchBugs(ctx context.Context, vector []float32, limit uint64)
 
 func bugFromPayload(pay map[string]*qdrant.Value) Bug {
 	return Bug{
-		ID:         pay["bug_id"].GetStringValue(),
-		Title:      pay["title"].GetStringValue(),
-		Detail:     pay["detail"].GetStringValue(),
-		Severity:   pay["severity"].GetStringValue(),
-		Status:     pay["status"].GetStringValue(),
-		RootCause:  pay["root_cause"].GetStringValue(),
-		FixSummary: pay["fix_summary"].GetStringValue(),
-		TaskID:     pay["task_id"].GetStringValue(),
-		Tags:       extractStringList(pay["tags"]),
-		CreatedAt:  pay["created_at"].GetStringValue(),
-		UpdatedAt:  pay["updated_at"].GetStringValue(),
+		ID:              pay["bug_id"].GetStringValue(),
+		Title:           pay["title"].GetStringValue(),
+		Detail:          pay["detail"].GetStringValue(),
+		Severity:        pay["severity"].GetStringValue(),
+		Status:          pay["status"].GetStringValue(),
+		RootCause:       pay["root_cause"].GetStringValue(),
+		FixSummary:      pay["fix_summary"].GetStringValue(),
+		TaskID:          pay["task_id"].GetStringValue(),
+		Tags:            extractStringList(pay["tags"]),
+		AffectedFiles:   extractStringList(pay["affected_files"]),
+		AffectedSymbols: extractStringList(pay["affected_symbols"]),
+		CreatedAt:       pay["created_at"].GetStringValue(),
+		UpdatedAt:       pay["updated_at"].GetStringValue(),
 	}
 }
 
