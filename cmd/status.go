@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/enforcement"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/telemetry"
 	"github.com/gurkangul/gg-cli/internal/trace"
@@ -119,6 +120,14 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	return printJSON(payload, func() {
+		// Stabilization banner — when enforcement is off the install-hook,
+		// gsd-guard, and pre-task-done verify gate are all silent no-ops.
+		// Without this line an operator has no way to tell the guards are
+		// asleep. Stays at the very top so it cannot be missed.
+		if !enforcement.Enabled() {
+			fmt.Printf("⚠ guards=off  (%s=1 to enable: install-agent-hooks, gsd-guard, pre-task-done gate)\n\n", enforcement.EnvVar)
+		}
+
 		// North Star metric — one-liner at the very top so agents and humans
 		// can instantly gauge dogfood adoption without scrolling.
 		if cfg, cfgErr := config.Load(); cfgErr == nil {

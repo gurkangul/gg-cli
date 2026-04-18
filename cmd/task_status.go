@@ -92,6 +92,9 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	// meta/feature ratio without verify-driven churn.
 	if !enforcement.Enabled() {
 		// intentional no-op — see internal/enforcement for the kill switch.
+		// Emit an audit line so telemetry can count how often the gate
+		// was asleep while tasks were marked done.
+		emitGuardSkipEvent("pre-task-done")
 	} else if rej := runGateHooks(cmd, hookCfg, "pre-task-done", taskID, summary); rej != nil {
 		emitGateFailedEvent(cmd.ErrOrStderr(), rej)
 		notifyGateFailure(cmd, rej) // best-effort: no-op if store unreachable or opted out

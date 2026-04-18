@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -42,6 +43,7 @@ var forbiddenGSDTools = []string{
 
 func runGSDGuard(_ *cobra.Command, _ []string) error {
 	if !enforcement.Enabled() {
+		emitGuardSkipEvent("gsd-guard")
 		return nil // stabilization: guard no-ops until GG_ENFORCEMENT=1
 	}
 	// Load config — if .gg/ is not found or tracker.canonical != "gg", allow.
@@ -73,4 +75,23 @@ func runGSDGuard(_ *cobra.Command, _ []string) error {
 		}
 	}
 	return nil
+}
+
+// emitGuardSkipEvent writes a single NDJSON line to stderr so operators
+// and telemetry can audit how often a guard was asleep (enforcement off).
+// Shape mirrors the pre-task-done gate's verify_failed event so agents
+// parse both with one schema.
+func emitGuardSkipEvent(gate string) {
+	ev := struct {
+		Event string `json:"event"`
+		Gate  string `json:"gate"`
+		TS    string `json:"ts"`
+	}{
+		Event: "guard_skipped",
+		Gate:  gate,
+		TS:    time.Now().UTC().Format(time.RFC3339),
+	}
+	if b, err := json.Marshal(ev); err == nil {
+		fmt.Fprintln(os.Stderr, string(b))
+	}
 }

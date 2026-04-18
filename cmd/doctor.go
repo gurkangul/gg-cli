@@ -167,6 +167,9 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 
 	fmt.Println("GG Doctor")
 	fmt.Println(strings.Repeat("─", 50))
+	if !enforcement.Enabled() {
+		fmt.Printf("⚠ guards=off  (%s=1 to enable: install-agent-hooks, gsd-guard, pre-task-done gate)\n", enforcement.EnvVar)
+	}
 
 	report := &doctorReport{}
 
