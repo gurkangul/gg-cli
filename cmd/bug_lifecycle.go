@@ -72,8 +72,10 @@ func runBugFix(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Update/add Bug→File and Bug→Symbol edges in Memgraph when provided.
-	fixFiles := parseTags(bugFixFiles)
+	// Replace Bug→File and Bug→Symbol edges in Memgraph when provided.
+	// ReplaceBugAffects deletes stale edges before re-creating them so scope
+	// corrections don't accumulate alongside the original report's edges.
+	fixFiles := normalizeBugFiles(parseTags(bugFixFiles))
 	fixSymbols := parseTags(bugFixSymbols)
 	if len(fixFiles) > 0 || len(fixSymbols) > 0 {
 		if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Memgraph.URI != "" {
@@ -86,7 +88,7 @@ func runBugFix(cmd *cobra.Command, args []string) error {
 				if getErr == nil && bug != nil {
 					title = bug.Title
 				}
-				if mergeErr := gc.MergeBugAffects(gctx, bugID, title, fixFiles, fixSymbols); mergeErr != nil {
+				if mergeErr := gc.ReplaceBugAffects(gctx, bugID, title, fixFiles, fixSymbols); mergeErr != nil {
 					fmt.Printf("~ graph edges skipped: %v\n", mergeErr)
 				}
 				_ = gc.Close(gctx)

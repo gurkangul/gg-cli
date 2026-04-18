@@ -37,6 +37,25 @@ func init() {
 	bugCmd.AddCommand(bugReportCmd)
 }
 
+// normalizeBugFiles converts raw --files paths to project-relative form.
+// Absolute paths are rebased onto the project root; relative paths that escape
+// the root are dropped. Paths that can't be normalized (root detection failed)
+// are passed through unchanged so the caller still gets useful output.
+func normalizeBugFiles(paths []string) []string {
+	root, err := config.FindRoot()
+	if err != nil {
+		return paths
+	}
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if rel, ok := normalizeProjectPath(root, p); ok {
+			out = append(out, rel)
+		}
+		// paths outside the project root are silently dropped
+	}
+	return out
+}
+
 func runBugReport(cmd *cobra.Command, args []string) error {
 	printProjectBanner()
 	title, err := requireNonEmpty("title", args[0])
@@ -74,7 +93,7 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	affectedFiles := parseTags(bugFiles)
+	affectedFiles := normalizeBugFiles(parseTags(bugFiles))
 	affectedSymbols := parseTags(bugSymbols)
 
 	b := store.Bug{

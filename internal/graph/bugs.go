@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -61,13 +62,33 @@ func (c *Client) MergeBugAffects(ctx context.Context, bugID, title string, files
 			LabelSymbol, map[string]any{"name": name},
 			RelAffects, nil,
 		); err != nil {
-			// Symbol may not exist yet; log as warning rather than hard-failing.
-			// Future: once TASK-200 ships the full Bug→Symbol edge this can be strict.
-			_ = err
+			// Symbol node may not exist yet (gg index hasn't run, or the symbol
+			// name is not unique). Log to stderr so the caller can see it without
+			// treating it as a hard failure — file edges are already committed.
+			fmt.Fprintf(os.Stderr, "~ bug %s AFFECTS symbol %q skipped: %v\n", bugID, name, err)
 		}
 	}
 
 	return nil
+}
+
+// ReplaceBugAffects replaces all AFFECTS edges from a Bug node and re-creates
+// them from the provided file and symbol lists. Use this when correcting scope
+// (e.g. gg bug fix --files) so stale edges from the original report don't
+// accumulate alongside the corrected ones.
+func (c *Client) ReplaceBugAffects(ctx context.Context, bugID, title string, files, symbols []string) error {
+	if bugID == "" {
+		return fmt.Errorf("ReplaceBugAffects: bugID is required")
+	}
+	_, cleanup, err := c.runQuery(ctx,
+		"MATCH (b:Bug {bug_id: $bug_id, project_id: $pid})-[r:AFFECTS]->() DELETE r",
+		map[string]any{"bug_id": bugID},
+	)
+	if err != nil {
+		return fmt.Errorf("delete old AFFECTS edges for %s: %w", bugID, err)
+	}
+	cleanup()
+	return c.MergeBugAffects(ctx, bugID, title, files, symbols)
 }
 
 // BugsAffectingFile returns BugRef entries for every Bug node that has an
