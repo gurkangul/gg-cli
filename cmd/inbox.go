@@ -171,7 +171,7 @@ func printMessages(messages []store.Message, groupBy string) {
 }
 
 func printMessage(m store.Message) {
-	fmt.Printf("  [%s → %s] %s\n", m.FromRole, m.ToRole, m.Content)
+	fmt.Printf("  [%s → %s] %s\n", m.FromRole, m.ToRole, highlightMentions(m.Content))
 	if m.TaskID != "" {
 		fmt.Printf("    Task: %s\n", m.TaskID)
 	}
@@ -181,6 +181,11 @@ func printMessage(m store.Message) {
 			fmt.Printf("    %s\n", ts.Local().Format("2006-01-02 15:04"))
 		}
 	}
+}
+
+// highlightMentions wraps @role tokens with angle brackets for visual emphasis.
+func highlightMentions(content string) string {
+	return mentionRe.ReplaceAllString(content, "<@${1}>")
 }
 
 // parseDuration parses durations like "2h", "7d", "30m".

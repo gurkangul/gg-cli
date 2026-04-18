@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/gurkangul/gg-cli/internal/store"
@@ -10,10 +11,17 @@ import (
 )
 
 var tellCmd = &cobra.Command{
-	Use:   `tell "role" "message"`,
-	Short: "Send a message to another agent role",
-	Args:  cobra.ExactArgs(2),
-	RunE:  runTell,
+	Use:   `tell "role[,role2,...]" "message"`,
+	Short: "Send a message to one or more agent roles",
+	Long: `Send a message to one or more agent roles.
+
+Targets can be comma-separated for fanout:
+  gg tell qa,reviewer "TASK-042 ready for review"
+
+@role mentions in the message body are auto-routed in addition to the primary target:
+  gg tell all "@qa please review before merging"`,
+	Args: cobra.ExactArgs(2),
+	RunE: runTell,
 }
 
 var (
@@ -21,15 +29,52 @@ var (
 	tellTask string
 )
 
+var mentionRe = regexp.MustCompile(`@([A-Za-z][A-Za-z0-9_-]*)`)
+
 func init() {
 	tellCmd.Flags().StringVar(&tellFrom, "from", "", "sender role (defaults to $GG_ROLE, then 'user')")
 	tellCmd.Flags().StringVar(&tellTask, "task", "", "related task ID")
 	rootCmd.AddCommand(tellCmd)
 }
 
+// parseMentions extracts @role tokens from message content.
+func parseMentions(content string) []string {
+	matches := mentionRe.FindAllStringSubmatch(content, -1)
+	seen := make(map[string]bool)
+	var roles []string
+	for _, m := range matches {
+		r := strings.ToLower(m[1])
+		if !seen[r] {
+			seen[r] = true
+			roles = append(roles, r)
+		}
+	}
+	return roles
+}
+
+// collectTargets merges comma-separated primary targets with @mention targets, deduped.
+func collectTargets(rawTarget, content string) []string {
+	seen := make(map[string]bool)
+	var targets []string
+	for _, t := range strings.Split(rawTarget, ",") {
+		t = strings.TrimSpace(strings.ToLower(t))
+		if t != "" && !seen[t] {
+			seen[t] = true
+			targets = append(targets, t)
+		}
+	}
+	for _, r := range parseMentions(content) {
+		if !seen[r] {
+			seen[r] = true
+			targets = append(targets, r)
+		}
+	}
+	return targets
+}
+
 func runTell(cmd *cobra.Command, args []string) error {
 	printProjectBanner()
-	toRole, err := requireNonEmpty("role", args[0])
+	rawTarget, err := requireNonEmpty("role", args[0])
 	if err != nil {
 		return err
 	}
@@ -50,6 +95,11 @@ func runTell(cmd *cobra.Command, args []string) error {
 		from = "user"
 	}
 
+	targets := collectTargets(rawTarget, content)
+	if len(targets) == 0 {
+		return fmt.Errorf("no valid targets specified")
+	}
+
 	d, err := loadDeps(false)
 	if err != nil {
 		return err
@@ -59,17 +109,22 @@ func runTell(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	m := store.Message{
-		FromRole: from,
-		ToRole:   toRole,
-		Content:  content,
-		TaskID:   taskRef,
+	for _, target := range targets {
+		m := store.Message{
+			FromRole: from,
+			ToRole:   target,
+			Content:  content,
+			TaskID:   taskRef,
+		}
+		if err := d.store.SendMessage(ctx, m); err != nil {
+			return fmt.Errorf("send message to %s: %w", target, err)
+		}
 	}
 
-	if err := d.store.SendMessage(ctx, m); err != nil {
-		return fmt.Errorf("send message: %w", err)
+	if len(targets) == 1 {
+		fmt.Printf("✓ Message sent from %s to %s: %s\n", from, targets[0], content)
+	} else {
+		fmt.Printf("✓ Message sent from %s to [%s]: %s\n", from, strings.Join(targets, ", "), content)
 	}
-
-	fmt.Printf("✓ Message sent from %s to %s: %s\n", from, toRole, content)
 	return nil
 }

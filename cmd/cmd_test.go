@@ -710,3 +710,86 @@ func TestRejectHelp_ShowsDeprecationNotice(t *testing.T) {
 		t.Errorf("reject --help should mention deprecation, got:\n%s", out)
 	}
 }
+
+// ── parseMentions / collectTargets ────────────────────────────────────────────
+
+func TestParseMentions_None(t *testing.T) {
+	if got := parseMentions("ship it now"); len(got) != 0 {
+		t.Errorf("expected no mentions, got %v", got)
+	}
+}
+
+func TestParseMentions_Single(t *testing.T) {
+	got := parseMentions("hey @qa please review")
+	if len(got) != 1 || got[0] != "qa" {
+		t.Errorf("expected [qa], got %v", got)
+	}
+}
+
+func TestParseMentions_Multiple(t *testing.T) {
+	got := parseMentions("@architect and @qa both need to sign off")
+	if len(got) != 2 || got[0] != "architect" || got[1] != "qa" {
+		t.Errorf("expected [architect, qa], got %v", got)
+	}
+}
+
+func TestParseMentions_Deduped(t *testing.T) {
+	got := parseMentions("@qa @qa double mention")
+	if len(got) != 1 || got[0] != "qa" {
+		t.Errorf("expected [qa] deduped, got %v", got)
+	}
+}
+
+func TestCollectTargets_CommaSeparated(t *testing.T) {
+	got := collectTargets("qa,reviewer", "LGTM")
+	if len(got) != 2 || got[0] != "qa" || got[1] != "reviewer" {
+		t.Errorf("expected [qa, reviewer], got %v", got)
+	}
+}
+
+func TestCollectTargets_MentionAddsExtra(t *testing.T) {
+	got := collectTargets("all", "@qa please check")
+	if len(got) != 2 || got[0] != "all" || got[1] != "qa" {
+		t.Errorf("expected [all, qa], got %v", got)
+	}
+}
+
+func TestCollectTargets_MentionAlreadyInTarget(t *testing.T) {
+	got := collectTargets("qa", "@qa LGTM")
+	if len(got) != 1 || got[0] != "qa" {
+		t.Errorf("expected [qa] deduped, got %v", got)
+	}
+}
+
+func TestCollectTargets_CommaSeparatedWithMentions(t *testing.T) {
+	got := collectTargets("all,developer", "@qa review and @developer check")
+	// all, developer (from comma), qa (from mention) — developer already present
+	if len(got) != 3 {
+		t.Errorf("expected 3 targets, got %d: %v", len(got), got)
+	}
+}
+
+// ── highlightMentions ─────────────────────────────────────────────────────────
+
+func TestHighlightMentions_NoMentions(t *testing.T) {
+	got := highlightMentions("ship it")
+	if got != "ship it" {
+		t.Errorf("unexpected change: %q", got)
+	}
+}
+
+func TestHighlightMentions_Single(t *testing.T) {
+	got := highlightMentions("hey @qa please review")
+	want := "hey <@qa> please review"
+	if got != want {
+		t.Errorf("want %q, got %q", want, got)
+	}
+}
+
+func TestHighlightMentions_Multiple(t *testing.T) {
+	got := highlightMentions("@architect and @qa sign off")
+	want := "<@architect> and <@qa> sign off"
+	if got != want {
+		t.Errorf("want %q, got %q", want, got)
+	}
+}
