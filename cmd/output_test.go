@@ -169,23 +169,6 @@ func TestDiscStatusMark(t *testing.T) {
 	}
 }
 
-// ── discuss.go helpers ────────────────────────────────────────────────────────
-
-func TestDiscussStatusIcon(t *testing.T) {
-	cases := []struct{ status, want string }{
-		{"resolved", "✓"},
-		{"dismissed", "⊘"},
-		{"open", "•"},
-		{"", "•"},
-	}
-	for _, tc := range cases {
-		got := discussStatusIcon(tc.status)
-		if got != tc.want {
-			t.Errorf("discussStatusIcon(%q): got %q, want %q", tc.status, got, tc.want)
-		}
-	}
-}
-
 // ── task.go helpers ───────────────────────────────────────────────────────────
 
 func TestStatusIcon_Task(t *testing.T) {

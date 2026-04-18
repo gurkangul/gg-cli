@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `gg doctor --install-agent-hooks` now writes a `UserPromptSubmit` hook that surfaces unread messages as agent context on every prompt via `gg inbox --peek`.
 
+### Removed
+
+- **`gg discuss`** — removed after deprecation window (TODO(v0.2) marker). Discussion tracking is handled by `gg record` (decisions) and `gg task create` (action items). 0 calls in dogfood.
+- **`gg note`** — removed after deprecation window (TODO(v0.2) marker). Use `gg record` for decisions or commit messages for ambient context. 1 call in dogfood.
+
 ## [0.2.0] - 2026-04-18
 
 ### Added

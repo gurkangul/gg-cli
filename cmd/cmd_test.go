@@ -79,14 +79,6 @@ func TestReject_NoArgs_Error(t *testing.T) {
 	}
 }
 
-func TestNote_NoArgs_Error(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "note")
-	if err == nil {
-		t.Fatal("expected error for missing argument to 'gg note'")
-	}
-}
-
 func TestTell_TooFewArgs_Error(t *testing.T) {
 	t.Chdir(t.TempDir())
 	_, _, err := execCmd(t, "tell")
@@ -251,14 +243,6 @@ func TestReject_InvalidTask_Error(t *testing.T) {
 	}
 }
 
-func TestNote_InvalidTask_Error(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "note", "--task=BUG-001", "observed high latency")
-	if err == nil {
-		t.Fatal("expected error for non-TASK --task value in note")
-	}
-}
-
 func TestBugReport_InvalidTask_Error(t *testing.T) {
 	t.Chdir(t.TempDir())
 	_, _, err := execCmd(t, "bug", "report", "--task=notvalid", "crash on startup")
@@ -290,81 +274,6 @@ func TestRecordHelp_ShowsStanceFlag(t *testing.T) {
 	}
 	if !strings.Contains(out, "--stance") {
 		t.Errorf("record --help should mention --stance, got:\n%s", out)
-	}
-}
-
-// ── gg discuss ────────────────────────────────────────────────────────────────
-
-func TestDiscussOpen_NoArgs_Error(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "open")
-	if err == nil {
-		t.Fatal("expected error for missing topic argument")
-	}
-}
-
-func TestDiscussOpen_NoConfig_ConfigError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "open", "should we switch DB?")
-	if err == nil {
-		t.Fatal("expected error when .gg config is absent")
-	}
-}
-
-func TestDiscussList_NoConfig_ConfigError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "list")
-	if err == nil {
-		t.Fatal("expected error when .gg config is absent")
-	}
-}
-
-func TestDiscussGet_NoArgs_Error(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "get")
-	if err == nil {
-		t.Fatal("expected error for missing DISC-ID argument")
-	}
-}
-
-func TestDiscussGet_NoConfig_ConfigError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "get", "DISC-001")
-	if err == nil {
-		t.Fatal("expected error when .gg config is absent")
-	}
-}
-
-func TestDiscussResolve_MissingRequiredFlags_Error(t *testing.T) {
-	t.Chdir(t.TempDir())
-	// --via and --summary are required; calling without them should fail
-	_, _, err := execCmd(t, "discuss", "resolve", "DISC-001")
-	if err == nil {
-		t.Fatal("expected error for missing required flags")
-	}
-}
-
-func TestDiscussDismiss_MissingReason_Error(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "dismiss", "DISC-001")
-	if err == nil {
-		t.Fatal("expected error for missing --reason flag")
-	}
-}
-
-func TestDiscussShow_NoArgs_Error(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "show")
-	if err == nil {
-		t.Fatal("expected error for missing DISC-ID argument")
-	}
-}
-
-func TestDiscussNote_NoArgs_Error(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "note")
-	if err == nil {
-		t.Fatal("expected error for missing arguments")
 	}
 }
 
@@ -436,31 +345,11 @@ func TestTell_NoConfig_ConfigError(t *testing.T) {
 	}
 }
 
-// ── gg note ───────────────────────────────────────────────────────────────────
-
-func TestNote_NoConfig_ConfigError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "note", "observed high latency on search")
-	if err == nil {
-		t.Fatal("expected error when .gg config is absent")
-	}
-}
-
 // ── gg export ─────────────────────────────────────────────────────────────────
 
 func TestExport_NoConfig_ConfigError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	_, _, err := execCmd(t, "export")
-	if err == nil {
-		t.Fatal("expected error when .gg config is absent")
-	}
-}
-
-// ── gg list ───────────────────────────────────────────────────────────────────
-
-func TestNoteList_NoConfig_ConfigError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "note", "list")
 	if err == nil {
 		t.Fatal("expected error when .gg config is absent")
 	}
@@ -606,78 +495,19 @@ func TestTaskDeps_NoConfig_ConfigError(t *testing.T) {
 	}
 }
 
-// ── gg discuss note ───────────────────────────────────────────────────────────
-
-func TestDiscussNote_NoConfig_ConfigError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "note", "DISC-001", "this is a note")
-	if err == nil {
-		t.Fatal("expected error when .gg config is absent")
-	}
-}
-
-func TestDiscussResolve_NoConfig_ConfigError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "resolve", "DISC-001", "--via", "decision", "--summary", "we chose X")
-	if err == nil {
-		t.Fatal("expected error when .gg config is absent")
-	}
-}
-
-func TestDiscussDismiss_NoConfig_ConfigError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "dismiss", "DISC-001", "--reason", "no longer relevant")
-	if err == nil {
-		t.Fatal("expected error when .gg config is absent")
-	}
-}
-
-func TestDiscussShow_NoConfig_ConfigError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "discuss", "show", "DISC-001")
-	if err == nil {
-		t.Fatal("expected error when .gg config is absent")
-	}
-}
-
-// ── gg normalizeDiscID ────────────────────────────────────────────────────────
-
-func TestNormalizeDiscID_Valid(t *testing.T) {
-	got, err := normalizeDiscID("disc-007")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != "DISC-007" {
-		t.Errorf("got %q, want %q", got, "DISC-007")
-	}
-}
-
-func TestNormalizeDiscID_Empty_Error(t *testing.T) {
-	if _, err := normalizeDiscID(""); err == nil {
-		t.Fatal("expected error for empty string")
-	}
-}
-
-func TestNormalizeDiscID_Invalid_Error(t *testing.T) {
-	if _, err := normalizeDiscID("TASK-001"); err == nil {
-		t.Fatal("expected error for non-DISC ID format")
-	}
-}
-
 // ── gg resolveAuthor ─────────────────────────────────────────────────────────
 
 func TestResolveAuthor_FromEnv(t *testing.T) {
 	t.Setenv("GG_ROLE", "architect")
-	// Use discuss open cmd (has no --from flag); just check the env resolution.
-	// We test resolveAuthor indirectly via the exported env reading.
-	if got := resolveAuthor(discussOpenCmd); got != "architect" {
+	// Use statusCmd (has no --from flag); just check the env resolution.
+	if got := resolveAuthor(statusCmd); got != "architect" {
 		t.Errorf("expected 'architect', got %q", got)
 	}
 }
 
 func TestResolveAuthor_EmptyEnv(t *testing.T) {
 	t.Setenv("GG_ROLE", "")
-	if got := resolveAuthor(discussOpenCmd); got != "" {
+	if got := resolveAuthor(statusCmd); got != "" {
 		t.Errorf("expected empty, got %q", got)
 	}
 }

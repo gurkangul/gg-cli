@@ -413,4 +413,32 @@ Before acting in this project:
 3. Record every decision/task/rejection with gg — no exceptions.
 4. Broadcast substantive work via `gg tell all --from <role>`.
 
+### GSD ↔ gg mirror (if this project uses GSD)
+
+GSD is a planning workflow with its own SQLite state in `.gsd/gsd.db`.
+Other agents (Claude Code, Cursor, Aider) **cannot read GSD state** — they
+only see what's in gg. Without a gg mirror, GSD work is invisible to the
+rest of the team.
+
+Rules when GSD is in use:
+
+- **Every GSD task (T-level, not milestone or slice) MUST have a gg task
+  mirror.** One GSD task = one `gg task create`. Slice/milestone summaries
+  are not substitutes — per-task mirroring is the contract.
+- Mirror at pickup (`gsd_execute` → `gg task create` first), not at
+  completion. Invisible work in flight is the drift class this rule
+  prevents.
+- Reference the GSD ID in the gg title: `"[GSD:M001-S02-T05] implement foo"`
+  so anyone in gg can trace back if needed.
+- Close the gg mirror with `gg task done` when the GSD task completes.
+  Never self-close as implementer — reviewer authority applies here too.
+- If you must pick between the two stores, **gg is canonical**. GSD state
+  is a planning scratchpad; gg is the shared brain every agent reads.
+
+**Tracker rule — gg is canonical:** never call
+`mcp__gsd-workflow__gsd_plan_milestone`, `gsd_plan_slice`, or `gsd_plan_task`
+in a project that uses gg. Those tools write to `.gsd/gsd.db`; gg reads
+none of that, so the two stores diverge silently. Use `gg task create` for
+every work item and `gg record` for decisions.
+
 <!-- gg-managed:end -->
