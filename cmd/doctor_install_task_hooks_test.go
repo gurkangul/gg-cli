@@ -197,8 +197,18 @@ func TestInstallTaskHooks_MonorepoGoInSubdir_InstallsSubdirHook(t *testing.T) {
 	}
 	// The post-hook wrapper should also land for the legacy advisory hook.
 	postPath := filepath.Join(f.postDir, "10-go-quality-lift-cli.sh")
-	if _, err := os.Stat(postPath); err != nil {
-		t.Errorf("expected wrapped post-hook at %s, got: %v", postPath, err)
+	postBody, err := os.ReadFile(postPath)
+	if err != nil {
+		t.Fatalf("expected wrapped post-hook at %s: %v", postPath, err)
+	}
+	ps := string(postBody)
+	// Wrapped body must cd into the subdir so the advisory hook runs in the right directory.
+	if !strings.Contains(ps, `cd "lift-cli"`) {
+		t.Errorf("wrapped post-hook must cd into lift-cli; got:\n%s", ps)
+	}
+	// Exactly one shebang — wrapping must strip the original before prepending the new one.
+	if n := strings.Count(ps, "#!/"); n != 1 {
+		t.Errorf("wrapped post-hook must have exactly 1 shebang, got %d:\n%s", n, ps)
 	}
 	// The root-level bare filename must NOT exist — that would imply the
 	// installer falsely detected a root manifest.
@@ -230,5 +240,43 @@ func TestInstallTaskHooks_SkipsNodeModulesAndBuildArtifacts(t *testing.T) {
 		if strings.Contains(e.Name(), "go-verify") {
 			t.Errorf("installer picked up a go.mod inside a skipped directory: %s", e.Name())
 		}
+	}
+}
+
+// ── wrapLegacyPostHook unit tests ─────────────────────────────────────────────
+
+func TestWrapLegacyPostHook_SubdirInjectsCDAndSingleShebang(t *testing.T) {
+	body := "#!/bin/sh\nset -e\ngo build ./...\n"
+	got := wrapLegacyPostHook(body, "lift-cli")
+
+	// Exactly one shebang — the original must be stripped before the new header is prepended.
+	if n := strings.Count(got, "#!/"); n != 1 {
+		t.Errorf("expected exactly 1 shebang, got %d:\n%s", n, got)
+	}
+	// cd injection into the named subdirectory.
+	if !strings.Contains(got, `cd "lift-cli"`) {
+		t.Errorf("expected cd into lift-cli:\n%s", got)
+	}
+	// Original commands must still be present.
+	if !strings.Contains(got, "go build ./...") {
+		t.Errorf("original body was lost:\n%s", got)
+	}
+}
+
+func TestWrapLegacyPostHook_RootCaseReturnsBodyUnchanged(t *testing.T) {
+	body := "#!/bin/sh\nset -e\ngo build ./...\n"
+	for _, sub := range []string{".", ""} {
+		got := wrapLegacyPostHook(body, sub)
+		if got != body {
+			t.Errorf("sub=%q: body should be unchanged, got:\n%s", sub, got)
+		}
+	}
+}
+
+func TestWrapLegacyPostHook_BodyWithoutShebang_WrapsCleanly(t *testing.T) {
+	body := "set -e\ngo build ./...\n"
+	got := wrapLegacyPostHook(body, "sub")
+	if n := strings.Count(got, "#!/"); n != 1 {
+		t.Errorf("expected 1 shebang from wrapper, got %d:\n%s", n, got)
 	}
 }

@@ -2,11 +2,17 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg-cli/internal/store"
 )
 
 // writePreTaskDoneHook drops a shell script into .gg/hooks/pre-task-done.d/
@@ -127,6 +133,10 @@ func TestTaskDone_PreHookFails_EmitsNDJSONEvent(t *testing.T) {
 	if _, ok := found["ts"].(string); !ok {
 		t.Errorf("event.ts missing or not a string: %v", found["ts"])
 	}
+	// gate field — forward-compat: must be present so parsers survive a second gate type.
+	if got, _ := found["gate"].(string); got != "pre-task-done" {
+		t.Errorf("event.gate: got %q, want pre-task-done", got)
+	}
 }
 
 // (e) GG_NO_AUTO_NOTIFY=1 MUST suppress the cross-agent broadcast but MUST NOT
@@ -163,6 +173,90 @@ func TestTruncateHookOutput(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("truncateHookOutput(%q, %d) = %q, want %q", tc.in, tc.n, got, tc.want)
 		}
+	}
+}
+
+// ── TASK-173: notifyVerifyFailure success path ────────────────────────────────
+
+// mockMessageSender records calls to SendMessage so tests can assert the correct
+// FromRole, ToRole, and TaskID without a live Qdrant store.
+type mockMessageSender struct {
+	msgs []store.Message
+}
+
+func (m *mockMessageSender) SendMessage(_ context.Context, msg store.Message) error {
+	m.msgs = append(m.msgs, msg)
+	return nil
+}
+
+func TestSendVerifyFailure_CallsSendMessageWithCorrectFields(t *testing.T) {
+	sender := &mockMessageSender{}
+	rej := &verifyRejection{
+		TaskID:   "TASK-042",
+		Gate:     "pre-task-done",
+		Hook:     "10-build.sh",
+		ExitCode: 1,
+		Stderr:   "compile error",
+	}
+	sendVerifyFailure(context.Background(), sender, rej)
+	if len(sender.msgs) != 1 {
+		t.Fatalf("expected 1 SendMessage call, got %d", len(sender.msgs))
+	}
+	msg := sender.msgs[0]
+	if msg.FromRole != "verify-gate" {
+		t.Errorf("FromRole: got %q, want verify-gate", msg.FromRole)
+	}
+	if msg.ToRole != "all" {
+		t.Errorf("ToRole: got %q, want all", msg.ToRole)
+	}
+	if msg.TaskID != "TASK-042" {
+		t.Errorf("TaskID: got %q, want TASK-042", msg.TaskID)
+	}
+	if !strings.Contains(msg.Content, "TASK-042") {
+		t.Errorf("Content should mention task ID, got: %q", msg.Content)
+	}
+	if !strings.Contains(msg.Content, "compile error") {
+		t.Errorf("Content should include stderr first line, got: %q", msg.Content)
+	}
+}
+
+func TestSendVerifyFailure_NoStderr_ContentOmitsDetail(t *testing.T) {
+	sender := &mockMessageSender{}
+	rej := &verifyRejection{TaskID: "TASK-001", Gate: "pre-task-done", Hook: "10.sh", ExitCode: 1}
+	sendVerifyFailure(context.Background(), sender, rej)
+	if len(sender.msgs) != 1 {
+		t.Fatalf("expected 1 message")
+	}
+	if strings.Contains(sender.msgs[0].Content, " — ") {
+		t.Errorf("no stderr: content should not have ' — ' separator, got: %q", sender.msgs[0].Content)
+	}
+}
+
+// ── TASK-174: post-hook advisory fires after pre-hook success ─────────────────
+
+func TestRunTaskDoneHooks_FiresAfterPreHookSuccess(t *testing.T) {
+	ggDir := setupGGDir(t)
+
+	// Install a post-hook that writes a sentinel file to prove it ran.
+	hookDir := filepath.Join(ggDir, "hooks", "task-done.d")
+	if err := os.MkdirAll(hookDir, 0o755); err != nil {
+		t.Fatalf("mkdir task-done.d: %v", err)
+	}
+	sentinel := filepath.Join(t.TempDir(), "post-hook-ran")
+	hookBody := "#!/bin/sh\ntouch " + sentinel + "\n"
+	if err := os.WriteFile(filepath.Join(hookDir, "10-log.sh"), []byte(hookBody), 0o755); err != nil {
+		t.Fatalf("write post-hook: %v", err)
+	}
+
+	// Call runTaskDoneHooks directly — no store required.
+	cmd := &cobra.Command{}
+	cmd.SetErr(&bytes.Buffer{})
+	if err := runTaskDoneHooks(cmd, "TASK-001", "test summary"); err != nil {
+		t.Fatalf("runTaskDoneHooks: %v", err)
+	}
+
+	if _, err := os.Stat(sentinel); os.IsNotExist(err) {
+		t.Error("post-hook did not run: sentinel file not created")
 	}
 }
 

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -134,6 +135,7 @@ func taskHookEnv(taskID, summary, projectID string) map[string]string {
 // field must be stable — agents program against it.
 type verifyRejection struct {
 	TaskID   string
+	Gate     string // which gate directory triggered this (e.g. "pre-task-done")
 	Hook     string
 	ExitCode int
 	Stderr   string // trimmed hook output, capped
@@ -175,6 +177,7 @@ func runPreTaskDoneHooks(cmd *cobra.Command, taskID, summary string) *verifyReje
 
 	return &verifyRejection{
 		TaskID:   taskID,
+		Gate:     "pre-task-done",
 		Hook:     failed.Script,
 		ExitCode: failed.ExitCode,
 		Stderr:   truncateHookOutput(failed.Output, 400),
@@ -188,18 +191,40 @@ func runPreTaskDoneHooks(cmd *cobra.Command, taskID, summary string) *verifyReje
 // ExitError message; this line is purely for machine consumption.
 func emitVerifyFailedEvent(w io.Writer, rej *verifyRejection) {
 	payload := map[string]any{
-		"event":    "verify_failed",
-		"task":     rej.TaskID,
-		"hook":     rej.Hook,
-		"exit":     rej.ExitCode,
-		"ts":       time.Now().UTC().Format(time.RFC3339),
-		"detail":   rej.Stderr,
+		"event":  "verify_failed",
+		"gate":   rej.Gate,
+		"task":   rej.TaskID,
+		"hook":   rej.Hook,
+		"exit":   rej.ExitCode,
+		"ts":     time.Now().UTC().Format(time.RFC3339),
+		"detail": rej.Stderr,
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return // should never happen with these field types
 	}
 	fmt.Fprintln(w, string(b))
+}
+
+// messageSender is a narrow interface for injecting the notification path in tests.
+type messageSender interface {
+	SendMessage(ctx context.Context, msg store.Message) error
+}
+
+// sendVerifyFailure is the testable core of cross-agent notification. It builds
+// the message content and calls sender.SendMessage; errors are swallowed because
+// a failed notification must never mask the underlying verify failure.
+func sendVerifyFailure(ctx context.Context, sender messageSender, rej *verifyRejection) {
+	content := fmt.Sprintf("%s blocked at verify: %s (exit %d)", rej.TaskID, rej.Hook, rej.ExitCode)
+	if rej.Stderr != "" {
+		content += " — " + firstLine(rej.Stderr)
+	}
+	_ = sender.SendMessage(ctx, store.Message{
+		FromRole: "verify-gate",
+		ToRole:   "all",
+		Content:  content,
+		TaskID:   rej.TaskID,
+	})
 }
 
 // notifyVerifyFailure broadcasts a "verify-gate" message so parallel agents
@@ -221,17 +246,7 @@ func notifyVerifyFailure(cmd *cobra.Command, rej *verifyRejection) {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	content := fmt.Sprintf("%s blocked at verify: %s (exit %d)", rej.TaskID, rej.Hook, rej.ExitCode)
-	if rej.Stderr != "" {
-		content += " — " + firstLine(rej.Stderr)
-	}
-
-	_ = d.store.SendMessage(ctx, store.Message{
-		FromRole: "verify-gate",
-		ToRole:   "all",
-		Content:  content,
-		TaskID:   rej.TaskID,
-	})
+	sendVerifyFailure(ctx, d.store, rej)
 }
 
 // truncateHookOutput trims a hook's combined stdout+stderr to at most n bytes,

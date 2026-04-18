@@ -1101,12 +1101,6 @@ func wrapLegacyPostHook(body, sub string) string {
 	return header + trimmed
 }
 
-// fileExists reports whether path exists and is not a directory.
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
 // installHookIfAbsent writes body to path with 0755 permissions, unless a file
 // already exists there. Returns 1 if the file was written, 0 if skipped.
 // Prints a line for each outcome so the user can see what happened.

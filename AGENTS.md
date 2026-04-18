@@ -280,18 +280,20 @@ should treat this as "fix the failure and retry", not as a normal error.
 
 **Rejection contract (for every agent, not just Claude):**
 
-On rejection the CLI emits two signals in parallel, so naive callers and
+On rejection the CLI emits three signals in parallel, so naive callers and
 structured parsers can both react:
 
 1. **Exit code `7`** and a human line on stderr — the fallback for any agent
    that only knows how to read text.
 2. **NDJSON event line on stderr**, shape:
    ```
-   {"event":"verify_failed","task":"TASK-042","hook":"10-build.sh","exit":1,"ts":"2026-04-18T09:12:33Z","detail":"..."}
+   {"event":"verify_failed","gate":"pre-task-done","task":"TASK-042","hook":"10-build.sh","exit":1,"ts":"2026-04-18T09:12:33Z","detail":"..."}
    ```
-   Keys are stable — program against them. `detail` is the trimmed tail of the
-   hook's combined stdout+stderr; use it to show the agent *why* the gate
-   blocked so the next attempt can be targeted.
+   Keys are stable — program against them. The `gate` field identifies which
+   gate fired (today `pre-task-done`; future gates like `pre-review-approve`
+   share the same envelope). `detail` is the trimmed tail of the hook's
+   combined stdout+stderr; use it to show the agent *why* the gate blocked so
+   the next attempt can be targeted.
 3. **Auto-broadcast**: the CLI sends an internal `gg tell` from `verify-gate`
    to `all`, carrying the same summary and linked to the task. Parallel
    sessions see it in `gg status` immediately — no per-agent wiring needed.

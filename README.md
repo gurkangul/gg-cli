@@ -220,8 +220,20 @@ Enable recording: `GG_TRACE=1 gg search "topic"`. See [`docs/commands/trace.md`]
 | `gg init` | Initialize Qdrant collections and register project |
 | `gg doctor` | Check service connectivity and indexer binaries |
 | `gg doctor --install-indexers` | Auto-install missing SCIP binaries |
+| `gg doctor --install-task-hooks` | Install verify-gate hooks (auto-detects Go / Node / Bun) |
 | `gg doctor --reconcile` | Surface incomplete dual-store writes and show repair commands |
 | `gg reembed --confirm` | Migrate all collections to the currently configured embedding model |
+
+#### Verify gate
+
+`gg task done` runs every `*.sh` in `.gg/hooks/pre-task-done.d/` **before** writing the new state. Any non-zero exit aborts the transition with exit code `7` (`ExitVerifyFailed`) — the task stays in its current state.
+
+On rejection three signals fire in parallel:
+1. A human-readable line on **stderr** explaining which hook failed and why.
+2. A machine-parseable **NDJSON line** on stderr: `{"event":"verify_failed","gate":"pre-task-done","task":"TASK-ID","hook":"script.sh","exit":1,"ts":"…","detail":"…"}` — parse it with `jq` or any JSON reader.
+3. An automatic cross-agent **`gg tell`** from `verify-gate` to `all` so parallel sessions see the rejection in `gg status`.
+
+Install the starter hooks with `gg doctor --install-task-hooks`. Suppress the broadcast in CI or reentrant scripts with `GG_NO_AUTO_NOTIFY=1`.
 
 ---
 
