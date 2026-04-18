@@ -206,6 +206,28 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		// Bug reopen stats — best-effort weekly summary for the reopen-rate metric.
+		if bugTotal, bugByDir, bugErr := d.store.BugReopenStats(ctx); bugErr == nil && bugTotal > 0 {
+			fmt.Printf("\nBUGS REOPENED (last 7d): %d\n", bugTotal)
+			type kv struct {
+				dir   string
+				count int
+			}
+			var dirs []kv
+			for dir, c := range bugByDir {
+				dirs = append(dirs, kv{dir, c})
+			}
+			sort.Slice(dirs, func(i, j int) bool {
+				if dirs[i].count != dirs[j].count {
+					return dirs[i].count > dirs[j].count
+				}
+				return dirs[i].dir < dirs[j].dir
+			})
+			for _, kv := range dirs {
+				fmt.Printf("  %-20s %d\n", kv.dir, kv.count)
+			}
+		}
+
 		// Trace percentiles — shown only when trace data exists (GG_TRACE=1 must
 		// have been set during prior runs). Best-effort; missing files are silent.
 		if ggDir, dirErr := config.GGDir(); dirErr == nil {

@@ -14,11 +14,11 @@ var bugCmd = &cobra.Command{
 	Short: "Manage bug lifecycle",
 	Long: `Track defects from discovery through fix. Bugs are stored in Qdrant and
 searchable by description. Each bug moves through a lifecycle:
-  open → fixing → fixed | wontfix`,
+  open → fixing → fixed | wontfix → reopened → fixing → fixed`,
 }
 
 var validSeverities = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
-var validBugStatuses = map[string]bool{"open": true, "fixing": true, "fixed": true, "wontfix": true}
+var validBugStatuses = map[string]bool{"open": true, "fixing": true, "fixed": true, "wontfix": true, "reopened": true}
 
 func init() {
 	rootCmd.AddCommand(bugCmd)
@@ -32,6 +32,8 @@ func bugStatusIcon(status string) string {
 		return "–"
 	case "fixing":
 		return "→"
+	case "reopened":
+		return "↺"
 	default:
 		return "!"
 	}

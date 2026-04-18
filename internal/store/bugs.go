@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,19 +17,21 @@ var bugIDNamespace = uuid.MustParse("c0c0c0c0-1a5c-4d0d-bab0-000000000003")
 var bugIDRegex = regexp.MustCompile(`^BUG-\d{3,}$`)
 
 // Bug represents a structured defect report with lifecycle tracking.
-// Lifecycle: open → fixing → fixed | wontfix
+// Lifecycle: open → fixing → fixed | wontfix → reopened → fixing → fixed
 type Bug struct {
 	ID              string
 	Title           string
 	Detail          string
 	Severity        string // critical | high | medium | low
-	Status          string // open | fixing | fixed | wontfix
+	Status          string // open | fixing | fixed | wontfix | reopened
 	RootCause       string // filled on fix
 	FixSummary      string // short description of the fix
 	TaskID          string // optional linked task
 	Tags            []string
 	AffectedFiles   []string // source file paths this bug touches (mirrors Memgraph AFFECTS edges)
 	AffectedSymbols []string // symbol names this bug touches (mirrors Memgraph AFFECTS edges)
+	ReopenCount     int      // number of times this bug was reopened after being fixed
+	ReopenReasons   []string // reason provided at each reopen, in order
 	CreatedAt       string
 	UpdatedAt       string
 }
@@ -84,6 +87,8 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 		"tags":             toAnySlice(b.Tags),
 		"affected_files":   toAnySlice(b.AffectedFiles),
 		"affected_symbols": toAnySlice(b.AffectedSymbols),
+		"reopen_count":     float64(0),
+		"reopen_reasons":   toAnySlice(nil),
 		"created_at":       b.CreatedAt,
 		"updated_at":       b.UpdatedAt,
 	})
@@ -206,6 +211,97 @@ func (c *Client) updateBugStatus(ctx context.Context, bugID, status, rootCause, 
 	return err
 }
 
+// ReopenBug transitions a fixed or wontfix bug back to "reopened" and records
+// the reason. The reopen_count is incremented and the reason is appended to
+// reopen_reasons so the full history is preserved.
+func (c *Client) ReopenBug(ctx context.Context, bugID, reason string) error {
+	pointID := qdrant.NewID(pointUUIDForBugID(bugID))
+	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
+		CollectionName: c.collBugs(),
+		Ids:            []*qdrant.PointId{pointID},
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	})
+	if err != nil {
+		return err
+	}
+	if len(existing) == 0 {
+		return fmt.Errorf("bug %s not found", bugID)
+	}
+	pay := existing[0].GetPayload()
+	currentStatus := pay["status"].GetStringValue()
+	if currentStatus != "fixed" && currentStatus != "wontfix" {
+		return fmt.Errorf("bug %s is %s — can only reopen a fixed or wontfix bug", bugID, currentStatus)
+	}
+
+	newCount := int(pay["reopen_count"].GetDoubleValue()) + 1
+	existingReasons := extractStringList(pay["reopen_reasons"])
+	existingReasons = append(existingReasons, reason)
+
+	statusVal, _ := qdrant.NewValue("reopened")
+	countVal, _ := qdrant.NewValue(float64(newCount))
+	reasonsVal, _ := qdrant.NewValue(toAnySlice(existingReasons))
+	updVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
+
+	wait := true
+	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+		CollectionName: c.collBugs(),
+		Wait:           &wait,
+		Payload: map[string]*qdrant.Value{
+			"status":         statusVal,
+			"reopen_count":   countVal,
+			"reopen_reasons": reasonsVal,
+			"updated_at":     updVal,
+		},
+		PointsSelector: qdrant.NewPointsSelector(pointID),
+	})
+	return err
+}
+
+// BugReopenStats returns the total reopen count across all bugs updated within
+// the past 7 days, plus a breakdown by top-level directory from affected_files.
+func (c *Client) BugReopenStats(ctx context.Context) (total int, byDir map[string]int, err error) {
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+		CollectionName: c.collBugs(),
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+
+	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
+	byDir = make(map[string]int)
+
+	for _, p := range points {
+		pay := p.GetPayload()
+		rc := int(pay["reopen_count"].GetDoubleValue())
+		if rc == 0 {
+			continue
+		}
+		updatedAt := pay["updated_at"].GetStringValue()
+		t, parseErr := time.Parse(time.RFC3339, updatedAt)
+		if parseErr != nil || t.Before(cutoff) {
+			continue
+		}
+		total += rc
+		for _, f := range extractStringList(pay["affected_files"]) {
+			dir := topLevelDir(f)
+			if dir != "" {
+				byDir[dir] += rc
+			}
+		}
+	}
+	return total, byDir, nil
+}
+
+// topLevelDir returns the first path component of a slash-separated path.
+// Returns empty string for bare filenames with no directory component.
+func topLevelDir(path string) string {
+	if idx := strings.Index(path, "/"); idx > 0 {
+		return path[:idx]
+	}
+	return ""
+}
+
 func (c *Client) SearchBugs(ctx context.Context, vector []float32, limit uint64) ([]Bug, error) {
 	results, err := c.qdrantQuery(ctx, &qdrant.QueryPoints{
 		CollectionName: c.collBugs(),
@@ -236,6 +332,8 @@ func bugFromPayload(pay map[string]*qdrant.Value) Bug {
 		Tags:            extractStringList(pay["tags"]),
 		AffectedFiles:   extractStringList(pay["affected_files"]),
 		AffectedSymbols: extractStringList(pay["affected_symbols"]),
+		ReopenCount:     int(pay["reopen_count"].GetDoubleValue()),
+		ReopenReasons:   extractStringList(pay["reopen_reasons"]),
 		CreatedAt:       pay["created_at"].GetStringValue(),
 		UpdatedAt:       pay["updated_at"].GetStringValue(),
 	}
