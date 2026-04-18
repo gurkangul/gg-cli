@@ -23,6 +23,7 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg discuss](gg_discuss.md)	 - Manage open discussions (deprecated — use gg message or gg record)
 * [gg doctor](gg_doctor.md)	 - Diagnose and repair gg configuration
 * [gg export](gg_export.md)	 - Export all project data to a portable bundle
+* [gg gsd](gg_gsd.md)	 - GSD integration utilities
 * [gg impact](gg_impact.md)	 - Show downstream impact of changing a source file
 * [gg import](gg_import.md)	 - Import a project bundle exported by 'gg export'
 * [gg inbox](gg_inbox.md)	 - Read unread messages
@@ -37,7 +38,8 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg status](gg_status.md)	 - Orient yourself — show open tasks, pending messages, and recent decisions
 * [gg task](gg_task.md)	 - Manage tasks
 * [gg telemetry](gg_telemetry.md)	 - Manage local usage telemetry
-* [gg tell](gg_tell.md)	 - Send a message to another agent role
+* [gg tell](gg_tell.md)	 - Send a message to one or more agent roles
 * [gg trace](gg_trace.md)	 - Inspect GG_TRACE span data
+* [gg watch](gg_watch.md)	 - Tail inbox messages and event stream
 * [gg wave](gg_wave.md)	 - Manage wave/milestone calendar buckets (Memgraph only)
 

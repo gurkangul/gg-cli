@@ -25,6 +25,7 @@ gg doctor [flags]
       --heal                  migrate legacy .gg/telemetry.jsonl and .gg/cache/ to ~/.gg/projects/<id>/ (idempotent)
   -h, --help                  help for doctor
       --install-agent-hooks   write agent-side config (SessionStart hook / alwaysApply rule / read-preload) to enforce gg usage
+      --install-agents-md     inject the gg tracker-rules managed block into AGENTS.md (idempotent; alias for --install-agent-hooks --agent codex)
       --install-indexers      install missing SCIP indexer binaries (scip-go, scip-typescript, scip-python)
       --install-task-hooks    install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)
       --reconcile             scan the outbox for incomplete dual-store writes and report what needs repair
