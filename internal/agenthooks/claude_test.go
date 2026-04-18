@@ -295,3 +295,100 @@ func TestClaude_Install_DryRun(t *testing.T) {
 		t.Error("dry-run should not have created settings.json")
 	}
 }
+
+// TestClaude_Install_UserPromptSubmitHook verifies that a fresh install writes
+// both the SessionStart and UserPromptSubmit hooks.
+func TestClaude_Install_UserPromptSubmitHook(t *testing.T) {
+	root := t.TempDir()
+	res, err := (&claudeInstaller{}).Install(root, Options{Force: true})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if res.Action != ActionCreated {
+		t.Errorf("Action = %q, want %q", res.Action, ActionCreated)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(root, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	s := string(raw)
+	if !strings.Contains(s, "gg inbox") {
+		t.Errorf("settings.json missing UserPromptSubmit hook: %s", s)
+	}
+	if !strings.Contains(s, "UserPromptSubmit") {
+		t.Errorf("settings.json missing UserPromptSubmit event: %s", s)
+	}
+	// Both hooks must be valid JSON.
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatalf("settings.json not valid JSON: %v\n%s", err, raw)
+	}
+}
+
+// TestClaude_Install_IdempotentBothHooks verifies that running Install twice
+// reports UpToDate (no changes) when both hooks are already present.
+func TestClaude_Install_IdempotentBothHooks(t *testing.T) {
+	root := t.TempDir()
+	if _, err := (&claudeInstaller{}).Install(root, Options{Force: true}); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	res, err := (&claudeInstaller{}).Install(root, Options{})
+	if err != nil {
+		t.Fatalf("second install: %v", err)
+	}
+	if res.Action != ActionUpToDate {
+		t.Errorf("second install Action = %q, want %q", res.Action, ActionUpToDate)
+	}
+	found := false
+	for _, n := range res.Notes {
+		if strings.Contains(n, "UserPromptSubmit") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected UserPromptSubmit note in up-to-date result, got %v", res.Notes)
+	}
+}
+
+// TestClaude_Install_AddsUserPromptToExistingSessionStart verifies that when
+// only the SessionStart hook exists, a re-run adds UserPromptSubmit and
+// reports ActionUpdated.
+func TestClaude_Install_AddsUserPromptToExistingSessionStart(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Pre-existing settings with only SessionStart.
+	existing := `{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [{"type": "command", "command": "gg session-start --agent=claude-code"}]
+      }
+    ]
+  }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := (&claudeInstaller{}).Install(root, Options{})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if res.Action != ActionUpdated {
+		t.Errorf("Action = %q, want %q", res.Action, ActionUpdated)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
+	s := string(raw)
+	if !strings.Contains(s, "gg inbox") {
+		t.Errorf("UserPromptSubmit hook not added: %s", s)
+	}
+	if !strings.Contains(s, "gg session-start") {
+		t.Errorf("SessionStart hook dropped: %s", s)
+	}
+}

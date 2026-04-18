@@ -75,14 +75,13 @@ func (c *claudeInstaller) globalSignals() bool {
 // (including post-/clear resumes) without depending on the agent
 // remembering to run it.
 const (
-	claudeEventSessionStart = "SessionStart"
-	claudeMatcherStartup    = "startup"
-	claudeCommand           = "gg session-start --agent=claude-code"
-	// claudeCommandMarker is the substring used to detect a pre-existing
-	// gg hook during idempotent merges. Matching on the whole command
-	// string would be fragile if the user tweaks flags; matching the
-	// distinctive `gg session-start` prefix is enough.
-	claudeCommandMarker = "gg session-start"
+	claudeEventSessionStart      = "SessionStart"
+	claudeEventUserPromptSubmit  = "UserPromptSubmit"
+	claudeMatcherStartup         = "startup"
+	claudeCommand                = "gg session-start --agent=claude-code"
+	claudeCommandMarker          = "gg session-start"
+	claudeInboxCommand           = "gg inbox --peek"
+	claudeInboxCommandMarker     = "gg inbox"
 )
 
 type claudeInstaller struct {
@@ -138,17 +137,31 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 		return res, err
 	}
 
-	if claudeHasHook(data, claudeCommandMarker) {
+	sessionStartPresent := claudeHasHook(data, claudeCommandMarker)
+	inboxPresent := claudeHasUserPromptHook(data, claudeInboxCommandMarker)
+
+	if sessionStartPresent && inboxPresent {
 		res.Action = ActionUpToDate
 		res.Notes = append(res.Notes, "SessionStart hook already present")
+		res.Notes = append(res.Notes, "UserPromptSubmit hook already present")
 		return res, nil
 	}
 
-	claudeAddHook(data, claudeCommand)
+	if !sessionStartPresent {
+		claudeAddHook(data, claudeCommand)
+	}
+	if !inboxPresent {
+		claudeAddUserPromptHook(data, claudeInboxCommand)
+	}
 
 	if opts.DryRun {
 		res.Action = ActionDryRun
-		res.Notes = append(res.Notes, "would add SessionStart hook: "+claudeCommand)
+		if !sessionStartPresent {
+			res.Notes = append(res.Notes, "would add SessionStart hook: "+claudeCommand)
+		}
+		if !inboxPresent {
+			res.Notes = append(res.Notes, "would add UserPromptSubmit hook: "+claudeInboxCommand)
+		}
 		return res, nil
 	}
 
@@ -160,7 +173,12 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	} else {
 		res.Action = ActionCreated
 	}
-	res.Notes = append(res.Notes, "SessionStart hook: "+claudeCommand)
+	if !sessionStartPresent {
+		res.Notes = append(res.Notes, "SessionStart hook: "+claudeCommand)
+	}
+	if !inboxPresent {
+		res.Notes = append(res.Notes, "UserPromptSubmit hook: "+claudeInboxCommand)
+	}
 	return res, nil
 }
 
@@ -189,6 +207,51 @@ func claudeHasHook(data map[string]any, marker string) bool {
 		}
 	}
 	return false
+}
+
+// claudeHasUserPromptHook reports whether any UserPromptSubmit entry already
+// contains a command matching marker (substring compare). Used for idempotency.
+func claudeHasUserPromptHook(data map[string]any, marker string) bool {
+	hooks, _ := data["hooks"].(map[string]any)
+	if hooks == nil {
+		return false
+	}
+	entries, _ := hooks[claudeEventUserPromptSubmit].([]any)
+	for _, e := range entries {
+		m, _ := e.(map[string]any)
+		if m == nil {
+			continue
+		}
+		inner, _ := m["hooks"].([]any)
+		for _, h := range inner {
+			hm, _ := h.(map[string]any)
+			if hm == nil {
+				continue
+			}
+			if cmd, _ := hm["command"].(string); strings.Contains(cmd, marker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// claudeAddUserPromptHook adds a UserPromptSubmit hook entry for cmd. The
+// matcher is left empty (matches all prompts) per the Claude Code schema.
+func claudeAddUserPromptHook(data map[string]any, cmd string) {
+	hooks, _ := data["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+		data["hooks"] = hooks
+	}
+	entries, _ := hooks[claudeEventUserPromptSubmit].([]any)
+	entries = append(entries, map[string]any{
+		"matcher": "",
+		"hooks": []any{
+			map[string]any{"type": "command", "command": cmd},
+		},
+	})
+	hooks[claudeEventUserPromptSubmit] = entries
 }
 
 // claudeAddHook merges a new command hook into data without clobbering
