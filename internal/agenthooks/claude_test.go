@@ -392,3 +392,70 @@ func TestClaude_Install_AddsUserPromptToExistingSessionStart(t *testing.T) {
 		t.Errorf("SessionStart hook dropped: %s", s)
 	}
 }
+
+func TestClaude_Install_AddsPreToolUseGSDGuard(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := (&claudeInstaller{}).Install(root, Options{})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if res.Action == ActionUpToDate {
+		t.Fatal("expected install action, got up-to-date")
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
+	s := string(raw)
+	if !strings.Contains(s, "gg gsd-guard") {
+		t.Errorf("PreToolUse gsd-guard hook not added: %s", s)
+	}
+	if !strings.Contains(s, claudeEventPreToolUse) {
+		t.Errorf("PreToolUse key missing in settings.json: %s", s)
+	}
+}
+
+func TestClaude_Install_IdempotentOnGSDGuardPresent(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	inst := &claudeInstaller{}
+	if _, err := inst.Install(root, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := inst.Install(root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Action != ActionUpToDate {
+		t.Errorf("second Install Action = %q, want %q", res.Action, ActionUpToDate)
+	}
+
+	// Verify the guard hook only appears once.
+	raw, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatalf("parse settings.json: %v", err)
+	}
+	hooks, _ := data["hooks"].(map[string]any)
+	entries, _ := hooks[claudeEventPreToolUse].([]any)
+	guardCount := 0
+	for _, e := range entries {
+		m, _ := e.(map[string]any)
+		inner, _ := m["hooks"].([]any)
+		for _, h := range inner {
+			hm, _ := h.(map[string]any)
+			if cmd, _ := hm["command"].(string); strings.Contains(cmd, "gsd-guard") {
+				guardCount++
+			}
+		}
+	}
+	if guardCount != 1 {
+		t.Errorf("expected exactly 1 gsd-guard hook, got %d", guardCount)
+	}
+}

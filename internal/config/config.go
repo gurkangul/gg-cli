@@ -74,6 +74,14 @@ var DefaultHookInstallSkipDirs = []string{
 // packages/<x>/manifest and services/<x>/manifest without a full tree walk).
 const DefaultHookInstallMaxDepth = 3
 
+// TrackerConfig declares which task-tracker is canonical for this project.
+type TrackerConfig struct {
+	// Canonical names the tracker agents must use. Set to "gg" to activate
+	// the PreToolUse guard that blocks gsd_plan_* MCP calls. Leave empty
+	// (default) to allow any tracker side-by-side.
+	Canonical string `yaml:"canonical"`
+}
+
 // TelemetryConfig controls local-only usage telemetry.
 type TelemetryConfig struct {
 	// Enabled must be explicitly set to true to activate telemetry (opt-in).
@@ -92,6 +100,7 @@ type Config struct {
 	Hooks     HooksConfig     `yaml:"hooks"`
 	Telemetry TelemetryConfig `yaml:"telemetry"`
 	Doctor    DoctorConfig    `yaml:"doctor"`
+	Tracker   TrackerConfig   `yaml:"tracker"`
 }
 
 func DefaultConfig() *Config {

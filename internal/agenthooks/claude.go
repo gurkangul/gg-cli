@@ -77,11 +77,15 @@ func (c *claudeInstaller) globalSignals() bool {
 const (
 	claudeEventSessionStart      = "SessionStart"
 	claudeEventUserPromptSubmit  = "UserPromptSubmit"
+	claudeEventPreToolUse        = "PreToolUse"
 	claudeMatcherStartup         = "startup"
+	claudeMatcherGSDPlan         = "mcp__gsd-workflow__gsd_plan_milestone|mcp__gsd-workflow__gsd_plan_slice|mcp__gsd-workflow__gsd_plan_task|gsd_plan_milestone|gsd_plan_slice|gsd_plan_task"
 	claudeCommand                = "gg session-start --agent=claude-code"
 	claudeCommandMarker          = "gg session-start"
 	claudeInboxCommand           = "gg inbox --peek"
 	claudeInboxCommandMarker     = "gg inbox"
+	claudeGSDGuardCommand        = "gg gsd-guard"
+	claudeGSDGuardCommandMarker  = "gg gsd-guard"
 )
 
 type claudeInstaller struct {
@@ -139,11 +143,13 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 
 	sessionStartPresent := claudeHasHook(data, claudeCommandMarker)
 	inboxPresent := claudeHasUserPromptHook(data, claudeInboxCommandMarker)
+	gsdGuardPresent := claudeHasPreToolUseHook(data, claudeGSDGuardCommandMarker)
 
-	if sessionStartPresent && inboxPresent {
+	if sessionStartPresent && inboxPresent && gsdGuardPresent {
 		res.Action = ActionUpToDate
 		res.Notes = append(res.Notes, "SessionStart hook already present")
 		res.Notes = append(res.Notes, "UserPromptSubmit hook already present")
+		res.Notes = append(res.Notes, "PreToolUse gsd-guard hook already present")
 		return res, nil
 	}
 
@@ -153,6 +159,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	if !inboxPresent {
 		claudeAddUserPromptHook(data, claudeInboxCommand)
 	}
+	if !gsdGuardPresent {
+		claudeAddPreToolUseHook(data, claudeMatcherGSDPlan, claudeGSDGuardCommand)
+	}
 
 	if opts.DryRun {
 		res.Action = ActionDryRun
@@ -161,6 +170,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 		}
 		if !inboxPresent {
 			res.Notes = append(res.Notes, "would add UserPromptSubmit hook: "+claudeInboxCommand)
+		}
+		if !gsdGuardPresent {
+			res.Notes = append(res.Notes, "would add PreToolUse gsd-guard hook: "+claudeGSDGuardCommand)
 		}
 		return res, nil
 	}
@@ -178,6 +190,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	}
 	if !inboxPresent {
 		res.Notes = append(res.Notes, "UserPromptSubmit hook: "+claudeInboxCommand)
+	}
+	if !gsdGuardPresent {
+		res.Notes = append(res.Notes, "PreToolUse gsd-guard hook: "+claudeGSDGuardCommand)
 	}
 	return res, nil
 }
@@ -252,6 +267,51 @@ func claudeAddUserPromptHook(data map[string]any, cmd string) {
 		},
 	})
 	hooks[claudeEventUserPromptSubmit] = entries
+}
+
+// claudeHasPreToolUseHook reports whether a PreToolUse entry already contains
+// a command matching marker (substring compare). Used for idempotency.
+func claudeHasPreToolUseHook(data map[string]any, marker string) bool {
+	hooks, _ := data["hooks"].(map[string]any)
+	if hooks == nil {
+		return false
+	}
+	entries, _ := hooks[claudeEventPreToolUse].([]any)
+	for _, e := range entries {
+		m, _ := e.(map[string]any)
+		if m == nil {
+			continue
+		}
+		inner, _ := m["hooks"].([]any)
+		for _, h := range inner {
+			hm, _ := h.(map[string]any)
+			if hm == nil {
+				continue
+			}
+			if cmd, _ := hm["command"].(string); strings.Contains(cmd, marker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// claudeAddPreToolUseHook adds a PreToolUse hook entry that calls cmd for
+// tools whose name matches matcher.
+func claudeAddPreToolUseHook(data map[string]any, matcher, cmd string) {
+	hooks, _ := data["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+		data["hooks"] = hooks
+	}
+	entries, _ := hooks[claudeEventPreToolUse].([]any)
+	entries = append(entries, map[string]any{
+		"matcher": matcher,
+		"hooks": []any{
+			map[string]any{"type": "command", "command": cmd},
+		},
+	})
+	hooks[claudeEventPreToolUse] = entries
 }
 
 // claudeAddHook merges a new command hook into data without clobbering
