@@ -12,6 +12,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -253,7 +254,7 @@ func TestBugReport_InvalidTask_Error(t *testing.T) {
 
 func TestTaskCreate_InvalidPriority_Error(t *testing.T) {
 	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "task", "create", "--priority=urgent", "do something")
+	_, _, err := execCmd(t, "task", "create", "--requester=user", "--priority=urgent", "do something")
 	if err == nil {
 		t.Fatal("expected error for invalid --priority value")
 	}
@@ -261,9 +262,61 @@ func TestTaskCreate_InvalidPriority_Error(t *testing.T) {
 
 func TestTaskCreate_InvalidDeps_Error(t *testing.T) {
 	t.Chdir(t.TempDir())
-	_, _, err := execCmd(t, "task", "create", "--depends-on=BUG-001", "do something")
+	_, _, err := execCmd(t, "task", "create", "--requester=user", "--depends-on=BUG-001", "do something")
 	if err == nil {
 		t.Fatal("expected error for non-TASK --depends-on value")
+	}
+}
+
+func TestTaskCreate_MissingRequester_Error(t *testing.T) {
+	t.Chdir(t.TempDir())
+	_, _, err := execCmd(t, "task", "create", "do something")
+	if err == nil {
+		t.Fatal("expected error when --requester is missing")
+	}
+}
+
+func TestTaskCreate_InvalidRequester_Error(t *testing.T) {
+	t.Chdir(t.TempDir())
+	_, _, err := execCmd(t, "task", "create", "--requester=robot", "do something")
+	if err == nil {
+		t.Fatal("expected error for invalid --requester value")
+	}
+}
+
+func TestTaskCreate_MetaGuard_Blocked(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("GG_ALLOW_META", "")
+	titles := []string{
+		"update AGENTS.md tracker rules",
+		"bump CHANGELOG for v0.3",
+		"add enforcement feature",
+		"fix hook parity with codex",
+		"meta-task cleanup sprint",
+	}
+	for _, title := range titles {
+		_, _, err := execCmd(t, "task", "create", "--requester=agent", title)
+		if err == nil {
+			t.Errorf("expected meta-guard to block title %q", title)
+		}
+		var exitErr *ExitError
+		if !errors.As(err, &exitErr) || exitErr.Code != ExitNotFound {
+			t.Errorf("expected ExitNotFound (2) for meta-guard block on %q, got %v", title, err)
+		}
+	}
+}
+
+func TestTaskCreate_MetaGuard_AllowedWithEnv(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("GG_ALLOW_META", "stabilization exception: fixing docs pipeline")
+	// Should pass the guard and fail at loadDeps (no .gg config), not at meta-guard.
+	_, _, err := execCmd(t, "task", "create", "--requester=user", "update CHANGELOG for hotfix")
+	if err == nil {
+		t.Fatal("expected config error after guard passes, not nil")
+	}
+	var exitErr *ExitError
+	if errors.As(err, &exitErr) && exitErr.Code == ExitNotFound {
+		t.Errorf("meta-guard should not have blocked when GG_ALLOW_META is set, got exit 2")
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 
 func TestTaskCreate_StoreDown(t *testing.T) {
 	setupGGDir(t)
-	_, _, err := execCmd(t, "task", "create", "implement rate limiting")
+	_, _, err := execCmd(t, "task", "create", "--requester=user", "implement rate limiting")
 	if err == nil {
 		t.Fatal("expected error when Qdrant is down")
 	}

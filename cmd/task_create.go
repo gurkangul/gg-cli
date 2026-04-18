@@ -2,12 +2,23 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/store"
 )
+
+// metaTaskPattern matches task titles that fall into the self-feeding
+// meta-backlog (AGENTS.md edits, CHANGELOG bumps, tracker-rule enforcement,
+// hook wiring, parity work). These are frozen under stabilization mode.
+// Override with GG_ALLOW_META=<reason>.
+var metaTaskPattern = regexp.MustCompile(`(?i)(AGENTS\.md|CHANGELOG|tracker.?rule|hook|parity|meta|enforcement)`)
+
+// validRequesters are the allowed values for --requester.
+var validRequesters = map[string]bool{"user": true, "agent": true, "system": true}
 
 var taskCreateCmd = &cobra.Command{
 	Use:   `create "title"`,
@@ -32,6 +43,7 @@ var (
 	taskDependsOn string
 	taskBlocks    string
 	taskDeadline  string
+	taskRequester string
 )
 
 func init() {
@@ -41,6 +53,8 @@ func init() {
 	taskCreateCmd.Flags().StringVar(&taskDependsOn, "depends-on", "", "comma-separated task IDs this task depends on (e.g. TASK-001,TASK-002)")
 	taskCreateCmd.Flags().StringVar(&taskBlocks, "blocks", "", "comma-separated task IDs that this task is blocking")
 	taskCreateCmd.Flags().StringVar(&taskDeadline, "deadline", "", "deadline date (YYYY-MM-DD)")
+	taskCreateCmd.Flags().StringVar(&taskRequester, "requester", "", "who initiated this task: user, agent, or system (required)")
+	_ = taskCreateCmd.MarkFlagRequired("requester")
 	addFromFlag(taskCreateCmd)
 	taskCmd.AddCommand(taskCreateCmd)
 }
@@ -50,6 +64,17 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 	title, err := requireNonEmpty("title", args[0])
 	if err != nil {
 		return err
+	}
+	if !validRequesters[taskRequester] {
+		return fmt.Errorf("--requester must be one of: user, agent, system")
+	}
+	if metaTaskPattern.MatchString(title) {
+		if reason := os.Getenv("GG_ALLOW_META"); reason == "" {
+			return &ExitError{
+				Code:    ExitNotFound,
+				Message: fmt.Sprintf("meta-task blocked: title matches stabilization freeze pattern — set GG_ALLOW_META=<reason> to override: %q", title),
+			}
+		}
 	}
 	if taskPriority != "" && !validPriorities[taskPriority] {
 		return fmt.Errorf("invalid priority %q — use high, medium, or low (or omit to leave unset)", taskPriority)
@@ -98,6 +123,7 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		Blocks:    blocks,
 		Deadline:  strings.TrimSpace(taskDeadline),
 		Author:    resolveAuthor(cmd),
+		Requester: taskRequester,
 	}
 
 	id, err := d.store.CreateTask(ctx, t, vector)

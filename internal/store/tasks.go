@@ -32,6 +32,7 @@ type Task struct {
 	BlockReason  string
 	DoneSummary  string
 	Author       string // agent role or user that created this task
+	Requester    string // user | agent | system — who initiated this task
 	CreatedAt    string
 	ReviewStatus string // none|pending|approved|rejected — orthogonal to Status lifecycle
 	ReviewedBy   string // reviewer role or agent name
@@ -125,6 +126,7 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 		"block_reason": t.BlockReason,
 		"done_summary": t.DoneSummary,
 		"author":       t.Author,
+		"requester":    t.Requester,
 		"created_at":   t.CreatedAt,
 	})
 	if err != nil {
@@ -364,6 +366,7 @@ func taskFromPayload(pay map[string]*qdrant.Value) Task {
 		BlockReason:  pay["block_reason"].GetStringValue(),
 		DoneSummary:  pay["done_summary"].GetStringValue(),
 		Author:       pay["author"].GetStringValue(),
+		Requester:    pay["requester"].GetStringValue(),
 		CreatedAt:    pay["created_at"].GetStringValue(),
 		ReviewStatus: rs,
 		ReviewedBy:   pay["reviewed_by"].GetStringValue(),
