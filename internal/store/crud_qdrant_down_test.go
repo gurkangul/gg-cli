@@ -423,7 +423,7 @@ func TestFixBug_QdrantDown(t *testing.T) {
 	ctx, cancel := shortCtx(t)
 	defer cancel()
 
-	err := c.FixBug(ctx, "BUG-001", "nil pointer in search", "added nil check before dereference")
+	err := c.FixBug(ctx, "BUG-001", "nil pointer in search", "added nil check before dereference", "testdata/repro_test.go")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -434,7 +434,7 @@ func TestWontFixBug_QdrantDown(t *testing.T) {
 	ctx, cancel := shortCtx(t)
 	defer cancel()
 
-	err := c.WontFixBug(ctx, "BUG-002", "not reproducible")
+	err := c.WontFixBug(ctx, "BUG-002", "not reproducible", "testdata/repro_test.go")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

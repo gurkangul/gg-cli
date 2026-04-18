@@ -26,6 +26,7 @@ type Bug struct {
 	Status          string // open | fixing | fixed | wontfix | reopened
 	RootCause       string // filled on fix
 	FixSummary      string // short description of the fix
+	ReproScript     string // path to repro script or *_test.go file; "REPRO-MISSING" for legacy bugs
 	TaskID          string // optional linked task
 	Tags            []string
 	AffectedFiles   []string // source file paths this bug touches (mirrors Memgraph AFFECTS edges)
@@ -84,6 +85,7 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 		"status":           b.Status,
 		"root_cause":       b.RootCause,
 		"fix_summary":      b.FixSummary,
+		"repro_script":     b.ReproScript,
 		"task_id":          b.TaskID,
 		"tags":             toAnySlice(b.Tags),
 		"affected_files":   toAnySlice(b.AffectedFiles),
@@ -173,22 +175,24 @@ func (c *Client) ListBugs(ctx context.Context, statusFilter string) ([]Bug, erro
 	return bugs, nil
 }
 
-// FixBug transitions a bug to "fixed" and records the root cause and fix summary.
-func (c *Client) FixBug(ctx context.Context, bugID, rootCause, fixSummary string) error {
-	return c.updateBugStatus(ctx, bugID, "fixed", rootCause, fixSummary)
+// FixBug transitions a bug to "fixed" and records the root cause, fix summary,
+// and the repro script path that guards against regression.
+func (c *Client) FixBug(ctx context.Context, bugID, rootCause, fixSummary, reproScript string) error {
+	return c.updateBugStatus(ctx, bugID, "fixed", rootCause, fixSummary, reproScript)
 }
 
-// WontFixBug transitions a bug to "wontfix" with a reason in fixSummary.
-func (c *Client) WontFixBug(ctx context.Context, bugID, reason string) error {
-	return c.updateBugStatus(ctx, bugID, "wontfix", "", reason)
+// WontFixBug transitions a bug to "wontfix" with a reason and an optional repro
+// script that documents the confirmed-but-accepted failure mode.
+func (c *Client) WontFixBug(ctx context.Context, bugID, reason, reproScript string) error {
+	return c.updateBugStatus(ctx, bugID, "wontfix", "", reason, reproScript)
 }
 
 // StartFixingBug transitions a bug to "fixing".
 func (c *Client) StartFixingBug(ctx context.Context, bugID string) error {
-	return c.updateBugStatus(ctx, bugID, "fixing", "", "")
+	return c.updateBugStatus(ctx, bugID, "fixing", "", "", "")
 }
 
-func (c *Client) updateBugStatus(ctx context.Context, bugID, status, rootCause, fixSummary string) error {
+func (c *Client) updateBugStatus(ctx context.Context, bugID, status, rootCause, fixSummary, reproScript string) error {
 	pointID := qdrant.NewID(pointUUIDForBugID(bugID))
 	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
 		CollectionName: c.collBugs(),
@@ -209,13 +213,15 @@ func (c *Client) updateBugStatus(ctx context.Context, bugID, status, rootCause, 
 	statusVal, _ := qdrant.NewValue(status)
 	rootVal, _ := qdrant.NewValue(rootCause)
 	fixVal, _ := qdrant.NewValue(fixSummary)
+	reproVal, _ := qdrant.NewValue(reproScript)
 	updVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
 
 	payload := map[string]*qdrant.Value{
-		"status":      statusVal,
-		"root_cause":  rootVal,
-		"fix_summary": fixVal,
-		"updated_at":  updVal,
+		"status":       statusVal,
+		"root_cause":   rootVal,
+		"fix_summary":  fixVal,
+		"repro_script": reproVal,
+		"updated_at":   updVal,
 	}
 
 	wait := true
@@ -345,6 +351,7 @@ func bugFromPayload(pay map[string]*qdrant.Value) Bug {
 		Status:          pay["status"].GetStringValue(),
 		RootCause:       pay["root_cause"].GetStringValue(),
 		FixSummary:      pay["fix_summary"].GetStringValue(),
+		ReproScript:     pay["repro_script"].GetStringValue(),
 		TaskID:          pay["task_id"].GetStringValue(),
 		Tags:            extractStringList(pay["tags"]),
 		AffectedFiles:   extractStringList(pay["affected_files"]),

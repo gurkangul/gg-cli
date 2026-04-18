@@ -2,8 +2,20 @@
 package cmd
 
 import (
+	"os"
 	"testing"
 )
+
+// tempReproFile creates a minimal *_test.go file in the CWD (set by setupGGDir)
+// and returns its relative path for use with --repro in tests.
+func tempReproFile(t *testing.T) string {
+	t.Helper()
+	name := "repro_stub_test.go"
+	if err := os.WriteFile(name, []byte("package cmd\n"), 0o644); err != nil {
+		t.Fatalf("write repro stub: %v", err)
+	}
+	return name
+}
 
 func TestBugReport_StoreDown(t *testing.T) {
 	setupGGDir(t)
@@ -52,7 +64,8 @@ func TestBugGet_StoreDown(t *testing.T) {
 
 func TestBugFix_StoreDown(t *testing.T) {
 	setupGGDir(t)
-	_, _, err := execCmd(t, "bug", "fix", "BUG-001", "nil deref in search handler", "--root-cause", "missing nil check")
+	repro := tempReproFile(t)
+	_, _, err := execCmd(t, "bug", "fix", "BUG-001", "nil deref in search handler", "--root-cause", "missing nil check", "--repro", repro)
 	if err == nil {
 		t.Fatal("expected error when Qdrant is down")
 	}
@@ -82,7 +95,8 @@ func TestBugStart_StoreDown(t *testing.T) {
 
 func TestBugWontFix_StoreDown(t *testing.T) {
 	setupGGDir(t)
-	_, _, err := execCmd(t, "bug", "wontfix", "BUG-001", "not reproducible")
+	repro := tempReproFile(t)
+	_, _, err := execCmd(t, "bug", "wontfix", "BUG-001", "not reproducible", "--repro", repro)
 	if err == nil {
 		t.Fatal("expected error when Qdrant is down")
 	}

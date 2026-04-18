@@ -99,6 +99,9 @@ func runBugGet(cmd *cobra.Command, args []string) error {
 		if b.FixSummary != "" {
 			fmt.Printf("  Fix: %s\n", b.FixSummary)
 		}
+		if b.ReproScript != "" {
+			fmt.Printf("  Repro: %s\n", b.ReproScript)
+		}
 		fmt.Printf("  Created: %s\n", shortDate(b.CreatedAt))
 		fmt.Printf("  Updated: %s\n", shortDate(b.UpdatedAt))
 	})

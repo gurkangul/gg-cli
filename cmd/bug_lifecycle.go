@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -31,20 +33,45 @@ var bugWontFixCmd = &cobra.Command{
 }
 
 var (
-	bugRootCause  string
-	bugFixFiles   string
-	bugFixSymbols string
+	bugRootCause    string
+	bugFixFiles     string
+	bugFixSymbols   string
+	bugFixRepro     string
+	bugWontFixRepro string
 )
 
 func init() {
 	bugFixCmd.Flags().StringVar(&bugRootCause, "root-cause", "", "root cause identified during fix")
 	bugFixCmd.Flags().StringVar(&bugFixFiles, "files", "", "comma-separated source file paths affected by this fix")
 	bugFixCmd.Flags().StringVar(&bugFixSymbols, "symbols", "", "comma-separated symbol names affected by this fix")
+	bugFixCmd.Flags().StringVar(&bugFixRepro, "repro", "", "path to repro script or *_test.go that guards against regression (required)")
+	bugWontFixCmd.Flags().StringVar(&bugWontFixRepro, "repro", "", "path to repro script or *_test.go documenting the confirmed failure mode (required)")
 	addFromFlag(bugFixCmd)
 	addFromFlag(bugWontFixCmd)
 	bugCmd.AddCommand(bugFixCmd)
 	bugCmd.AddCommand(bugStartCmd)
 	bugCmd.AddCommand(bugWontFixCmd)
+}
+
+// validateReproPath checks that --repro names an existing file that is either
+// executable (any +x bit) or a Go test file (*_test.go).
+func validateReproPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("--repro is required: provide a path to a repro script or *_test.go file")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("--repro %q: %w", path, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("--repro %q is a directory, not a file", path)
+	}
+	isTestFile := strings.HasSuffix(path, "_test.go")
+	isExecutable := info.Mode().Perm()&0111 != 0
+	if !isTestFile && !isExecutable {
+		return fmt.Errorf("--repro %q must be executable or a *_test.go file", path)
+	}
+	return nil
 }
 
 func runBugFix(cmd *cobra.Command, args []string) error {
@@ -60,6 +87,9 @@ func runBugFix(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("%w (root cause must be the underlying defect, not the symptom — required to close a bug)", err)
 	}
+	if err := validateReproPath(bugFixRepro); err != nil {
+		return err
+	}
 
 	d, err := loadDeps(false)
 	if err != nil {
@@ -70,7 +100,7 @@ func runBugFix(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	if err := d.store.FixBug(ctx, bugID, rootCause, summary); err != nil {
+	if err := d.store.FixBug(ctx, bugID, rootCause, summary, bugFixRepro); err != nil {
 		return err
 	}
 
@@ -98,9 +128,10 @@ func runBugFix(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return printJSON(map[string]any{"id": bugID, "status": "fixed", "summary": summary, "root_cause": rootCause}, func() {
+	return printJSON(map[string]any{"id": bugID, "status": "fixed", "summary": summary, "root_cause": rootCause, "repro_script": bugFixRepro}, func() {
 		fmt.Printf("✓ %s marked as fixed\n", bugID)
 		fmt.Printf("  Root cause: %s\n", rootCause)
+		fmt.Printf("  Repro: %s\n", bugFixRepro)
 	})
 }
 
@@ -137,6 +168,9 @@ func runBugWontFix(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateReproPath(bugWontFixRepro); err != nil {
+		return err
+	}
 
 	d, err := loadDeps(false)
 	if err != nil {
@@ -147,11 +181,12 @@ func runBugWontFix(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	if err := d.store.WontFixBug(ctx, bugID, reason); err != nil {
+	if err := d.store.WontFixBug(ctx, bugID, reason, bugWontFixRepro); err != nil {
 		return err
 	}
 
-	return printJSON(map[string]any{"id": bugID, "status": "wontfix", "reason": reason}, func() {
+	return printJSON(map[string]any{"id": bugID, "status": "wontfix", "reason": reason, "repro_script": bugWontFixRepro}, func() {
 		fmt.Printf("– %s marked as wontfix\n", bugID)
+		fmt.Printf("  Repro: %s\n", bugWontFixRepro)
 	})
 }
