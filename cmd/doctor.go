@@ -1031,6 +1031,16 @@ func runDoctorInstallTaskHooks() error {
 		}
 	}
 
+	// Regression gate: always install 90-bug-repros.sh regardless of language.
+	// Off by default (GG_ENFORCEMENT=off); enable with GG_ENFORCEMENT=on.
+	bugReprosPath := filepath.Join(preDir, "90-bug-repros.sh")
+	if n, err := installHookIfAbsent(bugReprosPath, templates.BugReprosHook,
+		"regression gate — runs all repro scripts for fixed bugs (GG_ENFORCEMENT controls blocking)"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
 	if len(goDirs) == 0 && len(nodeDirs) == 0 {
 		fmt.Println("No go.mod or package.json found in the project (walked up to depth", maxDepth, ").")
 		fmt.Println("Write your own verify gate at:")

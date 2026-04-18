@@ -22,3 +22,6 @@ var PreTaskDoneGoHook string
 
 //go:embed pre-task-done-node.sh
 var PreTaskDoneNodeHook string
+
+//go:embed 90-bug-repros.sh
+var BugReprosHook string
