@@ -43,6 +43,7 @@ var (
 	doctorInstallIndexers   bool
 	doctorReconcile         bool
 	doctorInstallAgentHooks bool
+	doctorInstallAgentsMD   bool
 	doctorHooksAgent        string
 	doctorHooksDryRun       bool
 	doctorHooksForce        bool
@@ -73,6 +74,8 @@ func init() {
 		"with --wipe-brain: skip interactive confirmation")
 	doctorCmd.Flags().BoolVar(&doctorInstallTaskHooks, "install-task-hooks", false,
 		"install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)")
+	doctorCmd.Flags().BoolVar(&doctorInstallAgentsMD, "install-agents-md", false,
+		"inject the gg tracker-rules managed block into AGENTS.md (idempotent; alias for --install-agent-hooks --agent codex)")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -125,9 +128,15 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	if doctorReconcile {
 		return runDoctorReconcile(cmd)
 	}
-	// --install-agent-hooks: agent-config installer mode. Skips the normal
-	// diagnostics and runs the agenthooks package against the project.
+	// --install-agent-hooks / --install-agents-md: agent-config installer mode.
+	// Skips the normal diagnostics and runs the agenthooks package against the
+	// project. --install-agents-md is a focused alias that restricts the run
+	// to the codex (AGENTS.md) installer only.
 	if doctorInstallAgentHooks {
+		return runDoctorInstallAgentHooks(cmd)
+	}
+	if doctorInstallAgentsMD {
+		doctorHooksAgent = "codex"
 		return runDoctorInstallAgentHooks(cmd)
 	}
 	// --heal: migrate legacy .gg/ runtime state to ~/.gg/projects/<id>/.

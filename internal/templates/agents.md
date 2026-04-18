@@ -27,6 +27,26 @@ under 1MB binary", "must work offline"]
 
 ---
 
+## Tracker Rules
+
+**gg is the canonical tracker for this project.** Do not use a parallel
+planning tool alongside it — two trackers create drift that no agent can
+reconcile automatically.
+
+- Use `gg task create` for every work item. **Never call**
+  `mcp__gsd-workflow__gsd_plan_milestone`, `gsd_plan_slice`, or
+  `gsd_plan_task` — these write to a separate `.gsd/gsd.db` that other
+  agents cannot read, creating invisible state.
+- Use `gg record` for decisions and `gg reject` for rejected approaches.
+- Use `gg tell` for cross-agent messages.
+- Rationale: GSD milestone hierarchy writes state to `.gsd/gsd.db`. gg
+  reads none of that. The two stores diverge silently and stay diverged.
+
+> Run `gg doctor --install-agents-md` to inject these rules into an
+> existing project's AGENTS.md if they are missing.
+
+---
+
 ## How agents work in this project
 
 This project uses a shared knowledge base CLI: **gg**.
