@@ -78,14 +78,19 @@ const (
 	claudeEventSessionStart      = "SessionStart"
 	claudeEventUserPromptSubmit  = "UserPromptSubmit"
 	claudeEventPreToolUse        = "PreToolUse"
+	claudeEventPostToolUse       = "PostToolUse"
 	claudeMatcherStartup         = "startup"
 	claudeMatcherGSDPlan         = "mcp__gsd-workflow__gsd_plan_milestone|mcp__gsd-workflow__gsd_plan_slice|mcp__gsd-workflow__gsd_plan_task|gsd_plan_milestone|gsd_plan_slice|gsd_plan_task"
+	claudeMatcherWriteTools      = "Edit|Write|MultiEdit"
 	claudeCommand                = "gg session-start --agent=claude-code"
 	claudeCommandMarker          = "gg session-start"
 	claudeInboxCommand           = "gg inbox --peek"
 	claudeInboxCommandMarker     = "gg inbox"
 	claudeGSDGuardCommand        = "gg gsd-guard"
 	claudeGSDGuardCommandMarker  = "gg gsd-guard"
+	// warn-mode: || true so a verify failure never blocks the write, only warns.
+	claudeVerifyCommand          = `[ "${GG_NO_VERIFY:-0}" = '1' ] || gg verify --file "$CLAUDE_TOOL_INPUT_FILE_PATH" 2>&1 || true`
+	claudeVerifyCommandMarker    = "gg verify --file"
 )
 
 type claudeInstaller struct {
@@ -144,12 +149,14 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	sessionStartPresent := claudeHasHook(data, claudeCommandMarker)
 	inboxPresent := claudeHasUserPromptHook(data, claudeInboxCommandMarker)
 	gsdGuardPresent := claudeHasPreToolUseHook(data, claudeGSDGuardCommandMarker)
+	verifyPresent := claudeHasPostToolUseHook(data, claudeVerifyCommandMarker)
 
-	if sessionStartPresent && inboxPresent && gsdGuardPresent {
+	if sessionStartPresent && inboxPresent && gsdGuardPresent && verifyPresent {
 		res.Action = ActionUpToDate
 		res.Notes = append(res.Notes, "SessionStart hook already present")
 		res.Notes = append(res.Notes, "UserPromptSubmit hook already present")
 		res.Notes = append(res.Notes, "PreToolUse gsd-guard hook already present")
+		res.Notes = append(res.Notes, "PostToolUse verify hook already present")
 		return res, nil
 	}
 
@@ -162,6 +169,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	if !gsdGuardPresent {
 		claudeAddPreToolUseHook(data, claudeMatcherGSDPlan, claudeGSDGuardCommand)
 	}
+	if !verifyPresent {
+		claudeAddPostToolUseHook(data, claudeMatcherWriteTools, claudeVerifyCommand)
+	}
 
 	if opts.DryRun {
 		res.Action = ActionDryRun
@@ -173,6 +183,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 		}
 		if !gsdGuardPresent {
 			res.Notes = append(res.Notes, "would add PreToolUse gsd-guard hook: "+claudeGSDGuardCommand)
+		}
+		if !verifyPresent {
+			res.Notes = append(res.Notes, "would add PostToolUse verify hook: "+claudeVerifyCommand)
 		}
 		return res, nil
 	}
@@ -193,6 +206,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	}
 	if !gsdGuardPresent {
 		res.Notes = append(res.Notes, "PreToolUse gsd-guard hook: "+claudeGSDGuardCommand)
+	}
+	if !verifyPresent {
+		res.Notes = append(res.Notes, "PostToolUse verify hook: "+claudeVerifyCommand)
 	}
 	return res, nil
 }
@@ -312,6 +328,51 @@ func claudeAddPreToolUseHook(data map[string]any, matcher, cmd string) {
 		},
 	})
 	hooks[claudeEventPreToolUse] = entries
+}
+
+// claudeHasPostToolUseHook reports whether a PostToolUse entry already contains
+// a command matching marker (substring compare). Used for idempotency.
+func claudeHasPostToolUseHook(data map[string]any, marker string) bool {
+	hooks, _ := data["hooks"].(map[string]any)
+	if hooks == nil {
+		return false
+	}
+	entries, _ := hooks[claudeEventPostToolUse].([]any)
+	for _, e := range entries {
+		m, _ := e.(map[string]any)
+		if m == nil {
+			continue
+		}
+		inner, _ := m["hooks"].([]any)
+		for _, h := range inner {
+			hm, _ := h.(map[string]any)
+			if hm == nil {
+				continue
+			}
+			if cmd, _ := hm["command"].(string); strings.Contains(cmd, marker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// claudeAddPostToolUseHook adds a PostToolUse hook entry that calls cmd for
+// tools whose name matches matcher.
+func claudeAddPostToolUseHook(data map[string]any, matcher, cmd string) {
+	hooks, _ := data["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+		data["hooks"] = hooks
+	}
+	entries, _ := hooks[claudeEventPostToolUse].([]any)
+	entries = append(entries, map[string]any{
+		"matcher": matcher,
+		"hooks": []any{
+			map[string]any{"type": "command", "command": cmd},
+		},
+	})
+	hooks[claudeEventPostToolUse] = entries
 }
 
 // claudeAddHook merges a new command hook into data without clobbering
