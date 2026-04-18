@@ -154,6 +154,35 @@ func TestInstallTaskHooks_Idempotent_DoesNotOverwriteUserEdits(t *testing.T) {
 	}
 }
 
+// Legacy post-hook idempotency: a user who ran the old installer has a
+// monolithic .gg/hooks/task-done.d/10-go-quality.sh with no cd prefix and
+// their own tweaks. The new installer MUST NOT overwrite it when re-run at
+// the root — same guarantee the pre-hook enjoys (TASK-186).
+func TestInstallTaskHooks_Idempotent_LegacyPostHookSurvives(t *testing.T) {
+	f := newHookInstallFixture(t, true /*go.mod at root*/, false)
+
+	if err := os.MkdirAll(f.postDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	legacy := filepath.Join(f.postDir, "10-go-quality.sh")
+	legacyBody := "#!/bin/sh\n# pre-0.2 monolithic hook — user edits must survive\ngo test ./...\n"
+	if err := os.WriteFile(legacy, []byte(legacyBody), 0o755); err != nil {
+		t.Fatalf("write legacy hook: %v", err)
+	}
+
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+
+	got, err := os.ReadFile(legacy)
+	if err != nil {
+		t.Fatalf("read post-install: %v", err)
+	}
+	if string(got) != legacyBody {
+		t.Errorf("installer clobbered legacy post-hook:\nwant:\n%s\ngot:\n%s", legacyBody, string(got))
+	}
+}
+
 func TestInstallTaskHooks_UnknownProject_PrintsManualInstructionsAndExitsClean(t *testing.T) {
 	newHookInstallFixture(t, false, false)
 	// No go.mod, no package.json — installer must not error out; it prints a

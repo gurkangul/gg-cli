@@ -114,7 +114,8 @@ gg message send "Rate limiter is unblocked — proceeding with in-memory backend
 | `gg record "..."` | Record a decision with reason + tags |
 | `gg task create "..."` | Create a task |
 | `gg task list` | List tasks (filtered by priority/status) |
-| `gg task done TASK-ID "summary"` | Mark task done |
+| `gg task done TASK-ID "summary"` | Mark task done (runs `.gg/hooks/pre-task-done.d/*.sh` first — exit 7 if a hook rejects) |
+| `gg doctor --install-task-hooks` | Install verify-gate starter hooks (Go / Node / Bun auto-detect) |
 | `gg search "..."` | Semantic search across all brain records |
 | `gg status` | Project status (tasks + recent decisions) |
 | `gg status render` | Write STATUS.md from live brain state |

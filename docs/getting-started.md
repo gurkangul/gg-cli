@@ -80,8 +80,24 @@ gg index --lang go
 gg index --lang go --changed
 ```
 
+## Install the verify gate
+
+Once you start marking tasks done, have `gg` reject the transition when
+the build or tests fail. Install the starter hooks with one command:
+
+```
+gg doctor --install-task-hooks
+```
+
+It auto-detects Go (`go.mod`) and Node / Bun (`package.json`), walks
+monorepos up to depth 3, and never overwrites existing scripts. On
+failure, `gg task done` exits `7`, emits a parseable NDJSON line on
+stderr, and broadcasts to all agents — see
+[verify-gate.md](verify-gate.md) for the full contract.
+
 ## Next steps
 
 - [Command reference](commands.md)
 - [Architecture overview](architecture.md)
+- [Verify gate contract](verify-gate.md)
 - [Project roadmap](roadmap.md)

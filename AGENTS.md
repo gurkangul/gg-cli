@@ -272,7 +272,11 @@ should treat this as "fix the failure and retry", not as a normal error.
   matching starter script into `.gg/hooks/pre-task-done.d/` (and the Go lint
   post-hook where applicable). Existing files are preserved; re-running the
   installer never overwrites your edits. Commit the generated scripts so
-  every agent inherits the gate.
+  every agent inherits the gate. Walk behaviour: monorepo subdirectories are
+  scanned up to `doctor.hook_install.max_depth` (default 3); `node_modules`,
+  `.git`, `.gg`, `.gsd`, `vendor`, `dist`, `build`, `_bmad*` are pruned by
+  default. Symbolic links are not followed — write a manual hook if your
+  layout depends on symlinked subprojects.
 - Manual override — any executable `*.sh` in the same directory works. The
   simplest example that blocks `done` when the build is broken:
   `.gg/hooks/pre-task-done.d/10-build.sh` containing `#!/bin/sh` + your build

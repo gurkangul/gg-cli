@@ -76,16 +76,21 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Shared per-command config cache — loaded lazily on first use so the
+	// pre-hook and post-hook paths don't each pay for a separate
+	// config.GGDir + config.Load pair.
+	hookCfg := &hookConfig{}
+
 	// Pre-done verify gate: run .gg/hooks/pre-task-done.d/*.sh BEFORE touching
 	// the store. Always strict by design — a gate that passes on failure is
 	// not a gate. If any hook fails, the task stays in its current state and
 	// we return ExitVerifyFailed so agents can detect the blocked transition.
-	if rej := runPreTaskDoneHooks(cmd, taskID, summary); rej != nil {
-		emitVerifyFailedEvent(cmd.ErrOrStderr(), rej)
-		notifyVerifyFailure(cmd, rej) // best-effort: no-op if store unreachable or opted out
+	if rej := runGateHooks(cmd, hookCfg, "pre-task-done", taskID, summary); rej != nil {
+		emitGateFailedEvent(cmd.ErrOrStderr(), rej)
+		notifyGateFailure(cmd, rej) // best-effort: no-op if store unreachable or opted out
 		return &ExitError{
 			Code:    ExitVerifyFailed,
-			Message: fmt.Sprintf("pre-task-done hook rejected %s: %s exited %d (task state unchanged)", rej.TaskID, rej.Hook, rej.ExitCode),
+			Message: fmt.Sprintf("%s hook rejected %s: %s exited %d (task state unchanged)", rej.Gate, rej.TaskID, rej.Hook, rej.ExitCode),
 		}
 	}
 
@@ -103,7 +108,7 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	}
 
 	// Run post-done hooks from .gg/hooks/task-done.d/*.sh (warn-only unless hooks.strict=true).
-	if hookErr := runTaskDoneHooks(cmd, taskID, summary); hookErr != nil {
+	if hookErr := runTaskDoneHooks(cmd, hookCfg, taskID, summary); hookErr != nil {
 		return hookErr // only non-nil when strict mode is enabled and a hook failed
 	}
 
@@ -130,10 +135,11 @@ func taskHookEnv(taskID, summary, projectID string) map[string]string {
 	}
 }
 
-// verifyRejection describes a pre-task-done hook failure with enough detail
-// to emit a structured stderr event and a cross-agent notification. Every
-// field must be stable — agents program against it.
-type verifyRejection struct {
+// gateRejection describes a gate hook failure with enough detail to emit a
+// structured stderr event and a cross-agent notification. Every field is part
+// of the public contract — agents program against it, so changes here are
+// schema changes.
+type gateRejection struct {
 	TaskID   string
 	Gate     string // which gate directory triggered this (e.g. "pre-task-done")
 	Hook     string
@@ -141,23 +147,89 @@ type verifyRejection struct {
 	Stderr   string // trimmed hook output, capped
 }
 
-// runPreTaskDoneHooks runs .gg/hooks/pre-task-done.d/*.sh BEFORE the task state
-// is updated. Strict is hardcoded true — this is a gate, not an advisory. On
-// success returns nil. On failure returns a *verifyRejection carrying the
-// first failing hook's name, exit code, and (trimmed) output. Caller is
+// verifyRejection is the legacy alias for gateRejection kept as a type alias so
+// external consumers (and tests written against the earlier name) don't break
+// while the rest of the codebase migrates to the generic name.
+type verifyRejection = gateRejection
+
+// gateFailedPayload is the ordered NDJSON contract for verify_failed events.
+// Struct layout matches the stderr field order so a human reading a log sees
+// event → gate → task → hook → exit → ts → detail instead of alphabetical
+// soup. JSON tags are stable public API.
+type gateFailedPayload struct {
+	Event  string `json:"event"`
+	Gate   string `json:"gate"`
+	Task   string `json:"task"`
+	Hook   string `json:"hook"`
+	Exit   int    `json:"exit"`
+	TS     string `json:"ts"`
+	Detail string `json:"detail"`
+}
+
+// debugLog writes a one-line diagnostic to stderr when GG_DEBUG=1. Used to
+// surface silent fall-through paths (e.g. a gate skipping because .gg config
+// could not be loaded) without spamming normal sessions.
+func debugLog(w io.Writer, format string, args ...any) {
+	if os.Getenv("GG_DEBUG") != "1" {
+		return
+	}
+	fmt.Fprintf(w, "[gg debug] "+format+"\n", args...)
+}
+
+// hookConfig memoises one config.GGDir + config.Load pair per command so the
+// pre-hook and post-hook paths in runTaskDone do not each pay the cost of a
+// second disk read. Zero value is a fresh, not-yet-loaded cache.
+type hookConfig struct {
+	loaded bool
+	ggDir  string
+	cfg    *config.Config
+	err    error
+}
+
+// load returns the cached (ggDir, cfg) pair, loading on first call. When load
+// fails the error is memoised too so repeat calls are cheap no-ops.
+func (c *hookConfig) load(w io.Writer) (string, *config.Config, error) {
+	if c.loaded {
+		return c.ggDir, c.cfg, c.err
+	}
+	c.loaded = true
+	c.ggDir, c.err = config.GGDir()
+	if c.err != nil {
+		debugLog(w, "hookConfig.load: GGDir failed (%v)", c.err)
+		return "", nil, c.err
+	}
+	c.cfg, c.err = config.Load()
+	if c.err != nil {
+		debugLog(w, "hookConfig.load: config.Load failed (%v)", c.err)
+	}
+	return c.ggDir, c.cfg, c.err
+}
+
+// runGateHooks runs a task-lifecycle gate's *.sh scripts in lexicographic
+// order. Strict is hardcoded true — a gate that passes on failure is not a
+// gate. On success returns nil; on failure returns a *gateRejection carrying
+// the first failing hook's name, exit code, and (trimmed) output. Caller is
 // responsible for emitting the NDJSON event, notifying other agents, and
 // returning the ExitVerifyFailed ExitError.
-func runPreTaskDoneHooks(cmd *cobra.Command, taskID, summary string) *verifyRejection {
-	ggDir, err := config.GGDir()
-	if err != nil {
-		return nil // no .gg — no gate, fall through (caller will hit a config error anyway)
+//
+// gateName becomes the .d/ directory suffix (e.g. "pre-task-done" resolves to
+// .gg/hooks/pre-task-done.d/) and rides along in the rejection payload so the
+// stderr event identifies which gate fired. Future gates (pre-review-approve,
+// pre-bug-fix, …) reuse the same runner.
+//
+// cache is the per-command hookConfig memo. Pass a non-nil empty cache for
+// standalone calls (tests), or share one across the whole runTaskDone flow to
+// avoid duplicate disk reads.
+func runGateHooks(cmd *cobra.Command, cache *hookConfig, gateName, taskID, summary string) *gateRejection {
+	if cache == nil {
+		cache = &hookConfig{}
 	}
-	cfg, err := config.Load()
+	ggDir, cfg, err := cache.load(cmd.ErrOrStderr())
 	if err != nil {
-		return nil
+		return nil // no .gg or unreadable config — gate skipped, caller will hit the same error downstream
 	}
 
-	results, hookErr := hooks.RunHooks(ggDir, "pre-task-done", taskHookEnv(taskID, summary, cfg.ProjectID), true, cmd.ErrOrStderr())
+	results, hookErr := hooks.RunHooks(ggDir, gateName, taskHookEnv(taskID, summary, cfg.ProjectID), true, cmd.ErrOrStderr())
 	if hookErr == nil {
 		return nil
 	}
@@ -175,29 +247,35 @@ func runPreTaskDoneHooks(cmd *cobra.Command, taskID, summary string) *verifyReje
 		failed = results[len(results)-1]
 	}
 
-	return &verifyRejection{
+	return &gateRejection{
 		TaskID:   taskID,
-		Gate:     "pre-task-done",
+		Gate:     gateName,
 		Hook:     failed.Script,
 		ExitCode: failed.ExitCode,
 		Stderr:   truncateHookOutput(failed.Output, 400),
 	}
 }
 
-// emitVerifyFailedEvent writes a single NDJSON line to stderr describing the
-// rejection. The contract is deliberately boring: one line, stable keys, no
-// wrapping struct — any agent can parse it with `tail -1` + `jq`. Human text
-// continues to print alongside via hooks.RunHooks itself and the caller's
-// ExitError message; this line is purely for machine consumption.
-func emitVerifyFailedEvent(w io.Writer, rej *verifyRejection) {
-	payload := map[string]any{
-		"event":  "verify_failed",
-		"gate":   rej.Gate,
-		"task":   rej.TaskID,
-		"hook":   rej.Hook,
-		"exit":   rej.ExitCode,
-		"ts":     time.Now().UTC().Format(time.RFC3339),
-		"detail": rej.Stderr,
+// runPreTaskDoneHooks is the pre-task-done specialisation retained for
+// backward compatibility. Prefer runGateHooks for any new gate.
+func runPreTaskDoneHooks(cmd *cobra.Command, taskID, summary string) *gateRejection {
+	return runGateHooks(cmd, nil, "pre-task-done", taskID, summary)
+}
+
+// emitGateFailedEvent writes a single NDJSON line to stderr describing the
+// rejection. The contract is deliberately boring: one line, stable keys,
+// human-friendly field order — any agent can parse it with `tail -1` + `jq`.
+// Human text continues to print alongside via hooks.RunHooks itself and the
+// caller's ExitError message; this line is purely for machine consumption.
+func emitGateFailedEvent(w io.Writer, rej *gateRejection) {
+	payload := gateFailedPayload{
+		Event:  "verify_failed",
+		Gate:   rej.Gate,
+		Task:   rej.TaskID,
+		Hook:   rej.Hook,
+		Exit:   rej.ExitCode,
+		TS:     time.Now().UTC().Format(time.RFC3339),
+		Detail: rej.Stderr,
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -206,16 +284,20 @@ func emitVerifyFailedEvent(w io.Writer, rej *verifyRejection) {
 	fmt.Fprintln(w, string(b))
 }
 
+// emitVerifyFailedEvent is the legacy wrapper; callers should migrate to
+// emitGateFailedEvent.
+func emitVerifyFailedEvent(w io.Writer, rej *gateRejection) { emitGateFailedEvent(w, rej) }
+
 // messageSender is a narrow interface for injecting the notification path in tests.
 type messageSender interface {
 	SendMessage(ctx context.Context, msg store.Message) error
 }
 
-// sendVerifyFailure is the testable core of cross-agent notification. It builds
-// the message content and calls sender.SendMessage; errors are swallowed because
-// a failed notification must never mask the underlying verify failure.
-func sendVerifyFailure(ctx context.Context, sender messageSender, rej *verifyRejection) {
-	content := fmt.Sprintf("%s blocked at verify: %s (exit %d)", rej.TaskID, rej.Hook, rej.ExitCode)
+// sendGateFailure is the testable core of cross-agent notification. It builds
+// the message content and calls sender.SendMessage; errors are swallowed
+// because a failed notification must never mask the underlying verify failure.
+func sendGateFailure(ctx context.Context, sender messageSender, rej *gateRejection) {
+	content := fmt.Sprintf("%s blocked at %s: %s (exit %d)", rej.TaskID, rej.Gate, rej.Hook, rej.ExitCode)
 	if rej.Stderr != "" {
 		content += " — " + firstLine(rej.Stderr)
 	}
@@ -227,12 +309,18 @@ func sendVerifyFailure(ctx context.Context, sender messageSender, rej *verifyRej
 	})
 }
 
-// notifyVerifyFailure broadcasts a "verify-gate" message so parallel agents
-// and the next session's `gg status` surface the rejection. Best-effort: any
+// sendVerifyFailure is the legacy alias retained for the current test-suite
+// naming; prefer sendGateFailure for new call sites.
+func sendVerifyFailure(ctx context.Context, sender messageSender, rej *gateRejection) {
+	sendGateFailure(ctx, sender, rej)
+}
+
+// notifyGateFailure broadcasts a "verify-gate" message so parallel agents and
+// the next session's `gg status` surface the rejection. Best-effort: any
 // error (store down, config missing) is swallowed — a failed notification
 // must never mask the underlying verify failure. Skipped when
 // GG_NO_AUTO_NOTIFY=1 (useful in CI / tests / reentrant hook scripts).
-func notifyVerifyFailure(cmd *cobra.Command, rej *verifyRejection) {
+func notifyGateFailure(cmd *cobra.Command, rej *gateRejection) {
 	if os.Getenv("GG_NO_AUTO_NOTIFY") == "1" {
 		return
 	}
@@ -272,14 +360,15 @@ func firstLine(s string) string {
 
 // runTaskDoneHooks runs .gg/hooks/task-done.d/*.sh scripts after a task is
 // marked done. Returns a non-nil error only in strict mode when a hook fails.
-func runTaskDoneHooks(cmd *cobra.Command, taskID, summary string) error {
-	ggDir, err := config.GGDir()
+// cache may be nil for standalone use (tests); runTaskDone passes the shared
+// cache to avoid loading config twice per command.
+func runTaskDoneHooks(cmd *cobra.Command, cache *hookConfig, taskID, summary string) error {
+	if cache == nil {
+		cache = &hookConfig{}
+	}
+	ggDir, cfg, err := cache.load(cmd.ErrOrStderr())
 	if err != nil {
 		return nil // can't find .gg — skip silently
-	}
-	cfg, err := config.Load()
-	if err != nil {
-		return nil
 	}
 
 	_, hookErr := hooks.RunHooks(ggDir, "task-done", taskHookEnv(taskID, summary, cfg.ProjectID), cfg.Hooks.Strict, cmd.ErrOrStderr())

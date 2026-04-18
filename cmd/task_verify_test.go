@@ -251,7 +251,7 @@ func TestRunTaskDoneHooks_FiresAfterPreHookSuccess(t *testing.T) {
 	// Call runTaskDoneHooks directly — no store required.
 	cmd := &cobra.Command{}
 	cmd.SetErr(&bytes.Buffer{})
-	if err := runTaskDoneHooks(cmd, "TASK-001", "test summary"); err != nil {
+	if err := runTaskDoneHooks(cmd, nil, "TASK-001", "test summary"); err != nil {
 		t.Fatalf("runTaskDoneHooks: %v", err)
 	}
 

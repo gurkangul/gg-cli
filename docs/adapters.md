@@ -58,6 +58,23 @@ gg check
 chmod +x .git/hooks/pre-push
 ```
 
+## gg task-lifecycle hooks
+
+Independent of git, `gg` runs its own lifecycle hooks from `.gg/hooks/`:
+
+- **`.gg/hooks/pre-task-done.d/*.sh`** — blocking verify gate. Every
+  script runs in lexicographic order before `gg task done` writes the
+  new state. Any non-zero exit aborts the transition with exit code `7`
+  and keeps the task in its current state. Install starter scripts with
+  `gg doctor --install-task-hooks` (auto-detects Go / Node / Bun).
+- **`.gg/hooks/task-done.d/*.sh`** — advisory post-hook. Runs after the
+  store update succeeds; warnings only unless `hooks.strict: true` is
+  set in `.gg/config.yaml`.
+
+Hooks receive `GG_TASK_ID`, `GG_TASK_SUMMARY`, `GG_PROJECT_ID`, and
+`GG_ACTOR` as env vars. Full contract and the NDJSON rejection envelope
+are documented in [verify-gate.md](verify-gate.md).
+
 ## Backend alternatives
 
 The default backend is local Docker. For shared team setups, point `config.yaml` at a remote Qdrant/Memgraph instance.

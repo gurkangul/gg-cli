@@ -45,6 +45,35 @@ type HooksConfig struct {
 	Strict bool `yaml:"strict"`
 }
 
+// DoctorConfig controls `gg doctor` behaviour.
+type DoctorConfig struct {
+	// HookInstall tunes `gg doctor --install-task-hooks`.
+	HookInstall HookInstallConfig `yaml:"hook_install"`
+}
+
+// HookInstallConfig tunes the `--install-task-hooks` manifest walk.
+type HookInstallConfig struct {
+	// SkipDirs lists directory names the walk must never descend into
+	// when hunting for go.mod / package.json. Leave empty to use the
+	// built-in default (DefaultHookInstallSkipDirs).
+	SkipDirs []string `yaml:"skip_dirs"`
+	// MaxDepth caps how deep the walk recurses from the project root.
+	// Zero means "use the built-in default" (3).
+	MaxDepth int `yaml:"max_depth"`
+}
+
+// DefaultHookInstallSkipDirs lists directory names the installer never
+// descends into by default. Users can override / extend via config.yaml.
+var DefaultHookInstallSkipDirs = []string{
+	".git", ".gg", ".gsd",
+	"node_modules", "vendor", "dist", "build",
+	"_bmad", "_bmad-output",
+}
+
+// DefaultHookInstallMaxDepth is the default recursion cap (covers
+// packages/<x>/manifest and services/<x>/manifest without a full tree walk).
+const DefaultHookInstallMaxDepth = 3
+
 // TelemetryConfig controls local-only usage telemetry.
 type TelemetryConfig struct {
 	// Enabled must be explicitly set to true to activate telemetry (opt-in).
@@ -62,6 +91,7 @@ type Config struct {
 	Memgraph  MemgraphConfig  `yaml:"memgraph"`
 	Hooks     HooksConfig     `yaml:"hooks"`
 	Telemetry TelemetryConfig `yaml:"telemetry"`
+	Doctor    DoctorConfig    `yaml:"doctor"`
 }
 
 func DefaultConfig() *Config {

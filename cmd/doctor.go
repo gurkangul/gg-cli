@@ -895,24 +895,32 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// hookInstallMaxDepth caps how deep the installer walks when hunting for
-// manifests. 3 covers the common monorepo patterns (packages/<x>/package.json,
-// services/<x>/go.mod) without paying the price of a full tree walk.
-const hookInstallMaxDepth = 3
+// hookInstallSettings resolves the installer's walk depth and skip-directory
+// list. Precedence:
+//
+//  1. Values explicitly set in .gg/config.yaml under doctor.hook_install.
+//  2. Built-in defaults (config.DefaultHookInstallSkipDirs /
+//     config.DefaultHookInstallMaxDepth).
+//
+// Returning a lookup map keeps the per-directory prune check O(1).
+func hookInstallSettings() (skipDirs map[string]bool, maxDepth int) {
+	maxDepth = config.DefaultHookInstallMaxDepth
+	dirs := config.DefaultHookInstallSkipDirs
 
-// hookInstallSkipDirs are directories the manifest walk never descends into.
-// Either expensive (node_modules), irrelevant (tool state), or protected
-// from accidental scan (the user's own VCS).
-var hookInstallSkipDirs = map[string]bool{
-	".git":         true,
-	".gg":          true,
-	".gsd":         true,
-	"node_modules": true,
-	"vendor":       true,
-	"dist":         true,
-	"build":        true,
-	"_bmad":        true,
-	"_bmad-output": true,
+	if cfg, err := config.Load(); err == nil {
+		if cfg.Doctor.HookInstall.MaxDepth > 0 {
+			maxDepth = cfg.Doctor.HookInstall.MaxDepth
+		}
+		if len(cfg.Doctor.HookInstall.SkipDirs) > 0 {
+			dirs = cfg.Doctor.HookInstall.SkipDirs
+		}
+	}
+
+	skipDirs = make(map[string]bool, len(dirs))
+	for _, d := range dirs {
+		skipDirs[d] = true
+	}
+	return skipDirs, maxDepth
 }
 
 // runDoctorInstallTaskHooks installs the verify-gate pre-task-done hooks and
@@ -920,7 +928,8 @@ var hookInstallSkipDirs = map[string]bool{
 // the project — including nested monorepo packages. Existing files are
 // preserved so repeated runs are idempotent.
 //
-// Detection (relative paths up to hookInstallMaxDepth deep):
+// Detection (relative paths up to config.DefaultHookInstallMaxDepth, overridable
+// via doctor.hook_install.max_depth in .gg/config.yaml):
 //   - go.mod         → Go pre-hook (blocking: build + vet + test) + legacy post hook
 //   - package.json   → Node/Bun/pnpm/Yarn pre-hook (install + typecheck + build + test)
 //
@@ -949,11 +958,12 @@ func runDoctorInstallTaskHooks() error {
 		return fmt.Errorf("create post-hook dir: %w", mkErr)
 	}
 
-	goDirs, err := findManifestDirs(projectRoot, "go.mod")
+	skipDirs, maxDepth := hookInstallSettings()
+	goDirs, err := findManifestDirs(projectRoot, "go.mod", skipDirs, maxDepth)
 	if err != nil {
 		return fmt.Errorf("walk for go.mod: %w", err)
 	}
-	nodeDirs, err := findManifestDirs(projectRoot, "package.json")
+	nodeDirs, err := findManifestDirs(projectRoot, "package.json", skipDirs, maxDepth)
 	if err != nil {
 		return fmt.Errorf("walk for package.json: %w", err)
 	}
@@ -996,7 +1006,7 @@ func runDoctorInstallTaskHooks() error {
 	}
 
 	if len(goDirs) == 0 && len(nodeDirs) == 0 {
-		fmt.Println("No go.mod or package.json found in the project (walked up to depth", hookInstallMaxDepth, ").")
+		fmt.Println("No go.mod or package.json found in the project (walked up to depth", maxDepth, ").")
 		fmt.Println("Write your own verify gate at:")
 		fmt.Printf("  %s/10-custom-verify.sh\n", preDir)
 		fmt.Println("Env vars your script receives: GG_TASK_ID, GG_TASK_SUMMARY, GG_PROJECT_ID, GG_ACTOR.")
@@ -1019,11 +1029,18 @@ func runDoctorInstallTaskHooks() error {
 	return nil
 }
 
-// findManifestDirs walks root up to hookInstallMaxDepth and returns the list
-// of directories (relative to root, using '/' as separator) that contain a
-// file named manifestName. Slash-delimited "." represents the root.
-// Directories listed in hookInstallSkipDirs are pruned from the walk.
-func findManifestDirs(root, manifestName string) ([]string, error) {
+// findManifestDirs walks root up to maxDepth and returns the list of
+// directories (relative to root, using '/' as separator) that contain a file
+// named manifestName. Slash-delimited "." represents the root. Directories
+// whose base name is a key in skipDirs are pruned from the walk.
+//
+// filepath.WalkDir does not follow symbolic links, so a symlinked package
+// directory (e.g. `packages/foo -> ../../shared/foo`) is not descended into;
+// write a manual hook if your monorepo depends on symlinked subprojects.
+// Directories in skipDirs (typically including ".gg") are also pruned, so a
+// nested gg project living at `services/api/.gg/` is invisible to the outer
+// walk by design — each nested project has its own installer run.
+func findManifestDirs(root, manifestName string, skipDirs map[string]bool, maxDepth int) ([]string, error) {
 	var out []string
 	rootClean := filepath.Clean(root)
 
@@ -1045,11 +1062,11 @@ func findManifestDirs(root, manifestName string) ([]string, error) {
 				return nil
 			}
 			// Prune expensive / irrelevant directories by name.
-			if hookInstallSkipDirs[de.Name()] {
+			if skipDirs[de.Name()] {
 				return filepath.SkipDir
 			}
 			depth := len(strings.Split(filepath.ToSlash(rel), "/"))
-			if depth > hookInstallMaxDepth {
+			if depth > maxDepth {
 				return filepath.SkipDir
 			}
 			return nil

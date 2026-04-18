@@ -88,6 +88,15 @@ header "── project state ─────────────────
 
 run "gg status"
 
+header "── verify gate: 'done' is earned, not declared ─────────────────"
+
+comment "Install the verify gate (auto-detects Go / Node / Bun, walks monorepos)"
+run "gg doctor --install-task-hooks"
+
+comment "'gg task done' now runs .gg/hooks/pre-task-done.d/*.sh first — exit 7 if any check fails"
+comment "See docs/verify-gate.md for the full rejection contract (exit code + NDJSON + auto-broadcast)"
+
 printf '\n'
 printf "${GREEN}  ✓ Every agent. Same decisions. Same tasks. No re-derivation.${RESET}\n"
+printf "${DIM}    Build broken? 'done' is rejected before the store is touched.${RESET}\n"
 sleep 2.5

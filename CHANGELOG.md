@@ -40,6 +40,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `TestRecord_OriginHuman` in `internal/telemetry` now isolates `GG_AGENT` as well as `GG_ROLE`, so running the suite inside a standard agent session (`GG_AGENT=claude-code`) no longer produces a false positive failure.
 
+### Changed
+
+- Verify-gate internals renamed for gate symmetry ahead of future gates (`pre-review-approve.d`, …). `verifyRejection` kept as a type alias; `emitVerifyFailedEvent` / `sendVerifyFailure` kept as legacy wrappers. Call sites prefer the new `gateRejection`, `emitGateFailedEvent`, `sendGateFailure`, `notifyGateFailure`, and the gate-name-parameterised `runGateHooks(cmd, cache, gateName, taskID, summary)`.
+- NDJSON payload now marshalled via an explicit `gateFailedPayload` struct with stable JSON tags, so field order in stderr is `event → gate → task → hook → exit → ts → detail` instead of Go's alphabetical map ordering.
+- `gg task done` shares a single per-command config cache (`hookConfig`) between the pre-hook and post-hook paths — one `config.GGDir` + one `config.Load` per invocation instead of two.
+- Installer walk parameters moved to configuration. `.gg/config.yaml` now accepts `doctor.hook_install.skip_dirs` and `doctor.hook_install.max_depth`; defaults are still the built-in skip list + depth 3.
+
+### Documentation
+
+- `docs/verify-gate.md` — dedicated reference: contract, env vars, NDJSON schema with stability guarantees, escape valves (`GG_NO_AUTO_NOTIFY`, `GG_DEBUG`), exit codes table, and troubleshooting.
+- `docs/getting-started.md` picks up the installer one-liner in the "Install the verify gate" section.
+- `docs/ONBOARDING.md` key-commands table links `gg task done` to the gate and adds `gg doctor --install-task-hooks`.
+- `docs/adapters.md` new "gg task-lifecycle hooks" subsection distinguishes pre-done blocking from post-done advisory.
+- `docs/demo.sh` now demonstrates `gg doctor --install-task-hooks` at the end of the walkthrough.
+- `AGENTS.md` documents the monorepo walk defaults, skip-dir override, and the symlink caveat.
+
 ## [0.1.0] - 2026-04-14
 
 ### Added
