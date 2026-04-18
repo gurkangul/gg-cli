@@ -15,23 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Flags: `--role` (filter by recipient), `--event` (filter by telemetry event type), `--tag`, `--since` (ISO timestamp or relative duration), `--format ndjson|pretty`, `--no-inbox`, `--no-telemetry`.
 - stdout-pipeable: any tool that reads a line-delimited stream works without extra wiring.
 
-**`gg brain backfill` — re-embed missing brain entries**
+**`gg brain backfill` — migrate implicit Task↔Decision links to Memgraph edges**
 
-- Walks all KB entries (decisions, rejections, tasks, bugs, notes, messages) and re-queues any that have no embedding vector. Useful after Ollama model changes or a missed indexing window.
+- Scans Qdrant for implicit Task↔Decision relationships and writes them as explicit `(Decision)-[:DECIDES]->(Task)` edges in Memgraph so `gg impact` and decision-traversal queries work on older projects that predate the edge model.
+- Two sources: (1) `Decision.task_id` direct field (always migrated — unambiguous); (2) tag overlap where exactly one decision and one task share a tag (ambiguous multi-matches reported and skipped).
+- Dry-run by default — pass `--apply` to execute. Idempotent `MERGE` with `created_by=backfill_v1` tag for rollback. Post-migration audit prints counts.
 
 **`gg gsd audit` — GSD ↔ gg mirror drift detection**
 
-- Compares `.gsd/gsd.db` task state against gg tasks with a `GSD:` prefix in their title, reporting tasks present in GSD but missing from gg (or mismatched status). Integrates with `gg doctor` output style.
+- Compares `.gsd/gsd.db` task state against gg tasks whose titles contain `[GSD:<milestone>-<slice>-<task>]`, reporting tasks present in GSD but missing from gg. Exits non-zero on drift so CI can gate on mirror integrity.
 
 **Task lifecycle auto-broadcast**
 
-- `gg task create` and `gg task done` now broadcast a short summary to `all` automatically when `GG_AGENT` or `GG_ROLE` is set and `GG_NO_AUTO_NOTIFY` is unset. Parallel sessions see task state changes without manual `gg tell` calls.
+- `gg task create`, `gg task done`, and `gg task block` now broadcast a short summary to `all` automatically when `GG_AGENT` or `GG_ROLE` is set and `GG_NO_AUTO_NOTIFY` is unset. Parallel sessions see task state changes without manual `gg tell` calls.
 - `GG_NO_AUTO_NOTIFY=1` suppresses the broadcast (same escape valve as the verify-gate notify).
 
 **`gg tell` `@role` mention syntax + multi-target comma fanout**
 
 - `@role` mentions in message bodies are auto-routed to the named recipient's inbox in addition to the declared target. Inbox renders `<<@role>>` so mentions are visually distinct.
-- Comma-separated `--to` values (`gg tell "developer,qa" "..."`) fan the same message out to multiple recipients atomically.
+- Comma-separated targets in the first positional argument (`gg tell "developer,qa" "..."`) fan the same message out to multiple recipients atomically.
 
 **Claude Code PreToolUse guard**
 
