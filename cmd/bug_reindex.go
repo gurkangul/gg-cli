@@ -68,7 +68,7 @@ func runBugReindex(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("memgraph: %w", err)
 	}
-	defer gc.Close(ctx)
+	defer func() { _ = gc.Close(ctx) }()
 
 	var skipped, replayed, failed int
 	for _, b := range bugs {
