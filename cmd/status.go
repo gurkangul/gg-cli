@@ -5,11 +5,13 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/enforcement"
+	"github.com/gurkangul/gg-cli/internal/outbox"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/telemetry"
 	"github.com/gurkangul/gg-cli/internal/trace"
@@ -99,6 +101,39 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "warning: list rejections:", rejectionsErr)
 	}
 
+	// Bug counts by status — mirrors task counts so operators see defect
+	// pressure alongside work pressure. Each sub-count degrades independently.
+	bugCounts := map[string]uint64{}
+	for _, s := range []string{"open", "fixing", "fixed", "wontfix", "reopened"} {
+		n, err := d.store.CountBugs(ctx, s)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: count bugs (%s): %v\n", s, err)
+			continue
+		}
+		bugCounts[s] = n
+	}
+
+	// Outbox backlog — pending Memgraph writes from crashed gg index runs.
+	// Unbounded growth signals that `gg doctor --reconcile` is never run.
+	var outboxCount int
+	var outboxOldestAge string
+	if ggDir, ggErr := config.GGDir(); ggErr == nil {
+		if entries, obErr := outbox.List(ggDir); obErr == nil {
+			outboxCount = len(entries)
+			var oldest time.Time
+			for _, e := range entries {
+				if t, perr := time.Parse(time.RFC3339, e.CreatedAt); perr == nil {
+					if oldest.IsZero() || t.Before(oldest) {
+						oldest = t
+					}
+				}
+			}
+			if !oldest.IsZero() {
+				outboxOldestAge = time.Since(oldest).Round(time.Minute).String()
+			}
+		}
+	}
+
 	type countVal struct {
 		Pending    uint64 `json:"pending"`
 		InProgress uint64 `json:"in_progress"`
@@ -111,6 +146,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			InProgress: counts["in_progress"].n,
 			Blocked:    counts["blocked"].n,
 			Done:       counts["done"].n,
+		},
+		"bug_counts": bugCounts,
+		"outbox": map[string]any{
+			"pending":    outboxCount,
+			"oldest_age": outboxOldestAge,
 		},
 		"open_tasks":  openTasks,
 		"messages":    messages,
@@ -165,6 +205,24 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				continue
 			}
 			fmt.Printf("  %s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
+		}
+
+		// Bugs — pressure gauge. Skip silently when every count errored.
+		if bugCounts["open"]+bugCounts["fixing"]+bugCounts["reopened"]+bugCounts["fixed"]+bugCounts["wontfix"] > 0 {
+			fmt.Println("\nBUGS:")
+			fmt.Printf("  ● Open: %d  ⚙ Fixing: %d  ↻ Reopened: %d  ✓ Fixed: %d  ⊘ Wontfix: %d\n",
+				bugCounts["open"], bugCounts["fixing"], bugCounts["reopened"], bugCounts["fixed"], bugCounts["wontfix"])
+		}
+
+		// Outbox — pending Memgraph writes. Any count > 0 is a signal the
+		// reconcile loop has not run since the last crash; the oldest-age
+		// line tells the operator how stale the backlog is.
+		if outboxCount > 0 {
+			ageDetail := ""
+			if outboxOldestAge != "" {
+				ageDetail = "  (oldest: " + outboxOldestAge + " ago — run `gg doctor --reconcile`)"
+			}
+			fmt.Printf("\nOUTBOX:\n  ⏳ Pending: %d%s\n", outboxCount, ageDetail)
 		}
 
 		if messagesErr == nil {

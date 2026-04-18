@@ -130,6 +130,21 @@ func (c *Client) GetBug(ctx context.Context, bugID string) (*Bug, error) {
 	return &b, nil
 }
 
+// CountBugs returns the number of bugs with the given status; pass an empty
+// string to count all. Mirrors CountTasks so status renderers can pull a
+// cheap summary without scrolling every payload.
+func (c *Client) CountBugs(ctx context.Context, statusFilter string) (uint64, error) {
+	req := &qdrant.CountPoints{
+		CollectionName: c.collBugs(),
+	}
+	if statusFilter != "" {
+		req.Filter = &qdrant.Filter{
+			Must: []*qdrant.Condition{qdrant.NewMatchKeyword("status", statusFilter)},
+		}
+	}
+	return c.qc.Count(ctx, req)
+}
+
 func (c *Client) ListBugs(ctx context.Context, statusFilter string) ([]Bug, error) {
 	req := &qdrant.ScrollPoints{
 		CollectionName: c.collBugs(),

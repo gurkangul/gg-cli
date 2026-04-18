@@ -6,6 +6,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/outbox"
 )
 
 var checkCmd = &cobra.Command{
@@ -45,6 +48,9 @@ type checkResult struct {
 	OpenTasks       uint64 `json:"open_tasks"`
 	PendingTasks    uint64 `json:"pending_tasks"`
 	BlockedTasks    uint64 `json:"blocked_tasks"`
+	OpenBugs        uint64 `json:"open_bugs"`
+	ReopenedBugs    uint64 `json:"reopened_bugs"`
+	OutboxPending   int    `json:"outbox_pending"`
 	OpenDiscussions uint64 `json:"open_discussions"`
 	Issues          int    `json:"issues"`
 	Status          string `json:"status"` // "ok" or "issues"
@@ -84,6 +90,31 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// ── Open + reopened bugs (defect pressure before push) ─────────────────
+	openBugs, obErr := d.store.CountBugs(ctx, "open")
+	fixingBugs, fxErr := d.store.CountBugs(ctx, "fixing")
+	reopenedBugs, rbErr := d.store.CountBugs(ctx, "reopened")
+	if obErr == nil && fxErr == nil && rbErr == nil {
+		result.OpenBugs = openBugs + fixingBugs
+		result.ReopenedBugs = reopenedBugs
+		if result.OpenBugs > 0 || result.ReopenedBugs > 0 {
+			result.Issues++
+		}
+	}
+
+	// ── Outbox backlog (crashed-index writes waiting for reconcile) ─────────
+	var obxErr error
+	if ggDir, ggErr := config.GGDir(); ggErr == nil {
+		if entries, listErr := outbox.List(ggDir); listErr == nil {
+			result.OutboxPending = len(entries)
+			if result.OutboxPending > 0 {
+				result.Issues++
+			}
+		} else {
+			obxErr = listErr
+		}
+	}
+
 	if result.Issues == 0 {
 		result.Status = "ok"
 	} else {
@@ -108,6 +139,24 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintf(os.Stderr, "warn  %-30s %d unresolved\n", "open discussions", result.OpenDiscussions)
 		default:
 			fmt.Printf("  ✓ %-30s none\n", "open discussions")
+		}
+
+		switch {
+		case obErr != nil || fxErr != nil || rbErr != nil:
+			fmt.Fprintln(os.Stderr, "warning: could not query bugs")
+		case result.OpenBugs > 0 || result.ReopenedBugs > 0:
+			fmt.Fprintf(os.Stderr, "warn  %-30s %d open, %d reopened\n", "bugs", result.OpenBugs, result.ReopenedBugs)
+		default:
+			fmt.Printf("  ✓ %-30s none\n", "open bugs")
+		}
+
+		switch {
+		case obxErr != nil:
+			fmt.Fprintln(os.Stderr, "warning: could not read outbox")
+		case result.OutboxPending > 0:
+			fmt.Fprintf(os.Stderr, "warn  %-30s %d pending (run `gg doctor --reconcile`)\n", "outbox", result.OutboxPending)
+		default:
+			fmt.Printf("  ✓ %-30s empty\n", "outbox")
 		}
 
 		fmt.Println(strings.Repeat("─", 50))
