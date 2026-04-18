@@ -10,8 +10,8 @@ gg (CLI, Go)
 │   ├── <project>-rejections       gg record --stance=reject
 │   ├── <project>-tasks            gg task
 │   ├── <project>-bugs             gg bug
-│   ├── <project>-discussions      gg discuss
-│   ├── <project>-notes            gg note
+│   ├── <project>-discussions      (legacy; CLI verbs removed in v0.3)
+│   ├── <project>-notes            (legacy; CLI verbs removed in v0.3)
 │   └── <project>-messages         gg tell / gg inbox
 │
 ├── Memgraph (graph DB)            localhost:7687 (optional)

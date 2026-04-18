@@ -42,24 +42,6 @@ gg bug wontfix BUG-ID "reason"
 gg bug triage BUG-ID          # unified context bundle for fixing
 ```
 
-## Discussions
-
-```sh
-gg discuss open "topic" --detail "..."
-gg discuss list [--all]
-gg discuss get DISC-ID
-gg discuss resolve DISC-ID --via decision --summary "decided X"
-gg discuss dismiss DISC-ID --reason "superseded"
-```
-
-## Notes
-
-```sh
-gg note "observation"
-gg note list
-gg note search "topic"
-```
-
 ## Messaging
 
 ```sh

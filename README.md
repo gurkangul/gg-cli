@@ -145,27 +145,6 @@ gg status
 | `gg bug wontfix BUG-ID "reason"` | Close as won't-fix |
 | `gg bug triage BUG-ID` | Auto context bundle for fixing |
 
-### Discussions
-
-Open discussions track unresolved questions so they survive across sessions.
-
-| Command | Description |
-|---|---|
-| `gg discuss open "topic" --detail "…"` | Open a discussion |
-| `gg discuss list` | List open discussions |
-| `gg discuss resolve DISC-ID --via decision --summary "…"` | Close with a resolution |
-| `gg discuss dismiss DISC-ID --reason "…"` | Close as irrelevant/superseded |
-
-### Notes
-
-```sh
-gg note "observed X while working on TASK-NNN — might affect Y"
-gg note list
-gg note search "topic"
-```
-
-Notes are semantically searchable and have no lifecycle.
-
 ### Messaging between agents
 
 ```sh
