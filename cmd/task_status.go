@@ -107,6 +107,8 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	notifyTaskLifecycle(ctx, d.store, taskID, "done", summary)
+
 	// Run post-done hooks from .gg/hooks/task-done.d/*.sh (warn-only unless hooks.strict=true).
 	if hookErr := runTaskDoneHooks(cmd, hookCfg, taskID, summary); hookErr != nil {
 		return hookErr // only non-nil when strict mode is enabled and a hook failed
@@ -327,6 +329,28 @@ func notifyGateFailure(cmd *cobra.Command, rej *gateRejection) {
 	sendVerifyFailure(ctx, d.store, rej)
 }
 
+// notifyTaskLifecycle broadcasts a short "[actor → all] TASK-XXX <event>: detail"
+// message so parallel sessions see task lifecycle transitions in gg status without
+// a manual gg tell. Best-effort: errors are swallowed. Skipped when GG_NO_AUTO_NOTIFY=1.
+func notifyTaskLifecycle(ctx context.Context, sender messageSender, taskID, event, detail string) {
+	if os.Getenv("GG_NO_AUTO_NOTIFY") == "1" {
+		return
+	}
+	actor := os.Getenv("GG_ROLE")
+	if actor == "" {
+		actor = os.Getenv("GG_AGENT")
+	}
+	if actor == "" {
+		actor = "agent"
+	}
+	_ = sender.SendMessage(ctx, store.Message{
+		FromRole: actor,
+		ToRole:   "all",
+		Content:  taskID + " " + event + ": " + detail,
+		TaskID:   taskID,
+	})
+}
+
 // truncateHookOutput trims a hook's combined stdout+stderr to at most n bytes,
 // keeping the tail (most recent output usually carries the error) and adding a
 // leading ellipsis when truncation occurred.
@@ -439,6 +463,8 @@ func runTaskBlock(cmd *cobra.Command, args []string) error {
 	if err := d.store.UpdateTaskStatus(ctx, taskID, "blocked", reason); err != nil {
 		return err
 	}
+
+	notifyTaskLifecycle(ctx, d.store, taskID, "blocked", reason)
 
 	return printJSON(map[string]any{"id": taskID, "status": "blocked", "reason": reason}, func() {
 		fmt.Printf("⚠ %s marked as blocked: %s\n", taskID, reason)

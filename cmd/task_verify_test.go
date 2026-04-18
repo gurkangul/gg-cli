@@ -260,6 +260,69 @@ func TestRunTaskDoneHooks_FiresAfterPreHookSuccess(t *testing.T) {
 	}
 }
 
+// ── TASK-190: notifyTaskLifecycle ─────────────────────────────────────────────
+
+func TestNotifyTaskLifecycle_SendsCorrectMessage(t *testing.T) {
+	t.Setenv("GG_NO_AUTO_NOTIFY", "")
+	t.Setenv("GG_ROLE", "developer")
+	sender := &mockMessageSender{}
+	notifyTaskLifecycle(context.Background(), sender, "TASK-042", "done", "my summary")
+	if len(sender.msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(sender.msgs))
+	}
+	msg := sender.msgs[0]
+	if msg.FromRole != "developer" {
+		t.Errorf("FromRole: got %q, want developer", msg.FromRole)
+	}
+	if msg.ToRole != "all" {
+		t.Errorf("ToRole: got %q, want all", msg.ToRole)
+	}
+	if msg.TaskID != "TASK-042" {
+		t.Errorf("TaskID: got %q, want TASK-042", msg.TaskID)
+	}
+	want := "TASK-042 done: my summary"
+	if msg.Content != want {
+		t.Errorf("Content: got %q, want %q", msg.Content, want)
+	}
+}
+
+func TestNotifyTaskLifecycle_FallsBackToGGAgent(t *testing.T) {
+	t.Setenv("GG_NO_AUTO_NOTIFY", "")
+	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_AGENT", "claude-code")
+	sender := &mockMessageSender{}
+	notifyTaskLifecycle(context.Background(), sender, "TASK-001", "blocked", "reason")
+	if len(sender.msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(sender.msgs))
+	}
+	if sender.msgs[0].FromRole != "claude-code" {
+		t.Errorf("FromRole: got %q, want claude-code", sender.msgs[0].FromRole)
+	}
+}
+
+func TestNotifyTaskLifecycle_SkippedWhenOptOut(t *testing.T) {
+	t.Setenv("GG_NO_AUTO_NOTIFY", "1")
+	sender := &mockMessageSender{}
+	notifyTaskLifecycle(context.Background(), sender, "TASK-001", "done", "summary")
+	if len(sender.msgs) != 0 {
+		t.Errorf("expected no messages when GG_NO_AUTO_NOTIFY=1, got %d", len(sender.msgs))
+	}
+}
+
+func TestNotifyTaskLifecycle_DefaultActorWhenNoEnv(t *testing.T) {
+	t.Setenv("GG_NO_AUTO_NOTIFY", "")
+	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_AGENT", "")
+	sender := &mockMessageSender{}
+	notifyTaskLifecycle(context.Background(), sender, "TASK-001", "created", "some title")
+	if len(sender.msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(sender.msgs))
+	}
+	if sender.msgs[0].FromRole != "agent" {
+		t.Errorf("FromRole: got %q, want agent", sender.msgs[0].FromRole)
+	}
+}
+
 func TestFirstLine(t *testing.T) {
 	cases := []struct {
 		in   string

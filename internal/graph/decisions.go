@@ -48,6 +48,46 @@ func (c *Client) UpsertRejectsEdge(ctx context.Context, rejectingQdrantID, rejec
 	)
 }
 
+// UpsertDecidesEdgeBackfill creates or updates a (Decision)-[:DECIDES]->(Task) edge
+// and stamps created_by=backfill_v1 so it can be identified and rolled back.
+func (c *Client) UpsertDecidesEdgeBackfill(ctx context.Context, decisionQdrantID, taskQdrantID string) error {
+	return c.upsertBackfillEdge(ctx,
+		LabelDecision, decisionQdrantID,
+		LabelTask, taskQdrantID,
+		RelDecides,
+	)
+}
+
+// upsertBackfillEdge is like upsertKnowledgeEdge but also stamps created_by=backfill_v1
+// on the relationship so backfill-created edges can be identified and rolled back.
+func (c *Client) upsertBackfillEdge(
+	ctx context.Context,
+	srcLabel, srcQdrantID string,
+	dstLabel, dstQdrantID string,
+	edgeType string,
+) error {
+	_, cleanup, err := c.runQuery(ctx,
+		fmt.Sprintf(
+			"MATCH (a:%s {qdrant_id: $src_id, project_id: $pid}) "+
+				"MATCH (b:%s {qdrant_id: $dst_id, project_id: $pid}) "+
+				"MERGE (a)-[r:%s]->(b) "+
+				"SET r.project_id = $pid, r.created_at = $ts, r.created_by = $created_by",
+			srcLabel, dstLabel, edgeType,
+		),
+		map[string]any{
+			"src_id":     srcQdrantID,
+			"dst_id":     dstQdrantID,
+			"ts":         time.Now().UTC().Format(time.RFC3339),
+			"created_by": "backfill_v1",
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("upsert backfill %s edge (%s→%s): %w", edgeType, srcQdrantID, dstQdrantID, err)
+	}
+	cleanup()
+	return nil
+}
+
 // upsertKnowledgeEdge is the shared implementation for knowledge-graph cross-link edges.
 // Both endpoints are looked up by their qdrant_id within the same project_id — a
 // cross-project edge is structurally impossible because the MATCH filters on $pid.

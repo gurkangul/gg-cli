@@ -105,6 +105,8 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create task: %w", err)
 	}
 
+	notifyTaskLifecycle(ctx, d.store, id, "created", title)
+
 	return printJSON(map[string]any{"id": id, "title": title}, func() {
 		fmt.Printf("✓ Task created: %s — %s\n", id, title)
 	})

@@ -90,7 +90,7 @@ func init() {
 	brainImportCmd.Flags().BoolVar(&brainImportYes, "yes", false, "confirm destructive --wipe without interactive prompt")
 	brainImportCmd.Flags().BoolVar(&brainImportForceProjectMismatch, "force-project-mismatch", false, "allow importing a snapshot from a different project_id")
 
-	brainCmd.AddCommand(brainExportCmd, brainImportCmd, brainStatusCmd)
+	brainCmd.AddCommand(brainExportCmd, brainImportCmd, brainStatusCmd, brainBackfillCmd)
 	rootCmd.AddCommand(brainCmd)
 }
 
