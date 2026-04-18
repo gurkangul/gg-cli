@@ -258,6 +258,29 @@ func (c *Client) FileSymbols(ctx context.Context, filePath string) ([]*Node, err
 	return nodes, nil
 }
 
+// CountFileNodes returns the number of File nodes indexed for this project.
+// Returns 0 when the graph is empty (not yet indexed).
+func (c *Client) CountFileNodes(ctx context.Context) (int64, error) {
+	result, cleanup, err := c.runQuery(ctx,
+		"MATCH (f:File {project_id: $pid}) RETURN count(f) AS n",
+		nil,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("count file nodes: %w", err)
+	}
+	defer cleanup()
+
+	record, err := result.Single(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count file nodes single: %w", err)
+	}
+	n, _, err := neo4j.GetRecordValue[int64](record, "n")
+	if err != nil {
+		return 0, fmt.Errorf("count file nodes get value: %w", err)
+	}
+	return n, nil
+}
+
 // SweepProject removes ALL nodes (and their edges) belonging to this project.
 // Call this before a full re-index to ensure that nodes from a previous branch
 // or rebase don't survive as ghost symbols in the graph.

@@ -101,6 +101,11 @@ func runImpact(cmd *cobra.Command, args []string) error {
 			gctx, gcancel := withTimeout(cmd.Context())
 			defer gcancel()
 
+			// 0. Detect empty graph — Memgraph is up but nothing has been indexed yet.
+			if fileCount, fcErr := gc.CountFileNodes(gctx); fcErr == nil && fileCount == 0 {
+				result.Warnings = append(result.Warnings, "graph is empty — run 'gg index --lang <lang>' to populate it (e.g. 'gg index --lang go')")
+			}
+
 			// 1. Downstream dependents.
 			deps, depErr := gc.DependentsOf(gctx, relPath)
 			if depErr != nil {
