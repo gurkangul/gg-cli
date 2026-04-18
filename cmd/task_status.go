@@ -256,12 +256,6 @@ func runGateHooks(cmd *cobra.Command, cache *hookConfig, gateName, taskID, summa
 	}
 }
 
-// runPreTaskDoneHooks is the pre-task-done specialisation retained for
-// backward compatibility. Prefer runGateHooks for any new gate.
-func runPreTaskDoneHooks(cmd *cobra.Command, taskID, summary string) *gateRejection {
-	return runGateHooks(cmd, nil, "pre-task-done", taskID, summary)
-}
-
 // emitGateFailedEvent writes a single NDJSON line to stderr describing the
 // rejection. The contract is deliberately boring: one line, stable keys,
 // human-friendly field order — any agent can parse it with `tail -1` + `jq`.
@@ -283,10 +277,6 @@ func emitGateFailedEvent(w io.Writer, rej *gateRejection) {
 	}
 	fmt.Fprintln(w, string(b))
 }
-
-// emitVerifyFailedEvent is the legacy wrapper; callers should migrate to
-// emitGateFailedEvent.
-func emitVerifyFailedEvent(w io.Writer, rej *gateRejection) { emitGateFailedEvent(w, rej) }
 
 // messageSender is a narrow interface for injecting the notification path in tests.
 type messageSender interface {
