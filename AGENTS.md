@@ -305,6 +305,41 @@ structured parsers can both react:
    never masks the verify failure. Set `GG_NO_AUTO_NOTIFY=1` to suppress the
    broadcast (CI, reentrant hook scripts, tests).
 
+## BUG FIX PRE-FLIGHT (mandatory before `gg bug fix`)
+
+Bugs regress when agents edit code without knowing the blast radius. These
+three queries take under a minute and prevent re-opening the same bug:
+
+1. `gg bug triage BUG-NNN --compact`
+   — surfaces prior decisions, rejections, and tasks semantically near this
+   bug. Read the output; if a prior fix is cited, use its approach or
+   record a rejection before diverging.
+2. For **every file** you intend to edit, before touching it:
+   ```
+   gg impact <file> --compact
+   ```
+   — lists 1-hop dependents (who imports this), exported symbols, and
+   related decisions. If a related decision constrains your approach,
+   adjust the fix.
+3. `gg search --compact "<bug keywords>"`
+   — final sanity check for prior fixes or rejected approaches on this
+   exact symptom.
+
+**Commit message footer (required).** Paste a one-line summary of each
+`gg impact` output so future triage recovers the blast radius you saw:
+```
+impact cmd/index.go:   4 deps, 12 symbols, 1 related decision (DEC-042)
+impact internal/graph: 2 deps, 8 symbols, 0 related decisions
+```
+A commit that fixes a bug without this footer fails review.
+
+**Close the loop.** After the fix lands:
+```
+gg bug fix BUG-NNN --root-cause "<one line>" "<fix summary>"
+```
+Until Bug→File graph edges ship (TASK-200), include each affected file
+path inside `--root-cause` so semantic triage can recover them later.
+
 ## MESSAGING ANOTHER AGENT
 
 When some work belongs to a different role (e.g. architect decided, developer
@@ -402,6 +437,8 @@ to capture decisions automatically. Asking first violates the contract.
 - Ask the user to run `gg` commands — you run them
 - Finish a subagent round without persisting its decisions/tasks/rejections to `gg`
 - Broadcast every step — only broadcast moments other agents genuinely need
+- Run `gg bug fix` without the BUG FIX PRE-FLIGHT section output pasted in
+  the commit footer — unobserved blast radius is how bugs keep regressing
 
 <!-- gg-managed:start -->
 ## Mandatory gg-cli Protocol (managed by gg — do not edit this block)
