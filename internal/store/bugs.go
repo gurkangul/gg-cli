@@ -364,6 +364,36 @@ func bugFromPayload(pay map[string]*qdrant.Value) Bug {
 	}
 }
 
+// SetBugReproScript attaches or replaces the repro_script field on an existing
+// bug without changing its status. Used to backfill repros on already-fixed bugs.
+func (c *Client) SetBugReproScript(ctx context.Context, bugID, reproScript string) error {
+	pointID := qdrant.NewID(pointUUIDForBugID(bugID))
+	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
+		CollectionName: c.collBugs(),
+		Ids:            []*qdrant.PointId{pointID},
+		WithPayload:    qdrant.NewWithPayloadInclude("bug_id"),
+	})
+	if err != nil {
+		return err
+	}
+	if len(existing) == 0 {
+		return fmt.Errorf("bug %s not found", bugID)
+	}
+	reproVal, _ := qdrant.NewValue(reproScript)
+	updVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
+	wait := true
+	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+		CollectionName: c.collBugs(),
+		Wait:           &wait,
+		Payload: map[string]*qdrant.Value{
+			"repro_script": reproVal,
+			"updated_at":   updVal,
+		},
+		PointsSelector: qdrant.NewPointsSelector(pointID),
+	})
+	return err
+}
+
 // ParseBugID extracts the numeric suffix from a bug ID like "BUG-001".
 func ParseBugID(id string) (int, error) {
 	if !bugIDRegex.MatchString(id) {

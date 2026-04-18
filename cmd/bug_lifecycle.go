@@ -32,6 +32,14 @@ var bugWontFixCmd = &cobra.Command{
 	RunE:  runBugWontFix,
 }
 
+var bugAttachReproCmd = &cobra.Command{
+	Use:   "attach-repro BUG-ID <repro-path>",
+	Short: "Attach a repro script to an already-fixed bug",
+	Long:  "Backfill the repro_script field on an existing bug. Path must be executable or a *_test.go file.",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runBugAttachRepro,
+}
+
 var (
 	bugRootCause    string
 	bugFixFiles     string
@@ -51,6 +59,7 @@ func init() {
 	bugCmd.AddCommand(bugFixCmd)
 	bugCmd.AddCommand(bugStartCmd)
 	bugCmd.AddCommand(bugWontFixCmd)
+	bugCmd.AddCommand(bugAttachReproCmd)
 }
 
 // validateReproPath checks that --repro names an existing file that is either
@@ -188,5 +197,33 @@ func runBugWontFix(cmd *cobra.Command, args []string) error {
 	return printJSON(map[string]any{"id": bugID, "status": "wontfix", "reason": reason, "repro_script": bugWontFixRepro}, func() {
 		fmt.Printf("– %s marked as wontfix\n", bugID)
 		fmt.Printf("  Repro: %s\n", bugWontFixRepro)
+	})
+}
+
+func runBugAttachRepro(cmd *cobra.Command, args []string) error {
+	bugID, err := requireBugID(args[0])
+	if err != nil {
+		return err
+	}
+	if err := validateReproPath(args[1]); err != nil {
+		return err
+	}
+	reproPath := args[1]
+
+	d, err := loadDeps(false)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	if err := d.store.SetBugReproScript(ctx, bugID, reproPath); err != nil {
+		return err
+	}
+
+	return printJSON(map[string]any{"id": bugID, "repro_script": reproPath}, func() {
+		fmt.Printf("✓ %s repro attached: %s\n", bugID, reproPath)
 	})
 }
