@@ -34,6 +34,7 @@ func init() {
 	bugReportCmd.Flags().StringVar(&bugTaskID, "task", "", "link to a task (e.g. TASK-042)")
 	bugReportCmd.Flags().StringVar(&bugFiles, "files", "", "comma-separated source file paths this bug affects")
 	bugReportCmd.Flags().StringVar(&bugSymbols, "symbols", "", "comma-separated symbol names this bug affects")
+	addFromFlag(bugReportCmd)
 	bugCmd.AddCommand(bugReportCmd)
 }
 
@@ -104,6 +105,7 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		TaskID:          taskID,
 		AffectedFiles:   affectedFiles,
 		AffectedSymbols: affectedSymbols,
+		By:              resolveAuthor(cmd),
 	}
 
 	id, err := d.store.ReportBug(ctx, b, vector)

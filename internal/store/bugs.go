@@ -32,6 +32,7 @@ type Bug struct {
 	AffectedSymbols []string // symbol names this bug touches (mirrors Memgraph AFFECTS edges)
 	ReopenCount     int      // number of times this bug was reopened after being fixed
 	ReopenReasons   []string // reason provided at each reopen, in order
+	By              string   // agent role or user that reported this bug
 	CreatedAt       string
 	UpdatedAt       string
 }
@@ -89,6 +90,7 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 		"affected_symbols": toAnySlice(b.AffectedSymbols),
 		"reopen_count":     float64(0),
 		"reopen_reasons":   toAnySlice(nil),
+		"by":               b.By,
 		"created_at":       b.CreatedAt,
 		"updated_at":       b.UpdatedAt,
 	})
@@ -349,6 +351,7 @@ func bugFromPayload(pay map[string]*qdrant.Value) Bug {
 		AffectedSymbols: extractStringList(pay["affected_symbols"]),
 		ReopenCount:     int(pay["reopen_count"].GetDoubleValue()),
 		ReopenReasons:   extractStringList(pay["reopen_reasons"]),
+		By:              pay["by"].GetStringValue(),
 		CreatedAt:       pay["created_at"].GetStringValue(),
 		UpdatedAt:       pay["updated_at"].GetStringValue(),
 	}

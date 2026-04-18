@@ -40,6 +40,8 @@ func init() {
 	bugFixCmd.Flags().StringVar(&bugRootCause, "root-cause", "", "root cause identified during fix")
 	bugFixCmd.Flags().StringVar(&bugFixFiles, "files", "", "comma-separated source file paths affected by this fix")
 	bugFixCmd.Flags().StringVar(&bugFixSymbols, "symbols", "", "comma-separated symbol names affected by this fix")
+	addFromFlag(bugFixCmd)
+	addFromFlag(bugWontFixCmd)
 	bugCmd.AddCommand(bugFixCmd)
 	bugCmd.AddCommand(bugStartCmd)
 	bugCmd.AddCommand(bugWontFixCmd)
