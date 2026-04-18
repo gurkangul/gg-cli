@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**`gg watch` — real-time inbox and event stream**
+
+- `gg watch` tails the project's telemetry JSONL and polls the inbox simultaneously, emitting new entries as they arrive. Designed for tmux status bars, desktop notification scripts, and agent-side monitoring loops.
+- Flags: `--role` (filter by recipient), `--event` (filter by telemetry event type), `--tag`, `--since` (ISO timestamp or relative duration), `--format ndjson|pretty`, `--no-inbox`, `--no-telemetry`.
+- stdout-pipeable: any tool that reads a line-delimited stream works without extra wiring.
+
+**`gg brain backfill` — re-embed missing brain entries**
+
+- Walks all KB entries (decisions, rejections, tasks, bugs, notes, messages) and re-queues any that have no embedding vector. Useful after Ollama model changes or a missed indexing window.
+
+**`gg gsd audit` — GSD ↔ gg mirror drift detection**
+
+- Compares `.gsd/gsd.db` task state against gg tasks with a `GSD:` prefix in their title, reporting tasks present in GSD but missing from gg (or mismatched status). Integrates with `gg doctor` output style.
+
+**Task lifecycle auto-broadcast**
+
+- `gg task create` and `gg task done` now broadcast a short summary to `all` automatically when `GG_AGENT` or `GG_ROLE` is set and `GG_NO_AUTO_NOTIFY` is unset. Parallel sessions see task state changes without manual `gg tell` calls.
+- `GG_NO_AUTO_NOTIFY=1` suppresses the broadcast (same escape valve as the verify-gate notify).
+
+**`gg tell` `@role` mention syntax + multi-target comma fanout**
+
+- `@role` mentions in message bodies are auto-routed to the named recipient's inbox in addition to the declared target. Inbox renders `<<@role>>` so mentions are visually distinct.
+- Comma-separated `--to` values (`gg tell "developer,qa" "..."`) fan the same message out to multiple recipients atomically.
+
+**Claude Code PreToolUse guard**
+
+- `gg gsd-guard` (hidden, invoked by a `PreToolUse` hook) reads the tool-call JSON from stdin and blocks `gsd_plan_*` MCP calls when `tracker.canonical: gg` is set in `.gg/config.yaml`, redirecting agents to `gg task create`.
+- Installed automatically by `gg doctor --install-agent-hooks`.
+
+**`gg init` AGENTS.md tracker governance + `gg doctor --install-agents-md`**
+
+- The `gg init` AGENTS.md template includes a `## Tracker Rules` section naming gg as canonical and listing the forbidden MCP calls.
+- `gg doctor --install-agents-md` injects the managed block into an existing project's AGENTS.md (idempotent).
+
+**UserPromptSubmit inbox drift-detection hook**
+
+- `gg doctor --install-agent-hooks` now writes a `UserPromptSubmit` hook that surfaces unread messages as agent context on every prompt via `gg inbox --peek`.
+
 ## [0.2.0] - 2026-04-18
 
 ### Added
