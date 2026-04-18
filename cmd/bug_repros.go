@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -117,8 +116,7 @@ func runBugRunRepros(cmd *cobra.Command, _ []string) error {
 	for _, r := range failed {
 		fmt.Printf("--- %s (%s) ---\n%s\n\n", r.bugID, r.path, r.output)
 	}
-	os.Exit(ExitVerifyFailed)
-	return nil
+	return &ExitError{Code: ExitVerifyFailed, Message: fmt.Sprintf("%d repro(s) failed — regression detected", len(failed))}
 }
 
 func runSingleRepro(ctx context.Context, bugID, path string) reproResult {
