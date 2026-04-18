@@ -165,7 +165,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		// Without this line an operator has no way to tell the guards are
 		// asleep. Stays at the very top so it cannot be missed.
 		if !enforcement.Enabled() {
-			fmt.Printf("⚠ guards=off  (%s=1 to enable: install-agent-hooks, gsd-guard, pre-task-done gate)\n\n", enforcement.EnvVar)
+			fmt.Printf("⚠ guards=off  (unset %s or set =on to re-enable: install-agent-hooks, gsd-guard, pre-task-done gate)\n\n", enforcement.EnvVar)
 		}
 
 		// North Star metric — one-liner at the very top so agents and humans
