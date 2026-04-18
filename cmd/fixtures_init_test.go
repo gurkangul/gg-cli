@@ -70,11 +70,6 @@ func TestInit_GitignoreIdempotent(t *testing.T) {
 		t.Fatalf("write original .gitignore: %v", err)
 	}
 
-	// Simulate the idempotency check in runInit.
-	if _, err := os.Stat(gitignorePath); err == nil {
-		// File exists — skip write (same as runInit behaviour).
-	}
-
 	data, err := os.ReadFile(gitignorePath)
 	if err != nil {
 		t.Fatalf("read .gitignore: %v", err)

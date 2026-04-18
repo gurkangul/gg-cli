@@ -82,7 +82,7 @@ func (c *codexInstaller) Install(projectRoot string, opts Options) (Result, erro
 		return res, nil
 	}
 
-	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil { //nolint:gosec
 		return res, err
 	}
 	res.Action = ActionUpdated

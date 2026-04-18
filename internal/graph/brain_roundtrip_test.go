@@ -46,7 +46,7 @@ func TestMemgraphBrainRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Skipf("Memgraph not reachable: %v", err)
 	}
-	defer c.Close(ctx)
+	defer func() { _ = c.Close(ctx) }()
 
 	hctx, hcancel := context.WithTimeout(ctx, 5*time.Second)
 	defer hcancel()
@@ -219,7 +219,7 @@ func writeNodesJSONL(t *testing.T, path string, nodes []graph.BrainNode) string 
 	if err != nil {
 		t.Fatalf("create %s: %v", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	w := bufio.NewWriter(f)
 	for _, n := range nodes {
@@ -253,7 +253,7 @@ func writeEdgesJSONL(t *testing.T, path string, edges []graph.BrainEdge) string 
 	if err != nil {
 		t.Fatalf("create %s: %v", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	w := bufio.NewWriter(f)
 	for _, e := range edges {

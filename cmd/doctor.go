@@ -730,9 +730,10 @@ func runDoctorHeal() error {
 	// ── RULES.md template-drift check ──────────────────────────────────────
 	rulesPath := filepath.Join(ggDir, "RULES.md")
 	rulesStale, rulesErr := isTemplateDrifted(rulesPath, templates.RulesMD)
-	if rulesErr != nil {
+	switch {
+	case rulesErr != nil:
 		fmt.Printf("  ⚠ RULES.md: could not read file: %v\n", rulesErr)
-	} else if rulesStale {
+	case rulesStale:
 		migrated = true
 		fmt.Println()
 		fmt.Println("RULES.md template drift detected:")
@@ -750,7 +751,7 @@ func runDoctorHeal() error {
 				fmt.Printf("  ✓ RULES.md re-rendered from template (backup: %s.bak)\n", rulesPath)
 			}
 		}
-	} else {
+	default:
 		fmt.Println("  ✓ RULES.md         (matches current template — nothing to do)")
 	}
 
@@ -887,11 +888,11 @@ func copyDir(src, dst string) error {
 		if d.IsDir() {
 			return os.MkdirAll(target, 0o700)
 		}
-		data, readErr := os.ReadFile(path)
+		data, readErr := os.ReadFile(path) //nolint:gosec
 		if readErr != nil {
 			return readErr
 		}
-		return os.WriteFile(target, data, 0o600)
+		return os.WriteFile(target, data, 0o600) //nolint:gosec
 	})
 }
 

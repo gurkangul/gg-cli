@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -197,7 +198,7 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 		if taskGetWithCtx {
 			var block bytes.Buffer
 			renderRelatedContext(&block, relCtx)
-			os.Stdout.Write(block.Bytes())
+			_, _ = os.Stdout.Write(block.Bytes())
 			if cfg, cfgErr := config.Load(); cfgErr == nil {
 				if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
 					telemetry.RecordWithContext(rtDir, "task", "", block.Len())
@@ -225,7 +226,7 @@ func fetchRelatedContext(d *deps, t *store.Task) *relatedContext {
 	}
 
 	// Use a fresh timeout so we don't share the parent's deadline.
-	ctx, cancel := withTimeout(nil)
+	ctx, cancel := withTimeout(context.Background())
 	defer cancel()
 
 	vector, err := d.embedder.Generate(ctx, query)

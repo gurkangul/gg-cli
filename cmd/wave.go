@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -95,7 +94,7 @@ func runWaveAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer g.Close(cmd.Context())
+	defer func() { _ = g.Close(cmd.Context()) }()
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
@@ -120,7 +119,7 @@ func runWaveList(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	defer g.Close(cmd.Context())
+	defer func() { _ = g.Close(cmd.Context()) }()
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
@@ -164,7 +163,7 @@ func runWaveStatus(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer g.Close(cmd.Context())
+	defer func() { _ = g.Close(cmd.Context()) }()
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
@@ -195,7 +194,7 @@ func runWaveAssign(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer g.Close(cmd.Context())
+	defer func() { _ = g.Close(cmd.Context()) }()
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
@@ -257,7 +256,7 @@ func runWaveMigrateTags(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	defer g.Close(cmd.Context())
+	defer func() { _ = g.Close(cmd.Context()) }()
 
 	written := 0
 	for _, m := range matches {
@@ -284,6 +283,3 @@ func loadGraph() (*graph.Client, error) {
 	return graph.New(&cfg.Memgraph, cfg.ProjectID)
 }
 
-func withCmdTimeout() (context.Context, context.CancelFunc) {
-	return withTimeout(context.Background())
-}

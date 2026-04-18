@@ -383,7 +383,7 @@ func (c *Client) AppendTurn(ctx context.Context, discID string, turn Turn) (size
 	if turn.At == "" {
 		turn.At = time.Now().UTC().Format(time.RFC3339)
 	}
-	newTurns := append(currentTurns, turn)
+	newTurns := append(append([]Turn(nil), currentTurns...), turn)
 
 	turnsVal, err := qdrant.NewValue(turnsToAny(newTurns))
 	if err != nil {

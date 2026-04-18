@@ -21,8 +21,8 @@ func TestIsTerminal_CallsSuccessfully(t *testing.T) {
 	_ = isTerminal(os.Stdout)
 	// A closed pipe returns false (stat fails).
 	r, w, _ := os.Pipe()
-	r.Close()
-	w.Close()
+	_ = r.Close()
+	_ = w.Close()
 	_ = isTerminal(r)
 }
 
@@ -85,8 +85,8 @@ func TestImport_InvalidGzip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create temp file: %v", err)
 	}
-	f.WriteString("this is not gzip data")
-	f.Close()
+	_, _ = f.WriteString("this is not gzip data")
+	_ = f.Close()
 
 	_, _, err = execCmd(t, "import", f.Name())
 	if err == nil {
@@ -126,13 +126,13 @@ func TestPrintJSON_JSONOutputPath(t *testing.T) {
 	fallbackCalled := false
 	err := printJSON(map[string]string{"key": "value"}, func() { fallbackCalled = true })
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = origStdout
 
 	// Drain the pipe.
 	buf := make([]byte, 256)
-	r.Read(buf) //nolint:errcheck
-	r.Close()
+	_, _ = r.Read(buf)
+	_ = r.Close()
 
 	if err != nil {
 		t.Errorf("printJSON: unexpected error: %v", err)

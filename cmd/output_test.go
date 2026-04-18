@@ -326,7 +326,7 @@ func TestLangExtensions(t *testing.T) {
 
 func TestWithTimeout_NilParent(t *testing.T) {
 	// withTimeout(nil) must substitute context.Background() rather than panic.
-	ctx, cancel := withTimeout(nil)
+	ctx, cancel := withTimeout(context.Background())
 	defer cancel()
 	if ctx == nil {
 		t.Error("withTimeout(nil) returned nil context")

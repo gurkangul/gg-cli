@@ -116,7 +116,7 @@ func checkManifestProjectID(manifestPID, currentPID string, force bool) error {
 	}
 	return fmt.Errorf(
 		"brain import: project_id mismatch\n  snapshot: %s\n  current:  %s\n"+
-			"  Use --force-project-mismatch to import across projects.",
+			"  Use --force-project-mismatch to import across projects",
 		manifestPID, currentPID,
 	)
 }
@@ -417,7 +417,7 @@ func runBrainStatus(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Print snapshot counts.
-	kindOrder := append(store.BrainKind, "chunks", "edges")
+	kindOrder := append(append([]string(nil), store.BrainKind...), "chunks", "edges")
 	countParts := []string{}
 	for _, k := range kindOrder {
 		if n := manifest.Counts[k]; n > 0 {
@@ -587,7 +587,7 @@ func fileChecksum(path string) (string, error) {
 // printBrainDryRun prints what would be written without touching the filesystem.
 func printBrainDryRun(qdrantData map[string][]any, nodes, edges []any) error {
 	fmt.Println("Dry run — would write .gg/brain/:")
-	kindOrder := append(store.BrainKind, "chunks", "edges")
+	kindOrder := append(append([]string(nil), store.BrainKind...), "chunks", "edges")
 	for _, k := range kindOrder {
 		var n int
 		switch k {
@@ -618,7 +618,7 @@ func ensureBrainPartialIgnored(ggDir string) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, _ = fmt.Fprintln(f, "brain.partial/")
 }
 
@@ -660,7 +660,7 @@ func runBrainImport(cmd *cobra.Command, _ []string) error {
 	// Schema version check.
 	if manifest.SchemaVersion != 1 {
 		return fmt.Errorf(
-			"brain import: unsupported schema version %d (this binary supports up to v1)\nUpdate gg to the latest version.",
+			"brain import: unsupported schema version %d (this binary supports up to v1) — update gg to the latest version",
 			manifest.SchemaVersion,
 		)
 	}
@@ -673,7 +673,7 @@ func runBrainImport(cmd *cobra.Command, _ []string) error {
 		}
 		if actual != expected {
 			return fmt.Errorf(
-				"brain import: checksum mismatch for %s\n  expected: %s\n  actual:   %s\nRe-run 'gg brain export' to regenerate a clean snapshot.",
+				"brain import: checksum mismatch for %s\n  expected: %s\n  actual:   %s\nRe-run 'gg brain export' to regenerate a clean snapshot",
 				fname, expected, actual,
 			)
 		}
@@ -696,7 +696,7 @@ func runBrainImport(cmd *cobra.Command, _ []string) error {
 	// 3. Dry run — just report.
 	if brainImportDryRun {
 		fmt.Println("Dry run — would import:")
-		kindOrder := append(store.BrainKind, "chunks", "edges")
+		kindOrder := append(append([]string(nil), store.BrainKind...), "chunks", "edges")
 		for _, k := range kindOrder {
 			if n := manifest.Counts[k]; n > 0 {
 				fmt.Printf("  %-20s %d records\n", k+".jsonl", n)

@@ -303,7 +303,7 @@ func TestEstimateTurnsBytes(t *testing.T) {
 		t.Errorf("estimateTurnsBytes: got %d, want > 0", size)
 	}
 	// Adding a turn must increase the estimate.
-	turns2 := append(turns, Turn{By: "pm", Text: "another turn", Role: "pm", At: "2026-01-01T01:00:00Z"})
+	turns2 := append(append([]Turn(nil), turns...), Turn{By: "pm", Text: "another turn", Role: "pm", At: "2026-01-01T01:00:00Z"})
 	if estimateTurnsBytes(turns2) <= size {
 		t.Error("estimateTurnsBytes: expected larger estimate after adding a turn")
 	}

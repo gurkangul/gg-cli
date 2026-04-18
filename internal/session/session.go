@@ -84,7 +84,7 @@ func PasteBlock(agentHint string) string {
 	var sb strings.Builder
 	sb.WriteString("I am operating inside a gg-cli enforced project.\n")
 	sb.WriteString("Before anything else:\n")
-	sb.WriteString(fmt.Sprintf("  1. export GG_AGENT=%s   # use your agent's name\n", agentHint))
+	fmt.Fprintf(&sb, "  1. export GG_AGENT=%s   # use your agent's name\n", agentHint)
 	sb.WriteString("  2. Run: gg status\n")
 	sb.WriteString("  3. Read AGENTS.md at the repo root.\n")
 	sb.WriteString("  4. From now on use gg for every decision, task, rejection,\n")
