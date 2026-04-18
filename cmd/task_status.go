@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/enforcement"
 	"github.com/gurkangul/gg-cli/internal/hooks"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
@@ -85,7 +86,13 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	// the store. Always strict by design — a gate that passes on failure is
 	// not a gate. If any hook fails, the task stays in its current state and
 	// we return ExitVerifyFailed so agents can detect the blocked transition.
-	if rej := runGateHooks(cmd, hookCfg, "pre-task-done", taskID, summary); rej != nil {
+	//
+	// Stabilization: skipped when GG_ENFORCEMENT is not set. The hook scripts
+	// stay on disk; the gate just becomes a no-op so we can measure the
+	// meta/feature ratio without verify-driven churn.
+	if !enforcement.Enabled() {
+		// intentional no-op — see internal/enforcement for the kill switch.
+	} else if rej := runGateHooks(cmd, hookCfg, "pre-task-done", taskID, summary); rej != nil {
 		emitGateFailedEvent(cmd.ErrOrStderr(), rej)
 		notifyGateFailure(cmd, rej) // best-effort: no-op if store unreachable or opted out
 		return &ExitError{

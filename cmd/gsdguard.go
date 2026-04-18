@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/enforcement"
 )
 
 var gsdGuardCmd = &cobra.Command{
@@ -40,6 +41,9 @@ var forbiddenGSDTools = []string{
 }
 
 func runGSDGuard(_ *cobra.Command, _ []string) error {
+	if !enforcement.Enabled() {
+		return nil // stabilization: guard no-ops until GG_ENFORCEMENT=1
+	}
 	// Load config — if .gg/ is not found or tracker.canonical != "gg", allow.
 	if _, err := config.FindRoot(); err != nil {
 		return nil // not a gg project, passthrough

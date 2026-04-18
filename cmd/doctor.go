@@ -18,6 +18,7 @@ import (
 	"github.com/gurkangul/gg-cli/internal/agenthooks"
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/embedding"
+	"github.com/gurkangul/gg-cli/internal/enforcement"
 	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/index/runner"
 	"github.com/gurkangul/gg-cli/internal/outbox"
@@ -133,9 +134,17 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// project. --install-agents-md is a focused alias that restricts the run
 	// to the codex (AGENTS.md) installer only.
 	if doctorInstallAgentHooks {
+		if !enforcement.Enabled() {
+			fmt.Println("gg doctor --install-agent-hooks: " + enforcement.DisabledNotice)
+			return nil
+		}
 		return runDoctorInstallAgentHooks(cmd)
 	}
 	if doctorInstallAgentsMD {
+		if !enforcement.Enabled() {
+			fmt.Println("gg doctor --install-agents-md: " + enforcement.DisabledNotice)
+			return nil
+		}
 		doctorHooksAgent = "codex"
 		return runDoctorInstallAgentHooks(cmd)
 	}
@@ -149,6 +158,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	}
 	// --install-task-hooks: write Go project task-done hook.
 	if doctorInstallTaskHooks {
+		if !enforcement.Enabled() {
+			fmt.Println("gg doctor --install-task-hooks: " + enforcement.DisabledNotice)
+			return nil
+		}
 		return runDoctorInstallTaskHooks()
 	}
 
