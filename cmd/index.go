@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -131,12 +132,9 @@ func runFullIndex(ctx context.Context, root, ggDir string, lang runner.Lang, r r
 		fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
 	} else {
 		fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
-		// State is consistent — clear the outbox entry.
-		if outboxID != "" {
-			if delErr := outbox.Delete(ggDir, outboxID); delErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: outbox delete failed: %v\n", delErr)
-			}
-		}
+		// State is consistent — clear this outbox entry and any stale entries from
+		// prior crashed runs for the same root+lang (a full reindex supersedes them).
+		sweepIndexOutbox(ggDir, root, string(lang), outboxID)
 	}
 	return nil
 }
@@ -232,13 +230,42 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 		fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
 	} else {
 		fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
-		if outboxID != "" {
-			if delErr := outbox.Delete(ggDir, outboxID); delErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: outbox delete failed: %v\n", delErr)
+		sweepIndexOutbox(ggDir, root, string(lang), outboxID)
+	}
+	return nil
+}
+
+// sweepIndexOutbox deletes all pending outbox entries for the given root+lang
+// (including currentID if non-empty). A completed index supersedes all prior
+// incomplete attempts for the same project, so there is no reason to keep them.
+func sweepIndexOutbox(ggDir, root, lang, currentID string) {
+	if currentID != "" {
+		if err := outbox.Delete(ggDir, currentID); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: outbox delete failed: %v\n", err)
+		}
+	}
+	entries, err := outbox.List(ggDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: outbox list failed: %v\n", err)
+		return
+	}
+	for _, e := range entries {
+		if e.ID == currentID {
+			continue
+		}
+		if e.Kind != "full-index" && e.Kind != "changed-index" {
+			continue
+		}
+		var p indexOutboxPayload
+		if jsonErr := json.Unmarshal(e.Payload, &p); jsonErr != nil {
+			continue
+		}
+		if p.Root == root && p.Lang == lang {
+			if delErr := outbox.Delete(ggDir, e.ID); delErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: outbox delete failed (stale entry %s): %v\n", e.ID, delErr)
 			}
 		}
 	}
-	return nil
 }
 
 // index runs the SCIP indexer and processes the output into Memgraph.
