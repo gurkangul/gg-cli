@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-18
+
 ### Added
 
 **Pre-done verify gate — turn `gg` from a notebook into a checkpoint**
@@ -42,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Verify-gate internals renamed for gate symmetry ahead of future gates (`pre-review-approve.d`, …). `verifyRejection` kept as a type alias; `emitVerifyFailedEvent` / `sendVerifyFailure` kept as legacy wrappers. Call sites prefer the new `gateRejection`, `emitGateFailedEvent`, `sendGateFailure`, `notifyGateFailure`, and the gate-name-parameterised `runGateHooks(cmd, cache, gateName, taskID, summary)`.
+- Verify-gate internals renamed for gate symmetry ahead of future gates (`pre-review-approve.d`, …). `verifyRejection` kept as a type alias and `sendVerifyFailure` kept as a one-line wrapper for test-suite continuity; unused back-compat stubs (`runPreTaskDoneHooks`, `emitVerifyFailedEvent`) were removed. Call sites prefer the new `gateRejection`, `emitGateFailedEvent`, `sendGateFailure`, `notifyGateFailure`, and the gate-name-parameterised `runGateHooks(cmd, cache, gateName, taskID, summary)`.
 - NDJSON payload now marshalled via an explicit `gateFailedPayload` struct with stable JSON tags, so field order in stderr is `event → gate → task → hook → exit → ts → detail` instead of Go's alphabetical map ordering.
 - `gg task done` shares a single per-command config cache (`hookConfig`) between the pre-hook and post-hook paths — one `config.GGDir` + one `config.Load` per invocation instead of two.
 - Installer walk parameters moved to configuration. `.gg/config.yaml` now accepts `doctor.hook_install.skip_dirs` and `doctor.hook_install.max_depth`; defaults are still the built-in skip list + depth 3.
