@@ -161,13 +161,12 @@ func TestTaskDone_PreHookFails_NoAutoNotifyStillRejects(t *testing.T) {
 	}
 }
 
-// (f) Stabilization kill-switch: when GG_ENFORCEMENT is not set, a failing
-// pre-task-done hook MUST NOT block — the gate is a no-op so only the store
-// path is exercised. Terminal error is ExitStoreDown (Qdrant unreachable),
-// never ExitVerifyFailed. Re-enable by setting GG_ENFORCEMENT=1.
+// (f) Opt-out: when GG_ENFORCEMENT=off, a failing pre-task-done hook MUST NOT
+// block — the gate is a no-op so only the store path is exercised. Terminal
+// error is ExitStoreDown (Qdrant unreachable), never ExitVerifyFailed.
+// Disable with GG_ENFORCEMENT=off (or 0/false/no).
 func TestTaskDone_PreHook_SkippedWhenEnforcementDisabled(t *testing.T) {
-	// Explicitly unset so an ambient env from the dev shell does not leak in.
-	t.Setenv("GG_ENFORCEMENT", "")
+	t.Setenv("GG_ENFORCEMENT", "off")
 	ggDir := setupGGDir(t)
 	writePreTaskDoneHook(t, ggDir, "01-fail.sh", "exit 1")
 	_, _, err := execCmd(t, "task", "done", "TASK-001", "gate disabled — should fall through")

@@ -1,27 +1,29 @@
 // Package enforcement centralises the kill-switch for gg's enforcement
 // features (agent-hook installers, PreToolUse guard, pre-task-done verify
-// gate). During the v0.3 stabilization window these features default to
-// OFF so we can measure the meta/feature ratio without the self-feeding
-// backlog loop described in the Mary-plan decision.
+// gate). Enforcement is ON by default; set GG_ENFORCEMENT=off (or 0/false/no)
+// to disable for a session.
 package enforcement
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
-// EnvVar names the opt-in environment variable callers must set to
-// re-enable enforcement during stabilization.
+// EnvVar names the opt-out environment variable callers may set to disable
+// enforcement for a session.
 const EnvVar = "GG_ENFORCEMENT"
 
 // Enabled reports whether enforcement features should run.
-// Set GG_ENFORCEMENT=1 (or "true"/"yes") to opt in.
+// Returns true by default; set GG_ENFORCEMENT=off (or 0/false/no) to disable.
 func Enabled() bool {
-	switch os.Getenv(EnvVar) {
-	case "1", "true", "TRUE", "yes", "YES", "on", "ON":
-		return true
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvVar))) {
+	case "0", "false", "no", "off":
+		return false
 	}
-	return false
+	return true
 }
 
 // DisabledNotice is the human-readable banner printed by commands that
 // no-op because enforcement is off. Kept here so every site uses the
 // same wording and the user can grep for it.
-const DisabledNotice = "enforcement disabled — set " + EnvVar + "=1 to enable (stabilization window)"
+const DisabledNotice = "enforcement disabled — set " + EnvVar + "=on (or unset) to re-enable"

@@ -44,7 +44,7 @@ var forbiddenGSDTools = []string{
 func runGSDGuard(_ *cobra.Command, _ []string) error {
 	if !enforcement.Enabled() {
 		emitGuardSkipEvent("gsd-guard")
-		return nil // stabilization: guard no-ops until GG_ENFORCEMENT=1
+		return nil // opt-out: set GG_ENFORCEMENT=off to bypass
 	}
 	// Load config — if .gg/ is not found or tracker.canonical != "gg", allow.
 	if _, err := config.FindRoot(); err != nil {

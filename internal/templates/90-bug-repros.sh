@@ -2,14 +2,14 @@
 # Regression gate: run all registered bug repro scripts before allowing task-done.
 #
 # GG_ENFORCEMENT controls behaviour:
-#   off (default) — skip entirely (soak mode)
+#   on (default)  — run and block (exit 7) on any regression
 #   warn          — run and report, but do not block
-#   on            — run and block (exit 7) on any regression
+#   off           — skip entirely
 #
 # Repro scripts are attached to fixed bugs via 'gg bug attach-repro'.
 # Each script exits 0 if the fix is still in place, non-zero on regression.
 
-MODE="${GG_ENFORCEMENT:-off}"
+MODE="${GG_ENFORCEMENT:-on}"
 
 if [ "$MODE" = "off" ]; then
   exit 0

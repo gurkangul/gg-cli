@@ -87,13 +87,9 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	// not a gate. If any hook fails, the task stays in its current state and
 	// we return ExitVerifyFailed so agents can detect the blocked transition.
 	//
-	// Stabilization: skipped when GG_ENFORCEMENT is not set. The hook scripts
-	// stay on disk; the gate just becomes a no-op so we can measure the
-	// meta/feature ratio without verify-driven churn.
+	// Opt-out: skipped when GG_ENFORCEMENT=off. Set it to opt out for a session.
 	if !enforcement.Enabled() {
-		// intentional no-op — see internal/enforcement for the kill switch.
-		// Emit an audit line so telemetry can count how often the gate
-		// was asleep while tasks were marked done.
+		// Emit an audit line so telemetry can count how often the gate was bypassed.
 		emitGuardSkipEvent("pre-task-done")
 	} else if rej := runGateHooks(cmd, hookCfg, "pre-task-done", taskID, summary); rej != nil {
 		emitGateFailedEvent(cmd.ErrOrStderr(), rej)
