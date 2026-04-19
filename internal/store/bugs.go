@@ -280,6 +280,58 @@ func (c *Client) ReopenBug(ctx context.Context, bugID, reason string) error {
 	return err
 }
 
+// BugHealthStats summarises the stability trend for a lookback window, giving
+// the rough reopen-rate signal gg audit surfaces as a quality thermometer.
+//
+// reopen_rate = Reopens / (Reopens + FreshCloses). High rates (>20%) mean the
+// team is shipping "done" that later comes back — the signature of the
+// premature-closure pattern surfaced by dogfood audit 2026-04-19.
+type BugHealthStats struct {
+	Reopens     int // total reopen transitions logged in the window
+	FreshCloses int // bugs closed (fixed|wontfix) in the window with no reopen history
+}
+
+// BugHealthStatsSince returns reopen and fresh-close counts for bugs whose
+// updated_at falls within the last sinceDays. Values are independent counts
+// (Reopens increments on reopen; FreshCloses increments on initial close) so
+// the caller computes the ratio and applies thresholds.
+//
+// sinceDays <= 0 is treated as 7.
+func (c *Client) BugHealthStatsSince(ctx context.Context, sinceDays int) (BugHealthStats, error) {
+	if sinceDays <= 0 {
+		sinceDays = 7
+	}
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+		CollectionName: c.collBugs(),
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	})
+	if err != nil {
+		return BugHealthStats{}, err
+	}
+	cutoff := time.Now().UTC().Add(-time.Duration(sinceDays) * 24 * time.Hour)
+	var stats BugHealthStats
+	for _, p := range points {
+		pay := p.GetPayload()
+		updatedAt := pay["updated_at"].GetStringValue()
+		t, parseErr := time.Parse(time.RFC3339, updatedAt)
+		if parseErr != nil || t.Before(cutoff) {
+			continue
+		}
+		status := pay["status"].GetStringValue()
+		rc := int(pay["reopen_count"].GetDoubleValue())
+		if rc > 0 {
+			stats.Reopens += rc
+		}
+		// A "fresh close" is a bug that reached fixed/wontfix without having
+		// been reopened. Reopened-then-fixed bugs are counted as reopens only
+		// so the ratio captures the cost of getting it right the second time.
+		if rc == 0 && (status == "fixed" || status == "wontfix") {
+			stats.FreshCloses++
+		}
+	}
+	return stats, nil
+}
+
 // BugReopenStats returns the total reopen count across all bugs updated within
 // the past 7 days, plus a breakdown by top-level directory from affected_files.
 func (c *Client) BugReopenStats(ctx context.Context) (total int, byDir map[string]int, err error) {
