@@ -18,13 +18,15 @@ import (
 )
 
 var contextCmd = &cobra.Command{
-	Use:   `context "topic"`,
-	Short: "Fetch a unified context bundle for a topic",
+	Use:   `context [topic]`,
+	Short: "Fetch a unified context bundle for a topic or task",
 	Long: `Searches decisions, rejections, tasks, and discussions for the given topic
 using semantic similarity and returns a bundled context package for agent consumption.
 
-Phase 2 will add Memgraph structural queries (affected files/symbols).`,
-	Args: cobra.ExactArgs(1),
+Use --for-task TASK-NNN to get a task-scoped context bundle: the task itself,
+its dependencies, and semantically related decisions/rejections, useful for
+resuming work after a conversation compaction.`,
+	Args: cobra.RangeArgs(0, 1),
 	RunE: runContext,
 }
 
@@ -33,6 +35,7 @@ var contextIncludeResolved bool
 var contextFullTranscript bool
 var contextCompact bool
 var contextBudget int
+var contextForTask string
 
 func init() {
 	contextCmd.Flags().Uint64Var(&contextLimit, "limit", 5, "max results per collection")
@@ -40,6 +43,7 @@ func init() {
 	contextCmd.Flags().BoolVar(&contextFullTranscript, "full", false, "print full deliberation transcript for each discussion")
 	contextCmd.Flags().BoolVar(&contextCompact, "compact", false, "emit one line per item — drops reasons/details/transcripts to preserve agent context window")
 	contextCmd.Flags().IntVar(&contextBudget, "budget", 0, "token budget: emit P1 items first, drop lower-priority tiers when over budget (0 = no limit; implies --compact)")
+	contextCmd.Flags().StringVar(&contextForTask, "for-task", "", "task-scoped rehydration: fetch the task, its dependencies, and related decisions/rejections")
 	rootCmd.AddCommand(contextCmd)
 }
 
@@ -162,6 +166,12 @@ type contextPayload struct {
 const contextCacheKind = "context"
 
 func runContext(cmd *cobra.Command, args []string) error {
+	if contextForTask != "" {
+		return runContextForTask(cmd, contextForTask)
+	}
+	if len(args) == 0 {
+		return fmt.Errorf("topic argument required (or use --for-task TASK-NNN)")
+	}
 	query, err := requireNonEmpty("topic", args[0])
 	if err != nil {
 		return err
@@ -421,6 +431,184 @@ func serveContextFromCache(cmd *cobra.Command, query string) error {
 	}
 	// Pass banner as a warning and cachedAt so --json consumers see the stale signal.
 	return printContextBundle(cmd, query, bundle, []string{banner}, cachedAt)
+}
+
+// taskContextBundle holds the result of a --for-task query.
+type taskContextBundle struct {
+	anchor  store.Task
+	deps    []store.Task // tasks listed in anchor.DependsOn
+	bundle  contextBundle
+}
+
+// runContextForTask fetches the anchor task, its DependsOn dependencies, and
+// semantically related decisions/rejections, then renders a compact resumption bundle.
+func runContextForTask(cmd *cobra.Command, taskID string) error {
+	d, err := loadDepsReadOnly(true)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	if d.qdrantDown {
+		return fmt.Errorf("qdrant unreachable — cannot fetch task context (no fallback for --for-task)")
+	}
+
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	anchor, err := d.store.GetTask(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("task %s: %w", taskID, err)
+	}
+
+	// Fetch dependency tasks in parallel.
+	var deps []store.Task
+	if len(anchor.DependsOn) > 0 {
+		type result struct {
+			t   *store.Task
+			err error
+		}
+		ch := make(chan result, len(anchor.DependsOn))
+		for _, depID := range anchor.DependsOn {
+			depID := depID
+			go func() {
+				t, err := d.store.GetTask(ctx, depID)
+				ch <- result{t, err}
+			}()
+		}
+		for range anchor.DependsOn {
+			r := <-ch
+			if r.err == nil {
+				deps = append(deps, *r.t)
+			}
+		}
+	}
+
+	// Build semantic query from the anchor task's title and detail.
+	queryText := anchor.Title
+	if anchor.Detail != "" {
+		queryText += " " + anchor.Detail
+	}
+
+	vector, err := d.embedder.Generate(ctx, queryText)
+	if err != nil {
+		return fmt.Errorf("generate embedding: %w", err)
+	}
+
+	var bundle contextBundle
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		bundle.decisions, bundle.decErr = d.store.SearchDecisions(ctx, vector, contextLimit)
+	}()
+	go func() {
+		defer wg.Done()
+		bundle.rejections, bundle.rejErr = d.store.SearchRejections(ctx, vector, contextLimit)
+	}()
+	wg.Wait()
+
+	// Boost decisions whose TaskID matches the anchor or whose tags overlap.
+	anchorTags := make(map[string]bool, len(anchor.Tags))
+	for _, tag := range anchor.Tags {
+		anchorTags[tag] = true
+	}
+	bundle.decisions = boostRelatedDecisions(bundle.decisions, anchor.ID, anchorTags)
+
+	tb := taskContextBundle{anchor: *anchor, deps: deps, bundle: bundle}
+
+	var errs []string
+	if bundle.decErr != nil {
+		errs = append(errs, fmt.Sprintf("decisions: %v", bundle.decErr))
+	}
+	if bundle.rejErr != nil {
+		errs = append(errs, fmt.Sprintf("rejections: %v", bundle.rejErr))
+	}
+
+	return printJSON(map[string]any{
+		"task":       anchor,
+		"deps":       deps,
+		"decisions":  bundle.decisions,
+		"rejections": bundle.rejections,
+		"warnings":   errs,
+	}, func() {
+		renderForTask(cmd.OutOrStdout(), tb, errs)
+	})
+}
+
+// boostRelatedDecisions moves decisions whose TaskID matches the anchor or
+// whose tags overlap to the front without duplicating them.
+func boostRelatedDecisions(decisions []store.Decision, anchorID string, anchorTags map[string]bool) []store.Decision {
+	var pinned, rest []store.Decision
+	for _, dec := range decisions {
+		if dec.TaskID == anchorID {
+			pinned = append(pinned, dec)
+			continue
+		}
+		for _, tag := range dec.Tags {
+			if anchorTags[tag] {
+				pinned = append(pinned, dec)
+				goto next
+			}
+		}
+		rest = append(rest, dec)
+	next:
+	}
+	return append(pinned, rest...)
+}
+
+// renderForTask prints the for-task context bundle.
+func renderForTask(w io.Writer, tb taskContextBundle, errs []string) {
+	a := tb.anchor
+	fmt.Fprintf(w, "FOR-TASK CONTEXT: %s — %s\n", a.ID, compactTrim(a.Title, 70))
+	fmt.Fprintf(w, "  Status: %s | Priority: %s\n", a.Status, a.Priority)
+	if a.Detail != "" {
+		fmt.Fprintf(w, "  Detail: %s\n", compactTrim(a.Detail, 120))
+	}
+	if len(a.Tags) > 0 {
+		fmt.Fprintf(w, "  Tags: %s\n", strings.Join(a.Tags, ", "))
+	}
+	fmt.Fprintln(w, strings.Repeat("─", 60))
+
+	if len(tb.deps) > 0 {
+		fmt.Fprintf(w, "\nDEPENDENCIES (%d):\n", len(tb.deps))
+		for _, dep := range tb.deps {
+			fmt.Fprintf(w, "  %s %s  %s (%s)\n",
+				taskStatusIcon(dep.Status), dep.ID, compactTrim(dep.Title, 60), dep.Priority)
+		}
+	}
+
+	if len(tb.bundle.decisions) > 0 {
+		fmt.Fprintf(w, "\nRELATED DECISIONS (%d):\n", len(tb.bundle.decisions))
+		for _, dec := range tb.bundle.decisions {
+			suffix := ""
+			if dec.TaskID != "" {
+				suffix = " →" + dec.TaskID
+			}
+			fmt.Fprintf(w, "  D  %s  %s%s\n",
+				shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth), suffix)
+		}
+	}
+
+	if len(tb.bundle.rejections) > 0 {
+		fmt.Fprintf(w, "\nRELATED REJECTIONS (%d):\n", len(tb.bundle.rejections))
+		for _, r := range tb.bundle.rejections {
+			suffix := ""
+			if r.TaskID != "" {
+				suffix = " →" + r.TaskID
+			}
+			fmt.Fprintf(w, "  R  %s  %s%s\n",
+				shortDate(r.CreatedAt), compactTrim(r.Approach, compactLineWidth), suffix)
+		}
+	}
+
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "  %d decisions  %d rejections  %d deps\n",
+		len(tb.bundle.decisions), len(tb.bundle.rejections), len(tb.deps))
+
+	if len(errs) > 0 {
+		fmt.Fprintf(w, "\nWarnings:\n  %s\n", strings.Join(errs, "\n  "))
+	}
 }
 
 // shortDate returns the first 10 characters of an RFC3339 timestamp (YYYY-MM-DD).
