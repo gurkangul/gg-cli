@@ -122,6 +122,25 @@ type TasksConfig struct {
 	VerifierSeparation bool `yaml:"verifier_separation"`
 }
 
+// AuditThresholdsConfig configures the numeric thresholds used by `gg audit health`.
+// All fields have built-in defaults; override in .gg/config.yaml under audit.thresholds.
+type AuditThresholdsConfig struct {
+	// ReopenRateWarn is the reopen-rate fraction above which gg audit health
+	// emits a "stabilize before adding" warning. Default 0.20 (20%).
+	ReopenRateWarn float64 `yaml:"reopen_rate_warn"`
+	// ReopenRateFreeze is the reopen-rate fraction above which gg audit health
+	// emits a "freeze new features" recommendation. Default 0.40 (40%).
+	ReopenRateFreeze float64 `yaml:"reopen_rate_freeze"`
+	// SurfacePressureP95 is the p95 distinct-files-per-fix count above which
+	// gg audit health emits a "centralize common state" warning. Default 3.
+	SurfacePressureP95 int `yaml:"surface_pressure_p95"`
+}
+
+// AuditConfig groups all `gg audit` behaviour knobs.
+type AuditConfig struct {
+	Thresholds AuditThresholdsConfig `yaml:"thresholds"`
+}
+
 // TrackerConfig declares which task-tracker is canonical for this project.
 type TrackerConfig struct {
 	// Canonical names the tracker agents must use. Set to "gg" to activate
@@ -156,6 +175,7 @@ type Config struct {
 	Tracker   TrackerConfig   `yaml:"tracker"`
 	Bugs      BugsConfig      `yaml:"bugs"`
 	Tasks     TasksConfig     `yaml:"tasks"`
+	Audit     AuditConfig     `yaml:"audit"`
 }
 
 func DefaultConfig() *Config {

@@ -368,6 +368,73 @@ func (c *Client) BugReopenStats(ctx context.Context) (total int, byDir map[strin
 	return total, byDir, nil
 }
 
+// SurfacePressureStats summarises how many distinct files each bug fix touched,
+// used by `gg audit health` to detect scattered-state patterns.
+type SurfacePressureStats struct {
+	P95FilesPerFix int // 95th-percentile of distinct files touched per fixed bug
+	Median         int // median of the same distribution
+	SampleSize     int // number of fixed bugs with at least one affected_file recorded
+}
+
+// SurfacePressureSince computes file-spread statistics for bugs whose
+// updated_at falls within the last sinceDays and whose status is "fixed" or
+// "wontfix". Bugs with no affected_files are excluded from the sample (they
+// predate the --root-cause file convention). sinceDays <= 0 defaults to 7.
+func (c *Client) SurfacePressureSince(ctx context.Context, sinceDays int) (SurfacePressureStats, error) {
+	if sinceDays <= 0 {
+		sinceDays = 7
+	}
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+		CollectionName: c.collBugs(),
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	})
+	if err != nil {
+		return SurfacePressureStats{}, err
+	}
+	cutoff := time.Now().UTC().Add(-time.Duration(sinceDays) * 24 * time.Hour)
+	var counts []int
+	for _, p := range points {
+		pay := p.GetPayload()
+		status := pay["status"].GetStringValue()
+		if status != "fixed" && status != "wontfix" {
+			continue
+		}
+		updatedAt := pay["updated_at"].GetStringValue()
+		t, parseErr := time.Parse(time.RFC3339, updatedAt)
+		if parseErr != nil || t.Before(cutoff) {
+			continue
+		}
+		files := extractStringList(pay["affected_files"])
+		if len(files) == 0 {
+			continue
+		}
+		counts = append(counts, len(files))
+	}
+	if len(counts) == 0 {
+		return SurfacePressureStats{}, nil
+	}
+	sort.Ints(counts)
+	return SurfacePressureStats{
+		P95FilesPerFix: percentile95(counts),
+		Median:         counts[len(counts)/2],
+		SampleSize:     len(counts),
+	}, nil
+}
+
+// percentile95 returns the 95th-percentile value from a sorted integer slice
+// using the nearest-rank method: rank = ceil(0.95 * n).
+func percentile95(sorted []int) int {
+	if len(sorted) == 0 {
+		return 0
+	}
+	// Integer ceiling of 0.95*n without importing math.
+	rank := (len(sorted)*95 + 99) / 100
+	if rank > len(sorted) {
+		rank = len(sorted)
+	}
+	return sorted[rank-1]
+}
+
 // topLevelDir returns the first path component of a slash-separated path.
 // Returns empty string for bare filenames with no directory component.
 func topLevelDir(path string) string {

@@ -23,6 +23,28 @@ memgraph:
 # bugs:
 #   require_broken_ref: true
 
+# tasks.require_ready_for_live: opt-in gate that refuses `gg task done` unless
+# the task first transitions to ready_for_live via `gg task ready-for-live`.
+# Pair with verifier_separation to enforce that a different role from the one
+# that set ready_for_live must close the task (blocks single-actor premature
+# closure — the TASK-200→207 class of failure). Default false for back-compat.
+#
+# tasks:
+#   require_ready_for_live: true
+#   verifier_separation: true
+
+# audit.thresholds: tune when `gg audit health` emits warnings. All values
+# have built-in defaults shown below; override only what you need to change.
+# reopen_rate_warn:      fraction >20% → "stabilize before adding" warning
+# reopen_rate_freeze:    fraction >40% → "freeze new features" recommendation
+# surface_pressure_p95:  p95 distinct files/fix >3 → "centralize common state" warning
+#
+# audit:
+#   thresholds:
+#     reopen_rate_warn: 0.20
+#     reopen_rate_freeze: 0.40
+#     surface_pressure_p95: 3
+
 # tracker.canonical: declare gg as the sole task tracker for this project.
 # When set to "gg", the Claude Code PreToolUse guard blocks
 # mcp__gsd-workflow__gsd_plan_* calls and redirects agents to gg task create.
