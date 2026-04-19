@@ -37,6 +37,28 @@ func TestParseSinceFlag(t *testing.T) {
 	}
 }
 
+func TestFilterGapsFiles(t *testing.T) {
+	prefixes := []string{"docs/cli/", "testdata/", "_bmad"}
+	files := []string{
+		"cmd/audit.go",
+		"docs/cli/gg.md",
+		"testdata/regression/bug-001.sh",
+		"internal/store/tasks.go",
+		"_bmad/artifacts.md",
+		"docs/architecture.md", // docs/ but not docs/cli/ — should pass through
+	}
+	got := filterGapsFiles(files, prefixes)
+	want := []string{"cmd/audit.go", "internal/store/tasks.go", "docs/architecture.md"}
+	if len(got) != len(want) {
+		t.Fatalf("filterGapsFiles: got %v, want %v", got, want)
+	}
+	for i, g := range got {
+		if g != want[i] {
+			t.Errorf("filterGapsFiles[%d] = %q, want %q", i, g, want[i])
+		}
+	}
+}
+
 func TestFileIsCovered(t *testing.T) {
 	corpus := []string{
 		"task about cmd/audit.go refactoring the session window logic",

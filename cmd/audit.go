@@ -41,9 +41,22 @@ var (
 	auditFlagSessionID string
 	auditFlagFile      string
 
-	auditGapsSince   string
-	auditGapsCompact bool
+	auditGapsSince      string
+	auditGapsCompact    bool
+	auditGapsIncludeAll bool
 )
+
+// gapsDefaultSkipPrefixes are path prefixes excluded from coverage reporting
+// by default because they contain auto-generated or test-only files that
+// cannot meaningfully be referenced in gg tasks/decisions.
+var gapsDefaultSkipPrefixes = []string{
+	"docs/cli/",    // auto-generated CLI reference docs
+	"testdata/",    // regression test fixtures
+	"_bmad",        // BMAD agent planning artifacts
+	"seed/",        // demo seed data
+	".gsd/",        // GSD planning workspace
+	".claude/",     // Claude config artifacts
+}
 
 var auditGapsCmd = &cobra.Command{
 	Use:   "gaps",
@@ -80,6 +93,7 @@ func init() {
 
 	auditGapsCmd.Flags().StringVar(&auditGapsSince, "since", "7d", "look back window (e.g. 7d, 14d, 30d)")
 	auditGapsCmd.Flags().BoolVar(&auditGapsCompact, "compact", false, "one line per gap — no coverage details")
+	auditGapsCmd.Flags().BoolVar(&auditGapsIncludeAll, "include-all", false, "include auto-gen and test dirs (docs/cli, testdata, _bmad, seed)")
 
 	auditCmd.AddCommand(auditTrackCmd, auditReportCmd, auditGapsCmd)
 	rootCmd.AddCommand(auditCmd)
@@ -297,6 +311,24 @@ func fileIsCovered(file string, corpus []string) bool {
 	return false
 }
 
+// filterGapsFiles removes files whose path starts with any of the given prefixes.
+func filterGapsFiles(files, skipPrefixes []string) []string {
+	out := files[:0:len(files)]
+	for _, f := range files {
+		skip := false
+		for _, p := range skipPrefixes {
+			if strings.HasPrefix(f, p) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 func runAuditGaps(cmd *cobra.Command, _ []string) error {
 	since, err := parseSinceFlag(auditGapsSince)
 	if err != nil {
@@ -315,6 +347,10 @@ func runAuditGaps(cmd *cobra.Command, _ []string) error {
 	if len(files) == 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "No commits found in the last %s.\n", auditGapsSince)
 		return nil
+	}
+
+	if !auditGapsIncludeAll {
+		files = filterGapsFiles(files, gapsDefaultSkipPrefixes)
 	}
 
 	d, err := loadDepsReadOnly(false)
