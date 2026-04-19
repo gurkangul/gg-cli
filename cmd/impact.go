@@ -72,7 +72,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("find project root: %w", err)
 	}
-	relPath, ok := normalizeProjectPath(projRoot, rawArg)
+	relPath, ok := normalizeProjectPath(projRoot, "", rawArg)
 	if !ok {
 		return fmt.Errorf("path %q is outside project root %q", rawArg, projRoot)
 	}

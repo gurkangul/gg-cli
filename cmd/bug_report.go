@@ -49,7 +49,7 @@ func normalizeBugFiles(paths []string) []string {
 	}
 	out := make([]string, 0, len(paths))
 	for _, p := range paths {
-		if rel, ok := normalizeProjectPath(root, p); ok {
+		if rel, ok := normalizeProjectPath(root, "", p); ok {
 			out = append(out, rel)
 		}
 		// paths outside the project root are silently dropped

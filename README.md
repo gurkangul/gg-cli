@@ -163,6 +163,13 @@ gg index --lang python
 
 Supported indexers: `scip-go`, `scip-typescript`, `scip-python`.
 
+**Monorepos.** If the language manifest (`go.mod`, `package.json`,
+`pyproject.toml`) is not at the project root, `gg index` walks up to
+`doctor.hook_install.max_depth` (default `3`) subdirectories and runs the
+SCIP indexer once per discovered module. Stored paths are always relative
+to the project root, so `gg impact lift-cli/cmd/foo.go` works whether or
+not `lift-cli/` is the Go module root.
+
 ### Keeping agent context small
 
 gg output grows with the knowledge base; on mature projects a single `gg
