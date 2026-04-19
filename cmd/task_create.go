@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"regexp"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -131,9 +134,34 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create task: %w", err)
 	}
 
+	upsertTaskGraphNode(cmd, ctx, id, title)
+
 	notifyTaskLifecycle(ctx, d.store, id, "created", title)
 
 	return printJSON(map[string]any{"id": id, "title": title}, func() {
 		fmt.Printf("✓ Task created: %s — %s\n", id, title)
 	})
+}
+
+// upsertTaskGraphNode mirrors the Qdrant Task write into Memgraph so that
+// `gg impact` and graph traversals see every task, not only ones later
+// referenced by `gg record --implements`. Failures are non-fatal: Qdrant is
+// the source of truth; Memgraph is a derived view rebuildable via
+// `gg brain backfill`. Matches the pattern in cmd/record.go:writeGraphEdges.
+func upsertTaskGraphNode(cmd *cobra.Command, ctx context.Context, id, title string) {
+	cfg, err := config.Load()
+	if err != nil || cfg.Memgraph.URI == "" {
+		return
+	}
+
+	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph init failed (%v) — Task node not created for %s\n", err, id)
+		return
+	}
+	defer func() { _ = gc.Close(ctx) }()
+
+	if uErr := gc.UpsertTaskNode(ctx, id, title); uErr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph Task node upsert failed for %s: %v\n", id, uErr)
+	}
 }
