@@ -64,10 +64,24 @@ type HookInstallConfig struct {
 
 // DefaultHookInstallSkipDirs lists directory names the installer never
 // descends into by default. Users can override / extend via config.yaml.
+// Framework build-artifact dirs are pruned so emitted `package.json`
+// manifests inside bundle output (e.g. Nuxt's web/.output/server) do not
+// get wired as pre-task-done hooks — a broken workspace there blocks every
+// `gg task done` via npm ci -w failure (BUG-017).
 var DefaultHookInstallSkipDirs = []string{
 	".git", ".gg", ".gsd",
 	"node_modules", "vendor", "dist", "build",
 	"_bmad", "_bmad-output",
+	// Framework build outputs (carry synthetic package.json files):
+	".output",     // Nuxt / Nitro
+	".next",       // Next.js
+	".vercel",     // Vercel framework output
+	".svelte-kit", // SvelteKit
+	".astro",      // Astro
+	".turbo",      // Turborepo
+	".nuxt",       // Nuxt dev cache
+	".cache",      // Remix / generic tool cache
+	"out",         // Next.js export target
 }
 
 // DefaultHookInstallMaxDepth is the default recursion cap (covers

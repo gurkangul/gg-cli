@@ -272,6 +272,57 @@ func TestInstallTaskHooks_SkipsNodeModulesAndBuildArtifacts(t *testing.T) {
 	}
 }
 
+// Regression for BUG-017: Nuxt's bundled build output emits a synthetic
+// `web/.output/server/package.json`. Before the fix, the installer treated
+// that path as a real Node workspace and wrote a pre-task-done hook that
+// later broke every `gg task done` with an `npm ci -w` workspace error.
+// Modern framework build dirs (.output, .next, .vercel, .svelte-kit, .astro,
+// .turbo, .nuxt, .cache, out) must be pruned from the walk.
+func TestInstallTaskHooks_SkipsFrameworkBuildArtifacts_BUG017(t *testing.T) {
+	f := newHookInstallFixture(t, false, true /*root package.json — a legit Node project*/)
+	// Drop synthetic package.json files into each framework build output dir
+	// so the installer has a chance to walk into them.
+	artifactDirs := []string{
+		"web/.output/server",
+		"web/.next/standalone",
+		".vercel/output/functions",
+		".svelte-kit/output/server",
+		".astro/server",
+		".turbo/daemon",
+		".nuxt/dist",
+		".cache/build",
+		"out/server",
+	}
+	for _, sub := range artifactDirs {
+		dir := filepath.Join(f.root, sub)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", sub, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"build-artifact","private":true}`), 0o644); err != nil {
+			t.Fatalf("write synthetic package.json in %s: %v", sub, err)
+		}
+	}
+
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+
+	// The only legit Node hook should be the root-level one — nothing slugified
+	// after a framework build dir.
+	entries, _ := os.ReadDir(f.preDir)
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.Contains(name, "node-verify") {
+			continue
+		}
+		for _, bad := range []string{".output", ".next", ".vercel", ".svelte-kit", ".astro", ".turbo", ".nuxt", ".cache", "out-"} {
+			if strings.Contains(name, bad) {
+				t.Errorf("installer reached a framework build artifact: %s", name)
+			}
+		}
+	}
+}
+
 // ── wrapLegacyPostHook unit tests ─────────────────────────────────────────────
 
 func TestWrapLegacyPostHook_SubdirInjectsCDAndSingleShebang(t *testing.T) {
