@@ -1,6 +1,10 @@
 package templates
 
-import _ "embed"
+import (
+	"crypto/sha256"
+	_ "embed"
+	"fmt"
+)
 
 //go:embed docker-compose.yaml
 var DockerCompose string
@@ -31,3 +35,27 @@ var SmokeE2EHook string
 
 //go:embed makefile-test-tiers.mk
 var MakefileTestTiers string
+
+// ArtifactSHAs returns a map of artifact key → SHA256 of the bundled template.
+// Keys are paths relative to .gg/ (e.g. "RULES.md",
+// "hooks/pre-task-done.d/05-smoke-e2e.sh"). This is the canonical set of
+// artifacts that gg manages; gg doctor --sync-artifacts compares it against
+// .gg/installed.json to surface drift.
+func ArtifactSHAs() map[string]string {
+	entries := map[string]string{
+		"RULES.md":                               RulesMD,
+		"AGENTS.md":                              AgentsMD,
+		"hooks/pre-task-done.d/05-smoke-e2e.sh": SmokeE2EHook,
+		"hooks/task-done.d/90-bug-repros.sh":     BugReprosHook,
+		"hooks/pre-task-done.d/10-go-verify.sh":  PreTaskDoneGoHook,
+		"hooks/pre-task-done.d/10-node-verify.sh": PreTaskDoneNodeHook,
+		"hooks/task-done.d/80-task-done-go.sh":   TaskDoneGoHook,
+		"templates/makefile-test-tiers.mk":       MakefileTestTiers,
+	}
+	out := make(map[string]string, len(entries))
+	for k, v := range entries {
+		h := sha256.Sum256([]byte(v))
+		out[k] = fmt.Sprintf("%x", h)
+	}
+	return out
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/agenthooks"
+	"github.com/gurkangul/gg-cli/internal/artifacts"
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/embedding"
 	"github.com/gurkangul/gg-cli/internal/enforcement"
@@ -52,6 +53,8 @@ var (
 	doctorWipeBrain         bool
 	doctorWipeBrainYes      bool
 	doctorInstallTaskHooks  bool
+	doctorSyncArtifacts     bool
+	doctorSyncApply         bool
 )
 
 func init() {
@@ -77,6 +80,10 @@ func init() {
 		"install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)")
 	doctorCmd.Flags().BoolVar(&doctorInstallAgentsMD, "install-agents-md", false,
 		"inject the gg tracker-rules managed block into AGENTS.md (idempotent; alias for --install-agent-hooks --agent codex)")
+	doctorCmd.Flags().BoolVar(&doctorSyncArtifacts, "sync-artifacts", false,
+		"compare .gg/installed.json against the current CLI templates and show a drift table")
+	doctorCmd.Flags().BoolVar(&doctorSyncApply, "apply", false,
+		"with --sync-artifacts: re-install drifted or missing artifacts")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -164,6 +171,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		}
 		return runDoctorInstallTaskHooks()
 	}
+	// --sync-artifacts: compare installed.json vs current CLI templates.
+	if doctorSyncArtifacts {
+		return runDoctorSyncArtifacts(doctorSyncApply)
+	}
 
 	fmt.Println("GG Doctor")
 	fmt.Println(strings.Repeat("─", 50))
@@ -201,11 +212,17 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	fmt.Println("\nOutbox (index pipeline crash-safety):")
 	doctorCheckOutbox(report)
 
+	// Artifact drift check (advisory — does not count as a problem).
+	driftCount := doctorCheckArtifactDrift()
+
 	// Summary
 	fmt.Println()
 	fmt.Println(strings.Repeat("─", 50))
 	if report.problems == 0 {
 		fmt.Println("All checks passed.")
+		if driftCount > 0 {
+			fmt.Printf("  ⚠ %d artifact(s) drifted from CLI templates — run `gg doctor --sync-artifacts` to inspect\n", driftCount)
+		}
 		fmt.Println()
 		fmt.Println("Paste this into your AI agent's chat (works for any agent):")
 		fmt.Println()
@@ -217,6 +234,134 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 	return fmt.Errorf("%d problem(s) found — fix the issues above and re-run `gg doctor`", report.problems)
+}
+
+// doctorCheckArtifactDrift reads installed.json and counts drifted/missing
+// artifacts. Returns 0 when the manifest is missing (not yet initialized).
+func doctorCheckArtifactDrift() int {
+	root, err := config.FindRoot()
+	if err != nil {
+		return 0
+	}
+	ggDir := filepath.Join(root, ".gg")
+	m, err := artifacts.Read(ggDir)
+	if err != nil || len(m.Artifacts) == 0 {
+		return 0
+	}
+	current := templates.ArtifactSHAs()
+	entries := artifacts.Diff(m, current)
+	n := 0
+	for _, e := range entries {
+		if e.Status != "ok" {
+			n++
+		}
+	}
+	return n
+}
+
+// runDoctorSyncArtifacts implements `gg doctor --sync-artifacts [--apply]`.
+func runDoctorSyncArtifacts(apply bool) error {
+	root, err := config.FindRoot()
+	if err != nil {
+		return fmt.Errorf("not inside a gg project: %w", err)
+	}
+	ggDir := filepath.Join(root, ".gg")
+	m, err := artifacts.Read(ggDir)
+	if err != nil {
+		return fmt.Errorf("read installed.json: %w", err)
+	}
+	current := templates.ArtifactSHAs()
+	entries := artifacts.Diff(m, current)
+
+	fmt.Println("Artifact Drift Report")
+	fmt.Println(strings.Repeat("─", 60))
+	fmt.Printf("  %-46s  %s\n", "Artifact", "Status")
+	fmt.Println(strings.Repeat("─", 60))
+
+	drifted := 0
+	for _, e := range entries {
+		marker := "✓"
+		if e.Status == "drifted" {
+			marker = "~"
+			drifted++
+		} else if e.Status == "missing" {
+			marker = "?"
+			drifted++
+		}
+		fmt.Printf("  %s %-44s  %s\n", marker, e.Key, e.Status)
+	}
+	fmt.Println(strings.Repeat("─", 60))
+
+	if drifted == 0 {
+		fmt.Println("All artifacts up to date.")
+		return nil
+	}
+	fmt.Printf("%d artifact(s) need attention.\n", drifted)
+
+	if !apply {
+		fmt.Println("Run with --apply to re-install drifted artifacts.")
+		return nil
+	}
+
+	applied := 0
+	for _, e := range entries {
+		if e.Status == "ok" {
+			continue
+		}
+		if err := syncArtifactFile(ggDir, e.Key); err != nil {
+			fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", e.Key, err)
+			continue
+		}
+		if err := artifacts.Record(ggDir, e.Key, e.Current); err != nil {
+			fmt.Fprintf(os.Stderr, "  ✗ record %s: %v\n", e.Key, err)
+			continue
+		}
+		fmt.Printf("  ✓ restored %s\n", e.Key)
+		applied++
+	}
+	fmt.Printf("%d artifact(s) restored.\n", applied)
+	return nil
+}
+
+// syncArtifactFile writes the current CLI template content for key to
+// <ggDir>/<key>, creating parent directories as needed.
+func syncArtifactFile(ggDir, key string) error {
+	content, ok := artifactContent(key)
+	if !ok {
+		return fmt.Errorf("unknown artifact key %q", key)
+	}
+	path := filepath.Join(ggDir, filepath.FromSlash(key))
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	perm := os.FileMode(0o644)
+	if strings.HasSuffix(key, ".sh") {
+		perm = 0o755
+	}
+	return os.WriteFile(path, []byte(content), perm) //nolint:gosec
+}
+
+// artifactContent returns the bundled template body for a given key.
+func artifactContent(key string) (string, bool) {
+	switch key {
+	case "RULES.md":
+		return templates.RulesMD, true
+	case "AGENTS.md":
+		return templates.AgentsMD, true
+	case "hooks/pre-task-done.d/05-smoke-e2e.sh":
+		return templates.SmokeE2EHook, true
+	case "hooks/task-done.d/90-bug-repros.sh":
+		return templates.BugReprosHook, true
+	case "hooks/pre-task-done.d/10-go-verify.sh":
+		return templates.PreTaskDoneGoHook, true
+	case "hooks/pre-task-done.d/10-node-verify.sh":
+		return templates.PreTaskDoneNodeHook, true
+	case "hooks/task-done.d/80-task-done-go.sh":
+		return templates.TaskDoneGoHook, true
+	case "templates/makefile-test-tiers.mk":
+		return templates.MakefileTestTiers, true
+	}
+	return "", false
 }
 
 // runDoctorInstallAgentHooks is the subcommand dispatched by
@@ -1087,6 +1232,10 @@ func runDoctorInstallTaskHooks() error {
 		return nil
 	}
 
+	// Record installed artifacts in .gg/installed.json so `gg doctor --sync-artifacts`
+	// can detect drift when the CLI is upgraded.
+	recordTaskHookArtifacts(ggDir)
+
 	if installed == 0 {
 		fmt.Println("All detected hooks already present — nothing to do (remove files manually to reinstall).")
 		return nil
@@ -1100,6 +1249,22 @@ func runDoctorInstallTaskHooks() error {
 	fmt.Println()
 	fmt.Println("Edit the scripts freely — they ship as starting points, not contracts.")
 	return nil
+}
+
+// recordTaskHookArtifacts stamps .gg/installed.json with the current CLI
+// template SHAs for all task-hook artifacts. Called after install so that
+// `gg doctor --sync-artifacts` knows what version was installed.
+// Errors are silently swallowed — manifest drift is advisory, never fatal.
+func recordTaskHookArtifacts(ggDir string) {
+	current := templates.ArtifactSHAs()
+	m, err := artifacts.Read(ggDir)
+	if err != nil {
+		return
+	}
+	for k, sha := range current {
+		m.Artifacts[k] = sha
+	}
+	_ = artifacts.Write(ggDir, m)
 }
 
 // findManifestDirs walks root up to maxDepth and returns the list of

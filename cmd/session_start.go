@@ -7,7 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	gg "github.com/gurkangul/gg-cli"
+	"github.com/gurkangul/gg-cli/internal/changelog"
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/projectstate"
 	"github.com/gurkangul/gg-cli/internal/session"
 )
 
@@ -44,6 +47,8 @@ func init() {
 	sessionStartCmd.Flags().StringVar(&sessionStartAgent, "agent", "",
 		"agent name (claude-code, cursor, aider, codex, ...) — overrides $GG_AGENT")
 	rootCmd.AddCommand(sessionStartCmd)
+	// Inject CHANGELOG.md content so the parser has it at runtime.
+	changelog.SetContent(gg.ChangelogRaw)
 }
 
 func runSessionStart(cmd *cobra.Command, _ []string) error {
@@ -62,13 +67,20 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	if root, err := config.FindRoot(); err == nil {
 		br.ProjectRoot = root
 	}
+	var loadedCfg *config.Config
 	if cfg, err := config.Load(); err == nil {
 		br.ProjectID = cfg.ProjectID
+		loadedCfg = cfg
 	}
 
 	if err := br.Render(os.Stdout); err != nil {
 		return err
 	}
+
+	// Version-delta notice: compare last_seen_cli_version to current version.
+	// Best-effort — failures are silently swallowed so a missing state file
+	// never disrupts the session.
+	emitVersionDelta(loadedCfg)
 
 	// Inline `gg status` so the briefing carries the full current-state
 	// snapshot the agent would otherwise have to fetch separately. runStatus
@@ -79,6 +91,56 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(os.Stderr, "warning: gg status failed: %v\n", err)
 	}
 	return nil
+}
+
+// emitVersionDelta surfaces a version upgrade notice when the CLI has been
+// updated since the last session. Updates last_seen_cli_version on success.
+// cfg may be nil (outside a project) — silently skipped.
+func emitVersionDelta(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	runtimeDir, err := cfg.RuntimeDir()
+	if err != nil {
+		return
+	}
+	state, err := projectstate.Read(runtimeDir)
+	if err != nil {
+		return
+	}
+	curr := version // package-level var set by ldflags
+	prev := state.LastSeenCLIVersion
+
+	// Always update so next session sees the current version.
+	defer func() {
+		_ = projectstate.Write(runtimeDir, projectstate.State{LastSeenCLIVersion: curr})
+	}()
+
+	if prev == "" || prev == curr {
+		return
+	}
+
+	excerpt := changelog.Since(prev, curr)
+	if excerpt == "" {
+		fmt.Printf("─── VERSION UPDATE: %s → %s ───\n\n", prev, curr)
+		return
+	}
+
+	// Limit excerpt to first 50 lines to keep session context concise.
+	lines := strings.Split(excerpt, "\n")
+	const maxLines = 50
+	truncated := false
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+		truncated = true
+	}
+	fmt.Printf("─── VERSION UPDATE: %s → %s ───\n", prev, curr)
+	fmt.Println()
+	fmt.Println(strings.Join(lines, "\n"))
+	if truncated {
+		fmt.Println("… (see CHANGELOG.md for full details)")
+	}
+	fmt.Println()
 }
 
 func resolveSessionAgent() string {
