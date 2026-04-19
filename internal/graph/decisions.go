@@ -68,6 +68,24 @@ func (c *Client) UpsertBlocksEdge(ctx context.Context, gaterQdrantID, gatedQdran
 	)
 }
 
+// DeleteTaskNode removes a Task node (and all its relationships) from the graph
+// for this project. Identified by qdrant_id (the task ID, e.g. "TASK-235").
+// Idempotent: a no-op if the node doesn't exist.
+func (c *Client) DeleteTaskNode(ctx context.Context, taskQdrantID string) error {
+	if taskQdrantID == "" {
+		return fmt.Errorf("taskQdrantID is required")
+	}
+	_, cleanup, err := c.runQuery(ctx,
+		"MATCH (t:Task {qdrant_id: $tid, project_id: $pid}) DETACH DELETE t",
+		map[string]any{"tid": taskQdrantID},
+	)
+	if err != nil {
+		return fmt.Errorf("delete Task node %s: %w", taskQdrantID, err)
+	}
+	cleanup()
+	return nil
+}
+
 // TaskDependents returns task IDs that depend on (or are blocked by) the given
 // task — i.e. the downstream blast radius of closing or rejecting it. Both
 // DEPENDS_ON (reverse) and BLOCKS (forward) are surfaced.

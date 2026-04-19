@@ -460,6 +460,26 @@ func taskFromRetrieved(p *qdrant.RetrievedPoint) Task {
 	return taskFromPayload(p.GetPayload())
 }
 
+// CancelTask permanently removes a task from Qdrant. The point is deleted by
+// its deterministic UUID so no scan is needed. The caller is responsible for
+// also removing the Task node from Memgraph (see cmd/task_cancel.go).
+func (c *Client) CancelTask(ctx context.Context, taskID string) error {
+	if _, err := ParseTaskID(taskID); err != nil {
+		return err
+	}
+	ptID := qdrant.NewID(pointUUIDForTaskID(taskID))
+	wait := true
+	_, err := c.qc.Delete(ctx, &qdrant.DeletePoints{
+		CollectionName: c.collTasks(),
+		Wait:           &wait,
+		Points:         qdrant.NewPointsSelector(ptID),
+	})
+	if err != nil {
+		return fmt.Errorf("cancel task %s: %w", taskID, err)
+	}
+	return nil
+}
+
 // ParseTaskID extracts the numeric suffix from a task ID like "TASK-001".
 func ParseTaskID(id string) (int, error) {
 	if !taskIDRegex.MatchString(id) {
