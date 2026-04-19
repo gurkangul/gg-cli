@@ -52,9 +52,9 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("summarize: %w", err)
 	}
 
-	if !cfg.Telemetry.Enabled && telemetry.IsDisabled() {
+	if telemetry.IsDisabled() {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Telemetry is disabled — no data collected.")
-		fmt.Fprintln(cmd.ErrOrStderr(), "  Enable with: gg config set telemetry.enabled true")
+		fmt.Fprintln(cmd.ErrOrStderr(), "  Re-enable by unsetting GG_TELEMETRY=0 or removing telemetry.enabled: false from .gg/config.yaml.")
 		return nil
 	}
 

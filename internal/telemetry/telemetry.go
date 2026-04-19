@@ -6,7 +6,9 @@
 // The file is append-only and never truncated by gg itself; callers can
 // rotate or delete it freely.
 //
-// Disable telemetry entirely with: export GG_TELEMETRY=0
+// Telemetry is ON by default (local-only, no network). Disable entirely with:
+// export GG_TELEMETRY=0   (env override always wins)
+// or by adding to .gg/config.yaml:  telemetry: {enabled: false}
 //
 // Origin heuristic: if GG_ROLE is set the call is assumed to come from an
 // agent; otherwise it is treated as human-initiated. This is a best-effort
@@ -28,9 +30,10 @@ const (
 	originHuman = "human"
 )
 
-// configEnabled holds the opt-in value loaded from config at startup.
-// 0 = disabled (default), 1 = enabled. Set via SetEnabled before first use.
-var configEnabled atomic.Int32
+// configExplicitDisabled is true when .gg/config.yaml contains
+// `telemetry.enabled: false`. It lets users turn telemetry off via config
+// without relying on env vars. Default zero value is false → default ON.
+var configExplicitDisabled atomic.Bool
 
 // Entry is a single telemetry record.
 type Entry struct {
@@ -52,24 +55,22 @@ func filePath(runtimeDir string) string {
 	return filepath.Join(runtimeDir, fileName)
 }
 
-// SetEnabled sets the config-based telemetry opt-in. Call this once at
-// startup after loading .gg/config.yaml (telemetry.enabled field).
-// The GG_TELEMETRY env var always takes precedence over this setting.
+// SetEnabled applies the explicit config-based telemetry setting. Call this
+// at startup ONLY when .gg/config.yaml carries an explicit `telemetry.enabled`
+// value — omit the call (or never reach it) when the field is absent, so the
+// default ON behaviour kicks in. The GG_TELEMETRY env var always takes
+// precedence over this setting.
 func SetEnabled(enabled bool) {
-	if enabled {
-		configEnabled.Store(1)
-	} else {
-		configEnabled.Store(0)
-	}
+	configExplicitDisabled.Store(!enabled)
 }
 
-// IsDisabled reports whether telemetry is off. Telemetry is opt-in (default
-// OFF). Priority order:
+// IsDisabled reports whether telemetry is off. Telemetry is ON by default
+// (local-only, no network). Priority order:
 //
 //  1. GG_TELEMETRY=0/false/no/off → always disabled
 //  2. GG_TELEMETRY=1/true/yes/on  → always enabled
-//  3. config telemetry.enabled: true (via SetEnabled) → enabled
-//  4. otherwise → disabled
+//  3. config telemetry.enabled: false (via SetEnabled) → disabled
+//  4. otherwise → enabled
 func IsDisabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("GG_TELEMETRY"))) {
 	case "0", "false", "no", "off":
@@ -77,7 +78,7 @@ func IsDisabled() bool {
 	case "1", "true", "yes", "on":
 		return false
 	}
-	return configEnabled.Load() == 0
+	return configExplicitDisabled.Load()
 }
 
 // Record appends one entry to the telemetry log. Errors are silently ignored

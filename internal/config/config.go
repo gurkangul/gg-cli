@@ -98,9 +98,14 @@ type TrackerConfig struct {
 
 // TelemetryConfig controls local-only usage telemetry.
 type TelemetryConfig struct {
-	// Enabled must be explicitly set to true to activate telemetry (opt-in).
-	// Override at runtime with GG_TELEMETRY=1 (enable) or GG_TELEMETRY=0 (disable).
-	Enabled bool `yaml:"enabled"`
+	// Enabled is a tri-state: nil (absent in YAML) → default ON, *true →
+	// explicit on, *false → explicit off. Using a pointer lets the loader
+	// distinguish "user wrote nothing" (keep default) from "user wrote false"
+	// (explicit opt-out). Override at runtime with GG_TELEMETRY=1 or
+	// GG_TELEMETRY=0 — the env var always wins. Default is ON because
+	// telemetry is local-only (no network) and drives the project's own
+	// dogfood North Star metric (BUG-018).
+	Enabled *bool `yaml:"enabled,omitempty"`
 }
 
 type Config struct {

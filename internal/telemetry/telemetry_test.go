@@ -43,19 +43,45 @@ func TestRecord_DisabledViaEnv(t *testing.T) {
 	}
 }
 
-func TestRecord_DisabledByDefault(t *testing.T) {
-	// Reset to default-off state: no env override, no config opt-in.
+// TestRecord_DisabledViaConfig — user writes `telemetry.enabled: false` in
+// .gg/config.yaml → SetEnabled(false) is called → IsDisabled() returns true
+// even without GG_TELEMETRY env override.
+func TestRecord_DisabledViaConfig(t *testing.T) {
 	t.Setenv("GG_TELEMETRY", "")
 	SetEnabled(false)
-	t.Cleanup(func() { SetEnabled(true) }) // restore for other tests
+	t.Cleanup(func() { SetEnabled(true) })
 
 	if !IsDisabled() {
-		t.Fatal("IsDisabled() = false, want true when env unset and config disabled")
+		t.Fatal("IsDisabled() = false, want true when config explicitly disables")
 	}
 	dir := t.TempDir()
 	Record(dir, "status", "")
 	if _, err := os.ReadFile(filePath(dir)); !os.IsNotExist(err) {
-		t.Errorf("telemetry file should not be created when disabled by default: err=%v", err)
+		t.Errorf("telemetry file should not be created when config disables: err=%v", err)
+	}
+}
+
+// TestRecord_EnabledByDefault_BUG018 — telemetry is ON by default when neither
+// GG_TELEMETRY nor config explicitly disables it. Regression for BUG-018:
+// opt-in default silently killed the North Star dogfood metric because users
+// never knew to set `telemetry.enabled: true`.
+func TestRecord_EnabledByDefault_BUG018(t *testing.T) {
+	t.Setenv("GG_TELEMETRY", "") // no env override
+	// Simulate fresh process: SetEnabled never called. We can't un-call
+	// SetEnabled in-process, so reset to the zero-state explicitly.
+	configExplicitDisabled.Store(false)
+
+	if IsDisabled() {
+		t.Fatal("IsDisabled() = true, want false when neither env nor config opts out")
+	}
+	dir := t.TempDir()
+	Record(dir, "status", "")
+	data, err := os.ReadFile(filePath(dir))
+	if err != nil {
+		t.Fatalf("telemetry file should be created by default: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("telemetry file empty despite default-on semantics")
 	}
 }
 

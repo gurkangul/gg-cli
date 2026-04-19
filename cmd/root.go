@@ -37,7 +37,12 @@ func init() {
 		}
 		// Best-effort: silently skip if config can't be loaded.
 		if cfg, err := config.Load(); err == nil {
-			telemetry.SetEnabled(cfg.Telemetry.Enabled)
+			// Only override the default-ON behaviour when the user explicitly
+			// set telemetry.enabled in .gg/config.yaml (see BUG-018). Field
+			// absence must not be read as "false".
+			if cfg.Telemetry.Enabled != nil {
+				telemetry.SetEnabled(*cfg.Telemetry.Enabled)
+			}
 			if runtimeDir, err := cfg.RuntimeDir(); err == nil {
 				// Pass --from flag value if the command defines one — telemetry
 				// uses it as a "this is an agent" signal alongside GG_ROLE/GG_AGENT.
