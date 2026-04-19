@@ -58,7 +58,7 @@ func runTaskReindex(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = gc.Close(ctx) }()
 
-	var replayed, failed int
+	var replayed, failed, edgesWritten int
 	for _, t := range tasks {
 		gctx, gcancel := withTimeout(cmd.Context())
 		upErr := gc.UpsertTaskNode(gctx, t.ID, t.Title)
@@ -66,15 +66,45 @@ func runTaskReindex(cmd *cobra.Command, _ []string) error {
 		if upErr != nil {
 			fmt.Printf("~ %s: %v\n", t.ID, upErr)
 			failed++
-		} else {
-			replayed++
+			continue
+		}
+		replayed++
+	}
+
+	// Second pass: write DEPENDS_ON + BLOCKS edges after every Task node
+	// exists so MATCH endpoints always resolve.
+	for _, t := range tasks {
+		for _, dep := range t.DependsOn {
+			if dep == "" {
+				continue
+			}
+			ectx, ecancel := withTimeout(cmd.Context())
+			if eErr := gc.UpsertDependsOnEdge(ectx, t.ID, dep); eErr != nil {
+				fmt.Printf("~ %s DEPENDS_ON %s: %v\n", t.ID, dep, eErr)
+			} else {
+				edgesWritten++
+			}
+			ecancel()
+		}
+		for _, bl := range t.Blocks {
+			if bl == "" {
+				continue
+			}
+			ectx, ecancel := withTimeout(cmd.Context())
+			if eErr := gc.UpsertBlocksEdge(ectx, t.ID, bl); eErr != nil {
+				fmt.Printf("~ %s BLOCKS %s: %v\n", t.ID, bl, eErr)
+			} else {
+				edgesWritten++
+			}
+			ecancel()
 		}
 	}
 
 	return printJSON(map[string]any{
-		"replayed": replayed,
-		"failed":   failed,
+		"replayed":      replayed,
+		"failed":        failed,
+		"edges_written": edgesWritten,
 	}, func() {
-		fmt.Printf("task reindex complete: %d replayed, %d failed\n", replayed, failed)
+		fmt.Printf("task reindex complete: %d replayed, %d failed, %d edges\n", replayed, failed, edgesWritten)
 	})
 }

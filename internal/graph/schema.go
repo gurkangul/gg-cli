@@ -42,6 +42,8 @@ const (
 	RelRejects    = "REJECTS"    // (Decision)-[:REJECTS]->(Decision)
 	RelInWave     = "IN_WAVE"    // (Task)-[:IN_WAVE]->(Wave)
 	RelAffects    = "AFFECTS"    // (Bug)-[:AFFECTS]->(File|Symbol)
+	RelDependsOn  = "DEPENDS_ON" // (Task)-[:DEPENDS_ON]->(Task) — a waits for b
+	RelBlocks     = "BLOCKS"     // (Task)-[:BLOCKS]->(Task)    — a gates b
 )
 
 // ResolutionTier records how a graph node was produced.

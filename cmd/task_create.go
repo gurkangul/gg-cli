@@ -135,6 +135,7 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	upsertTaskGraphNode(cmd, ctx, id, title)
+	upsertTaskDependencyEdges(cmd, ctx, id, deps, blocks)
 
 	notifyTaskLifecycle(ctx, d.store, id, "created", title)
 
@@ -163,5 +164,50 @@ func upsertTaskGraphNode(cmd *cobra.Command, ctx context.Context, id, title stri
 
 	if uErr := gc.UpsertTaskNode(ctx, id, title); uErr != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph Task node upsert failed for %s: %v\n", id, uErr)
+	}
+}
+
+// upsertTaskDependencyEdges writes (Task)-[:DEPENDS_ON]->(Task) edges for every
+// --depends-on target and (Task)-[:BLOCKS]->(Task) edges for every --blocks
+// target. Stub-upserts the target Task node first so the edge MATCH succeeds
+// even when the other task predates TASK-225's dual-write. Non-fatal.
+func upsertTaskDependencyEdges(cmd *cobra.Command, ctx context.Context, id string, deps, blocks []string) {
+	if len(deps) == 0 && len(blocks) == 0 {
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil || cfg.Memgraph.URI == "" {
+		return
+	}
+	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph init failed (%v) — dependency edges for %s skipped\n", err, id)
+		return
+	}
+	defer func() { _ = gc.Close(ctx) }()
+
+	for _, dep := range deps {
+		if dep == "" {
+			continue
+		}
+		if uErr := gc.UpsertTaskNode(ctx, dep, dep); uErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph stub Task node upsert failed for %s: %v\n", dep, uErr)
+			continue
+		}
+		if eErr := gc.UpsertDependsOnEdge(ctx, id, dep); eErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph DEPENDS_ON edge %s→%s failed: %v\n", id, dep, eErr)
+		}
+	}
+	for _, bl := range blocks {
+		if bl == "" {
+			continue
+		}
+		if uErr := gc.UpsertTaskNode(ctx, bl, bl); uErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph stub Task node upsert failed for %s: %v\n", bl, uErr)
+			continue
+		}
+		if eErr := gc.UpsertBlocksEdge(ctx, id, bl); eErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph BLOCKS edge %s→%s failed: %v\n", id, bl, eErr)
+		}
 	}
 }

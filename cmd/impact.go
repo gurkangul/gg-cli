@@ -16,9 +16,9 @@ import (
 )
 
 var impactCmd = &cobra.Command{
-	Use:   "impact <file|BUG-NNN>",
-	Short: "Show downstream impact of changing a source file, or blast radius of a bug",
-	Long: `Show what a change to the given source file affects, or what a bug touches.
+	Use:   "impact <file|BUG-NNN|TASK-NNN>",
+	Short: "Show downstream impact of changing a file, or blast radius of a bug or task",
+	Long: `Show what a change to the given source file affects, or what a bug/task touches.
 
 File mode (default):
   - Files that directly import it (1-hop dependents from the code graph)
@@ -29,6 +29,10 @@ File mode (default):
 Bug mode (BUG-NNN argument):
   - Files and symbols the bug affects (Bug→File/Symbol graph edges)
   - Decisions, tasks, and rejections related to the bug (semantic search)
+
+Task mode (TASK-NNN argument):
+  - Downstream dependents (tasks that DEPENDS_ON this one, or are BLOCKED by it)
+  - Decisions and related tasks from the knowledge store (semantic search)
 
 Requires Memgraph (gg index must have been run). The knowledge-store search
 works even without Memgraph.`,
@@ -62,9 +66,12 @@ func runImpact(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Detect BUG-NNN mode vs file mode.
+	// Detect BUG-NNN / TASK-NNN mode vs file mode.
 	if _, parseErr := store.ParseBugID(rawArg); parseErr == nil {
 		return runImpactBug(cmd, rawArg)
+	}
+	if _, parseErr := store.ParseTaskID(rawArg); parseErr == nil {
+		return runImpactTask(cmd, rawArg)
 	}
 
 	// Resolve to project-relative path — that's what the graph indexes (BUG-010).
@@ -396,6 +403,106 @@ func runImpactBug(cmd *cobra.Command, bugID string) error {
 			fmt.Fprintf(os.Stdout, "\n%s — %d files %d sym %dD %dT %dR\n",
 				bugID, len(result.Files), len(result.Symbols),
 				len(result.Decisions), len(result.Tasks), len(result.Rejections))
+		}
+		if len(result.Warnings) > 0 {
+			fmt.Fprintln(os.Stdout, "\nWarnings:")
+			for _, w := range result.Warnings {
+				fmt.Fprintf(os.Stdout, "  ~ %s\n", w)
+			}
+		}
+	})
+}
+
+// runImpactTask handles `gg impact TASK-NNN` — shows which other tasks
+// depend on or are blocked by this one (Memgraph DEPENDS_ON / BLOCKS edges
+// shipped with TASK-233), plus semantically related decisions/tasks from
+// the knowledge store.
+func runImpactTask(cmd *cobra.Command, taskID string) error {
+	d, err := loadDeps(true)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	type taskImpactResult struct {
+		TaskID     string            `json:"task_id"`
+		Dependents []string          `json:"dependents"`
+		Decisions  []store.Decision  `json:"decisions"`
+		Tasks      []store.Task      `json:"tasks"`
+		Rejections []store.Rejection `json:"rejections"`
+		Warnings   []string          `json:"warnings,omitempty"`
+	}
+
+	result := taskImpactResult{TaskID: taskID}
+
+	cfg, _ := config.Load()
+	if cfg != nil && cfg.Memgraph.URI != "" {
+		gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID)
+		if gcErr != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("graph client init: %v", gcErr))
+		} else {
+			defer func() { _ = gc.Close(ctx) }()
+			gctx, gcancel := withTimeout(cmd.Context())
+			defer gcancel()
+			deps, depErr := gc.TaskDependents(gctx, taskID)
+			if depErr != nil {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("task dependents query: %v", depErr))
+			} else {
+				result.Dependents = deps
+			}
+		}
+	} else {
+		result.Warnings = append(result.Warnings, "Memgraph not configured — graph data unavailable")
+	}
+
+	vector, embErr := d.embedder.Generate(ctx, taskID)
+	if embErr != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("embedding: %v", embErr))
+	} else {
+		var wg sync.WaitGroup
+		var decErr, taskErr, rejErr error
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			result.Decisions, decErr = d.store.SearchDecisions(ctx, vector, impactKBLimit)
+		}()
+		go func() {
+			defer wg.Done()
+			result.Tasks, taskErr = d.store.SearchTasks(ctx, vector, impactKBLimit, true)
+		}()
+		go func() {
+			defer wg.Done()
+			result.Rejections, rejErr = d.store.SearchRejections(ctx, vector, impactKBLimit)
+		}()
+		wg.Wait()
+		for _, e := range []error{decErr, taskErr, rejErr} {
+			if e != nil {
+				result.Warnings = append(result.Warnings, e.Error())
+			}
+		}
+	}
+
+	return printJSON(result, func() {
+		fmt.Printf("Impact: %s\n", taskID)
+		fmt.Fprintln(os.Stdout, strings.Repeat("─", 60))
+		fmt.Fprintf(os.Stdout, "\nDownstream Dependents (%d):\n", len(result.Dependents))
+		if len(result.Dependents) == 0 {
+			fmt.Fprintln(os.Stdout, "  (none — no other task depends on or is blocked by this one)")
+		} else {
+			for _, id := range result.Dependents {
+				fmt.Fprintf(os.Stdout, "  → %s\n", id)
+			}
+		}
+		fmt.Fprintf(os.Stdout, "\nRelated Decisions (%d):\n", len(result.Decisions))
+		for _, dec := range result.Decisions {
+			fmt.Fprintf(os.Stdout, "  • %s\n", compactTrim(dec.Text, compactLineWidth))
+		}
+		fmt.Fprintf(os.Stdout, "\nRelated Tasks (%d):\n", len(result.Tasks))
+		for _, t := range result.Tasks {
+			fmt.Fprintf(os.Stdout, "  T %s — %s\n", t.ID, compactTrim(t.Title, compactLineWidth))
 		}
 		if len(result.Warnings) > 0 {
 			fmt.Fprintln(os.Stdout, "\nWarnings:")

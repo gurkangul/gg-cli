@@ -48,6 +48,60 @@ func (c *Client) UpsertRejectsEdge(ctx context.Context, rejectingQdrantID, rejec
 	)
 }
 
+// UpsertDependsOnEdge creates or updates a (Task)-[:DEPENDS_ON]->(Task) edge.
+// Semantics: source task waits on target task.
+func (c *Client) UpsertDependsOnEdge(ctx context.Context, waiterQdrantID, waitedOnQdrantID string) error {
+	return c.upsertKnowledgeEdge(ctx,
+		LabelTask, waiterQdrantID,
+		LabelTask, waitedOnQdrantID,
+		RelDependsOn,
+	)
+}
+
+// UpsertBlocksEdge creates or updates a (Task)-[:BLOCKS]->(Task) edge.
+// Semantics: source task gates target task.
+func (c *Client) UpsertBlocksEdge(ctx context.Context, gaterQdrantID, gatedQdrantID string) error {
+	return c.upsertKnowledgeEdge(ctx,
+		LabelTask, gaterQdrantID,
+		LabelTask, gatedQdrantID,
+		RelBlocks,
+	)
+}
+
+// TaskDependents returns task IDs that depend on (or are blocked by) the given
+// task — i.e. the downstream blast radius of closing or rejecting it. Both
+// DEPENDS_ON (reverse) and BLOCKS (forward) are surfaced.
+func (c *Client) TaskDependents(ctx context.Context, taskQdrantID string) ([]string, error) {
+	result, cleanup, err := c.runQuery(ctx,
+		"MATCH (waiter:Task {project_id: $pid})-[:DEPENDS_ON]->(t:Task {qdrant_id: $tid, project_id: $pid}) "+
+			"RETURN DISTINCT waiter.qdrant_id AS id "+
+			"UNION "+
+			"MATCH (t:Task {qdrant_id: $tid, project_id: $pid})-[:BLOCKS]->(gated:Task {project_id: $pid}) "+
+			"RETURN DISTINCT gated.qdrant_id AS id",
+		map[string]any{"tid": taskQdrantID},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("task dependents query: %w", err)
+	}
+	defer cleanup()
+
+	var ids []string
+	for result.Next(ctx) {
+		record := result.Record()
+		id, ok := record.Get("id")
+		if !ok {
+			continue
+		}
+		if s, isStr := id.(string); isStr && s != "" {
+			ids = append(ids, s)
+		}
+	}
+	if err := result.Err(); err != nil {
+		return nil, fmt.Errorf("task dependents iterate: %w", err)
+	}
+	return ids, nil
+}
+
 // UpsertDecidesEdgeBackfill creates or updates a (Decision)-[:DECIDES]->(Task) edge
 // and stamps created_by=backfill_v1 so it can be identified and rolled back.
 func (c *Client) UpsertDecidesEdgeBackfill(ctx context.Context, decisionQdrantID, taskQdrantID string) error {
