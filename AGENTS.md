@@ -451,6 +451,35 @@ in a project that uses gg. Those tools write to `.gsd/gsd.db`; gg reads
 none of that, so the two stores diverge silently. Use `gg task create` for
 every work item and `gg record` for decisions.
 
+### Gate workflow (check `.gg/config.yaml` for which are active)
+
+**Task close — when `tasks.require_ready_for_live: true`:**
+`gg task done` is refused until the task first transitions via
+`gg task ready-for-live TASK-NNN "verify plan sentence" --from <your-role>`.
+Then close with `gg task done TASK-NNN "summary" --verifier <different-role>`.
+When `verifier_separation: true`, the verifier role MUST differ from the
+actor that set ready_for_live — this blocks single-agent self-certification
+(the TASK-200→207 class of premature-close bugs).
+
+**Bug fix — when `bugs.require_broken_ref: true`:**
+`gg bug fix BUG-NNN --repro <path> --repro-broken-ref <SHA>` is mandatory.
+The CLI creates a worktree at <SHA> and asserts the repro exits non-zero
+there (bug existed), then asserts it exits 0 at HEAD (fix works). A repro
+that passes at the broken ref is rejected — it means the test never
+exercised the failing path.
+
+**Before editing any file (mandatory pre-flight):** run `gg impact <file>`
+to see historical bugs that have touched it + 1-hop code dependents. Paste
+a one-line summary per file into the commit footer.
+
+**`gg impact` accepts three argument types:**
+`<file-path>` → file blast radius; `BUG-NNN` → affected files/symbols;
+`TASK-NNN` → downstream dependents via DEPENDS_ON/BLOCKS edges.
+
+**When reporting a bug, always pass `--affected-files` + `--affected-symbols`**
+so the Bug→File AFFECTS edges land in Memgraph. Without them the bug node
+exists but is invisible to `gg impact <file>` queries.
+
 <!-- gg-managed:end -->
 
 <!-- gg-bmad:start -->
