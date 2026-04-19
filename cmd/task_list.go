@@ -51,7 +51,7 @@ func init() {
 
 func runTaskList(cmd *cobra.Command, args []string) error {
 	if taskListStatus != "" && !validStatuses[taskListStatus] {
-		return fmt.Errorf("invalid status %q — use pending, in_progress, done, or blocked", taskListStatus)
+		return fmt.Errorf("invalid status %q — use pending, in_progress, ready_for_live, done, or blocked", taskListStatus)
 	}
 
 	d, err := loadDeps(false)
@@ -266,6 +266,9 @@ func renderTaskGetDefault(w io.Writer, t *store.Task) {
 	}
 	if t.BlockReason != "" {
 		fmt.Fprintf(w, "  ⚠ Blocked: %s\n", t.BlockReason)
+	}
+	if t.ReadyForLiveBy != "" {
+		fmt.Fprintf(w, "  ◉ Ready for live: %s (by %s)\n", t.ReadyForLivePlan, t.ReadyForLiveBy)
 	}
 	if t.DoneSummary != "" {
 		fmt.Fprintf(w, "  ✓ Done: %s\n", t.DoneSummary)

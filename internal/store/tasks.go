@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,6 +39,11 @@ type Task struct {
 	ReviewedBy   string // reviewer role or agent name
 	ReviewedAt   string // RFC3339 timestamp
 	ReviewNotes  string // optional reviewer notes
+	// ready_for_live metadata — set when status == "ready_for_live". Used by the
+	// verifier-separation gate to ensure a different actor calls `task done`.
+	ReadyForLiveBy   string // role that performed the ready-for-live transition
+	ReadyForLiveAt   string // RFC3339 timestamp of the transition
+	ReadyForLivePlan string // short verify plan written by the implementer
 }
 
 // scrollAll paginates through every point matching the given request template.
@@ -270,6 +276,64 @@ var ValidReviewStatuses = map[string]bool{
 	"none": true, "pending": true, "approved": true, "rejected": true,
 }
 
+// SetReadyForLive transitions a task to status "ready_for_live" and records
+// the actor + timestamp + verify-plan that accompanied the transition. The
+// actor is read by the verifier-separation gate in `gg task done` to enforce
+// same-actor-cannot-verify.
+//
+// Refuses when the task is already in "ready_for_live" (returns
+// ErrAlreadyInState) or in terminal status "done" (no backwards transition —
+// reopen via `gg task reopen` or `gg bug reopen` instead).
+//
+// readyBy should be a role/agent name — empty is rejected so the gate has
+// something non-empty to compare against on the done side.
+func (c *Client) SetReadyForLive(ctx context.Context, taskID, readyBy, plan string) error {
+	if strings.TrimSpace(readyBy) == "" {
+		return fmt.Errorf("ready_for_live_by is required (use --from or set GG_ROLE)")
+	}
+	pointID := qdrant.NewID(pointUUIDForTaskID(taskID))
+	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
+		CollectionName: c.collTasks(),
+		Ids:            []*qdrant.PointId{pointID},
+		WithPayload:    qdrant.NewWithPayloadInclude("task_id", "status"),
+	})
+	if err != nil {
+		return err
+	}
+	if len(existing) == 0 {
+		return fmt.Errorf("task %s not found", taskID)
+	}
+	currentStatus := existing[0].GetPayload()["status"].GetStringValue()
+	if currentStatus == "ready_for_live" {
+		return fmt.Errorf("%w: task %s already ready_for_live", ErrAlreadyInState, taskID)
+	}
+	if currentStatus == "done" {
+		return fmt.Errorf("cannot transition done task %s back to ready_for_live (reopen first)", taskID)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	statusVal, _ := qdrant.NewValue("ready_for_live")
+	byVal, _ := qdrant.NewValue(readyBy)
+	atVal, _ := qdrant.NewValue(now)
+	planVal, _ := qdrant.NewValue(plan)
+	emptyVal, _ := qdrant.NewValue("")
+	wait := true
+	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+		CollectionName: c.collTasks(),
+		Wait:           &wait,
+		Payload: map[string]*qdrant.Value{
+			"status":              statusVal,
+			"ready_for_live_by":   byVal,
+			"ready_for_live_at":   atVal,
+			"ready_for_live_plan": planVal,
+			"block_reason":        emptyVal,
+			"done_summary":        emptyVal,
+		},
+		PointsSelector: qdrant.NewPointsSelector(pointID),
+	})
+	return err
+}
+
 // UpdateReviewStatus updates the review_status, reviewed_by, reviewed_at, and
 // review_notes fields of a task without touching its lifecycle status. The review
 // state is orthogonal to the work lifecycle (pending → in_progress → done).
@@ -368,10 +432,13 @@ func taskFromPayload(pay map[string]*qdrant.Value) Task {
 		Author:       pay["author"].GetStringValue(),
 		Requester:    pay["requester"].GetStringValue(),
 		CreatedAt:    pay["created_at"].GetStringValue(),
-		ReviewStatus: rs,
-		ReviewedBy:   pay["reviewed_by"].GetStringValue(),
-		ReviewedAt:   pay["reviewed_at"].GetStringValue(),
-		ReviewNotes:  pay["review_notes"].GetStringValue(),
+		ReviewStatus:     rs,
+		ReviewedBy:       pay["reviewed_by"].GetStringValue(),
+		ReviewedAt:       pay["reviewed_at"].GetStringValue(),
+		ReviewNotes:      pay["review_notes"].GetStringValue(),
+		ReadyForLiveBy:   pay["ready_for_live_by"].GetStringValue(),
+		ReadyForLiveAt:   pay["ready_for_live_at"].GetStringValue(),
+		ReadyForLivePlan: pay["ready_for_live_plan"].GetStringValue(),
 	}
 }
 

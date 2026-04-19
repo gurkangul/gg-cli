@@ -95,6 +95,33 @@ type BugsConfig struct {
 	RequireBrokenRef bool `yaml:"require_broken_ref"`
 }
 
+// TasksConfig controls task-lifecycle enforcement gates.
+//
+// Both flags are opt-in (default false) so existing projects and their 212
+// historical task closures keep working without change. A project adopting
+// the ready_for_live gate flips them together in .gg/config.yaml:
+//
+//	tasks:
+//	  require_ready_for_live: true
+//	  verifier_separation: true
+//
+// Rationale: dogfood audit 2026-04-19 surfaced a premature-closure pattern —
+// same-actor verification, where an implementing agent marks its own work
+// done on unit-test-green before any live verification. The gate structurally
+// separates implementer ("ready for live") from verifier ("done").
+type TasksConfig struct {
+	// RequireReadyForLive, when true, refuses `gg task done` unless the task
+	// has already been transitioned to status "ready_for_live" via
+	// `gg task ready-for-live`. Default false for back-compat.
+	RequireReadyForLive bool `yaml:"require_ready_for_live"`
+
+	// VerifierSeparation, when true, requires `gg task done --verifier <role>`
+	// and refuses when <role> matches the actor that set ready_for_live.
+	// Prevents an implementer from also acting as its own verifier. Only
+	// effective when RequireReadyForLive is also true.
+	VerifierSeparation bool `yaml:"verifier_separation"`
+}
+
 // TrackerConfig declares which task-tracker is canonical for this project.
 type TrackerConfig struct {
 	// Canonical names the tracker agents must use. Set to "gg" to activate
@@ -128,6 +155,7 @@ type Config struct {
 	Doctor    DoctorConfig    `yaml:"doctor"`
 	Tracker   TrackerConfig   `yaml:"tracker"`
 	Bugs      BugsConfig      `yaml:"bugs"`
+	Tasks     TasksConfig     `yaml:"tasks"`
 }
 
 func DefaultConfig() *Config {

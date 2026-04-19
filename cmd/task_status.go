@@ -20,6 +20,11 @@ import (
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
+// taskDoneVerifier is the role flag for the verifier-separation gate in
+// `gg task done`. Read only when .gg/config.yaml has
+// tasks.verifier_separation: true — otherwise ignored for back-compat.
+var taskDoneVerifier string
+
 var taskDoneCmd = &cobra.Command{
 	Use:   `done TASK-ID "summary"`,
 	Short: "Mark a task done — include a one-sentence summary of what was accomplished",
@@ -35,6 +40,15 @@ current state and a machine-parseable {"event":"verify_failed",...} line is
 emitted to stderr along with an internal 'gg tell' to all agents.
 Install starter scripts with 'gg doctor --install-task-hooks' (auto-detects
 Go and Node/Bun).
+
+READY-FOR-LIVE GATE (opt-in): when .gg/config.yaml has
+tasks.require_ready_for_live: true, this command refuses unless the task is
+already in status "ready_for_live" (transition it with 'gg task ready-for-live'
+after local checks pass). Combined with tasks.verifier_separation: true the
+command also requires --verifier <role> and rejects when the verifier is the
+same actor that performed the ready-for-live transition. Prevents the
+premature-closure / same-actor-verification pattern surfaced by the
+dogfood audit 2026-04-19.
 
 See also: gg task review (request peer review), gg record (capture design decisions made during the work)`,
 	Args: cobra.ExactArgs(2),
@@ -62,6 +76,8 @@ var taskDepsCmd = &cobra.Command{
 }
 
 func init() {
+	taskDoneCmd.Flags().StringVar(&taskDoneVerifier, "verifier",
+		"", "actor role that verified the live run (required when tasks.verifier_separation is true)")
 	taskCmd.AddCommand(taskDoneCmd)
 	taskCmd.AddCommand(taskBlockCmd)
 	taskCmd.AddCommand(taskDepsCmd)
@@ -108,6 +124,24 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
+
+	// Ready-for-live gate (opt-in via .gg/config.yaml tasks.*). Runs AFTER
+	// pre-task-done.d hooks so callers see hook failures before state-machine
+	// complaints — cheaper feedback when both would reject. Same
+	// GG_ENFORCEMENT=off escape hatch applies for emergencies.
+	if _, cfg, cfgErr := hookCfg.load(cmd.ErrOrStderr()); cfgErr == nil && cfg != nil && cfg.Tasks.RequireReadyForLive {
+		if !enforcement.Enabled() {
+			emitGuardSkipEvent("pre-task-done-ready-for-live")
+		} else {
+			t, getErr := d.store.GetTask(ctx, taskID)
+			if getErr != nil {
+				return getErr
+			}
+			if rej := checkReadyForLiveGate(t, &cfg.Tasks, taskDoneVerifier); rej != nil {
+				return rej
+			}
+		}
+	}
 
 	if err := d.store.UpdateTaskStatus(ctx, taskID, "done", summary); err != nil {
 		return err

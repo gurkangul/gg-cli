@@ -15,7 +15,7 @@ var taskCmd = &cobra.Command{
 }
 
 var validPriorities = map[string]bool{"high": true, "medium": true, "low": true}
-var validStatuses = map[string]bool{"pending": true, "in_progress": true, "done": true, "blocked": true}
+var validStatuses = map[string]bool{"pending": true, "in_progress": true, "ready_for_live": true, "done": true, "blocked": true}
 
 func init() {
 	rootCmd.AddCommand(taskCmd)
@@ -49,6 +49,8 @@ func statusIcon(status string) string {
 		return "⚠"
 	case "in_progress":
 		return "→"
+	case "ready_for_live":
+		return "◉"
 	default:
 		return "○"
 	}
