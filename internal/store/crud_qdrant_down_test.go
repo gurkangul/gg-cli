@@ -332,7 +332,7 @@ func TestGetInbox_QdrantDown(t *testing.T) {
 	ctx, cancel := shortCtx(t)
 	defer cancel()
 
-	_, err := c.GetInbox(ctx, "developer")
+	_, err := c.GetInbox(ctx, "developer", false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

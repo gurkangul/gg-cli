@@ -9,11 +9,15 @@ import (
 	"github.com/qdrant/go-client/qdrant"
 )
 
+// Audience controls inbox visibility. "agents" = agent-to-agent only (filtered
+// from human inbox by default). "human" = human-visible only. "all" = everyone
+// (default, backward-compatible).
 type Message struct {
 	ID        string
 	FromRole  string
 	ToRole    string
 	Content   string
+	Audience  string // "all" | "human" | "agents"
 	Read      bool
 	TaskID    string
 	CreatedAt string
@@ -27,10 +31,15 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 		m.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
+	audience := m.Audience
+	if audience == "" {
+		audience = "all"
+	}
 	payload, err := qdrant.TryValueMap(map[string]any{
 		"from_role":  m.FromRole,
 		"to_role":    m.ToRole,
 		"content":    m.Content,
+		"audience":   audience,
 		"read":       false,
 		"task_id":    m.TaskID,
 		"created_at": m.CreatedAt,
@@ -56,18 +65,26 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 	return err
 }
 
-func (c *Client) GetInbox(ctx context.Context, role string) ([]Message, error) {
+// GetInbox returns unread messages. When humanOnly is true, messages with
+// audience="agents" are excluded (human-facing inbox view).
+func (c *Client) GetInbox(ctx context.Context, role string, humanOnly bool) ([]Message, error) {
 	conditions := []*qdrant.Condition{
 		qdrant.NewMatchBool("read", false),
 	}
 	if role != "" {
 		conditions = append(conditions, qdrant.NewMatchKeyword("to_role", role))
 	}
+	filter := &qdrant.Filter{Must: conditions}
+	if humanOnly {
+		filter.MustNot = []*qdrant.Condition{
+			qdrant.NewMatchKeyword("audience", "agents"),
+		}
+	}
 
 	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
 		CollectionName: c.collMessages(),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
-		Filter:         &qdrant.Filter{Must: conditions},
+		Filter:         filter,
 	})
 	if err != nil {
 		return nil, err
@@ -83,7 +100,7 @@ func (c *Client) GetInbox(ctx context.Context, role string) ([]Message, error) {
 // DismissAll marks all unread messages (optionally filtered by recipient role)
 // as read. Returns the count of dismissed messages.
 func (c *Client) DismissAll(ctx context.Context, role string) (int, error) {
-	msgs, err := c.GetInbox(ctx, role)
+	msgs, err := c.GetInbox(ctx, role, false)
 	if err != nil {
 		return 0, err
 	}
@@ -124,11 +141,16 @@ func (c *Client) MarkMessagesRead(ctx context.Context, ids []string) error {
 
 func messageFromRetrieved(p *qdrant.RetrievedPoint) Message {
 	pay := p.GetPayload()
+	audience := pay["audience"].GetStringValue()
+	if audience == "" {
+		audience = "all"
+	}
 	return Message{
 		ID:        p.GetId().GetUuid(),
 		FromRole:  pay["from_role"].GetStringValue(),
 		ToRole:    pay["to_role"].GetStringValue(),
 		Content:   pay["content"].GetStringValue(),
+		Audience:  audience,
 		Read:      pay["read"].GetBoolValue(),
 		TaskID:    pay["task_id"].GetStringValue(),
 		CreatedAt: pay["created_at"].GetStringValue(),

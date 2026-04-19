@@ -19,14 +19,19 @@ Targets can be comma-separated for fanout:
   gg tell qa,reviewer "TASK-042 ready for review"
 
 @role mentions in the message body are auto-routed in addition to the primary target:
-  gg tell all "@qa please review before merging"`,
+  gg tell all "@qa please review before merging"
+
+Use --audience to control inbox visibility:
+  gg tell all "TASK-016 picked up" --from developer --audience agents
+  gg tell human "deploy is blocked, need approval" --from developer --audience human`,
 	Args: cobra.ExactArgs(2),
 	RunE: runTell,
 }
 
 var (
-	tellFrom string
-	tellTask string
+	tellFrom     string
+	tellTask     string
+	tellAudience string
 )
 
 var mentionRe = regexp.MustCompile(`@([A-Za-z][A-Za-z0-9_-]*)`)
@@ -34,6 +39,7 @@ var mentionRe = regexp.MustCompile(`@([A-Za-z][A-Za-z0-9_-]*)`)
 func init() {
 	tellCmd.Flags().StringVar(&tellFrom, "from", "", "sender role (defaults to $GG_ROLE, then 'user')")
 	tellCmd.Flags().StringVar(&tellTask, "task", "", "related task ID")
+	tellCmd.Flags().StringVar(&tellAudience, "audience", "all", "visibility: all | human | agents (agents = filtered from human inbox by default)")
 	rootCmd.AddCommand(tellCmd)
 }
 
@@ -95,6 +101,15 @@ func runTell(cmd *cobra.Command, args []string) error {
 		from = "user"
 	}
 
+	audience := strings.TrimSpace(tellAudience)
+	switch audience {
+	case "all", "human", "agents":
+	case "":
+		audience = "all"
+	default:
+		return fmt.Errorf("--audience must be one of: all, human, agents (got %q)", audience)
+	}
+
 	targets := collectTargets(rawTarget, content)
 	if len(targets) == 0 {
 		return fmt.Errorf("no valid targets specified")
@@ -114,6 +129,7 @@ func runTell(cmd *cobra.Command, args []string) error {
 			FromRole: from,
 			ToRole:   target,
 			Content:  content,
+			Audience: audience,
 			TaskID:   taskRef,
 		}
 		if err := d.store.SendMessage(ctx, m); err != nil {

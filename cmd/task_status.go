@@ -352,6 +352,7 @@ func notifyTaskLifecycle(ctx context.Context, sender messageSender, taskID, even
 	_ = sender.SendMessage(ctx, store.Message{
 		FromRole: actor,
 		ToRole:   "all",
+		Audience: "agents",
 		Content:  taskID + " " + event + ": " + detail,
 		TaskID:   taskID,
 	})

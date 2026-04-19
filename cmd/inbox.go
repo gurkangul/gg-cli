@@ -15,8 +15,12 @@ var inboxCmd = &cobra.Command{
 	Short: "Read unread messages",
 	Long: `Show unread messages in the agent inbox.
 
+By default, agent-to-agent broadcast messages (audience=agents) are hidden.
+Use --include-agents to see them.
+
 Examples:
-  gg inbox                        # show all unread, mark as read
+  gg inbox                        # show all unread (human-visible), mark as read
+  gg inbox --include-agents       # include agent-to-agent status broadcasts
   gg inbox --peek                 # view without marking as read
   gg inbox --since 2h             # only messages from last 2 hours
   gg inbox --older-than 7d        # dismiss messages older than 7 days
@@ -26,12 +30,13 @@ Examples:
 }
 
 var (
-	inboxRole       string
-	inboxPeek       bool
-	inboxDismissAll bool
-	inboxSince      string
-	inboxOlderThan  string
-	inboxGroupBy    string
+	inboxRole          string
+	inboxPeek          bool
+	inboxDismissAll    bool
+	inboxSince         string
+	inboxOlderThan     string
+	inboxGroupBy       string
+	inboxIncludeAgents bool
 )
 
 func init() {
@@ -41,6 +46,7 @@ func init() {
 	inboxCmd.Flags().StringVar(&inboxSince, "since", "", "only show messages newer than duration (e.g. 2h, 7d, 30m)")
 	inboxCmd.Flags().StringVar(&inboxOlderThan, "older-than", "", "dismiss (mark read) messages older than duration without showing them")
 	inboxCmd.Flags().StringVar(&inboxGroupBy, "group-by", "", "group output by field: sender")
+	inboxCmd.Flags().BoolVar(&inboxIncludeAgents, "include-agents", false, "show agent-to-agent broadcasts (hidden by default)")
 	rootCmd.AddCommand(inboxCmd)
 }
 
@@ -68,7 +74,7 @@ func runInbox(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	messages, err := d.store.GetInbox(ctx, inboxRole)
+	messages, err := d.store.GetInbox(ctx, inboxRole, !inboxIncludeAgents)
 	if err != nil {
 		return fmt.Errorf("get inbox: %w", err)
 	}

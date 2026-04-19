@@ -52,7 +52,7 @@ func runStatusRender(cmd *cobra.Command, _ []string) error {
 	tasks, _ := d.store.ListTasks(ctx, "")
 	decisions, _ := d.store.ListDecisions(ctx, 10)
 	rejections, _ := d.store.ListRejections(ctx, 5)
-	messages, _ := d.store.GetInbox(ctx, "")
+	messages, _ := d.store.GetInbox(ctx, "", true)
 
 	cfg, cfgErr := config.Load()
 	projectName := ""
