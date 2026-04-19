@@ -145,12 +145,13 @@ func runRecord(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("store decision: %w", err)
 	}
 
-	// Optional Memgraph edge writes — best-effort, warn but don't fail on graph errors.
+	// Always upsert the Decision node to Memgraph so `gg impact` and graph
+	// queries see every decision — edges (DECIDES / REJECTS) remain conditional
+	// on --implements / --rejects. Best-effort: warn but don't fail on graph
+	// errors (Qdrant remains source of truth).
 	implementsRef := strings.TrimSpace(recordImplements)
 	rejectsRef := strings.TrimSpace(recordRejects)
-	if implementsRef != "" || rejectsRef != "" {
-		writeGraphEdges(cmd, ctx, dec, implementsRef, rejectsRef)
-	}
+	writeGraphEdges(cmd, ctx, dec, implementsRef, rejectsRef)
 
 	return printJSON(dec, func() {
 		fmt.Printf("✓ Decision recorded: %s\n", text)
