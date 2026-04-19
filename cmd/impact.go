@@ -428,12 +428,14 @@ func runImpactTask(cmd *cobra.Command, taskID string) error {
 	defer cancel()
 
 	type taskImpactResult struct {
-		TaskID     string            `json:"task_id"`
-		Dependents []string          `json:"dependents"`
-		Decisions  []store.Decision  `json:"decisions"`
-		Tasks      []store.Task      `json:"tasks"`
-		Rejections []store.Rejection `json:"rejections"`
-		Warnings   []string          `json:"warnings,omitempty"`
+		TaskID       string            `json:"task_id"`
+		Dependents   []string          `json:"dependents"`
+		Siblings     []string          `json:"siblings"`
+		Decisions    []store.Decision  `json:"decisions"`
+		Tasks        []store.Task      `json:"tasks"`
+		Bugs         []store.Bug       `json:"bugs"`
+		Rejections   []store.Rejection `json:"rejections"`
+		Warnings     []string          `json:"warnings,omitempty"`
 	}
 
 	result := taskImpactResult{TaskID: taskID}
@@ -453,6 +455,12 @@ func runImpactTask(cmd *cobra.Command, taskID string) error {
 			} else {
 				result.Dependents = deps
 			}
+			siblings, sibErr := gc.TaskSiblings(gctx, taskID)
+			if sibErr != nil {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("task siblings query: %v", sibErr))
+			} else {
+				result.Siblings = siblings
+			}
 		}
 	} else {
 		result.Warnings = append(result.Warnings, "Memgraph not configured — graph data unavailable")
@@ -463,8 +471,8 @@ func runImpactTask(cmd *cobra.Command, taskID string) error {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("embedding: %v", embErr))
 	} else {
 		var wg sync.WaitGroup
-		var decErr, taskErr, rejErr error
-		wg.Add(3)
+		var decErr, taskErr, bugErr, rejErr error
+		wg.Add(4)
 		go func() {
 			defer wg.Done()
 			result.Decisions, decErr = d.store.SearchDecisions(ctx, vector, impactKBLimit)
@@ -475,10 +483,14 @@ func runImpactTask(cmd *cobra.Command, taskID string) error {
 		}()
 		go func() {
 			defer wg.Done()
+			result.Bugs, bugErr = d.store.SearchBugs(ctx, vector, impactKBLimit)
+		}()
+		go func() {
+			defer wg.Done()
 			result.Rejections, rejErr = d.store.SearchRejections(ctx, vector, impactKBLimit)
 		}()
 		wg.Wait()
-		for _, e := range []error{decErr, taskErr, rejErr} {
+		for _, e := range []error{decErr, taskErr, bugErr, rejErr} {
 			if e != nil {
 				result.Warnings = append(result.Warnings, e.Error())
 			}
@@ -496,13 +508,34 @@ func runImpactTask(cmd *cobra.Command, taskID string) error {
 				fmt.Fprintf(os.Stdout, "  → %s\n", id)
 			}
 		}
-		fmt.Fprintf(os.Stdout, "\nRelated Decisions (%d):\n", len(result.Decisions))
-		for _, dec := range result.Decisions {
-			fmt.Fprintf(os.Stdout, "  • %s\n", compactTrim(dec.Text, compactLineWidth))
+		if len(result.Siblings) > 0 {
+			fmt.Fprintf(os.Stdout, "\nSibling Tasks via Shared Decisions (%d):\n", len(result.Siblings))
+			for _, id := range result.Siblings {
+				fmt.Fprintf(os.Stdout, "  ~ %s\n", id)
+			}
 		}
-		fmt.Fprintf(os.Stdout, "\nRelated Tasks (%d):\n", len(result.Tasks))
-		for _, t := range result.Tasks {
-			fmt.Fprintf(os.Stdout, "  T %s — %s\n", t.ID, compactTrim(t.Title, compactLineWidth))
+		if len(result.Decisions) > 0 {
+			fmt.Fprintf(os.Stdout, "\nRelated Decisions (%d):\n", len(result.Decisions))
+			for _, dec := range result.Decisions {
+				fmt.Fprintf(os.Stdout, "  • %s\n", compactTrim(dec.Text, compactLineWidth))
+			}
+		}
+		if len(result.Tasks) > 0 {
+			fmt.Fprintf(os.Stdout, "\nRelated Tasks (%d):\n", len(result.Tasks))
+			for _, t := range result.Tasks {
+				fmt.Fprintf(os.Stdout, "  T %s — %s\n", t.ID, compactTrim(t.Title, compactLineWidth))
+			}
+		}
+		if len(result.Bugs) > 0 {
+			fmt.Fprintf(os.Stdout, "\nRelated Bugs (%d):\n", len(result.Bugs))
+			for _, b := range result.Bugs {
+				fmt.Fprintf(os.Stdout, "  %s [%s] %s\n", b.ID, b.Status, compactTrim(b.Title, compactLineWidth))
+			}
+		}
+		if impactCompact {
+			fmt.Fprintf(os.Stdout, "\n%s — %d downstream %d siblings %dD %dT %dB %dR\n",
+				taskID, len(result.Dependents), len(result.Siblings),
+				len(result.Decisions), len(result.Tasks), len(result.Bugs), len(result.Rejections))
 		}
 		if len(result.Warnings) > 0 {
 			fmt.Fprintln(os.Stdout, "\nWarnings:")

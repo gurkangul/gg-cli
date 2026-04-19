@@ -66,3 +66,18 @@ func TestUpsertKnowledgeEdge_NoPanicOnBadConn(t *testing.T) {
 		t.Error("expected error from unreachable Memgraph, got nil")
 	}
 }
+
+// TestTaskSiblings_NoPanicOnBadConn verifies TaskSiblings propagates a connection
+// error rather than panicking. The Cypher query structure (two UNION arms) is
+// covered structurally by this test; integration coverage requires live Memgraph.
+func TestTaskSiblings_NoPanicOnBadConn(t *testing.T) {
+	cfg := &config.MemgraphConfig{URI: "bolt://localhost:19997"}
+	c, err := New(cfg, "proj-test")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = c.TaskSiblings(t.Context(), "TASK-234")
+	if err == nil {
+		t.Error("expected error from unreachable Memgraph, got nil")
+	}
+}

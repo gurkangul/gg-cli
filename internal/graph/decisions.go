@@ -120,6 +120,43 @@ func (c *Client) TaskDependents(ctx context.Context, taskQdrantID string) ([]str
 	return ids, nil
 }
 
+// TaskSiblings returns task IDs that share a Decision with the given task — i.e.
+// other tasks that implement the same decisions (via IMPLEMENTS edges in both
+// directions: task→decision and decision→task via DECIDES).
+func (c *Client) TaskSiblings(ctx context.Context, taskID string) ([]string, error) {
+	result, cleanup, err := c.runQuery(ctx,
+		"MATCH (t:Task {qdrant_id: $tid, project_id: $pid})-[:IMPLEMENTS]->(d:Decision {project_id: $pid})<-[:IMPLEMENTS]-(sibling:Task {project_id: $pid}) "+
+			"WHERE sibling.qdrant_id <> $tid "+
+			"RETURN DISTINCT sibling.qdrant_id AS id "+
+			"UNION "+
+			"MATCH (d:Decision {project_id: $pid})-[:DECIDES]->(t:Task {qdrant_id: $tid, project_id: $pid}) "+
+			"MATCH (d)-[:DECIDES]->(sibling:Task {project_id: $pid}) "+
+			"WHERE sibling.qdrant_id <> $tid "+
+			"RETURN DISTINCT sibling.qdrant_id AS id",
+		map[string]any{"tid": taskID},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("task siblings query: %w", err)
+	}
+	defer cleanup()
+
+	var ids []string
+	for result.Next(ctx) {
+		record := result.Record()
+		id, ok := record.Get("id")
+		if !ok {
+			continue
+		}
+		if s, isStr := id.(string); isStr && s != "" {
+			ids = append(ids, s)
+		}
+	}
+	if err := result.Err(); err != nil {
+		return nil, fmt.Errorf("task siblings iterate: %w", err)
+	}
+	return ids, nil
+}
+
 // UpsertDecidesEdgeBackfill creates or updates a (Decision)-[:DECIDES]->(Task) edge
 // and stamps created_by=backfill_v1 so it can be identified and rolled back.
 func (c *Client) UpsertDecidesEdgeBackfill(ctx context.Context, decisionQdrantID, taskQdrantID string) error {
