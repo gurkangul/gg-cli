@@ -348,6 +348,19 @@ func TestNotifyTaskLifecycle_DefaultActorWhenNoEnv(t *testing.T) {
 	}
 }
 
+func TestNotifyTaskLifecycle_AudienceIsAgents(t *testing.T) {
+	t.Setenv("GG_NO_AUTO_NOTIFY", "")
+	t.Setenv("GG_ROLE", "developer")
+	sender := &mockMessageSender{}
+	notifyTaskLifecycle(context.Background(), sender, "TASK-099", "done", "shipped")
+	if len(sender.msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(sender.msgs))
+	}
+	if sender.msgs[0].Audience != "agents" {
+		t.Errorf("Audience: got %q, want agents — lifecycle broadcasts must be agent-only so human inbox stays clean", sender.msgs[0].Audience)
+	}
+}
+
 func TestFirstLine(t *testing.T) {
 	cases := []struct {
 		in   string

@@ -333,18 +333,23 @@ Other agents running in parallel sessions cannot read your chat. They only see
 what you write to `gg`. For cross-agent visibility during substantial work,
 broadcast short status updates:
 ```
-gg tell "all" "short status" --from <your-role>
+gg tell "all" "short status" --from <your-role> --audience agents
 ```
+
+**Use `--audience agents` for all agent-status broadcasts.** These are
+routed away from the human inbox by default (`gg inbox` hides them unless
+the human passes `--include-agents`). Only omit `--audience` (defaults to
+`all`) when the human explicitly needs to see the message.
 
 **Broadcast at these moments — and only these:**
 - Starting a substantial task (so another agent doesn't pick up the same one):
-  `gg tell "all" "TASK-016 picked up, evaluating Memgraph Go drivers" --from developer`
+  `gg tell "all" "TASK-016 picked up, evaluating Memgraph Go drivers" --from developer --audience agents`
 - Choosing an approach among alternatives other agents might care about:
-  `gg tell "all" "TASK-016: picked neo4j-go-driver over mgclient-go — Bolt support, active maintenance" --from developer`
+  `gg tell "all" "TASK-016: picked neo4j-go-driver over mgclient-go — Bolt support, active maintenance" --from developer --audience agents`
 - Hitting a blocker that affects shared assumptions:
-  `gg tell "all" "TASK-016 blocked: Go 1.26 incompatibility in neo4j driver, investigating workaround" --from developer`
+  `gg tell "all" "TASK-016 blocked: Go 1.26 incompatibility in neo4j driver, investigating workaround" --from developer --audience agents`
 - Finishing a multi-step task (alongside `gg task done`):
-  `gg tell "all" "TASK-016 done: Memgraph Go client live, internal/graph/ ready for TASK-007" --from developer`
+  `gg tell "all" "TASK-016 done: Memgraph Go client live, internal/graph/ ready for TASK-007" --from developer --audience agents`
 
 **Do NOT broadcast:**
 - Every code change, file read, or thought
