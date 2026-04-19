@@ -175,6 +175,14 @@ type WeeklySummary struct {
 // Summarize reads the telemetry file and aggregates the last 7 days of data.
 // Returns an empty summary (not an error) when the file doesn't exist.
 func Summarize(runtimeDir string) (*WeeklySummary, error) {
+	return SummarizeFrom(runtimeDir, time.Now().UTC().AddDate(0, 0, -7))
+}
+
+// SummarizeFrom reads the telemetry file and aggregates all entries at or
+// after since. Returns an empty summary (not an error) when the file doesn't
+// exist. Useful for per-session gap detection where the cutoff is the
+// session's first write timestamp rather than a fixed 7-day window.
+func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 	data, err := os.ReadFile(filePath(runtimeDir))
 	if os.IsNotExist(err) {
 		return &WeeklySummary{VerbCounts: map[string]int{}}, nil
@@ -183,7 +191,6 @@ func Summarize(runtimeDir string) (*WeeklySummary, error) {
 		return nil, err
 	}
 
-	cutoff := time.Now().UTC().AddDate(0, 0, -7)
 	sum := &WeeklySummary{VerbCounts: map[string]int{}}
 
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
@@ -196,7 +203,7 @@ func Summarize(runtimeDir string) (*WeeklySummary, error) {
 			continue
 		}
 		ts, err := time.Parse(time.RFC3339, e.Timestamp)
-		if err != nil || ts.Before(cutoff) {
+		if err != nil || ts.Before(since) {
 			continue
 		}
 		sum.Total++

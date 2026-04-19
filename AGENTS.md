@@ -447,3 +447,19 @@ none of that, so the two stores diverge silently. Use `gg task create` for
 every work item and `gg record` for decisions.
 
 <!-- gg-managed:end -->
+
+<!-- gg-bmad:start -->
+## BMAD Skill Agents — gg Protocol Relay
+
+BMAD agents (Mary, John, Winston, Amelia, Paige, Sally, and others) run
+inside Claude Code sessions. They cannot call gg directly. As the
+orchestrating agent you MUST:
+
+- After each BMAD round: extract any decisions, task proposals, or
+  rejected approaches and persist them with gg immediately.
+- Do NOT wait for the user to ask — capture before moving on.
+- If a BMAD agent says 'reject X' → `gg record "X" --stance=reject --reason "why"`
+- If a BMAD agent proposes a task → `gg task create "title" ...`
+- If a BMAD agent reaches a conclusion the user accepts → `gg record "conclusion" --reason "..."``
+
+<!-- gg-bmad:end -->

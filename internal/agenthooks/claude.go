@@ -75,22 +75,29 @@ func (c *claudeInstaller) globalSignals() bool {
 // (including post-/clear resumes) without depending on the agent
 // remembering to run it.
 const (
-	claudeEventSessionStart      = "SessionStart"
-	claudeEventUserPromptSubmit  = "UserPromptSubmit"
-	claudeEventPreToolUse        = "PreToolUse"
-	claudeEventPostToolUse       = "PostToolUse"
-	claudeMatcherStartup         = "startup"
-	claudeMatcherGSDPlan         = "mcp__gsd-workflow__gsd_plan_milestone|mcp__gsd-workflow__gsd_plan_slice|mcp__gsd-workflow__gsd_plan_task|gsd_plan_milestone|gsd_plan_slice|gsd_plan_task"
-	claudeMatcherWriteTools      = "Edit|Write|MultiEdit"
-	claudeCommand                = "gg session-start --agent=claude-code"
-	claudeCommandMarker          = "gg session-start"
-	claudeInboxCommand           = "gg inbox --peek"
-	claudeInboxCommandMarker     = "gg inbox"
-	claudeGSDGuardCommand        = "gg gsd-guard"
-	claudeGSDGuardCommandMarker  = "gg gsd-guard"
+	claudeEventSessionStart     = "SessionStart"
+	claudeEventUserPromptSubmit = "UserPromptSubmit"
+	claudeEventPreToolUse       = "PreToolUse"
+	claudeEventPostToolUse      = "PostToolUse"
+	claudeEventStop             = "Stop"
+	claudeMatcherStartup        = "startup"
+	claudeMatcherGSDPlan        = "mcp__gsd-workflow__gsd_plan_milestone|mcp__gsd-workflow__gsd_plan_slice|mcp__gsd-workflow__gsd_plan_task|gsd_plan_milestone|gsd_plan_slice|gsd_plan_task"
+	claudeMatcherWriteTools     = "Edit|Write|MultiEdit"
+	claudeCommand               = "gg session-start --agent=claude-code"
+	claudeCommandMarker         = "gg session-start"
+	claudeInboxCommand          = "gg inbox --peek"
+	claudeInboxCommandMarker    = "gg inbox"
+	claudeGSDGuardCommand       = "gg gsd-guard"
+	claudeGSDGuardCommandMarker = "gg gsd-guard"
 	// warn-mode: || true so a verify failure never blocks the write, only warns.
-	claudeVerifyCommand          = `[ "${GG_NO_VERIFY:-0}" = '1' ] || gg verify --file "$CLAUDE_TOOL_INPUT_FILE_PATH" 2>&1 || true`
-	claudeVerifyCommandMarker    = "gg verify --file"
+	claudeVerifyCommand       = `[ "${GG_NO_VERIFY:-0}" = '1' ] || gg verify --file "$CLAUDE_TOOL_INPUT_FILE_PATH" 2>&1 || true`
+	claudeVerifyCommandMarker = "gg verify --file"
+	// audit-track: record each Edit/Write/MultiEdit in session audit log.
+	claudeAuditTrackCommand       = `[ "${GG_NO_AUDIT:-0}" = '1' ] || gg audit track --session-id "$CLAUDE_SESSION_ID" --file "${CLAUDE_TOOL_INPUT_FILE_PATH:-}" 2>/dev/null || true`
+	claudeAuditTrackCommandMarker = "gg audit track"
+	// audit-report: emit untracked-mutation warning at session end (non-blocking).
+	claudeAuditReportCommand       = `[ "${GG_NO_AUDIT:-0}" = '1' ] || gg audit report --session-id "$CLAUDE_SESSION_ID" 2>/dev/null || true`
+	claudeAuditReportCommandMarker = "gg audit report"
 )
 
 type claudeInstaller struct {
@@ -150,13 +157,17 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	inboxPresent := claudeHasUserPromptHook(data, claudeInboxCommandMarker)
 	gsdGuardPresent := claudeHasPreToolUseHook(data, claudeGSDGuardCommandMarker)
 	verifyPresent := claudeHasPostToolUseHook(data, claudeVerifyCommandMarker)
+	auditTrackPresent := claudeHasPostToolUseHook(data, claudeAuditTrackCommandMarker)
+	auditReportPresent := claudeHasStopHook(data, claudeAuditReportCommandMarker)
 
-	if sessionStartPresent && inboxPresent && gsdGuardPresent && verifyPresent {
+	if sessionStartPresent && inboxPresent && gsdGuardPresent && verifyPresent && auditTrackPresent && auditReportPresent {
 		res.Action = ActionUpToDate
 		res.Notes = append(res.Notes, "SessionStart hook already present")
 		res.Notes = append(res.Notes, "UserPromptSubmit hook already present")
 		res.Notes = append(res.Notes, "PreToolUse gsd-guard hook already present")
 		res.Notes = append(res.Notes, "PostToolUse verify hook already present")
+		res.Notes = append(res.Notes, "PostToolUse audit-track hook already present")
+		res.Notes = append(res.Notes, "Stop audit-report hook already present")
 		return res, nil
 	}
 
@@ -172,6 +183,12 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	if !verifyPresent {
 		claudeAddPostToolUseHook(data, claudeMatcherWriteTools, claudeVerifyCommand)
 	}
+	if !auditTrackPresent {
+		claudeAddPostToolUseHook(data, claudeMatcherWriteTools, claudeAuditTrackCommand)
+	}
+	if !auditReportPresent {
+		claudeAddStopHook(data, claudeAuditReportCommand)
+	}
 
 	if opts.DryRun {
 		res.Action = ActionDryRun
@@ -186,6 +203,12 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 		}
 		if !verifyPresent {
 			res.Notes = append(res.Notes, "would add PostToolUse verify hook: "+claudeVerifyCommand)
+		}
+		if !auditTrackPresent {
+			res.Notes = append(res.Notes, "would add PostToolUse audit-track hook: "+claudeAuditTrackCommand)
+		}
+		if !auditReportPresent {
+			res.Notes = append(res.Notes, "would add Stop audit-report hook: "+claudeAuditReportCommand)
 		}
 		return res, nil
 	}
@@ -209,6 +232,12 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	}
 	if !verifyPresent {
 		res.Notes = append(res.Notes, "PostToolUse verify hook: "+claudeVerifyCommand)
+	}
+	if !auditTrackPresent {
+		res.Notes = append(res.Notes, "PostToolUse audit-track hook: "+claudeAuditTrackCommand)
+	}
+	if !auditReportPresent {
+		res.Notes = append(res.Notes, "Stop audit-report hook: "+claudeAuditReportCommand)
 	}
 	return res, nil
 }
@@ -373,6 +402,51 @@ func claudeAddPostToolUseHook(data map[string]any, matcher, cmd string) {
 		},
 	})
 	hooks[claudeEventPostToolUse] = entries
+}
+
+// claudeHasStopHook reports whether a Stop entry already contains a command
+// matching marker (substring compare). Used for idempotency.
+func claudeHasStopHook(data map[string]any, marker string) bool {
+	hooks, _ := data["hooks"].(map[string]any)
+	if hooks == nil {
+		return false
+	}
+	entries, _ := hooks[claudeEventStop].([]any)
+	for _, e := range entries {
+		m, _ := e.(map[string]any)
+		if m == nil {
+			continue
+		}
+		inner, _ := m["hooks"].([]any)
+		for _, h := range inner {
+			hm, _ := h.(map[string]any)
+			if hm == nil {
+				continue
+			}
+			if cmd, _ := hm["command"].(string); strings.Contains(cmd, marker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// claudeAddStopHook adds a Stop hook entry that calls cmd. The matcher is
+// left empty (matches all stop events) per the Claude Code hook schema.
+func claudeAddStopHook(data map[string]any, cmd string) {
+	hooks, _ := data["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+		data["hooks"] = hooks
+	}
+	entries, _ := hooks[claudeEventStop].([]any)
+	entries = append(entries, map[string]any{
+		"matcher": "",
+		"hooks": []any{
+			map[string]any{"type": "command", "command": cmd},
+		},
+	})
+	hooks[claudeEventStop] = entries
 }
 
 // claudeAddHook merges a new command hook into data without clobbering

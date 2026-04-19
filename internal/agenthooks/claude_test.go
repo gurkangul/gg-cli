@@ -578,3 +578,149 @@ func TestClaude_Install_IdempotentOnGSDGuardPresent(t *testing.T) {
 		t.Errorf("expected exactly 1 gsd-guard hook, got %d", guardCount)
 	}
 }
+
+func TestClaude_Install_AuditHooksAdded(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := (&claudeInstaller{}).Install(root, Options{})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if res.Action == ActionUpToDate {
+		t.Error("fresh install should not be up-to-date")
+	}
+
+	raw, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
+	s := string(raw)
+	if !strings.Contains(s, claudeAuditTrackCommandMarker) {
+		t.Errorf("PostToolUse audit-track hook not added: %s", s)
+	}
+	if !strings.Contains(s, claudeAuditReportCommandMarker) {
+		t.Errorf("Stop audit-report hook not added: %s", s)
+	}
+}
+
+func TestClaude_Install_AuditHooksIdempotent(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	inst := &claudeInstaller{}
+	if _, err := inst.Install(root, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := inst.Install(root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Action != ActionUpToDate {
+		t.Errorf("second Install Action = %q, want %q", res.Action, ActionUpToDate)
+	}
+
+	// Verify each audit hook appears exactly once.
+	raw, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatalf("parse settings.json: %v", err)
+	}
+	hooks, _ := data["hooks"].(map[string]any)
+
+	countHookInEvent := func(event, marker string) int {
+		entries, _ := hooks[event].([]any)
+		n := 0
+		for _, e := range entries {
+			m, _ := e.(map[string]any)
+			inner, _ := m["hooks"].([]any)
+			for _, h := range inner {
+				hm, _ := h.(map[string]any)
+				if cmd, _ := hm["command"].(string); strings.Contains(cmd, marker) {
+					n++
+				}
+			}
+		}
+		return n
+	}
+
+	if n := countHookInEvent(claudeEventPostToolUse, claudeAuditTrackCommandMarker); n != 1 {
+		t.Errorf("expected exactly 1 audit-track PostToolUse hook, got %d", n)
+	}
+	if n := countHookInEvent(claudeEventStop, claudeAuditReportCommandMarker); n != 1 {
+		t.Errorf("expected exactly 1 audit-report Stop hook, got %d", n)
+	}
+}
+
+func TestClaude_Install_AuditHooksPreserveExistingOnUpdate(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build settings with all pre-existing hooks except audit ones via
+	// json.Marshal so shell variables in commands don't break JSON encoding.
+	existingData := map[string]any{
+		"hooks": map[string]any{
+			claudeEventSessionStart: []any{
+				map[string]any{
+					"matcher": claudeMatcherStartup,
+					"hooks":   []any{map[string]any{"type": "command", "command": claudeCommand}},
+				},
+			},
+			claudeEventUserPromptSubmit: []any{
+				map[string]any{
+					"matcher": "",
+					"hooks":   []any{map[string]any{"type": "command", "command": claudeInboxCommand}},
+				},
+			},
+			claudeEventPreToolUse: []any{
+				map[string]any{
+					"matcher": claudeMatcherGSDPlan,
+					"hooks":   []any{map[string]any{"type": "command", "command": claudeGSDGuardCommand}},
+				},
+			},
+			claudeEventPostToolUse: []any{
+				map[string]any{
+					"matcher": claudeMatcherWriteTools,
+					"hooks":   []any{map[string]any{"type": "command", "command": claudeVerifyCommand}},
+				},
+			},
+		},
+	}
+	existingJSON, err := json.Marshal(existingData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), existingJSON, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := (&claudeInstaller{}).Install(root, Options{})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if res.Action != ActionUpdated {
+		t.Errorf("Action = %q, want %q", res.Action, ActionUpdated)
+	}
+
+	raw, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
+	s := string(raw)
+	if !strings.Contains(s, claudeAuditTrackCommandMarker) {
+		t.Errorf("audit-track hook not added: %s", s)
+	}
+	if !strings.Contains(s, claudeAuditReportCommandMarker) {
+		t.Errorf("audit-report hook not added: %s", s)
+	}
+	// Prior hooks must survive.
+	if !strings.Contains(s, "gg session-start") {
+		t.Errorf("SessionStart hook dropped")
+	}
+	if !strings.Contains(s, "gg verify --file") {
+		t.Errorf("verify hook dropped")
+	}
+}
