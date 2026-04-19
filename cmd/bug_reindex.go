@@ -72,10 +72,6 @@ func runBugReindex(cmd *cobra.Command, _ []string) error {
 
 	var skipped, replayed, failed int
 	for _, b := range bugs {
-		if len(b.AffectedFiles) == 0 && len(b.AffectedSymbols) == 0 {
-			skipped++
-			continue
-		}
 		if !sinceTime.IsZero() {
 			ts, parseErr := time.Parse(time.RFC3339, b.UpdatedAt)
 			if parseErr != nil || ts.Before(sinceTime) {
