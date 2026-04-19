@@ -1069,6 +1069,15 @@ func runDoctorInstallTaskHooks() error {
 		installed++
 	}
 
+	// Offer to add the include line to an existing Makefile. The prompt is
+	// non-destructive: we only append, and only when the user says yes.
+	makefilePath := filepath.Join(projectRoot, "Makefile")
+	if _, statErr := os.Stat(makefilePath); statErr == nil {
+		if err := offerMakefileTestTierInclude(makefilePath, mkTierPath, projectRoot); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠ Makefile update skipped: %v\n", err)
+		}
+	}
+
 	if len(goDirs) == 0 && len(nodeDirs) == 0 {
 		fmt.Println("No go.mod or package.json found in the project (walked up to depth", maxDepth, ").")
 		fmt.Println("Write your own verify gate at:")
@@ -1180,6 +1189,45 @@ func wrapLegacyPostHook(body, sub string) string {
 		}
 	}
 	return header + trimmed
+}
+
+// offerMakefileTestTierInclude checks whether makefilePath already includes the
+// test-tier template. If not, it prompts the user interactively and appends the
+// include line on confirmation. The function is intentionally non-destructive:
+// it never modifies existing content — only appends — and always asks first.
+func offerMakefileTestTierInclude(makefilePath, tierTemplatePath, projectRoot string) error {
+	data, err := os.ReadFile(makefilePath) //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("read Makefile: %w", err)
+	}
+	if strings.Contains(string(data), "makefile-test-tiers.mk") {
+		fmt.Println("  ✓ Makefile already includes test-tier template — nothing to do")
+		return nil
+	}
+
+	rel, _ := filepath.Rel(projectRoot, tierTemplatePath)
+	includeLine := "include " + filepath.ToSlash(rel)
+
+	fmt.Printf("\nMakefile found at %s.\n", makefilePath)
+	fmt.Printf("Add test-tier targets (test-unit / test-integration / test-smoke / test-e2e)? [y/N] ")
+	fmt.Printf("  This appends: %s\n", includeLine)
+
+	var answer string
+	if _, scanErr := fmt.Scanln(&answer); scanErr != nil || strings.ToLower(strings.TrimSpace(answer)) != "y" {
+		fmt.Println("  Skipped — add the include manually when ready.")
+		return nil
+	}
+
+	f, openErr := os.OpenFile(makefilePath, os.O_APPEND|os.O_WRONLY, 0o644) //nolint:gosec
+	if openErr != nil {
+		return fmt.Errorf("open Makefile: %w", openErr)
+	}
+	defer func() { _ = f.Close() }()
+	if _, writeErr := fmt.Fprintf(f, "\n# gg test-tier targets\n%s\n", includeLine); writeErr != nil {
+		return fmt.Errorf("append to Makefile: %w", writeErr)
+	}
+	fmt.Printf("  ✓ Added '%s' to Makefile\n", includeLine)
+	return nil
 }
 
 // installHookIfAbsent writes body to path with 0755 permissions, unless a file

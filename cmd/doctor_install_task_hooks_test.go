@@ -323,6 +323,112 @@ func TestInstallTaskHooks_SkipsFrameworkBuildArtifacts_BUG017(t *testing.T) {
 	}
 }
 
+// ── smoke gate + test-tier template tests (TASK-222) ──────────────────────────
+
+// Smoke hook is always installed regardless of detected language, so teams
+// can adopt the test-tier Makefile pattern incrementally. The hook self-skips
+// at runtime when no Makefile / no test-smoke target is present.
+func TestInstallTaskHooks_SmokeGate_AlwaysInstalled(t *testing.T) {
+	// No go.mod, no package.json — but smoke hook must still land.
+	f := newHookInstallFixture(t, false, false)
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+
+	smokePath := filepath.Join(f.preDir, "05-smoke-e2e.sh")
+	if !installerShebang(t, smokePath) {
+		t.Errorf("expected smoke pre-hook at %s", smokePath)
+	}
+	// The file must be executable.
+	info, err := os.Stat(smokePath)
+	if err != nil {
+		t.Fatalf("stat %s: %v", smokePath, err)
+	}
+	if info.Mode()&0o100 == 0 {
+		t.Errorf("%s should be executable, got mode %v", smokePath, info.Mode())
+	}
+}
+
+// Smoke hook also installed alongside language-specific hooks for Go projects.
+func TestInstallTaskHooks_SmokeGate_InstalledWithGoProject(t *testing.T) {
+	f := newHookInstallFixture(t, true, false)
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+	smokePath := filepath.Join(f.preDir, "05-smoke-e2e.sh")
+	if !installerShebang(t, smokePath) {
+		t.Errorf("expected smoke pre-hook at %s", smokePath)
+	}
+}
+
+// Smoke hook content must contain the GG_NO_SMOKE opt-out and the make target
+// check — these are the two runtime skip paths.
+func TestInstallTaskHooks_SmokeGate_ContentHasSkipPaths(t *testing.T) {
+	f := newHookInstallFixture(t, false, false)
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(f.preDir, "05-smoke-e2e.sh"))
+	if err != nil {
+		t.Fatalf("read smoke hook: %v", err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		"GG_NO_SMOKE",
+		"test-smoke",
+		"make test-smoke",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("smoke hook missing expected content %q", want)
+		}
+	}
+}
+
+// Makefile tier template is always written to .gg/templates/ so it is
+// discoverable even on projects without a detected language manifest.
+func TestInstallTaskHooks_MakefileTemplate_AlwaysInstalled(t *testing.T) {
+	f := newHookInstallFixture(t, false, false)
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+	tmplPath := filepath.Join(f.ggDir, "templates", "makefile-test-tiers.mk")
+	data, err := os.ReadFile(tmplPath)
+	if err != nil {
+		t.Fatalf("expected makefile template at %s: %v", tmplPath, err)
+	}
+	body := string(data)
+	for _, target := range []string{"test-unit", "test-integration", "test-smoke", "test-e2e"} {
+		if !strings.Contains(body, target) {
+			t.Errorf("makefile template missing target %q", target)
+		}
+	}
+}
+
+// Re-running the installer must not overwrite the Makefile template if it
+// already exists (idempotent, matches behavior of hook file installs).
+func TestInstallTaskHooks_MakefileTemplate_Idempotent(t *testing.T) {
+	f := newHookInstallFixture(t, false, false)
+	tmplDir := filepath.Join(f.ggDir, "templates")
+	if err := os.MkdirAll(tmplDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	custom := filepath.Join(tmplDir, "makefile-test-tiers.mk")
+	customBody := "# my custom overrides\ntest-smoke:\n\techo ok\n"
+	if err := os.WriteFile(custom, []byte(customBody), 0o644); err != nil {
+		t.Fatalf("write custom template: %v", err)
+	}
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+	got, err := os.ReadFile(custom)
+	if err != nil {
+		t.Fatalf("read after install: %v", err)
+	}
+	if string(got) != customBody {
+		t.Errorf("installer overwrote custom makefile template")
+	}
+}
+
 // ── wrapLegacyPostHook unit tests ─────────────────────────────────────────────
 
 func TestWrapLegacyPostHook_SubdirInjectsCDAndSingleShebang(t *testing.T) {
