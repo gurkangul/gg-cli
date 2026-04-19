@@ -25,3 +25,9 @@ var PreTaskDoneNodeHook string
 
 //go:embed 90-bug-repros.sh
 var BugReprosHook string
+
+//go:embed 05-smoke-e2e.sh
+var SmokeE2EHook string
+
+//go:embed makefile-test-tiers.mk
+var MakefileTestTiers string

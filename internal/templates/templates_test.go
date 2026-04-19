@@ -22,6 +22,9 @@ func TestTemplates_TrailingNewline(t *testing.T) {
 		{"TaskDoneGoHook", TaskDoneGoHook},
 		{"PreTaskDoneGoHook", PreTaskDoneGoHook},
 		{"PreTaskDoneNodeHook", PreTaskDoneNodeHook},
+		{"BugReprosHook", BugReprosHook},
+		{"SmokeE2EHook", SmokeE2EHook},
+		{"MakefileTestTiers", MakefileTestTiers},
 	}
 	for _, tc := range cases {
 		if !strings.HasSuffix(tc.body, "\n") {
@@ -43,6 +46,8 @@ func TestTemplates_Shebang(t *testing.T) {
 		{"TaskDoneGoHook", TaskDoneGoHook},
 		{"PreTaskDoneGoHook", PreTaskDoneGoHook},
 		{"PreTaskDoneNodeHook", PreTaskDoneNodeHook},
+		{"BugReprosHook", BugReprosHook},
+		{"SmokeE2EHook", SmokeE2EHook},
 	}
 	for _, tc := range cases {
 		if !strings.HasPrefix(tc.body, "#!/bin/sh\n") {

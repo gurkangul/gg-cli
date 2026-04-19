@@ -1041,6 +1041,34 @@ func runDoctorInstallTaskHooks() error {
 		installed += n
 	}
 
+	// Test-tier smoke gate (TASK-222): install the hook everywhere but have
+	// it self-skip until the project adopts the test-tier Makefile pattern.
+	// Filename prefix 05 runs BEFORE language-specific 10-* hooks so a broken
+	// test-smoke fails fast, before spending the Go/Node verify-suite budget.
+	smokeHookPath := filepath.Join(preDir, "05-smoke-e2e.sh")
+	if n, err := installHookIfAbsent(smokeHookPath, templates.SmokeE2EHook,
+		"smoke gate — runs `make test-smoke` when the target exists (skips quietly otherwise)"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
+	// Makefile tier template: written to .gg/templates/ so humans can discover
+	// + opt-in via `include .gg/templates/makefile-test-tiers.mk`. Never
+	// auto-edits the project Makefile — opt-in is the whole point.
+	tmplDir := filepath.Join(ggDir, "templates")
+	if mkErr := os.MkdirAll(tmplDir, 0o755); mkErr != nil {
+		return fmt.Errorf("create templates dir: %w", mkErr)
+	}
+	mkTierPath := filepath.Join(tmplDir, "makefile-test-tiers.mk")
+	if _, statErr := os.Stat(mkTierPath); os.IsNotExist(statErr) {
+		if writeErr := os.WriteFile(mkTierPath, []byte(templates.MakefileTestTiers), 0o644); writeErr != nil {
+			return fmt.Errorf("write %s: %w", mkTierPath, writeErr)
+		}
+		fmt.Printf("  ✓ template .gg/templates/makefile-test-tiers.mk written — add `include` line to adopt\n")
+		installed++
+	}
+
 	if len(goDirs) == 0 && len(nodeDirs) == 0 {
 		fmt.Println("No go.mod or package.json found in the project (walked up to depth", maxDepth, ").")
 		fmt.Println("Write your own verify gate at:")
