@@ -113,17 +113,18 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("report bug: %w", err)
 	}
 
-	// Write Bug node + AFFECTS edges to Memgraph when configured.
-	if len(affectedFiles) > 0 || len(affectedSymbols) > 0 {
-		if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Memgraph.URI != "" {
-			if gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID); gcErr == nil {
-				gctx, gcancel := withTimeout(cmd.Context())
-				defer gcancel()
-				if mergeErr := gc.MergeBugAffects(gctx, id, title, affectedFiles, affectedSymbols); mergeErr != nil {
-					fmt.Printf("~ graph edges skipped: %v\n", mergeErr)
-				}
-				_ = gc.Close(gctx)
+	// Write Bug node + AFFECTS edges to Memgraph when configured. Always
+	// upsert the Bug node, even when no affected files/symbols were given —
+	// otherwise `gg impact BUG-NNN` cannot find the bug and onelift/qrmenu
+	// end up with 0 Bug nodes in Memgraph despite a populated Qdrant.
+	if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Memgraph.URI != "" {
+		if gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID); gcErr == nil {
+			gctx, gcancel := withTimeout(cmd.Context())
+			defer gcancel()
+			if mergeErr := gc.MergeBugAffects(gctx, id, title, affectedFiles, affectedSymbols); mergeErr != nil {
+				fmt.Printf("~ graph edges skipped: %v\n", mergeErr)
 			}
+			_ = gc.Close(gctx)
 		}
 	}
 
