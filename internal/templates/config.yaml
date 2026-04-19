@@ -16,6 +16,13 @@ memgraph:
   password: ""                   # Leave empty; set MEMGRAPH_PASSWORD env var instead of writing here
                                  # MEMGRAPH_URI and MEMGRAPH_USERNAME env vars also override their fields
 
+# bugs.require_broken_ref: set to true to make --repro-broken-ref mandatory on
+# every `gg bug fix` call. When true, every fix must prove the repro failed at
+# the pre-fix commit and passes at HEAD. Default false for back-compat.
+#
+# bugs:
+#   require_broken_ref: true
+
 # tracker.canonical: declare gg as the sole task tracker for this project.
 # When set to "gg", the Claude Code PreToolUse guard blocks
 # mcp__gsd-workflow__gsd_plan_* calls and redirects agents to gg task create.

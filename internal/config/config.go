@@ -88,6 +88,13 @@ var DefaultHookInstallSkipDirs = []string{
 // packages/<x>/manifest and services/<x>/manifest without a full tree walk).
 const DefaultHookInstallMaxDepth = 3
 
+// BugsConfig controls bug-fix workflow enforcement.
+type BugsConfig struct {
+	// RequireBrokenRef, when true, makes --repro-broken-ref mandatory on
+	// every `gg bug fix` call. Default false (warn-only) for back-compat.
+	RequireBrokenRef bool `yaml:"require_broken_ref"`
+}
+
 // TrackerConfig declares which task-tracker is canonical for this project.
 type TrackerConfig struct {
 	// Canonical names the tracker agents must use. Set to "gg" to activate
@@ -120,6 +127,7 @@ type Config struct {
 	Telemetry TelemetryConfig `yaml:"telemetry"`
 	Doctor    DoctorConfig    `yaml:"doctor"`
 	Tracker   TrackerConfig   `yaml:"tracker"`
+	Bugs      BugsConfig      `yaml:"bugs"`
 }
 
 func DefaultConfig() *Config {
