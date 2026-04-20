@@ -39,6 +39,9 @@ var BugReprosHook string
 //go:embed 05-smoke-e2e.sh
 var SmokeE2EHook string
 
+//go:embed 30-file-size.sh
+var FileSizeGateHook string
+
 //go:embed makefile-test-tiers.mk
 var MakefileTestTiers string
 
@@ -56,6 +59,7 @@ func ArtifactSHAs() map[string]string {
 		"hooks/pre-task-done.d/10-go-verify.sh":  PreTaskDoneGoHook,
 		"hooks/pre-task-done.d/10-node-verify.sh": PreTaskDoneNodeHook,
 		"hooks/pre-task-done.d/20-decide-capture.sh": PreTaskDoneDecideCaptureHook,
+		"hooks/pre-task-done.d/30-file-size.sh":       FileSizeGateHook,
 		"hooks/task-done.d/80-task-done-go.sh":   TaskDoneGoHook,
 		"templates/makefile-test-tiers.mk":       MakefileTestTiers,
 	}

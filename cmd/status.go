@@ -11,6 +11,7 @@ import (
 
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/enforcement"
+	"github.com/gurkangul/gg-cli/internal/filesize"
 	"github.com/gurkangul/gg-cli/internal/outbox"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/telemetry"
@@ -343,6 +344,19 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				if r.LowCompliance {
 					fmt.Printf("\n⚠ Inbox obedience: agent %q %.0f%% (%d/%d) last 7d — run `gg audit inbox-obedience` for detail\n",
 						r.Role, r.ObedienceRatio*100, r.Acknowledged, r.Received)
+				}
+			}
+		}
+
+		// File-size drift summary: show a one-liner when new violations exist.
+		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+			if allFiles, scanErr := filesize.ScanDir(cwd); scanErr == nil {
+				if b, bErr := filesize.ReadBaseline(cwd); bErr == nil {
+					violations := filesize.CheckViolations(allFiles, b, true)
+					if len(violations) > 0 {
+						fmt.Printf("\nFile-size drift: %d new violation(s) (baseline frozen at %d) — run `gg audit file-size`\n",
+							len(violations), len(b.Files))
+					}
 				}
 			}
 		}

@@ -205,6 +205,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err := runDoctorInstallTaskHooks(); err != nil {
 			fmt.Fprintf(os.Stderr, "⚠ task hooks install: %v\n", err)
 		}
+
+		// Capture the file-size baseline so 30-file-size.sh grandfathers
+		// any pre-existing over-limit files in this project.
+		if err := runDoctorSyncBaseline(); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠ file-size baseline: %v\n", err)
+		}
 	}
 
 	langHint := detectLangHint(cwd)

@@ -18,6 +18,7 @@ import (
 	"github.com/gurkangul/gg-cli/internal/agenthooks"
 	"github.com/gurkangul/gg-cli/internal/artifacts"
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/filesize"
 	"github.com/gurkangul/gg-cli/internal/embedding"
 	"github.com/gurkangul/gg-cli/internal/enforcement"
 	"github.com/gurkangul/gg-cli/internal/graph"
@@ -57,9 +58,10 @@ var (
 	doctorSyncApply         bool
 	doctorBypassAudit       bool
 	doctorBypassAuditSince  string
-	doctorCheckContract     bool
-	doctorContractFix       bool
+	doctorCheckContract      bool
+	doctorContractFix        bool
 	doctorContractForceReset bool
+	doctorSyncBaseline       bool
 )
 
 func init() {
@@ -99,6 +101,8 @@ func init() {
 		"with --check-contract: repair STALE and MISSING entries; refuses DRIFTED without --force-reset")
 	doctorCmd.Flags().BoolVar(&doctorContractForceReset, "force-reset", false,
 		"with --check-contract --fix: overwrite manually-edited (DRIFTED) contract blocks")
+	doctorCmd.Flags().BoolVar(&doctorSyncBaseline, "sync-baseline", false,
+		"rescan project and refresh .gg/file-size-baseline.json with current line counts")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -197,6 +201,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// --check-contract: drift detection for managed contract blocks.
 	if doctorCheckContract {
 		return runDoctorCheckContract(doctorContractFix, doctorContractForceReset)
+	}
+	// --sync-baseline: refresh .gg/file-size-baseline.json.
+	if doctorSyncBaseline {
+		return runDoctorSyncBaseline()
 	}
 
 	fmt.Println("GG Doctor")
@@ -1236,6 +1244,17 @@ func runDoctorInstallTaskHooks() error {
 		installed += n
 	}
 
+	// 30-file-size.sh: warns (or blocks) when source/test files exceed the
+	// 500/800-line modularity cap. Default mode=warn; set
+	// GG_FILE_SIZE_GATE=block to escalate, GG_FILE_SIZE_GATE=off to disable.
+	fileSizeHookPath := filepath.Join(preDir, "30-file-size.sh")
+	if n, err := installHookIfAbsent(fileSizeHookPath, templates.FileSizeGateHook,
+		"file-size gate — warns on oversized source/test files (GG_FILE_SIZE_GATE=warn|block|off)"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
 	// Makefile tier template: written to .gg/templates/ so humans can discover
 	// + opt-in via `include .gg/templates/makefile-test-tiers.mk`. Never
 	// auto-edits the project Makefile — opt-in is the whole point.
@@ -1508,5 +1527,34 @@ func runInstall(cmd *cobra.Command, spec indexerSpec) error {
 	if err := c.Run(); err != nil {
 		return fmt.Errorf("%s: %w", strings.Join(spec.Install, " "), err)
 	}
+	return nil
+}
+
+// runDoctorSyncBaseline rescans the project and rewrites .gg/file-size-baseline.json
+// with current line counts for all files that currently exceed their size limit.
+// Files already under the limit are omitted — the baseline only grandfathers violations.
+func runDoctorSyncBaseline() error {
+	root, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	allFiles, err := filesize.ScanDir(root)
+	if err != nil {
+		return fmt.Errorf("scanning project: %w", err)
+	}
+
+	b := &filesize.Baseline{Files: map[string]int{}}
+	for path, lines := range allFiles {
+		limit := filesize.ParseLimit(path)
+		if lines > limit {
+			b.Files[path] = lines
+		}
+	}
+
+	if err := filesize.WriteBaseline(root, b); err != nil {
+		return fmt.Errorf("writing baseline: %w", err)
+	}
+
+	fmt.Printf("file-size baseline updated: %d file(s) grandfathered in .gg/file-size-baseline.json\n", len(b.Files))
 	return nil
 }
