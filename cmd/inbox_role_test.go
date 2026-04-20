@@ -1,0 +1,131 @@
+// Package cmd — tests for role-targeted imperative marker in printMessages.
+package cmd
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/gurkangul/gg-cli/internal/store"
+	"github.com/gurkangul/gg-cli/internal/templates"
+)
+
+// captureStdout redirects os.Stdout to a buffer for the duration of fn.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+
+	fn()
+
+	w.Close()
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	return buf.String()
+}
+
+func TestInbox_ActionRequired_ToRole(t *testing.T) {
+	t.Setenv("GG_ROLE", "gsd")
+
+	msgs := []store.Message{
+		{FromRole: "claude-code", ToRole: "gsd", Content: "please review TASK-010"},
+	}
+	out := captureStdout(t, func() {
+		printMessages(msgs, "")
+	})
+
+	if !strings.Contains(out, "[ACTION REQUIRED]") {
+		t.Errorf("expected [ACTION REQUIRED] for to_role=gsd when GG_ROLE=gsd, got:\n%s", out)
+	}
+}
+
+func TestInbox_ActionRequired_MentionInContent(t *testing.T) {
+	t.Setenv("GG_ROLE", "gsd")
+
+	msgs := []store.Message{
+		{FromRole: "claude-code", ToRole: "all", Content: "@gsd please take TASK-010"},
+	}
+	out := captureStdout(t, func() {
+		printMessages(msgs, "")
+	})
+
+	if !strings.Contains(out, "[ACTION REQUIRED]") {
+		t.Errorf("expected [ACTION REQUIRED] for @gsd mention when GG_ROLE=gsd, got:\n%s", out)
+	}
+}
+
+func TestInbox_InfoPrefix_OtherRole(t *testing.T) {
+	t.Setenv("GG_ROLE", "gsd")
+
+	msgs := []store.Message{
+		{FromRole: "claude-code", ToRole: "all", Content: "TASK-010 done"},
+	}
+	out := captureStdout(t, func() {
+		printMessages(msgs, "")
+	})
+
+	if !strings.Contains(out, "[INFO]") {
+		t.Errorf("expected [INFO] prefix for non-targeted message when GG_ROLE=gsd, got:\n%s", out)
+	}
+	if strings.Contains(out, "[ACTION REQUIRED]") {
+		t.Errorf("unexpected [ACTION REQUIRED] for non-targeted message, got:\n%s", out)
+	}
+}
+
+func TestInbox_TwoSections_WhenBothExist(t *testing.T) {
+	t.Setenv("GG_ROLE", "gsd")
+
+	msgs := []store.Message{
+		{FromRole: "claude-code", ToRole: "gsd", Content: "assignment"},
+		{FromRole: "claude-code", ToRole: "all", Content: "broadcast"},
+	}
+	out := captureStdout(t, func() {
+		printMessages(msgs, "")
+	})
+
+	if !strings.Contains(out, "ASSIGNMENTS REQUIRING ACTION") {
+		t.Errorf("expected ASSIGNMENTS section header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "INFO") {
+		t.Errorf("expected INFO section header, got:\n%s", out)
+	}
+}
+
+func TestInbox_FlatList_WhenGGRoleUnset(t *testing.T) {
+	t.Setenv("GG_ROLE", "")
+
+	msgs := []store.Message{
+		{FromRole: "claude-code", ToRole: "gsd", Content: "assignment"},
+		{FromRole: "claude-code", ToRole: "all", Content: "broadcast"},
+	}
+	out := captureStdout(t, func() {
+		printMessages(msgs, "")
+	})
+
+	if strings.Contains(out, "[ACTION REQUIRED]") || strings.Contains(out, "[INFO]") {
+		t.Errorf("GG_ROLE unset should produce flat list without prefixes, got:\n%s", out)
+	}
+	if !strings.Contains(out, fmt.Sprintf("INBOX (%d unread)", len(msgs))) {
+		t.Errorf("expected flat INBOX header, got:\n%s", out)
+	}
+}
+
+func TestInbox_ContractContainsInboxObeyRule(t *testing.T) {
+	contract := templates.AgentContract
+	if !strings.Contains(contract, "Before starting any new task") {
+		t.Errorf("agent-contract.md missing Inbox Obey rule 'Before starting any new task':\n%s", contract)
+	}
+	if !strings.Contains(contract, "Silent skip") && !strings.Contains(contract, "silent skip") {
+		t.Errorf("agent-contract.md missing 'silent skip' violation language:\n%s", contract)
+	}
+}

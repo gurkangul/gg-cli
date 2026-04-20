@@ -235,6 +235,8 @@ func advanceCursorToNow(_ *deps) {
 }
 
 func printMessages(messages []store.Message, groupBy string) {
+	myRole := strings.TrimSpace(os.Getenv("GG_ROLE"))
+
 	if groupBy == "sender" {
 		byRole := make(map[string][]store.Message)
 		var order []string
@@ -251,20 +253,64 @@ func printMessages(messages []store.Message, groupBy string) {
 			fmt.Printf("\nFrom: %s (%d)\n", role, len(msgs))
 			fmt.Println(strings.Repeat("─", 40))
 			for _, m := range msgs {
-				printMessage(m)
+				printMessage(m, myRole)
 			}
 		}
 		return
 	}
 
+	// When GG_ROLE is set, split messages into action-required vs info.
+	if myRole != "" {
+		var actions, infos []store.Message
+		for _, m := range messages {
+			if isActionRequired(m, myRole) {
+				actions = append(actions, m)
+			} else {
+				infos = append(infos, m)
+			}
+		}
+		if len(actions) > 0 && len(infos) > 0 {
+			fmt.Printf("ASSIGNMENTS REQUIRING ACTION (%d):\n", len(actions))
+			for _, m := range actions {
+				printMessage(m, myRole)
+			}
+			fmt.Printf("\nINFO (%d):\n", len(infos))
+			for _, m := range infos {
+				printMessage(m, myRole)
+			}
+			return
+		}
+	}
+
 	fmt.Printf("INBOX (%d unread):\n", len(messages))
 	for _, m := range messages {
-		printMessage(m)
+		printMessage(m, myRole)
 	}
 }
 
-func printMessage(m store.Message) {
-	fmt.Printf("  [%s → %s] %s\n", m.FromRole, m.ToRole, highlightMentions(m.Content))
+// isActionRequired returns true when a message is directly targeting myRole
+// either via to_role or an @role mention in content.
+func isActionRequired(m store.Message, myRole string) bool {
+	if myRole == "" {
+		return false
+	}
+	if strings.EqualFold(m.ToRole, myRole) {
+		return true
+	}
+	lower := strings.ToLower(m.Content)
+	return strings.Contains(lower, "@"+strings.ToLower(myRole))
+}
+
+func printMessage(m store.Message, myRole string) {
+	prefix := ""
+	if myRole != "" {
+		if isActionRequired(m, myRole) {
+			prefix = "[ACTION REQUIRED] "
+		} else {
+			prefix = "[INFO] "
+		}
+	}
+	fmt.Printf("  %s[%s → %s] %s\n", prefix, m.FromRole, m.ToRole, highlightMentions(m.Content))
 	if m.TaskID != "" {
 		fmt.Printf("    Task: %s\n", m.TaskID)
 	}

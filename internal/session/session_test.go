@@ -44,14 +44,19 @@ func TestBriefing_Render_IncludesProtocolSteps(t *testing.T) {
 		t.Fatalf("Render: %v", err)
 	}
 	out := buf.String()
-	// The briefing must point agents at AGENTS.md and the four gg verbs
-	// they are expected to use. If any of these fall out of the output,
-	// the briefing has silently stopped reminding agents of the protocol.
-	musts := []string{"AGENTS.md", "gg search", "decision", "gg tell"}
+	// All 5 rules must appear in order. If any fall out the briefing has
+	// silently stopped reminding agents of the full protocol.
+	musts := []string{"AGENTS.md", "gg search", "decision", "gg tell", "gg inbox"}
 	for _, m := range musts {
 		if !strings.Contains(out, m) {
 			t.Errorf("briefing missing reference to %q: %q", m, out)
 		}
+	}
+
+	// Rule 5 must mention silent skip.
+	if !strings.Contains(out, "silent skip") && !strings.Contains(out, "silent-skip") &&
+		!strings.Contains(out, "violation") {
+		t.Errorf("briefing rule 5 must mention violation consequence: %q", out)
 	}
 }
 

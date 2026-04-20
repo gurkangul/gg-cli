@@ -383,7 +383,7 @@ func TestPrintMessage_Basic(t *testing.T) {
 			CreatedAt: "not-a-timestamp"},
 	}
 	for _, m := range msgs {
-		printMessage(m) // must not panic
+		printMessage(m, "") // must not panic
 	}
 }
 

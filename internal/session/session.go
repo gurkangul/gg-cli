@@ -64,6 +64,7 @@ func (b Briefing) Render(w io.Writer) error {
 	sb.WriteString("  2. Run `gg search --compact <topic>` before proposing anything new.\n")
 	sb.WriteString("  3. Record every decision/task/rejection with gg — no exceptions.\n")
 	sb.WriteString("  4. Broadcast substantive work via `gg tell all --from <role>`.\n")
+	sb.WriteString("  5. Before new work, run `gg inbox` and handle role-targeted assignments — silent skip = violation.\n")
 	sb.WriteString("\n")
 	_, err := io.WriteString(w, sb.String())
 	return err
