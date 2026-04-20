@@ -89,73 +89,52 @@ func (g *gsdInstaller) Install(projectRoot string, opts Options) (Result, error)
 
 	raw, err := os.ReadFile(path)
 	var existing string
+	fileExisted := true
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return res, err
 		}
-		// KNOWLEDGE.md doesn't exist yet — we'll create it.
-		existing = ""
+		fileExisted = false
 	} else {
 		existing = string(raw)
 	}
 
 	block := gsdBridgeBlock()
-
-	// Idempotency: if the marker is already present and content matches, skip.
-	startIdx := strings.Index(existing, gsdMarker)
-	endIdx := strings.Index(existing, gsdMarkerEnd)
-	if startIdx >= 0 && endIdx > startIdx {
-		endPos := endIdx + len(gsdMarkerEnd)
-		if endPos < len(existing) && existing[endPos] == '\n' {
-			endPos++
-		}
-		current := existing[startIdx:endPos]
-		if strings.TrimSpace(current) == strings.TrimSpace(block) {
-			res.Action = ActionUpToDate
-			res.Notes = append(res.Notes, "gg-bridge block already current")
-			return res, nil
-		}
-		// Replace drifted block.
-		before := existing[:startIdx]
-		after := existing[endPos:]
-		updated := before + block + after
-		if opts.DryRun {
-			res.Action = ActionDryRun
+	updated, changed, mergeErr := replaceOrAppendBlock(existing, gsdMarker, gsdMarkerEnd, block)
+	if mergeErr != nil {
+		return res, mergeErr
+	}
+	if !changed {
+		res.Action = ActionUpToDate
+		res.Notes = append(res.Notes, "gg-bridge block already current")
+	} else if opts.DryRun {
+		res.Action = ActionDryRun
+		if !fileExisted {
+			res.Notes = append(res.Notes, "would write gg-bridge block to "+gsdKnowledgeFile)
+		} else {
 			res.Notes = append(res.Notes, "would update gg-bridge block in "+gsdKnowledgeFile)
-			return res, nil
 		}
+	} else {
 		if err := writeFile(path, updated); err != nil {
 			return res, err
 		}
-		res.Action = ActionUpdated
-		res.Notes = append(res.Notes, "gg-bridge block updated in "+gsdKnowledgeFile)
-		return res, nil
+		if !fileExisted {
+			res.Action = ActionCreated
+			res.Notes = append(res.Notes, "created "+gsdKnowledgeFile+" with gg-bridge block")
+		} else {
+			res.Action = ActionUpdated
+			res.Notes = append(res.Notes, "gg-bridge block updated in "+gsdKnowledgeFile)
+		}
 	}
 
-	// Append block.
-	sep := "\n\n"
-	if strings.HasSuffix(existing, "\n\n") {
-		sep = ""
-	} else if strings.HasSuffix(existing, "\n") {
-		sep = "\n"
+	// Also write the shared contract block to this file.
+	cAction, cNotes, cErr := writeContractBlock(path, opts.DryRun)
+	if cErr != nil {
+		return res, cErr
 	}
-	updated := existing + sep + block
-
-	if opts.DryRun {
-		res.Action = ActionDryRun
-		res.Notes = append(res.Notes, "would write gg-bridge block to "+gsdKnowledgeFile)
-		return res, nil
-	}
-
-	if err := writeFile(path, updated); err != nil {
-		return res, err
-	}
-	if existing == "" {
-		res.Action = ActionCreated
-		res.Notes = append(res.Notes, "created "+gsdKnowledgeFile+" with gg-bridge block")
-	} else {
-		res.Action = ActionUpdated
-		res.Notes = append(res.Notes, "appended gg-bridge block to "+gsdKnowledgeFile)
+	res.Notes = append(res.Notes, cNotes...)
+	if res.Action == ActionUpToDate && cAction != ActionUpToDate {
+		res.Action = cAction
 	}
 	return res, nil
 }

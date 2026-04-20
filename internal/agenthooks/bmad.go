@@ -71,50 +71,22 @@ func (b *bmadInstaller) Install(projectRoot string, opts Options) (Result, error
 	existing := string(raw)
 	managed := bmadManagedBody()
 
-	updated, changed := bmadReplaceOrAppendBlock(existing, managed)
+	updated, changed, mergeErr := replaceOrAppendBlock(existing, bmadBlockStart, bmadBlockEnd, managed)
+	if mergeErr != nil {
+		return res, mergeErr
+	}
 	if !changed {
 		res.Action = ActionUpToDate
 		res.Notes = append(res.Notes, "BMAD relay block already current")
-		return res, nil
-	}
-
-	if opts.DryRun {
+	} else if opts.DryRun {
 		res.Action = ActionDryRun
 		res.Notes = append(res.Notes, "would write BMAD relay block to "+bmadFile)
-		return res, nil
+	} else {
+		if err := os.WriteFile(path, []byte(updated), 0o644); err != nil { //nolint:gosec
+			return res, err
+		}
+		res.Action = ActionUpdated
+		res.Notes = append(res.Notes, "BMAD relay block written between "+bmadBlockStart+" / "+bmadBlockEnd)
 	}
-
-	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil { //nolint:gosec
-		return res, err
-	}
-	res.Action = ActionUpdated
-	res.Notes = append(res.Notes, "BMAD relay block written between "+bmadBlockStart+" / "+bmadBlockEnd)
 	return res, nil
-}
-
-func bmadReplaceOrAppendBlock(content, managed string) (string, bool) {
-	startIdx := strings.Index(content, bmadBlockStart)
-	endIdx := strings.Index(content, bmadBlockEnd)
-
-	if startIdx >= 0 && endIdx > startIdx {
-		blockEnd := endIdx + len(bmadBlockEnd)
-		if blockEnd < len(content) && content[blockEnd] == '\n' {
-			blockEnd++
-		}
-		before := content[:startIdx]
-		after := content[blockEnd:]
-		newContent := before + managed + after
-		if newContent == content {
-			return content, false
-		}
-		return newContent, true
-	}
-
-	sep := "\n\n"
-	if strings.HasSuffix(content, "\n\n") {
-		sep = ""
-	} else if strings.HasSuffix(content, "\n") {
-		sep = "\n"
-	}
-	return content + sep + managed, true
 }

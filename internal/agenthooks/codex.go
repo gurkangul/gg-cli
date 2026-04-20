@@ -126,56 +126,34 @@ func (c *codexInstaller) Install(projectRoot string, opts Options) (Result, erro
 	existing := string(raw)
 	managed := codexManagedBody()
 
-	updated, changed := codexReplaceOrAppendBlock(existing, managed)
+	updated, changed, mergeErr := replaceOrAppendBlock(existing, codexBlockStart, codexBlockEnd, managed)
+	if mergeErr != nil {
+		return res, mergeErr
+	}
 	if !changed {
 		res.Action = ActionUpToDate
 		res.Notes = append(res.Notes, "managed block already current")
-		return res, nil
-	}
-
-	if opts.DryRun {
+	} else if opts.DryRun {
 		res.Action = ActionDryRun
 		res.Notes = append(res.Notes, "would update managed block in "+codexFile)
-		return res, nil
+	} else {
+		if err := os.WriteFile(path, []byte(updated), 0o644); err != nil { //nolint:gosec
+			return res, err
+		}
+		res.Action = ActionUpdated
+		res.Notes = append(res.Notes, "managed block written between "+codexBlockStart+" / "+codexBlockEnd)
 	}
 
-	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil { //nolint:gosec
-		return res, err
+	// Also write the shared contract block to this file.
+	cAction, cNotes, cErr := writeContractBlock(path, opts.DryRun)
+	if cErr != nil {
+		return res, cErr
 	}
-	res.Action = ActionUpdated
-	res.Notes = append(res.Notes, "managed block written between "+codexBlockStart+" / "+codexBlockEnd)
+	res.Notes = append(res.Notes, cNotes...)
+	// Upgrade action to reflect contract write if the main block was already up-to-date.
+	if res.Action == ActionUpToDate && cAction != ActionUpToDate {
+		res.Action = cAction
+	}
 	return res, nil
 }
 
-// codexReplaceOrAppendBlock returns the updated content and whether any
-// change was made. If the managed block markers are already present, the
-// region between them (inclusive) is replaced. Otherwise the managed body
-// is appended at the end with a blank-line separator.
-func codexReplaceOrAppendBlock(content, managed string) (string, bool) {
-	startIdx := strings.Index(content, codexBlockStart)
-	endIdx := strings.Index(content, codexBlockEnd)
-
-	if startIdx >= 0 && endIdx > startIdx {
-		// Replace inclusive of the end marker + its trailing newline (if any).
-		blockEnd := endIdx + len(codexBlockEnd)
-		if blockEnd < len(content) && content[blockEnd] == '\n' {
-			blockEnd++
-		}
-		before := content[:startIdx]
-		after := content[blockEnd:]
-		newContent := before + managed + after
-		if newContent == content {
-			return content, false
-		}
-		return newContent, true
-	}
-
-	// Append. Ensure exactly one blank line before the block.
-	sep := "\n\n"
-	if strings.HasSuffix(content, "\n\n") {
-		sep = ""
-	} else if strings.HasSuffix(content, "\n") {
-		sep = "\n"
-	}
-	return content + sep + managed, true
-}

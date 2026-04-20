@@ -6,6 +6,9 @@ import (
 	"fmt"
 )
 
+//go:embed agent-contract.md
+var AgentContract string
+
 //go:embed docker-compose.yaml
 var DockerCompose string
 

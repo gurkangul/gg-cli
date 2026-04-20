@@ -11,27 +11,23 @@ import (
 // just overwrite with the same content, never append.
 const cursorRuleFile = "gg-mandatory.mdc"
 
-// cursorRuleContent is the full managed file body. The first frontmatter
-// line advertises that this file is managed by gg so users know not to
-// hand-edit it — a regenerated file will clobber local changes.
-const cursorRuleContent = `---
+// cursorRuleFrontmatter is the YAML frontmatter prepended to the rule file.
+// It is not inside the contract markers so it can be updated independently.
+const cursorRuleFrontmatter = `---
 alwaysApply: true
 description: gg-cli enforced protocol (managed by gg — do not edit)
 ---
 
-# gg-cli Protocol
+You are operating inside a gg-cli enforced project. The rules below are
+mandatory. Read AGENTS.md at the repo root for the full protocol.
 
-You are operating inside a gg-cli enforced project. Before acting:
-
-1. Read AGENTS.md at the repo root — it defines this project's protocol.
-2. Run ` + "`gg search --compact <topic>`" + ` before proposing anything new.
-3. Record every decision/task/rejection with gg — no exceptions.
-4. Broadcast substantive work via ` + "`gg tell all --from <role>`" + `.
-
-The rules in AGENTS.md are authoritative. This file is a pointer so the
-protocol is visible on every prompt; it is not a substitute for reading
-AGENTS.md.
 `
+
+// cursorRuleContent constructs the full managed file body: static frontmatter
+// followed by the single-source contract block.
+func cursorRuleContent() string {
+	return cursorRuleFrontmatter + ContractBlock()
+}
 
 type cursorInstaller struct{}
 
@@ -48,8 +44,9 @@ func (c *cursorInstaller) Install(projectRoot string, opts Options) (Result, err
 	path := filepath.Join(dir, cursorRuleFile)
 	res := Result{Path: path}
 
+	want := cursorRuleContent()
 	existing, readErr := os.ReadFile(path)
-	if readErr == nil && string(existing) == cursorRuleContent {
+	if readErr == nil && string(existing) == want {
 		res.Action = ActionUpToDate
 		return res, nil
 	}
@@ -67,7 +64,7 @@ func (c *cursorInstaller) Install(projectRoot string, opts Options) (Result, err
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return res, err
 	}
-	if err := os.WriteFile(path, []byte(cursorRuleContent), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(want), 0o644); err != nil {
 		return res, err
 	}
 	if os.IsNotExist(readErr) {
