@@ -10,8 +10,11 @@ gg bug report "title" [flags]
 
 ```
       --detail string     detailed description
+      --files string      comma-separated source file paths this bug affects
+      --from string       author/role recording this (defaults to $GG_ROLE)
   -h, --help              help for report
       --severity string   severity: critical, high, medium, low (default "medium")
+      --symbols string    comma-separated symbol names this bug affects
       --tags string       comma-separated tags
       --task string       link to a task (e.g. TASK-042)
 ```

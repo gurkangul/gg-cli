@@ -28,6 +28,7 @@ gg task create "title" [flags]
       --from string         author/role recording this (defaults to $GG_ROLE)
   -h, --help                help for create
       --priority string     priority: high, medium, low (omit to leave unset)
+      --requester string    who initiated this task: user, agent, or system (required)
       --tags string         comma-separated tags
 ```
 

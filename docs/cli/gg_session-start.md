@@ -32,7 +32,7 @@ gg session-start [flags]
 ### Options
 
 ```
-      --agent string   agent name (claude-code, cursor, aider, codex, ...) — overrides $GG_AGENT
+      --agent string   agent name (claude-code, cursor, codex, ...) — overrides $GG_AGENT
   -h, --help           help for session-start
 ```
 

@@ -9,7 +9,9 @@ gg bug wontfix BUG-ID "reason" [flags]
 ### Options
 
 ```
-  -h, --help   help for wontfix
+      --from string    author/role recording this (defaults to $GG_ROLE)
+  -h, --help           help for wontfix
+      --repro string   path to repro script or *_test.go documenting the confirmed failure mode (required)
 ```
 
 ### Options inherited from parent commands

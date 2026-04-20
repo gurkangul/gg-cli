@@ -28,5 +28,6 @@ Manage a git-trackable snapshot of gg's shared brain.
 * [gg brain backfill](gg_brain_backfill.md)	 - Migrate tag-based Task↔Decision links to Memgraph edges
 * [gg brain export](gg_brain_export.md)	 - Serialize project brain to .gg/brain/ (JSONL, payload-only)
 * [gg brain import](gg_brain_import.md)	 - Restore Qdrant + Memgraph from .gg/brain/ (idempotent)
+* [gg brain reindex-decisions](gg_brain_reindex-decisions.md)	 - Replay Decision nodes into Memgraph from the Qdrant decision store
 * [gg brain status](gg_brain_status.md)	 - Show brain snapshot metadata and verify checksums
 

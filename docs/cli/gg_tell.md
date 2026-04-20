@@ -12,6 +12,10 @@ Targets can be comma-separated for fanout:
 @role mentions in the message body are auto-routed in addition to the primary target:
   gg tell all "@qa please review before merging"
 
+Use --audience to control inbox visibility:
+  gg tell all "TASK-016 picked up" --from developer --audience agents
+  gg tell human "deploy is blocked, need approval" --from developer --audience human
+
 ```
 gg tell "role[,role2,...]" "message" [flags]
 ```
@@ -19,9 +23,10 @@ gg tell "role[,role2,...]" "message" [flags]
 ### Options
 
 ```
-      --from string   sender role (defaults to $GG_ROLE, then 'user')
-  -h, --help          help for tell
-      --task string   related task ID
+      --audience string   visibility: all | human | agents (agents = filtered from human inbox by default) (default "all")
+      --from string       sender role (defaults to $GG_ROLE, then 'user')
+  -h, --help              help for tell
+      --task string       related task ID
 ```
 
 ### Options inherited from parent commands

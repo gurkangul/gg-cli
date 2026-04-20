@@ -19,7 +19,10 @@ gg doctor [flags]
 ### Options
 
 ```
-      --agent string          restrict --install-agent-hooks to a single agent (claude, cursor, aider, codex, zai)
+      --agent string          restrict --install-agent-hooks to a single agent (claude, cursor, codex, bmad, gsd)
+      --apply                 with --sync-artifacts: re-install drifted or missing artifacts
+      --bypass-audit          list GG_ENFORCEMENT=off bypass events from ~/.gg/projects/<id>/state.json (default: last 7d)
+      --bypass-since string   with --bypass-audit: time window (7d, 24h, 30d, or RFC3339 timestamp) (default "7d")
       --dry-run               with --install-agent-hooks: report what would change without writing anything
       --force                 with --install-agent-hooks: bypass detection and install for the named agent(s)
       --heal                  migrate legacy .gg/telemetry.jsonl and .gg/cache/ to ~/.gg/projects/<id>/ (idempotent)
@@ -29,6 +32,7 @@ gg doctor [flags]
       --install-indexers      install missing SCIP indexer binaries (scip-go, scip-typescript, scip-python)
       --install-task-hooks    install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)
       --reconcile             scan the outbox for incomplete dual-store writes and report what needs repair
+      --sync-artifacts        compare .gg/installed.json against the current CLI templates and show a drift table
       --wipe-brain            drop all Qdrant collections and Memgraph nodes for this project (destructive — use for testing)
       --yes                   with --wipe-brain: skip interactive confirmation
 ```
