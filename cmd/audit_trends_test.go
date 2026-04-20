@@ -70,7 +70,7 @@ func TestParseSinceDays_ValidInputs(t *testing.T) {
 		"7d":   7,
 		"14d":  14,
 		"30":   30,
-		" 7d ": 7,
+		" 7d ": 7, //nolint:gocritic // intentional: tests that parser trims surrounding whitespace
 	}
 	for in, want := range cases {
 		got, err := parseSinceDays(in)

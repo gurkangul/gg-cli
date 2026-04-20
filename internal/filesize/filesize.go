@@ -104,7 +104,7 @@ func CountLines(path string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	n := 0
 	for sc.Scan() {

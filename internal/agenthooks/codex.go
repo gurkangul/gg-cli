@@ -133,13 +133,14 @@ func (c *codexInstaller) Install(projectRoot string, opts Options) (Result, erro
 	if mergeErr != nil {
 		return res, mergeErr
 	}
-	if !changed {
+	switch {
+	case !changed:
 		res.Action = ActionUpToDate
 		res.Notes = append(res.Notes, "managed block already current")
-	} else if opts.DryRun {
+	case opts.DryRun:
 		res.Action = ActionDryRun
 		res.Notes = append(res.Notes, "would update managed block in "+codexFile)
-	} else {
+	default:
 		if err := os.WriteFile(path, []byte(updated), 0o644); err != nil { //nolint:gosec
 			return res, err
 		}

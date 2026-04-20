@@ -84,9 +84,7 @@ func CheckContract(projectRoot string) []ContractCheckResult {
 			r.Status = ContractMISSING
 		case startIdx >= 0 && endIdx > startIdx:
 			body := content[startIdx+len(ContractBlockBegin) : endIdx]
-			if strings.HasPrefix(body, "\n") {
-				body = body[1:]
-			}
+			body = strings.TrimPrefix(body, "\n")
 			h := sha256.Sum256([]byte(body))
 			r.FoundVersion = fmt.Sprintf("%x", h)
 			if r.FoundVersion == want {

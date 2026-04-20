@@ -97,10 +97,10 @@ func Diff(m Manifest, currentSHAs map[string]string) []DriftEntry {
 	for key, sha := range currentSHAs {
 		installed := m.Artifacts[key]
 		var status string
-		switch {
-		case installed == "":
+		switch installed {
+		case "":
 			status = "missing"
-		case installed == sha:
+		case sha:
 			status = "ok"
 		default:
 			status = "drifted"

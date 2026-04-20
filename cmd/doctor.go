@@ -312,10 +312,11 @@ func runDoctorSyncArtifacts(apply bool) error {
 	drifted := 0
 	for _, e := range entries {
 		marker := "✓"
-		if e.Status == "drifted" {
+		switch e.Status {
+		case "drifted":
 			marker = "~"
 			drifted++
-		} else if e.Status == "missing" {
+		case "missing":
 			marker = "?"
 			drifted++
 		}

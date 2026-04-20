@@ -107,17 +107,18 @@ func (g *gsdInstaller) Install(projectRoot string, opts Options) (Result, error)
 	if mergeErr != nil {
 		return res, mergeErr
 	}
-	if !changed {
+	switch {
+	case !changed:
 		res.Action = ActionUpToDate
 		res.Notes = append(res.Notes, "gg-bridge block already current")
-	} else if opts.DryRun {
+	case opts.DryRun:
 		res.Action = ActionDryRun
 		if !fileExisted {
 			res.Notes = append(res.Notes, "would write gg-bridge block to "+gsdKnowledgeFile)
 		} else {
 			res.Notes = append(res.Notes, "would update gg-bridge block in "+gsdKnowledgeFile)
 		}
-	} else {
+	default:
 		if err := writeFile(path, updated); err != nil {
 			return res, err
 		}

@@ -37,7 +37,7 @@ func TestContractVersion_IsHexSHA256(t *testing.T) {
 		t.Errorf("ContractVersion() length = %d, want 64 hex chars", len(v))
 	}
 	for _, c := range v {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Errorf("ContractVersion() contains non-hex char %q", c)
 		}
 	}
