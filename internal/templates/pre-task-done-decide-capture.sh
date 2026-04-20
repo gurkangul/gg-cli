@@ -31,14 +31,10 @@ if [ -z "$GG_TASK_ID" ]; then
   exit 0
 fi
 
-# `gg task decisions` emits one line per linked decision (JSON array with --json).
-# We use the plain text form and count non-empty lines to avoid a jq dependency.
-count=$(gg task decisions "$GG_TASK_ID" 2>/dev/null | grep -c '^' || true)
-# `grep -c '^'` on empty input returns 0; on "(no decisions)" single line returns 1.
-# Treat the sentinel "(no decisions" line as zero.
-if gg task decisions "$GG_TASK_ID" 2>/dev/null | grep -q '^(no decisions'; then
-  count=0
-fi
+# `gg task decisions --json` emits either `null` (no linked decisions) or a
+# JSON array of Decision objects. Each object contains a top-level `"ID":` key.
+# Counting those lines avoids a jq dependency while staying deterministic.
+count=$(gg task decisions "$GG_TASK_ID" --json 2>/dev/null | grep -c '"ID":' || true)
 
 if [ "$count" -gt 0 ]; then
   echo "[decide-gate] ✓ $GG_TASK_ID has $count linked decision(s)"
