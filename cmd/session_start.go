@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -110,11 +111,18 @@ func emitVersionDelta(cfg *config.Config) {
 	if err != nil {
 		return
 	}
+	writeVersionDelta(os.Stdout, runtimeDir, version)
+}
+
+// writeVersionDelta contains the testable body of emitVersionDelta: given a
+// runtime dir and a "current" version string, load the state, print the
+// delta block when applicable, and write LSCV back. Separated so tests can
+// exercise the full flow without mocking the process-global cfg/version.
+func writeVersionDelta(w io.Writer, runtimeDir, curr string) {
 	state, err := projectstate.Read(runtimeDir)
 	if err != nil {
 		return
 	}
-	curr := version // package-level var set by ldflags
 	prev := state.LastSeenCLIVersion
 
 	// Always update so next session sees the current version.
@@ -132,7 +140,7 @@ func emitVersionDelta(cfg *config.Config) {
 
 	excerpt := changelog.Since(prev, curr)
 	if excerpt == "" {
-		fmt.Printf("─── VERSION UPDATE: %s → %s ───\n\n", prev, curr)
+		fmt.Fprintf(w, "─── VERSION UPDATE: %s → %s ───\n\n", prev, curr)
 		return
 	}
 
@@ -144,13 +152,13 @@ func emitVersionDelta(cfg *config.Config) {
 		lines = lines[:maxLines]
 		truncated = true
 	}
-	fmt.Printf("─── VERSION UPDATE: %s → %s ───\n", prev, curr)
-	fmt.Println()
-	fmt.Println(strings.Join(lines, "\n"))
+	fmt.Fprintf(w, "─── VERSION UPDATE: %s → %s ───\n", prev, curr)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, strings.Join(lines, "\n"))
 	if truncated {
-		fmt.Println("… (see CHANGELOG.md for full details)")
+		fmt.Fprintln(w, "… (see CHANGELOG.md for full details)")
 	}
-	fmt.Println()
+	fmt.Fprintln(w)
 }
 
 // emitBypassDelta surfaces a warning when GG_ENFORCEMENT=off bypasses have
