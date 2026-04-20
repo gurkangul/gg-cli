@@ -102,6 +102,9 @@ type Installer interface {
 	// Install writes or merges the agent's config. Must be idempotent:
 	// re-running on an already-installed project produces ActionUpToDate.
 	Install(projectRoot string, opts Options) (Result, error)
+	// ContractPath returns the path to the file that holds the managed
+	// contract block for this agent. Used by --check-contract drift detection.
+	ContractPath(projectRoot string) string
 }
 
 // registry is the ordered list of known installers. InstallDetected and

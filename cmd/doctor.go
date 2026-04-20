@@ -57,6 +57,9 @@ var (
 	doctorSyncApply         bool
 	doctorBypassAudit       bool
 	doctorBypassAuditSince  string
+	doctorCheckContract     bool
+	doctorContractFix       bool
+	doctorContractForceReset bool
 )
 
 func init() {
@@ -90,6 +93,12 @@ func init() {
 		"list GG_ENFORCEMENT=off bypass events from ~/.gg/projects/<id>/state.json (default: last 7d)")
 	doctorCmd.Flags().StringVar(&doctorBypassAuditSince, "bypass-since", "7d",
 		"with --bypass-audit: time window (7d, 24h, 30d, or RFC3339 timestamp)")
+	doctorCmd.Flags().BoolVar(&doctorCheckContract, "check-contract", false,
+		"compare the managed contract block in each agent's entry-point file against the current template (exit 1 on drift)")
+	doctorCmd.Flags().BoolVar(&doctorContractFix, "fix", false,
+		"with --check-contract: repair STALE and MISSING entries; refuses DRIFTED without --force-reset")
+	doctorCmd.Flags().BoolVar(&doctorContractForceReset, "force-reset", false,
+		"with --check-contract --fix: overwrite manually-edited (DRIFTED) contract blocks")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -184,6 +193,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// --bypass-audit: list enforcement-bypass events recorded in state.json.
 	if doctorBypassAudit {
 		return runDoctorBypassAudit(doctorBypassAuditSince)
+	}
+	// --check-contract: drift detection for managed contract blocks.
+	if doctorCheckContract {
+		return runDoctorCheckContract(doctorContractFix, doctorContractForceReset)
 	}
 
 	fmt.Println("GG Doctor")
@@ -1273,6 +1286,53 @@ func runDoctorInstallTaskHooks() error {
 	fmt.Printf("  3. run %s/*.sh as advisory (warnings only unless hooks.strict=true)\n", postDir)
 	fmt.Println()
 	fmt.Println("Edit the scripts freely — they ship as starting points, not contracts.")
+	return nil
+}
+
+// runDoctorCheckContract checks the managed contract block in each agent's
+// entry-point file and reports drift. With fix=true it repairs STALE and MISSING
+// entries. DRIFTED entries require forceReset=true to overwrite.
+// Returns nil if all agents are OK; returns a non-nil error with a message on drift
+// (so the CLI exits non-zero) unless fix resolves everything.
+func runDoctorCheckContract(fix, forceReset bool) error {
+	projectRoot, err := config.FindRoot()
+	if err != nil {
+		return err
+	}
+
+	checks := agenthooks.CheckContract(projectRoot)
+
+	if fix {
+		lines, fixErr := agenthooks.FixContract(projectRoot, forceReset)
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		if fixErr != nil {
+			return fixErr
+		}
+		// Re-check after fix to see if drift remains.
+		checks = agenthooks.CheckContract(projectRoot)
+	}
+
+	allOK := true
+	fmt.Printf("Contract check  (version %s)\n", agenthooks.ContractVersion()[:12])
+	fmt.Println(strings.Repeat("─", 50))
+	for _, r := range checks {
+		marker := "✓"
+		if r.Status != agenthooks.ContractOK {
+			marker = "✗"
+			allOK = false
+		}
+		shortPath := r.Path
+		if rel, relErr := filepath.Rel(projectRoot, r.Path); relErr == nil {
+			shortPath = rel
+		}
+		fmt.Printf("  %s  %-8s  %-10s  %s\n", marker, r.Status, r.AgentName, shortPath)
+	}
+
+	if !allOK {
+		return fmt.Errorf("contract drift detected — run `gg doctor --check-contract --fix` to repair")
+	}
 	return nil
 }
 

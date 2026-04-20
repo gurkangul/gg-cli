@@ -9,6 +9,142 @@ import (
 	"github.com/gurkangul/gg-cli/internal/templates"
 )
 
+// ContractDriftStatus describes the state of the managed contract block in one
+// agent's entry-point file.
+type ContractDriftStatus int
+
+const (
+	ContractOK      ContractDriftStatus = iota // block present, hash matches current
+	ContractSTALE                              // block present, hash differs
+	ContractMISSING                            // markers absent
+	ContractDRIFTED                            // one marker present but not the other (malformed)
+)
+
+func (s ContractDriftStatus) String() string {
+	switch s {
+	case ContractOK:
+		return "OK"
+	case ContractSTALE:
+		return "STALE"
+	case ContractMISSING:
+		return "MISSING"
+	case ContractDRIFTED:
+		return "DRIFTED"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+// ContractCheckResult is the outcome for one agent.
+type ContractCheckResult struct {
+	AgentName string
+	Path      string
+	Status    ContractDriftStatus
+	// FoundVersion is the SHA256 of the block body found on disk (empty for MISSING/DRIFTED).
+	FoundVersion string
+	// WantVersion is ContractVersion() — the current expected hash.
+	WantVersion string
+}
+
+// CheckContract inspects the contract block in every registered agent's
+// entry-point file and returns a result per agent. Only agents whose contract
+// file already exists on disk are checked; agents with no file get MISSING.
+func CheckContract(projectRoot string) []ContractCheckResult {
+	want := ContractVersion()
+	results := make([]ContractCheckResult, 0, len(registry))
+	seen := make(map[string]bool)
+
+	for _, inst := range registry {
+		path := inst.ContractPath(projectRoot)
+		// Deduplicate paths — codex and bmad both target AGENTS.md.
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
+
+		r := ContractCheckResult{
+			AgentName:   inst.Name(),
+			Path:        path,
+			WantVersion: want,
+		}
+
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			r.Status = ContractMISSING
+			results = append(results, r)
+			continue
+		}
+
+		content := string(raw)
+		startIdx := strings.Index(content, ContractBlockBegin)
+		endIdx := strings.Index(content, ContractBlockEnd)
+
+		switch {
+		case startIdx < 0 && endIdx < 0:
+			r.Status = ContractMISSING
+		case startIdx >= 0 && endIdx > startIdx:
+			body := content[startIdx+len(ContractBlockBegin) : endIdx]
+			if strings.HasPrefix(body, "\n") {
+				body = body[1:]
+			}
+			h := sha256.Sum256([]byte(body))
+			r.FoundVersion = fmt.Sprintf("%x", h)
+			if r.FoundVersion == want {
+				r.Status = ContractOK
+			} else {
+				r.Status = ContractSTALE
+			}
+		default:
+			r.Status = ContractDRIFTED
+		}
+
+		results = append(results, r)
+	}
+	return results
+}
+
+// FixContract repairs STALE and MISSING entries. DRIFTED entries are skipped
+// unless forceReset is true. Returns per-agent action strings for reporting.
+func FixContract(projectRoot string, forceReset bool) ([]string, error) {
+	checks := CheckContract(projectRoot)
+	var lines []string
+
+	for _, r := range checks {
+		switch r.Status {
+		case ContractOK:
+			lines = append(lines, fmt.Sprintf("  %s  %s — no action needed", r.Status, r.AgentName))
+		case ContractSTALE, ContractMISSING:
+			act, _, err := writeContractBlock(r.Path, false)
+			if err != nil {
+				return lines, fmt.Errorf("%s: %w", r.AgentName, err)
+			}
+			lines = append(lines, fmt.Sprintf("  ✓ %s  %s — %s", r.Status, r.AgentName, act))
+		case ContractDRIFTED:
+			if !forceReset {
+				lines = append(lines, fmt.Sprintf("  ✗ DRIFTED  %s — markers malformed, rerun with --force-reset to overwrite", r.AgentName))
+			} else {
+				act, _, err := writeContractBlock(r.Path, false)
+				if err != nil {
+					return lines, fmt.Errorf("%s: %w", r.AgentName, err)
+				}
+				lines = append(lines, fmt.Sprintf("  ✓ DRIFTED→fixed  %s — %s", r.AgentName, act))
+			}
+		}
+	}
+	return lines, nil
+}
+
+// HasDrift returns true if any registered agent has a STALE or MISSING contract.
+// Used by session-start to emit a one-line warning without blocking startup.
+func HasDrift(projectRoot string) bool {
+	for _, r := range CheckContract(projectRoot) {
+		if r.Status == ContractSTALE || r.Status == ContractMISSING {
+			return true
+		}
+	}
+	return false
+}
+
 const (
 	ContractBlockBegin = "<!-- gg:contract:begin v1 -->"
 	ContractBlockEnd   = "<!-- gg:contract:end -->"

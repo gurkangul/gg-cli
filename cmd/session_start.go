@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	gg "github.com/gurkangul/gg-cli"
+	"github.com/gurkangul/gg-cli/internal/agenthooks"
 	"github.com/gurkangul/gg-cli/internal/changelog"
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/projectstate"
@@ -77,6 +78,13 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 
 	if err := br.Render(os.Stdout); err != nil {
 		return err
+	}
+
+	// Contract drift warning: best-effort, never fatal.
+	if br.ProjectRoot != "" {
+		if agenthooks.HasDrift(br.ProjectRoot) {
+			fmt.Fprintln(os.Stderr, "⚠ Contract drift detected: run `gg doctor --check-contract --fix` to repair")
+		}
 	}
 
 	// Version-delta notice: compare last_seen_cli_version to current version.

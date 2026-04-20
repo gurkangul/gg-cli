@@ -113,8 +113,9 @@ type claudeInstaller struct {
 	testEnv func(string) string
 }
 
-func (c *claudeInstaller) Name() string { return "claude" }
-func (c *claudeInstaller) Tier() Tier   { return TierHard }
+func (c *claudeInstaller) Name() string                         { return "claude" }
+func (c *claudeInstaller) Tier() Tier                           { return TierHard }
+func (c *claudeInstaller) ContractPath(projectRoot string) string { return pathIn(projectRoot, "CLAUDE.md") }
 
 // hasProjectClaudeDir reports whether this project has a .claude/ directory,
 // the primary signal that the project-level hook is (or can be) installed.

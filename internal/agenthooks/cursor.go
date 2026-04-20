@@ -33,6 +33,9 @@ type cursorInstaller struct{}
 
 func (c *cursorInstaller) Name() string { return "cursor" }
 func (c *cursorInstaller) Tier() Tier   { return TierHard }
+func (c *cursorInstaller) ContractPath(projectRoot string) string {
+	return pathIn(projectRoot, ".cursor", "rules", cursorRuleFile)
+}
 
 func (c *cursorInstaller) Detect(projectRoot string) bool {
 	info, err := os.Stat(filepath.Join(projectRoot, ".cursor"))

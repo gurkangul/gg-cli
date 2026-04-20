@@ -77,6 +77,9 @@ type gsdInstaller struct{}
 
 func (g *gsdInstaller) Name() string { return "gsd" }
 func (g *gsdInstaller) Tier() Tier   { return TierSoft }
+func (g *gsdInstaller) ContractPath(projectRoot string) string {
+	return pathIn(projectRoot, gsdKnowledgeFile)
+}
 
 func (g *gsdInstaller) Detect(projectRoot string) bool {
 	_, err := os.Stat(filepath.Join(projectRoot, gsdDBFile))

@@ -50,6 +50,9 @@ type bmadInstaller struct{}
 
 func (b *bmadInstaller) Name() string { return "bmad" }
 func (b *bmadInstaller) Tier() Tier   { return TierSoft }
+func (b *bmadInstaller) ContractPath(projectRoot string) string {
+	return pathIn(projectRoot, bmadFile)
+}
 
 func (b *bmadInstaller) Detect(projectRoot string) bool {
 	// _bmad/ directory is the canonical signal that BMAD is in use in this project.

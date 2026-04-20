@@ -101,6 +101,9 @@ type codexInstaller struct{}
 
 func (c *codexInstaller) Name() string { return "codex" }
 func (c *codexInstaller) Tier() Tier   { return TierSoft }
+func (c *codexInstaller) ContractPath(projectRoot string) string {
+	return pathIn(projectRoot, codexFile)
+}
 
 func (c *codexInstaller) Detect(projectRoot string) bool {
 	// AGENTS.md is the only reliable signal Codex-class agents will read.
