@@ -785,3 +785,40 @@ func TestClaude_Install_RewritesStaleInboxHook(t *testing.T) {
 		t.Errorf("second install Action = %q, want %q", res2.Action, ActionUpToDate)
 	}
 }
+
+// TestClaude_Install_DryRunIncludesContractNote — regression guard for BUG-020.
+// Before the fix, writeContractBlock was called AFTER the dry-run early return,
+// so dry-run previews silently skipped the CLAUDE.md contract note. After the
+// fix, the contract block write runs first and its notes land in both branches.
+func TestClaude_Install_DryRunIncludesContractNote(t *testing.T) {
+	root := t.TempDir()
+	// Seed a .claude/settings.json with a stale UserPromptSubmit hook so the
+	// installer enters the hooks-need-update path (not the all-up-to-date
+	// early return). This is the exact path BUG-020 regressed.
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := `{"hooks":{"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"gg inbox"}]}]}}`
+	if err := os.WriteFile(filepath.Join(root, ".claude", "settings.json"), []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	inst := &claudeInstaller{}
+	res, err := inst.Install(root, Options{Force: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if res.Action != ActionDryRun {
+		t.Errorf("Action = %q, want %q", res.Action, ActionDryRun)
+	}
+	hasContract := false
+	for _, n := range res.Notes {
+		if strings.Contains(strings.ToLower(n), "contract block") {
+			hasContract = true
+			break
+		}
+	}
+	if !hasContract {
+		t.Errorf("dry-run Notes missing contract block entry (BUG-020 regression): %v", res.Notes)
+	}
+}
