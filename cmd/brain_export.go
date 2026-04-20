@@ -1,0 +1,356 @@
+package cmd
+
+import (
+	"bufio"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/embedding"
+	"github.com/gurkangul/gg-cli/internal/graph"
+	"github.com/gurkangul/gg-cli/internal/scrub"
+	"github.com/gurkangul/gg-cli/internal/store"
+	"github.com/spf13/cobra"
+)
+
+func runBrainExport(cmd *cobra.Command, _ []string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	ggDir, err := config.GGDir()
+	if err != nil {
+		return err
+	}
+
+	if !jsonOutput {
+		fmt.Fprintf(os.Stderr, "Project: %s\n", cfg.ProjectID)
+	}
+
+	// Read embedding meta for manifest.
+	embMeta, err := embedding.ReadMeta(ggDir)
+	if err != nil {
+		return fmt.Errorf("read embedding meta: %w", err)
+	}
+	embModel := ""
+	embDim := store.VectorSize
+	if embMeta != nil {
+		embModel = embMeta.ModelName
+		embDim = embMeta.Dim
+	}
+
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	// Collect all data before touching the filesystem.
+	qdrantData, err := collectQdrantData(ctx, cfg, ggDir)
+	if err != nil {
+		return err
+	}
+	graphNodes, graphEdges, err := collectGraphData(ctx, cfg)
+	if err != nil {
+		// Memgraph optional — warn and continue with empty graph.
+		fmt.Fprintf(os.Stderr, "⚠ Memgraph unavailable (%v) — exporting Qdrant only\n", err)
+		graphNodes = nil
+		graphEdges = nil
+	}
+
+	// Scrub secrets from all collected payloads.
+	totalScrubbed := 0
+	for kind, items := range qdrantData {
+		for i, item := range items {
+			scrubbed, n := scrub.Any(item)
+			if n > 0 {
+				items[i] = scrubbed
+				totalScrubbed += n
+				fmt.Fprintf(os.Stderr, "⚠ secrets scrubbed from %s record %d (%d match(es))\n", kind, i, n)
+			}
+		}
+		qdrantData[kind] = items
+	}
+	for i, node := range graphNodes {
+		scrubbed, n := scrub.Any(node)
+		if n > 0 {
+			graphNodes[i] = scrubbed
+			totalScrubbed += n
+			fmt.Fprintf(os.Stderr, "⚠ secrets scrubbed from graph node %d (%d match(es))\n", i, n)
+		}
+	}
+	for i, edge := range graphEdges {
+		scrubbed, n := scrub.Any(edge)
+		if n > 0 {
+			graphEdges[i] = scrubbed
+			totalScrubbed += n
+			fmt.Fprintf(os.Stderr, "⚠ secrets scrubbed from graph edge %d (%d match(es))\n", i, n)
+		}
+	}
+	if brainExportStrict && totalScrubbed > 0 {
+		return fmt.Errorf("brain export --strict: %d secret pattern(s) detected — export aborted", totalScrubbed)
+	}
+
+	if brainExportDryRun {
+		return printBrainDryRun(qdrantData, graphNodes, graphEdges)
+	}
+
+	partialDir := filepath.Join(ggDir, brainPartialDirName)
+	finalDir := filepath.Join(ggDir, brainDirName)
+
+	// Clean up any previous partial attempt.
+	_ = os.RemoveAll(partialDir)
+	if err := os.MkdirAll(partialDir, 0o755); err != nil {
+		return fmt.Errorf("create brain.partial dir: %w", err)
+	}
+
+	checksums := make(map[string]string)
+	counts := make(map[string]int)
+
+	// Write Qdrant JSONL files.
+	for _, kind := range store.BrainKind {
+		records := qdrantData[kind]
+		fname := kind + ".jsonl"
+		sum, n, writeErr := writeBrainJSONL(partialDir, fname, records)
+		if writeErr != nil {
+			_ = os.RemoveAll(partialDir)
+			return fmt.Errorf("write %s: %w", fname, writeErr)
+		}
+		checksums[fname] = sum
+		counts[kind] = n
+	}
+
+	// Write chunks.jsonl (Memgraph nodes).
+	{
+		sum, n, writeErr := writeBrainJSONL(partialDir, "chunks.jsonl", graphNodes)
+		if writeErr != nil {
+			_ = os.RemoveAll(partialDir)
+			return fmt.Errorf("write chunks.jsonl: %w", writeErr)
+		}
+		checksums["chunks.jsonl"] = sum
+		counts["chunks"] = n
+	}
+
+	// Write edges.jsonl (Memgraph edges).
+	{
+		sum, n, writeErr := writeBrainJSONL(partialDir, "edges.jsonl", graphEdges)
+		if writeErr != nil {
+			_ = os.RemoveAll(partialDir)
+			return fmt.Errorf("write edges.jsonl: %w", writeErr)
+		}
+		checksums["edges.jsonl"] = sum
+		counts["edges"] = n
+	}
+
+	// Write manifest.json.
+	manifest := brainManifest{
+		SchemaVersion:  1,
+		GGVersion:      buildVersion(),
+		ProjectID:      cfg.ProjectID,
+		ExportedAt:     time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
+		EmbeddingModel: embModel,
+		EmbeddingDim:   embDim,
+		Counts:         counts,
+		SHA256:         checksums,
+		Scrubbed:       totalScrubbed,
+	}
+	manifestBytes, encErr := brainMarshalManifest(manifest)
+	if encErr != nil {
+		_ = os.RemoveAll(partialDir)
+		return encErr
+	}
+	manifestPath := filepath.Join(partialDir, "manifest.json")
+	if err := os.WriteFile(manifestPath, append(manifestBytes, '\n'), 0o644); err != nil {
+		_ = os.RemoveAll(partialDir)
+		return fmt.Errorf("write manifest.json: %w", err)
+	}
+
+	// Atomic rename: partial → final.
+	_ = os.RemoveAll(finalDir)
+	if err := os.Rename(partialDir, finalDir); err != nil {
+		return fmt.Errorf("rename brain.partial → brain: %w", err)
+	}
+
+	// Ensure .gg/.gitignore covers brain.partial/.
+	ensureBrainPartialIgnored(ggDir)
+
+	total := 0
+	for _, n := range counts {
+		total += n
+	}
+	fmt.Printf("✓ Brain exported → %s (%d records)\n", finalDir, total)
+	for _, kind := range store.BrainKind {
+		if n := counts[kind]; n > 0 {
+			fmt.Printf("  %-16s %d\n", kind, n)
+		}
+	}
+	if n := counts["chunks"]; n > 0 {
+		fmt.Printf("  %-16s %d\n", "chunks (graph)", n)
+	}
+	if n := counts["edges"]; n > 0 {
+		fmt.Printf("  %-16s %d\n", "edges (graph)", n)
+	}
+	return nil
+}
+
+// collectQdrantData scrolls all Qdrant collections for the project.
+func collectQdrantData(ctx context.Context, cfg *config.Config, ggDir string) (map[string][]any, error) {
+	client, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("store init: %w", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	hctx, hcancel := context.WithTimeout(ctx, healthCheckTimeout)
+	defer hcancel()
+	if hErr := client.HealthCheck(hctx); hErr != nil {
+		return nil, storeDownErr()
+	}
+
+	data := make(map[string][]any, len(store.BrainKind))
+	for _, kind := range store.BrainKind {
+		records, scrollErr := client.ExportBrainCollection(ctx, kind)
+		if scrollErr != nil {
+			return nil, fmt.Errorf("scroll %s: %w", kind, scrollErr)
+		}
+		items := make([]any, len(records))
+		for i, r := range records {
+			items[i] = map[string]any{
+				"id":      r.ID,
+				"payload": r.Payload,
+			}
+		}
+		data[kind] = items
+	}
+	return data, nil
+}
+
+// collectGraphData queries Memgraph for nodes and edges.
+// Returns (nil, nil, error) when Memgraph is unavailable.
+func collectGraphData(ctx context.Context, cfg *config.Config) ([]any, []any, error) {
+	if cfg.Memgraph.URI == "" {
+		return nil, nil, fmt.Errorf("memgraph not configured")
+	}
+	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = gc.Close(ctx) }()
+
+	nodes, err := gc.ExportNodes(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	edges, err := gc.ExportEdges(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	nodeItems := make([]any, len(nodes))
+	for i, n := range nodes {
+		nodeItems[i] = map[string]any{
+			"id":         n.ID,
+			"label":      n.Label,
+			"properties": n.Properties,
+		}
+	}
+	edgeItems := make([]any, len(edges))
+	for i, e := range edges {
+		edgeItems[i] = map[string]any{
+			"dst":        e.Dst,
+			"properties": e.Properties,
+			"src":        e.Src,
+			"type":       e.Type,
+		}
+	}
+	return nodeItems, edgeItems, nil
+}
+
+// writeBrainJSONL writes items as canonical JSONL to dir/filename, returns
+// (sha256hex, count, error). Creates an empty file when items is nil/empty.
+func writeBrainJSONL(dir, filename string, items []any) (string, int, error) {
+	path := filepath.Join(dir, filename)
+	f, err := os.Create(path) //nolint:gosec
+	if err != nil {
+		return "", 0, err
+	}
+
+	h := sha256.New()
+	w := bufio.NewWriter(f)
+	for _, item := range items {
+		line, encErr := store.CanonicalJSON(item)
+		if encErr != nil {
+			_ = f.Close()
+			return "", 0, fmt.Errorf("encode record: %w", encErr)
+		}
+		line = append(line, '\n')
+		if _, wErr := w.Write(line); wErr != nil {
+			_ = f.Close()
+			return "", 0, wErr
+		}
+		h.Write(line)
+	}
+	if err := w.Flush(); err != nil {
+		_ = f.Close()
+		return "", 0, err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return "", 0, err
+	}
+	if err := f.Close(); err != nil {
+		return "", 0, err
+	}
+	return hex.EncodeToString(h.Sum(nil)), len(items), nil
+}
+
+// fileChecksum returns the hex SHA-256 of the file at path.
+func fileChecksum(path string) (string, error) {
+	data, err := os.ReadFile(path) //nolint:gosec
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// printBrainDryRun prints what would be written without touching the filesystem.
+func printBrainDryRun(qdrantData map[string][]any, nodes, edges []any) error {
+	fmt.Println("Dry run — would write .gg/brain/:")
+	kindOrder := append(append([]string(nil), store.BrainKind...), "chunks", "edges")
+	for _, k := range kindOrder {
+		var n int
+		switch k {
+		case "chunks":
+			n = len(nodes)
+		case "edges":
+			n = len(edges)
+		default:
+			n = len(qdrantData[k])
+		}
+		fmt.Printf("  %-20s %d records\n", k+".jsonl", n)
+	}
+	fmt.Println("  manifest.json")
+	return nil
+}
+
+// ensureBrainPartialIgnored appends brain.partial/ to .gg/.gitignore if missing.
+func ensureBrainPartialIgnored(ggDir string) {
+	gitignorePath := filepath.Join(ggDir, ".gitignore")
+	data, err := os.ReadFile(gitignorePath) //nolint:gosec
+	if err != nil {
+		return
+	}
+	if strings.Contains(string(data), "brain.partial/") {
+		return
+	}
+	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_WRONLY, 0o644) //nolint:gosec
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	_, _ = fmt.Fprintln(f, "brain.partial/")
+}
