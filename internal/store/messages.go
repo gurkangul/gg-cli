@@ -99,6 +99,31 @@ func (c *Client) GetInbox(ctx context.Context, role string, humanOnly bool) ([]M
 
 // DismissAll marks all unread messages (optionally filtered by recipient role)
 // as read. Returns the count of dismissed messages.
+// ListMessagesSince returns all messages (read and unread) created at or after
+// the given time. Filtering is done in memory because created_at is a string
+// payload and Qdrant range filters require numeric fields.
+func (c *Client) ListMessagesSince(ctx context.Context, since time.Time) ([]Message, error) {
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+		CollectionName: c.collMessages(),
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out []Message
+	for _, p := range points {
+		m := messageFromRetrieved(p)
+		t, err := time.Parse(time.RFC3339, m.CreatedAt)
+		if err != nil {
+			continue
+		}
+		if !t.Before(since) {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) DismissAll(ctx context.Context, role string) (int, error) {
 	msgs, err := c.GetInbox(ctx, role, false)
 	if err != nil {
