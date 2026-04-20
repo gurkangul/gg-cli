@@ -212,8 +212,6 @@ func detectAgentHint(results []agenthooks.Result) string {
 				return "claude-code"
 			case "cursor":
 				return "cursor"
-			case "aider":
-				return "aider"
 			}
 		}
 	}

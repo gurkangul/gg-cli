@@ -68,7 +68,7 @@ visible to the others through shared memory.
 
 The very first thing to do at the start of any conversation:
 ```
-export GG_AGENT="claude-code"   # or "gsd", "cursor", "aider", etc.
+export GG_AGENT="claude-code"   # or "gsd", "cursor", "codex", etc.
 gg status
 ```
 

@@ -72,7 +72,7 @@ func (b Briefing) Render(w io.Writer) error {
 // PasteBlock is the copy-paste bootstrap prompt printed at the end of
 // `gg init` and `gg doctor` success output. Users paste this into an
 // agent's chat to kickstart compliance when no SessionStart hook is
-// available (Codex, Zai, generic CLIs) or as reinforcement.
+// available (Codex, generic CLIs) or as reinforcement.
 //
 // agentHint seeds the example GG_AGENT value; if empty, "claude-code"
 // is used. The block is plain ASCII — no markdown fences, no emojis —

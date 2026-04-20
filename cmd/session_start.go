@@ -47,7 +47,7 @@ Examples:
 
 func init() {
 	sessionStartCmd.Flags().StringVar(&sessionStartAgent, "agent", "",
-		"agent name (claude-code, cursor, aider, codex, ...) — overrides $GG_AGENT")
+		"agent name (claude-code, cursor, codex, ...) — overrides $GG_AGENT")
 	rootCmd.AddCommand(sessionStartCmd)
 	// Inject CHANGELOG.md content so the parser has it at runtime.
 	changelog.SetContent(gg.ChangelogRaw)
@@ -57,7 +57,7 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	agent := resolveSessionAgent()
 	if agent == "" {
 		fmt.Fprintln(os.Stderr, "error: no agent identity — set GG_AGENT or pass --agent=<name>")
-		fmt.Fprintln(os.Stderr, "       examples: claude-code, gsd, codex, cursor, aider")
+		fmt.Fprintln(os.Stderr, "       examples: claude-code, gsd, codex, cursor")
 		fmt.Fprintln(os.Stderr, "       agents must self-identify so telemetry can distinguish")
 		fmt.Fprintln(os.Stderr, "       agent-initiated calls from human ones.")
 		return configErr("agent identity required (set GG_AGENT or pass --agent)")

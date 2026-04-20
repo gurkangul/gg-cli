@@ -7,8 +7,7 @@ import (
 
 // RenderReport writes a human-readable summary of install results to w.
 // Output is stable and testable — one line per agent with an icon, name,
-// action, path, and tier tag. Notes (e.g. the zai shell alias advisory)
-// follow indented under their owner.
+// action, path, and tier tag. Notes follow indented under their owner.
 func RenderReport(w io.Writer, results []Result) {
 	for _, r := range results {
 		ic := icon(r.Action)

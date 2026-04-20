@@ -11,7 +11,7 @@
 //
 //	TierHard      — the agent runtime refuses to proceed until the gg
 //	                command runs (Claude Code SessionStart hook, Cursor
-//	                alwaysApply rule, Aider read-preload).
+//	                alwaysApply rule).
 //	TierSoft      — the agent reads the injected content but may ignore
 //	                it (Codex via AGENTS.md managed-block).
 //	TierFallback  — no config surface; best-effort via shell wrapper
@@ -109,11 +109,9 @@ type Installer interface {
 var registry = []Installer{
 	&claudeInstaller{},
 	&cursorInstaller{},
-	&aiderInstaller{},
 	&codexInstaller{},
 	&bmadInstaller{},
 	&gsdInstaller{},
-	&zaiInstaller{},
 }
 
 // AllNames returns the registry keys in registration order.

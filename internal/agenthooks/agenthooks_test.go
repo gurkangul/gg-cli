@@ -77,27 +77,6 @@ func TestInstallNamed_ForceBypassesDetection(t *testing.T) {
 	}
 }
 
-func TestZai_InstallAlwaysAdvisory(t *testing.T) {
-	root := t.TempDir()
-	// Zai via InstallNamed (force-invoked since Detect always false).
-	results := InstallNamed(root, []string{"zai"}, Options{})
-	if len(results) != 1 {
-		t.Fatal("expected 1 result")
-	}
-	r := results[0]
-	if r.Action != ActionUpToDate {
-		t.Errorf("zai action = %q, want %q (advisory-only)", r.Action, ActionUpToDate)
-	}
-	if len(r.Notes) == 0 {
-		t.Error("zai should return a non-empty advisory in Notes")
-	}
-	// Nothing should have been written to disk.
-	entries, _ := os.ReadDir(root)
-	if len(entries) != 0 {
-		t.Errorf("zai installer wrote files: %v", entries)
-	}
-}
-
 func TestTierString(t *testing.T) {
 	cases := []struct {
 		tier Tier
@@ -117,7 +96,7 @@ func TestTierString(t *testing.T) {
 
 func TestAllNames_CoversAllInstallers(t *testing.T) {
 	names := AllNames()
-	want := []string{"claude", "cursor", "aider", "codex", "bmad", "gsd", "zai"}
+	want := []string{"claude", "cursor", "codex", "bmad", "gsd"}
 	if len(names) != len(want) {
 		t.Fatalf("got %v, want %v", names, want)
 	}

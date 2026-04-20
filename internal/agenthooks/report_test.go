@@ -29,7 +29,7 @@ func TestRenderReport_OneLinePerResult(t *testing.T) {
 func TestRenderReport_IncludesNotesAndErrors(t *testing.T) {
 	results := []Result{
 		{
-			AgentName: "zai", Tier: TierFallback, Action: ActionUpToDate,
+			AgentName: "generic", Tier: TierFallback, Action: ActionUpToDate,
 			Notes: []string{"use alias", "or prefix GG_AGENT"},
 		},
 		{

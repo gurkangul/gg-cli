@@ -131,7 +131,7 @@ These rules are individually recorded via `gg record` (tags:
 
 The very first thing to do at the start of any conversation:
 ```
-export GG_AGENT="claude-code"   # or "codex", "cursor", "aider", etc.
+export GG_AGENT="claude-code"   # or "codex", "cursor", "gsd", etc.
 gg status
 ```
 
