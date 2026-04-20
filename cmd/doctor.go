@@ -55,6 +55,8 @@ var (
 	doctorInstallTaskHooks  bool
 	doctorSyncArtifacts     bool
 	doctorSyncApply         bool
+	doctorBypassAudit       bool
+	doctorBypassAuditSince  string
 )
 
 func init() {
@@ -84,6 +86,10 @@ func init() {
 		"compare .gg/installed.json against the current CLI templates and show a drift table")
 	doctorCmd.Flags().BoolVar(&doctorSyncApply, "apply", false,
 		"with --sync-artifacts: re-install drifted or missing artifacts")
+	doctorCmd.Flags().BoolVar(&doctorBypassAudit, "bypass-audit", false,
+		"list GG_ENFORCEMENT=off bypass events from ~/.gg/projects/<id>/state.json (default: last 7d)")
+	doctorCmd.Flags().StringVar(&doctorBypassAuditSince, "bypass-since", "7d",
+		"with --bypass-audit: time window (7d, 24h, 30d, or RFC3339 timestamp)")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -174,6 +180,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// --sync-artifacts: compare installed.json vs current CLI templates.
 	if doctorSyncArtifacts {
 		return runDoctorSyncArtifacts(doctorSyncApply)
+	}
+	// --bypass-audit: list enforcement-bypass events recorded in state.json.
+	if doctorBypassAudit {
+		return runDoctorBypassAudit(doctorBypassAuditSince)
 	}
 
 	fmt.Println("GG Doctor")

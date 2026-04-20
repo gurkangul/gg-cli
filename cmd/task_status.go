@@ -106,7 +106,7 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	// Opt-out: skipped when GG_ENFORCEMENT=off. Set it to opt out for a session.
 	if !enforcement.Enabled() {
 		// Emit an audit line so telemetry can count how often the gate was bypassed.
-		emitGuardSkipEvent("pre-task-done")
+		emitGuardSkipEvent("pre-task-done", taskID)
 	} else if rej := runGateHooks(cmd, hookCfg, "pre-task-done", taskID, summary); rej != nil {
 		emitGateFailedEvent(cmd.ErrOrStderr(), rej)
 		notifyGateFailure(cmd, rej) // best-effort: no-op if store unreachable or opted out
@@ -131,7 +131,7 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	// GG_ENFORCEMENT=off escape hatch applies for emergencies.
 	if _, cfg, cfgErr := hookCfg.load(cmd.ErrOrStderr()); cfgErr == nil && cfg != nil && cfg.Tasks.RequireReadyForLive {
 		if !enforcement.Enabled() {
-			emitGuardSkipEvent("pre-task-done-ready-for-live")
+			emitGuardSkipEvent("pre-task-done-ready-for-live", taskID)
 		} else {
 			t, getErr := d.store.GetTask(ctx, taskID)
 			if getErr != nil {

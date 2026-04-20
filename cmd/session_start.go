@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -82,6 +83,11 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// never disrupts the session.
 	emitVersionDelta(loadedCfg)
 
+	// Bypass-audit notice: surface GG_ENFORCEMENT=off events from the last
+	// 7 days so the human at the keyboard sees bypass pressure before
+	// anything else. Silent when count is zero.
+	emitBypassDelta(loadedCfg)
+
 	// Inline `gg status` so the briefing carries the full current-state
 	// snapshot the agent would otherwise have to fetch separately. runStatus
 	// failure (e.g. Qdrant down) is non-fatal here — the briefing header
@@ -112,8 +118,12 @@ func emitVersionDelta(cfg *config.Config) {
 	prev := state.LastSeenCLIVersion
 
 	// Always update so next session sees the current version.
+	// Preserve other state fields (BypassLog, etc.) by mutating-then-writing
+	// the existing struct — the previous version wrote a fresh State{} and
+	// silently dropped BypassLog every session-start.
 	defer func() {
-		_ = projectstate.Write(runtimeDir, projectstate.State{LastSeenCLIVersion: curr})
+		state.LastSeenCLIVersion = curr
+		_ = projectstate.Write(runtimeDir, state)
 	}()
 
 	if prev == "" || prev == curr {
@@ -141,6 +151,61 @@ func emitVersionDelta(cfg *config.Config) {
 		fmt.Println("… (see CHANGELOG.md for full details)")
 	}
 	fmt.Println()
+}
+
+// emitBypassDelta surfaces a warning when GG_ENFORCEMENT=off bypasses have
+// occurred in the last 7 days. Silent when count is zero or project context
+// is missing. Format mirrors emitVersionDelta (box header, short body) so
+// multiple delta blocks stack predictably in the session briefing.
+func emitBypassDelta(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	runtimeDir, err := cfg.RuntimeDir()
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	entries, err := projectstate.ListBypassesSince(runtimeDir, cutoff)
+	if err != nil || len(entries) == 0 {
+		return
+	}
+	// Count per-gate so the header answers "which gate is being bypassed?".
+	perGate := map[string]int{}
+	for _, e := range entries {
+		perGate[e.Gate]++
+	}
+	fmt.Printf("─── BYPASS AUDIT (last 7d): %d %s ───\n", len(entries), pluralize("bypass", len(entries)))
+	for g, n := range perGate {
+		fmt.Printf("  %-40s %d\n", g, n)
+	}
+	// Show the most recent 3 entries inline so the operator has concrete
+	// task/actor context without running `gg doctor --bypass-audit` first.
+	fmt.Println()
+	last := entries
+	if len(last) > 3 {
+		last = last[len(last)-3:]
+	}
+	for _, e := range last {
+		taskInfo := e.TaskID
+		if taskInfo == "" {
+			taskInfo = "(no task)"
+		}
+		actor := e.Actor
+		if actor == "" {
+			actor = "(unknown)"
+		}
+		fmt.Printf("  %s  %-28s  %-18s  %s\n", shortDate(e.TS), e.Gate, taskInfo, actor)
+	}
+	fmt.Println("  (full log: gg doctor --bypass-audit)")
+	fmt.Println()
+}
+
+func pluralize(word string, n int) string {
+	if n == 1 {
+		return word
+	}
+	return word + "es"
 }
 
 func resolveSessionAgent() string {

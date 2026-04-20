@@ -12,6 +12,7 @@ import (
 
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/enforcement"
+	"github.com/gurkangul/gg-cli/internal/projectstate"
 )
 
 var gsdGuardCmd = &cobra.Command{
@@ -43,7 +44,7 @@ var forbiddenGSDTools = []string{
 
 func runGSDGuard(_ *cobra.Command, _ []string) error {
 	if !enforcement.Enabled() {
-		emitGuardSkipEvent("gsd-guard")
+		emitGuardSkipEvent("gsd-guard", "")
 		return nil // opt-out: set GG_ENFORCEMENT=off to bypass
 	}
 	// Load config — if .gg/ is not found or tracker.canonical != "gg", allow.
@@ -80,18 +81,46 @@ func runGSDGuard(_ *cobra.Command, _ []string) error {
 // emitGuardSkipEvent writes a single NDJSON line to stderr so operators
 // and telemetry can audit how often a guard was asleep (enforcement off).
 // Shape mirrors the pre-task-done gate's verify_failed event so agents
-// parse both with one schema.
-func emitGuardSkipEvent(gate string) {
+// parse both with one schema. As a side-effect, it also appends a
+// BypassEntry to the project's state.json so future sessions can surface
+// the bypass count (session-start) and list the full log
+// (gg doctor --bypass-audit). Persistence is best-effort: any failure
+// (runtime dir missing, disk full, …) is silently ignored — a gate already
+// skipped is more important to observe than a missed audit line.
+func emitGuardSkipEvent(gate, taskID string) {
+	ts := time.Now().UTC().Format(time.RFC3339)
 	ev := struct {
-		Event string `json:"event"`
-		Gate  string `json:"gate"`
-		TS    string `json:"ts"`
+		Event  string `json:"event"`
+		Gate   string `json:"gate"`
+		TaskID string `json:"task_id,omitempty"`
+		TS     string `json:"ts"`
 	}{
-		Event: "guard_skipped",
-		Gate:  gate,
-		TS:    time.Now().UTC().Format(time.RFC3339),
+		Event:  "guard_skipped",
+		Gate:   gate,
+		TaskID: taskID,
+		TS:     ts,
 	}
 	if b, err := json.Marshal(ev); err == nil {
 		fmt.Fprintln(os.Stderr, string(b))
 	}
+
+	// Best-effort durable audit record.
+	actor := os.Getenv("GG_ROLE")
+	if actor == "" {
+		actor = os.Getenv("GG_AGENT")
+	}
+	if rt, rtErr := runtimeDirForBypass(); rtErr == nil {
+		_ = projectstate.AppendBypass(rt, gate, taskID, actor)
+	}
+}
+
+// runtimeDirForBypass resolves ~/.gg/projects/<id>/ without requiring the
+// full deps bundle. Returns an error when there's no gg project context,
+// in which case bypass persistence quietly no-ops.
+func runtimeDirForBypass() (string, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return "", err
+	}
+	return cfg.RuntimeDir()
 }
