@@ -27,6 +27,9 @@ var PreTaskDoneGoHook string
 //go:embed pre-task-done-node.sh
 var PreTaskDoneNodeHook string
 
+//go:embed pre-task-done-decide-capture.sh
+var PreTaskDoneDecideCaptureHook string
+
 //go:embed 90-bug-repros.sh
 var BugReprosHook string
 
@@ -49,6 +52,7 @@ func ArtifactSHAs() map[string]string {
 		"hooks/task-done.d/90-bug-repros.sh":     BugReprosHook,
 		"hooks/pre-task-done.d/10-go-verify.sh":  PreTaskDoneGoHook,
 		"hooks/pre-task-done.d/10-node-verify.sh": PreTaskDoneNodeHook,
+		"hooks/pre-task-done.d/20-decide-capture.sh": PreTaskDoneDecideCaptureHook,
 		"hooks/task-done.d/80-task-done-go.sh":   TaskDoneGoHook,
 		"templates/makefile-test-tiers.mk":       MakefileTestTiers,
 	}

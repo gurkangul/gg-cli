@@ -356,6 +356,8 @@ func artifactContent(key string) (string, bool) {
 		return templates.PreTaskDoneGoHook, true
 	case "hooks/pre-task-done.d/10-node-verify.sh":
 		return templates.PreTaskDoneNodeHook, true
+	case "hooks/pre-task-done.d/20-decide-capture.sh":
+		return templates.PreTaskDoneDecideCaptureHook, true
 	case "hooks/task-done.d/80-task-done-go.sh":
 		return templates.TaskDoneGoHook, true
 	case "templates/makefile-test-tiers.mk":
@@ -1193,6 +1195,19 @@ func runDoctorInstallTaskHooks() error {
 	smokeHookPath := filepath.Join(preDir, "05-smoke-e2e.sh")
 	if n, err := installHookIfAbsent(smokeHookPath, templates.SmokeE2EHook,
 		"smoke gate — runs `make test-smoke` when the target exists (skips quietly otherwise)"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
+	// Decision-capture gate (TASK-242): warns (or blocks with GG_DECIDE_GATE=block)
+	// when `gg task done` runs on a task with zero decisions linked via
+	// `gg record --task <TASK-ID>`. Filename prefix 20 runs AFTER language
+	// verifiers so a failing build/test still short-circuits first — the
+	// decide check is meaningless on code that doesn't compile.
+	decideHookPath := filepath.Join(preDir, "20-decide-capture.sh")
+	if n, err := installHookIfAbsent(decideHookPath, templates.PreTaskDoneDecideCaptureHook,
+		"decide gate — warns on task close without a linked gg record (GG_DECIDE_GATE=warn|block|off)"); err != nil {
 		return err
 	} else {
 		installed += n

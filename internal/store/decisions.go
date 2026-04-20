@@ -103,6 +103,33 @@ func (c *Client) ListDecisions(ctx context.Context, limit int) ([]Decision, erro
 	return decisions, nil
 }
 
+// ListDecisionsByTaskID returns every decision whose TaskID field matches
+// the given ID exactly. Semantic near-matches are deliberately excluded —
+// callers (notably the decision-capture gate) need structural proof that the
+// agent linked the decision on purpose, not merely that the model happened to
+// surface something related.
+func (c *Client) ListDecisionsByTaskID(ctx context.Context, taskID string) ([]Decision, error) {
+	if taskID == "" {
+		return nil, nil
+	}
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+		CollectionName: c.collDecisions(),
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var decisions []Decision
+	for _, p := range points {
+		d := decisionFromPayload(p.GetId().GetUuid(), p.GetPayload())
+		if d.TaskID == taskID {
+			decisions = append(decisions, d)
+		}
+	}
+	sortDecisionsDesc(decisions)
+	return decisions, nil
+}
+
 func sortDecisionsDesc(ds []Decision) {
 	sort.Slice(ds, func(i, j int) bool {
 		return ds[i].CreatedAt > ds[j].CreatedAt // RFC3339 is lexically orderable
