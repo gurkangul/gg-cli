@@ -724,3 +724,64 @@ func TestClaude_Install_AuditHooksPreserveExistingOnUpdate(t *testing.T) {
 		t.Errorf("verify hook dropped")
 	}
 }
+
+// TestClaude_Install_InboxCommandContainsNewFlags verifies that a fresh install
+// writes the updated UserPromptSubmit hook with cursor and role flags.
+func TestClaude_Install_InboxCommandContainsNewFlags(t *testing.T) {
+	root := t.TempDir()
+	if _, err := (&claudeInstaller{}).Install(root, Options{Force: true}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	s := string(raw)
+	for _, flag := range []string{"--since-cursor", "--advance-cursor", "--include-agents", "--role"} {
+		if !strings.Contains(s, flag) {
+			t.Errorf("settings.json missing flag %q in UserPromptSubmit hook: %s", flag, s)
+		}
+	}
+}
+
+// TestClaude_Install_RewritesStaleInboxHook verifies that when the old
+// "gg inbox --peek" hook is present, doctor rewrites it to the current format.
+func TestClaude_Install_RewritesStaleInboxHook(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	// Write a settings.json with the old-style hook.
+	stale := `{"hooks":{"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"gg inbox --peek"}]}]}}`
+	if err := os.WriteFile(filepath.Join(dir, ".claude", "settings.json"), []byte(stale), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	res, err := (&claudeInstaller{}).Install(dir, Options{Force: true})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if res.Action != ActionUpdated {
+		t.Errorf("Action = %q, want %q", res.Action, ActionUpdated)
+	}
+
+	raw, _ := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+	s := string(raw)
+	if !strings.Contains(s, "--since-cursor") {
+		t.Errorf("stale hook not rewritten — missing --since-cursor: %s", s)
+	}
+	// Must not have duplicate inbox entries.
+	count := strings.Count(s, "gg inbox")
+	if count != 1 {
+		t.Errorf("expected 1 inbox hook entry, got %d: %s", count, s)
+	}
+
+	// Second install must be idempotent.
+	res2, err := (&claudeInstaller{}).Install(dir, Options{})
+	if err != nil {
+		t.Fatalf("second install: %v", err)
+	}
+	if res2.Action != ActionUpToDate {
+		t.Errorf("second install Action = %q, want %q", res2.Action, ActionUpToDate)
+	}
+}

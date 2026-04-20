@@ -2,10 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/session"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -37,6 +40,8 @@ var (
 	inboxOlderThan     string
 	inboxGroupBy       string
 	inboxIncludeAgents bool
+	inboxSinceCursor   bool
+	inboxAdvanceCursor bool
 )
 
 func init() {
@@ -47,7 +52,16 @@ func init() {
 	inboxCmd.Flags().StringVar(&inboxOlderThan, "older-than", "", "dismiss (mark read) messages older than duration without showing them")
 	inboxCmd.Flags().StringVar(&inboxGroupBy, "group-by", "", "group output by field: sender")
 	inboxCmd.Flags().BoolVar(&inboxIncludeAgents, "include-agents", false, "show agent-to-agent broadcasts (hidden by default)")
+	inboxCmd.Flags().BoolVar(&inboxSinceCursor, "since-cursor", false, "only show messages newer than the stored per-agent cursor")
+	inboxCmd.Flags().BoolVar(&inboxAdvanceCursor, "advance-cursor", false, "after render, advance the per-agent cursor to the newest message timestamp")
 	rootCmd.AddCommand(inboxCmd)
+}
+
+// resolveInboxAgent returns the agent identity for cursor operations.
+// Returns empty string when identity cannot be determined — callers treat
+// empty as "skip cursor logic silently" (backwards-compatible).
+func resolveInboxAgent() string {
+	return strings.TrimSpace(os.Getenv("GG_AGENT"))
 }
 
 func runInbox(cmd *cobra.Command, args []string) error {
@@ -70,6 +84,9 @@ func runInbox(cmd *cobra.Command, args []string) error {
 			fmt.Println("No unread messages.")
 		} else {
 			fmt.Printf("✓ Dismissed %d message(s).\n", n)
+			if inboxAdvanceCursor {
+				advanceCursorToNow(d)
+			}
 		}
 		return nil
 	}
@@ -77,6 +94,29 @@ func runInbox(cmd *cobra.Command, args []string) error {
 	messages, err := d.store.GetInbox(ctx, inboxRole, !inboxIncludeAgents)
 	if err != nil {
 		return fmt.Errorf("get inbox: %w", err)
+	}
+
+	// --since-cursor: filter to messages newer than the stored per-agent cursor.
+	// Silently skipped when GG_AGENT is unset or runtimeDir is unavailable.
+	if inboxSinceCursor {
+		agent := resolveInboxAgent()
+		if agent != "" {
+			if cfg, cfgErr := config.Load(); cfgErr == nil {
+				if runtimeDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
+					cursor, ok, rdErr := session.Read(runtimeDir, agent)
+					if rdErr == nil && ok {
+						filtered := messages[:0]
+						for _, m := range messages {
+							ts, parseErr := time.Parse(time.RFC3339, m.CreatedAt)
+							if parseErr != nil || ts.After(cursor) {
+								filtered = append(filtered, m)
+							}
+						}
+						messages = filtered
+					}
+				}
+			}
+		}
 	}
 
 	// Parse --older-than: dismiss matching messages silently.
@@ -134,6 +174,11 @@ func runInbox(cmd *cobra.Command, args []string) error {
 
 	printMessages(messages, inboxGroupBy)
 
+	// Advance cursor to the newest message shown (or now if no messages).
+	if inboxAdvanceCursor {
+		advanceCursorToMax(d, messages)
+	}
+
 	if inboxPeek {
 		return nil
 	}
@@ -145,6 +190,48 @@ func runInbox(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("mark read: %w", err)
 	}
 	return nil
+}
+
+// advanceCursorToMax writes the cursor to max(CreatedAt) of shown messages,
+// or now() when the message list is empty. Silently no-ops on any error or
+// when GG_AGENT / runtimeDir are unavailable.
+func advanceCursorToMax(_ *deps, messages []store.Message) {
+	agent := resolveInboxAgent()
+	if agent == "" {
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	runtimeDir, err := cfg.RuntimeDir()
+	if err != nil {
+		return
+	}
+	ts := time.Now().UTC()
+	for _, m := range messages {
+		if t, parseErr := time.Parse(time.RFC3339, m.CreatedAt); parseErr == nil && t.After(ts) {
+			ts = t
+		}
+	}
+	_ = session.Write(runtimeDir, agent, ts)
+}
+
+// advanceCursorToNow writes cursor = now(). Used after dismiss-all.
+func advanceCursorToNow(_ *deps) {
+	agent := resolveInboxAgent()
+	if agent == "" {
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	runtimeDir, err := cfg.RuntimeDir()
+	if err != nil {
+		return
+	}
+	_ = session.Write(runtimeDir, agent, time.Now().UTC())
 }
 
 func printMessages(messages []store.Message, groupBy string) {

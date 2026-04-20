@@ -85,8 +85,11 @@ const (
 	claudeMatcherWriteTools     = "Edit|Write|MultiEdit"
 	claudeCommand               = "gg session-start --agent=claude-code"
 	claudeCommandMarker         = "gg session-start"
-	claudeInboxCommand          = "gg inbox --peek"
-	claudeInboxCommandMarker    = "gg inbox"
+	claudeInboxCommand       = `OUT=$(gg inbox --peek --since-cursor --advance-cursor --role "${GG_ROLE:-}" --include-agents 2>/dev/null); echo "$OUT" | grep -qE 'INBOX \(([1-9][0-9]*) unread\)' && jq -n --arg ctx "$OUT" '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:$ctx}}' || true`
+	claudeInboxCommandMarker = "--since-cursor"
+	// claudeInboxStaleMarker matches the old hook command so stale installs can
+	// be detected and rewritten to the current format on next `gg doctor`.
+	claudeInboxStaleMarker = "gg inbox"
 	claudeGSDGuardCommand       = "gg gsd-guard"
 	claudeGSDGuardCommandMarker = "gg gsd-guard"
 	// warn-mode: || true so a verify failure never blocks the write, only warns.
@@ -155,6 +158,7 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 
 	sessionStartPresent := claudeHasHook(data, claudeCommandMarker)
 	inboxPresent := claudeHasUserPromptHook(data, claudeInboxCommandMarker)
+	inboxStale := !inboxPresent && claudeHasUserPromptHook(data, claudeInboxStaleMarker)
 	gsdGuardPresent := claudeHasPreToolUseHook(data, claudeGSDGuardCommandMarker)
 	verifyPresent := claudeHasPostToolUseHook(data, claudeVerifyCommandMarker)
 	auditTrackPresent := claudeHasPostToolUseHook(data, claudeAuditTrackCommandMarker)
@@ -174,7 +178,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	if !sessionStartPresent {
 		claudeAddHook(data, claudeCommand)
 	}
-	if !inboxPresent {
+	if inboxStale {
+		claudeReplaceUserPromptHook(data, claudeInboxStaleMarker, claudeInboxCommand)
+	} else if !inboxPresent {
 		claudeAddUserPromptHook(data, claudeInboxCommand)
 	}
 	if !gsdGuardPresent {
@@ -195,7 +201,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 		if !sessionStartPresent {
 			res.Notes = append(res.Notes, "would add SessionStart hook: "+claudeCommand)
 		}
-		if !inboxPresent {
+		if inboxStale {
+			res.Notes = append(res.Notes, "would rewrite stale UserPromptSubmit hook: "+claudeInboxCommand)
+		} else if !inboxPresent {
 			res.Notes = append(res.Notes, "would add UserPromptSubmit hook: "+claudeInboxCommand)
 		}
 		if !gsdGuardPresent {
@@ -224,7 +232,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	if !sessionStartPresent {
 		res.Notes = append(res.Notes, "SessionStart hook: "+claudeCommand)
 	}
-	if !inboxPresent {
+	if inboxStale {
+		res.Notes = append(res.Notes, "UserPromptSubmit hook rewritten (stale → current): "+claudeInboxCommand)
+	} else if !inboxPresent {
 		res.Notes = append(res.Notes, "UserPromptSubmit hook: "+claudeInboxCommand)
 	}
 	if !gsdGuardPresent {
@@ -312,6 +322,34 @@ func claudeAddUserPromptHook(data map[string]any, cmd string) {
 		},
 	})
 	hooks[claudeEventUserPromptSubmit] = entries
+}
+
+// claudeReplaceUserPromptHook replaces the first UserPromptSubmit hook command
+// that contains staleMarker with newCmd. Used to upgrade stale hook installs
+// to the current format without leaving duplicate entries.
+func claudeReplaceUserPromptHook(data map[string]any, staleMarker, newCmd string) {
+	hooks, _ := data["hooks"].(map[string]any)
+	if hooks == nil {
+		return
+	}
+	entries, _ := hooks[claudeEventUserPromptSubmit].([]any)
+	for _, e := range entries {
+		m, _ := e.(map[string]any)
+		if m == nil {
+			continue
+		}
+		inner, _ := m["hooks"].([]any)
+		for _, h := range inner {
+			hm, _ := h.(map[string]any)
+			if hm == nil {
+				continue
+			}
+			if cmd, _ := hm["command"].(string); strings.Contains(cmd, staleMarker) {
+				hm["command"] = newCmd
+				return
+			}
+		}
+	}
 }
 
 // claudeHasPreToolUseHook reports whether a PreToolUse entry already contains
