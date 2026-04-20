@@ -207,6 +207,15 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 		claudeAddStopHook(data, claudeAuditReportCommand)
 	}
 
+	// Write shared contract block to CLAUDE.md (respects DryRun) before any
+	// early return so dry-run previews include the contract note alongside
+	// the hook-change notes.
+	claudeMDPath := pathIn(projectRoot, "CLAUDE.md")
+	_, cNotes, cErr := writeContractBlock(claudeMDPath, opts.DryRun)
+	if cErr != nil {
+		return res, cErr
+	}
+
 	if opts.DryRun {
 		res.Action = ActionDryRun
 		if !sessionStartPresent {
@@ -229,6 +238,7 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 		if !auditReportPresent {
 			res.Notes = append(res.Notes, "would add Stop audit-report hook: "+claudeAuditReportCommand)
 		}
+		res.Notes = append(res.Notes, cNotes...)
 		return res, nil
 	}
 
@@ -260,17 +270,10 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	if !auditReportPresent {
 		res.Notes = append(res.Notes, "Stop audit-report hook: "+claudeAuditReportCommand)
 	}
-
-	// Also write the shared contract block to CLAUDE.md.
-	claudeMDPath := pathIn(projectRoot, "CLAUDE.md")
-	cAction, cNotes, cErr := writeContractBlock(claudeMDPath, opts.DryRun)
-	if cErr != nil {
-		return res, cErr
-	}
 	res.Notes = append(res.Notes, cNotes...)
-	if res.Action == ActionUpToDate && cAction != ActionUpToDate {
-		res.Action = cAction
-	}
+	// res.Action is always ActionUpdated or ActionCreated in this path (the
+	// all-up-to-date case short-circuited above), so the contract block's
+	// sub-action does not need to escalate it.
 	return res, nil
 }
 
