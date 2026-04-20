@@ -61,6 +61,10 @@ func runDecide(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--task: %w", err)
 	}
 
+	if err := requireAgentIdentity(); err != nil {
+		return err
+	}
+
 	d, err := loadDeps(true)
 	if err != nil {
 		return err
@@ -69,6 +73,10 @@ func runDecide(cmd *cobra.Command, args []string) error {
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
+
+	if err := runInboxGatePreflight(ctx, d.store, "decide"); err != nil {
+		return err
+	}
 
 	embedText := text
 	if reason != "" {

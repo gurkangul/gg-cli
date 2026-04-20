@@ -224,6 +224,10 @@ func runBugFix(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if err := requireAgentIdentity(); err != nil {
+		return err
+	}
+
 	d, err := loadDeps(false)
 	if err != nil {
 		return err
@@ -232,6 +236,10 @@ func runBugFix(cmd *cobra.Command, args []string) error {
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
+
+	if err := runInboxGatePreflight(ctx, d.store, "bug-fix"); err != nil {
+		return err
+	}
 
 	if err := d.store.FixBug(ctx, bugID, rootCause, summary, bugFixRepro); err != nil {
 		return err

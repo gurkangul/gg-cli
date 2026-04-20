@@ -42,6 +42,7 @@ func setupGGDir(t *testing.T) string {
 		t.Fatalf("write config.yaml: %v", err)
 	}
 	t.Setenv("HOME", home)
+	t.Setenv("GG_AGENT", "test")
 	t.Chdir(dir)
 	return ggDir
 }
