@@ -48,9 +48,12 @@ var initCmd = &cobra.Command{
 	RunE:  runInit,
 }
 
+var initSkipEnforcement bool
 
 func init() {
 	rootCmd.AddCommand(initCmd)
+	initCmd.Flags().BoolVar(&initSkipEnforcement, "skip-enforcement", false,
+		"skip installing agent hooks and task-done gate scripts")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -188,10 +191,21 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// self-enforce the gg protocol without the user having to remember.
 	// Runs regardless of Docker status — hooks only depend on files, and
 	// users with Docker down still need the paste prompt to bootstrap.
-	installResults := agenthooks.InstallDetected(cwd, agenthooks.Options{})
-	fmt.Println()
-	fmt.Println("Agent Hooks:")
-	agenthooks.RenderReport(os.Stdout, installResults)
+	var installResults []agenthooks.Result
+	if !initSkipEnforcement {
+		installResults = agenthooks.InstallDetected(cwd, agenthooks.Options{})
+		fmt.Println()
+		fmt.Println("Agent Hooks:")
+		agenthooks.RenderReport(os.Stdout, installResults)
+
+		// Install task-done gate scripts (.gg/hooks/pre-task-done.d/) so the
+		// pre-task-done hook fires on 'gg task done' from the very first session.
+		fmt.Println()
+		fmt.Println("Task Hooks:")
+		if err := runDoctorInstallTaskHooks(); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠ task hooks install: %v\n", err)
+		}
+	}
 
 	langHint := detectLangHint(cwd)
 	printBootstrapPrompt(detectAgentHint(installResults), langHint)
