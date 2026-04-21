@@ -26,6 +26,7 @@ gg inbox [flags]
 
 ```
       --advance-cursor      after render, advance the per-agent cursor to the newest message timestamp
+      --compact             one line per message — drops timestamp precision and action-required split to preserve agent context window
       --dismiss-all         mark all unread messages as read without printing them
       --group-by string     group output by field: sender
   -h, --help                help for inbox

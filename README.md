@@ -173,7 +173,7 @@ not `lift-cli/` is the Go module root.
 ### Keeping agent context small
 
 gg output grows with the knowledge base; on mature projects a single `gg
-context` can span hundreds of lines. Two orthogonal options:
+context` can span hundreds of lines. Three orthogonal options:
 
 - `--compact` on verbose commands — one line per item (IDs, titles, dates),
   no reasons or detail bodies. The agent picks which items to fetch in full:
@@ -182,8 +182,26 @@ context` can span hundreds of lines. Two orthogonal options:
   gg context "auth" --compact
   gg search "jwt" --compact
   gg task get TASK-042 --compact
+  gg task list --compact
+  gg bug list --compact
+  gg inbox --compact
   gg impact src/auth.go --compact
+  gg impact TASK-042 --compact
   ```
+
+- **Agent auto-compact** — agents can skip the flag entirely. When `GG_ROLE`
+  or `GG_AGENT` is set (installed automatically by `gg doctor
+  --install-agent-hooks`), every compact-capable command defaults to compact
+  output. Humans keep the rich default. Override either direction:
+
+  ```sh
+  GG_COMPACT=1 gg task list              # force compact regardless of env
+  gg task list --compact=false           # agent opts out for debugging
+  ```
+
+  Resolution order: explicit `--compact` flag > `GG_COMPACT` env >
+  `GG_ROLE`/`GG_AGENT`/`--from` origin > off. `gg status` surfaces the
+  dogfood savings (`Compact  74 calls, 208.5 KB / ~53K tok saved`).
 
 - A generic shell-output compressor like [RTK](https://github.com/rtk-ai/rtk)
   transparently shrinks all tool output (git, tests, gg) before it reaches

@@ -23,8 +23,11 @@ gg doctor [flags]
       --apply                 with --sync-artifacts: re-install drifted or missing artifacts
       --bypass-audit          list GG_ENFORCEMENT=off bypass events from ~/.gg/projects/<id>/state.json (default: last 7d)
       --bypass-since string   with --bypass-audit: time window (7d, 24h, 30d, or RFC3339 timestamp) (default "7d")
+      --check-contract        compare the managed contract block in each agent's entry-point file against the current template (exit 1 on drift)
       --dry-run               with --install-agent-hooks: report what would change without writing anything
+      --fix                   with --check-contract: repair STALE and MISSING entries; refuses DRIFTED without --force-reset
       --force                 with --install-agent-hooks: bypass detection and install for the named agent(s)
+      --force-reset           with --check-contract --fix: overwrite manually-edited (DRIFTED) contract blocks
       --heal                  migrate legacy .gg/telemetry.jsonl and .gg/cache/ to ~/.gg/projects/<id>/ (idempotent)
   -h, --help                  help for doctor
       --install-agent-hooks   write agent-side config (SessionStart hook / alwaysApply rule / read-preload) to enforce gg usage
@@ -33,6 +36,7 @@ gg doctor [flags]
       --install-task-hooks    install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)
       --reconcile             scan the outbox for incomplete dual-store writes and report what needs repair
       --sync-artifacts        compare .gg/installed.json against the current CLI templates and show a drift table
+      --sync-baseline         rescan project and refresh .gg/file-size-baseline.json with current line counts
       --wipe-brain            drop all Qdrant collections and Memgraph nodes for this project (destructive — use for testing)
       --yes                   with --wipe-brain: skip interactive confirmation
 ```

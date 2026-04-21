@@ -9,7 +9,8 @@ gg init [flags]
 ### Options
 
 ```
-  -h, --help   help for init
+  -h, --help               help for init
+      --skip-enforcement   skip installing agent hooks and task-done gate scripts
 ```
 
 ### Options inherited from parent commands

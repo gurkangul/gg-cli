@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Compact system overhaul — agent auto-compact + 4 new surfaces**
+
+- `isCompactActive(cmd)` — unified resolution: explicit `--compact` flag > `GG_COMPACT` env > agent origin (`GG_ROLE`/`GG_AGENT`/`--from`) with `--compact` flag registered > off. Agents skip the flag and get compact by default; humans stay on rich output; the flag always wins for explicit opt-out.
+- `--compact` now available on: `gg inbox`, `gg task list`, `gg bug list`, `gg context --for-task` (previously only on `search`/`context`/`impact (file)`/`task get`).
+- Shared line builders in `cmd/compact.go` — 7 duplicated render sites collapsed; format changes land in one place. `renderer_v:1` stamp in telemetry entries so aggregates across format changes can be bucketed.
+- New `compact_tokens_saved` metric in `gg status` and `gg telemetry summary` (bytes/4 heuristic). Output: `Compact  74 calls, 208.5 KB / ~53K tok saved (avg 59% reduction)`.
+
+### Fixed
+
+- `compactTrim(s, n<=1)` no longer panics on `runes[:-1]` (latent bug — no caller passed 0 before, but the guard prevents future regressions).
+- `gg impact TASK-X --compact` and `gg impact BUG-X --compact` now actually compress output. Previously both appended a 1-line summary after the default render, *increasing* bytes and skipping telemetry — the flag was dead-code.
+- `gg impact BUG-X` default (non-compact) output now renders Related Decisions / Tasks / Rejections sections. They were fetched into the result struct but dropped from text mode (JSON output was unaffected).
+- `gg audit decide-gaps --compact` now records telemetry via `emitCompact` (was silently emitting without a telemetry entry).
+- `gg task get --compact --with-context` baseline measurement now includes the context block on both paths, so the savings percentage reported in `gg status` is honest instead of comparing compact-without-ctx against default-with-ctx.
+
 **`gg watch` — real-time inbox and event stream**
 
 - `gg watch` tails the project's telemetry JSONL and polls the inbox simultaneously, emitting new entries as they arrive. Designed for tmux status bars, desktop notification scripts, and agent-side monitoring loops.

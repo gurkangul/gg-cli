@@ -9,6 +9,7 @@ gg bug list [flags]
 ### Options
 
 ```
+      --compact         one line per bug — drops fix-summary to preserve agent context window
   -h, --help            help for list
       --status string   filter by status: open, fixing, fixed, wontfix
 ```
