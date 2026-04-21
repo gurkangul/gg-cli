@@ -87,3 +87,4 @@ func kindMeta(c *Client, kind string) (coll, idField, labelField string, err err
 		return "", "", "", fmt.Errorf("unknown kind %q — use tasks, decisions, rejections, notes, discussions, or bugs", kind)
 	}
 }
+

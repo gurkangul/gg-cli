@@ -144,6 +144,31 @@ type AuditThresholdsConfig struct {
 // AuditConfig groups all `gg audit` behaviour knobs.
 type AuditConfig struct {
 	Thresholds AuditThresholdsConfig `yaml:"thresholds"`
+	RepeatWork RepeatWorkConfig      `yaml:"repeat_work"`
+}
+
+// RepeatWorkConfig configures the `gg audit repeat-work` hotspot detector.
+// All fields have built-in defaults; override in .gg/config.yaml under
+// audit.repeat_work.
+type RepeatWorkConfig struct {
+	// WindowDays is the outer lookback window for tier-B/C signals. Default 7.
+	WindowDays int `yaml:"window_days"`
+	// RecordsThreshold is the minimum number of decisions on the same task
+	// within RecordsWindowDays to trigger a tier-A signal. Default 5.
+	RecordsThreshold int `yaml:"records_threshold"`
+	// RecordsWindowDays is the inner window for the task-record signal.
+	// Default 3 (days). Tighter than WindowDays because 5 records in 3 days
+	// signals more acute thrash than 5 records in 2 weeks.
+	RecordsWindowDays int `yaml:"records_window_days"`
+	// ReopensThreshold is the minimum reopen_count on a single bug to
+	// trigger a tier-A signal. Default 2.
+	ReopensThreshold int `yaml:"reopens_threshold"`
+	// FilesThreshold is the minimum distinct bugs touching the same file
+	// within WindowDays to trigger a tier-B signal. Default 3.
+	FilesThreshold int `yaml:"files_threshold"`
+	// TagThreshold is the minimum decisions sharing a non-trivial tag
+	// within WindowDays to trigger a tier-C signal. Default 5.
+	TagThreshold int `yaml:"tag_threshold"`
 }
 
 // TrackerConfig declares which task-tracker is canonical for this project.
