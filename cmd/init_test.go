@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,9 @@ func TestInit_EnforcementHooks_AgentHooksInstalled(t *testing.T) {
 		t.Fatalf("mkdir .claude: %v", err)
 	}
 
-	results := agenthooks.InstallDetected(root, agenthooks.Options{})
+	// Mirror what cmd/init.go now does — Force=true so globally-installed
+	// agents don't stop at "suggested" when the project has no local dir yet.
+	results := agenthooks.InstallDetected(root, agenthooks.Options{Force: true})
 
 	// At least one result must be non-skipped (created/updated/up-to-date).
 	found := false
@@ -36,6 +39,48 @@ func TestInit_EnforcementHooks_AgentHooksInstalled(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected at least one installed agent hook, all were not-detected: %v", results)
+	}
+}
+
+// TestInit_ForceAgentHooks_EnvLandsWithoutProjectClaudeDir covers the
+// TASK-266 follow-up: `gg init` must auto-install the Claude env.GG_AGENT
+// block even when the project has no pre-existing .claude/ directory. Before
+// the Force=true change, Install returned ActionSuggested and dormant TASK-265
+// auto-compact / TASK-266 env wiring stayed uninstalled on new projects.
+func TestInit_ForceAgentHooks_EnvLandsWithoutProjectClaudeDir(t *testing.T) {
+	ggDir := setupGGDir(t)
+	root := filepath.Dir(ggDir)
+	// No .claude/ in the project — this is the exact scenario the fix targets.
+
+	results := agenthooks.InstallDetected(root, agenthooks.Options{Force: true})
+
+	// Find the claude result; must be Created, not Suggested.
+	var claude *agenthooks.Result
+	for i, r := range results {
+		if r.AgentName == "claude" {
+			claude = &results[i]
+			break
+		}
+	}
+	if claude == nil {
+		t.Fatal("claude installer result missing from InstallDetected output")
+	}
+	if claude.Action == agenthooks.ActionSuggested {
+		t.Fatalf("with Force=true, claude must install — got ActionSuggested; dormant-fix regression: %v", claude)
+	}
+
+	// Settings file must carry the env.GG_AGENT block that TASK-266 wires.
+	raw, err := os.ReadFile(filepath.Join(root, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("settings.json not written: %v", err)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatalf("settings.json not valid JSON: %v", err)
+	}
+	env, _ := data["env"].(map[string]any)
+	if v, _ := env["GG_AGENT"].(string); v != "claude-code" {
+		t.Errorf("env.GG_AGENT = %q, want \"claude-code\" — TASK-266 wiring not reaching fresh init", v)
 	}
 }
 

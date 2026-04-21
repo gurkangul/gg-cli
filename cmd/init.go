@@ -191,9 +191,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// self-enforce the gg protocol without the user having to remember.
 	// Runs regardless of Docker status — hooks only depend on files, and
 	// users with Docker down still need the paste prompt to bootstrap.
+	//
+	// Force=true on init: when the user explicitly runs `gg init` they are
+	// asking for project setup — the suggest-only branch in the installer
+	// (created for `gg doctor` on existing projects where silent file
+	// creation would surprise) is wrong here. Without Force, users who have
+	// Claude/Cursor installed globally but no project-local .claude/ dir end
+	// up with a suggestion to run a second command, which means TASK-265
+	// agent auto-compact + TASK-266 env wiring stay dormant in new projects.
 	var installResults []agenthooks.Result
 	if !initSkipEnforcement {
-		installResults = agenthooks.InstallDetected(cwd, agenthooks.Options{})
+		installResults = agenthooks.InstallDetected(cwd, agenthooks.Options{Force: true})
 		fmt.Println()
 		fmt.Println("Agent Hooks:")
 		agenthooks.RenderReport(os.Stdout, installResults)
