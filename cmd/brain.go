@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -120,9 +119,4 @@ func buildVersion() string {
 		}
 	}
 	return "dev"
-}
-
-// brainKindOrder returns the display order for brain snapshot kinds.
-func brainKindOrder() []string {
-	return append(append([]string(nil), store.BrainKind...), "chunks", "edges")
 }

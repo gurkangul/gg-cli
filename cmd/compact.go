@@ -145,11 +145,12 @@ func compactBugLine(b store.Bug) string {
 func compactMessageLine(m store.Message) string {
 	ts := m.CreatedAt
 	// "2026-04-20T23:12:00Z" → "04-20 23:12"
-	if len(ts) >= 16 {
+	switch {
+	case len(ts) >= 16:
 		ts = ts[5:10] + " " + ts[11:16]
-	} else if len(ts) >= 10 {
+	case len(ts) >= 10:
 		ts = ts[5:10]
-	} else {
+	default:
 		ts = "—"
 	}
 	suffix := ""
