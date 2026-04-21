@@ -1,4 +1,10 @@
+---
+alwaysApply: true
+description: gg-cli enforced protocol (managed by gg — do not edit)
+---
 
+You are operating inside a gg-cli enforced project. The rules below are
+mandatory. Read AGENTS.md at the repo root for the full protocol.
 
 <!-- gg:contract:begin v1 -->
 ## GG MANDATORY CONTRACT

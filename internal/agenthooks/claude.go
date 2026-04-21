@@ -60,8 +60,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	verifyPresent := claudeHasPostToolUseHook(data, claudeVerifyCommandMarker)
 	auditTrackPresent := claudeHasPostToolUseHook(data, claudeAuditTrackCommandMarker)
 	auditReportPresent := claudeHasStopHook(data, claudeAuditReportCommandMarker)
+	envPresent := claudeHasEnv(data, claudeEnvAgentKey, claudeEnvAgentValue)
 
-	if sessionStartPresent && inboxPresent && gsdGuardPresent && verifyPresent && auditTrackPresent && auditReportPresent {
+	if sessionStartPresent && inboxPresent && gsdGuardPresent && verifyPresent && auditTrackPresent && auditReportPresent && envPresent {
 		res.Action = ActionUpToDate
 		res.Notes = append(res.Notes, "SessionStart hook already present")
 		res.Notes = append(res.Notes, "UserPromptSubmit hook already present")
@@ -69,6 +70,7 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 		res.Notes = append(res.Notes, "PostToolUse verify hook already present")
 		res.Notes = append(res.Notes, "PostToolUse audit-track hook already present")
 		res.Notes = append(res.Notes, "Stop audit-report hook already present")
+		res.Notes = append(res.Notes, "env.GG_AGENT already present")
 		// Still check/update CLAUDE.md contract block even when hooks are up-to-date.
 		claudeMDPath := pathIn(projectRoot, "CLAUDE.md")
 		cAction, cNotes, cErr := writeContractBlock(claudeMDPath, opts.DryRun)
@@ -102,6 +104,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	if !auditReportPresent {
 		claudeAddStopHook(data, claudeAuditReportCommand)
 	}
+	if !envPresent {
+		claudeSetEnv(data, claudeEnvAgentKey, claudeEnvAgentValue)
+	}
 
 	// Write shared contract block to CLAUDE.md (respects DryRun) before any
 	// early return so dry-run previews include the contract note alongside
@@ -134,6 +139,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 		if !auditReportPresent {
 			res.Notes = append(res.Notes, "would add Stop audit-report hook: "+claudeAuditReportCommand)
 		}
+		if !envPresent {
+			res.Notes = append(res.Notes, "would set env."+claudeEnvAgentKey+"="+claudeEnvAgentValue+" (lights up agent auto-compact + lifecycle auto-broadcast)")
+		}
 		res.Notes = append(res.Notes, cNotes...)
 		return res, nil
 	}
@@ -165,6 +173,9 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	}
 	if !auditReportPresent {
 		res.Notes = append(res.Notes, "Stop audit-report hook: "+claudeAuditReportCommand)
+	}
+	if !envPresent {
+		res.Notes = append(res.Notes, "env."+claudeEnvAgentKey+"="+claudeEnvAgentValue+" (lights up agent auto-compact + lifecycle auto-broadcast)")
 	}
 	res.Notes = append(res.Notes, cNotes...)
 	// res.Action is always ActionUpdated or ActionCreated in this path (the

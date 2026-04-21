@@ -53,6 +53,13 @@ const (
 	// audit-report: emit untracked-mutation warning at session end (non-blocking).
 	claudeAuditReportCommand       = `[ "${GG_NO_AUDIT:-0}" = '1' ] || gg audit report --session-id "$CLAUDE_SESSION_ID" 2>/dev/null || true`
 	claudeAuditReportCommandMarker = "gg audit report"
+	// claudeEnvAgentKey/Value: Claude Code injects `env` entries into every
+	// tool-call subprocess. Setting GG_AGENT here is the single switch that
+	// lights up gg's agent auto-compact (TASK-265), task lifecycle auto-
+	// broadcast, telemetry origin classification, and the inbox per-agent
+	// cursor — all were dormant until this env landed in settings.json.
+	claudeEnvAgentKey   = "GG_AGENT"
+	claudeEnvAgentValue = "claude-code"
 )
 
 // claudeHasHook reports whether any SessionStart entry already contains a
@@ -288,6 +295,30 @@ func claudeAddStopHook(data map[string]any, cmd string) {
 		},
 	})
 	hooks[claudeEventStop] = entries
+}
+
+// claudeHasEnv reports whether data["env"] already carries key with the
+// exact expected value. A drift case (key set to a different value) returns
+// false so the installer can surface it via notes rather than silently
+// accepting a stale manual edit.
+func claudeHasEnv(data map[string]any, key, want string) bool {
+	env, _ := data["env"].(map[string]any)
+	if env == nil {
+		return false
+	}
+	v, _ := env[key].(string)
+	return v == want
+}
+
+// claudeSetEnv writes data["env"][key] = value, creating the env map when
+// absent. Preserves any other env entries (respects user additions).
+func claudeSetEnv(data map[string]any, key, value string) {
+	env, _ := data["env"].(map[string]any)
+	if env == nil {
+		env = map[string]any{}
+		data["env"] = env
+	}
+	env[key] = value
 }
 
 // claudeAddHook merges a new command hook into data without clobbering

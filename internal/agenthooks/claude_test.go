@@ -296,6 +296,110 @@ func TestClaude_Install_DryRun(t *testing.T) {
 	}
 }
 
+// TestClaude_Install_WritesEnvGGAgent verifies the TASK-266 fix: fresh
+// install must write env.GG_AGENT=claude-code so tool-call subprocesses
+// inherit the identity and trigger auto-compact / auto-broadcast /
+// origin=agent classification without manual exports.
+func TestClaude_Install_WritesEnvGGAgent(t *testing.T) {
+	root := t.TempDir()
+	if _, err := (&claudeInstaller{}).Install(root, Options{Force: true}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	env, ok := data["env"].(map[string]any)
+	if !ok {
+		t.Fatalf("env block missing: %s", raw)
+	}
+	if v, _ := env["GG_AGENT"].(string); v != "claude-code" {
+		t.Errorf("env.GG_AGENT = %q, want \"claude-code\" — dormant-fix regression", v)
+	}
+}
+
+// TestClaude_Install_PreservesExistingEnvEntries verifies that user-supplied
+// env entries are kept when the installer adds GG_AGENT.
+func TestClaude_Install_PreservesExistingEnvEntries(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := `{"env": {"CLAUDE_DEBUG": "1", "USER_VAR": "keep-me"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&claudeInstaller{}).Install(root, Options{}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	env, _ := data["env"].(map[string]any)
+	for k, want := range map[string]string{
+		"CLAUDE_DEBUG": "1",
+		"USER_VAR":     "keep-me",
+		"GG_AGENT":     "claude-code",
+	} {
+		if got, _ := env[k].(string); got != want {
+			t.Errorf("env[%q] = %q, want %q — unrelated env must survive, our key must land", k, got, want)
+		}
+	}
+}
+
+// TestClaude_Install_IdempotentEnvDoesNotDuplicate verifies second run is
+// up-to-date (not rewriting) when env.GG_AGENT is already correct.
+func TestClaude_Install_IdempotentEnvDoesNotDuplicate(t *testing.T) {
+	root := t.TempDir()
+	if _, err := (&claudeInstaller{}).Install(root, Options{Force: true}); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	res, err := (&claudeInstaller{}).Install(root, Options{})
+	if err != nil {
+		t.Fatalf("second install: %v", err)
+	}
+	if res.Action != ActionUpToDate {
+		t.Errorf("second Action = %q, want %q (env already present)", res.Action, ActionUpToDate)
+	}
+	// Surface the env-present note so a human running `gg doctor` sees the
+	// status explicitly rather than inferring from silence.
+	foundEnvNote := false
+	for _, n := range res.Notes {
+		if strings.Contains(n, "env.GG_AGENT already present") {
+			foundEnvNote = true
+		}
+	}
+	if !foundEnvNote {
+		t.Errorf("up-to-date result should note env presence, got notes: %v", res.Notes)
+	}
+}
+
+// TestClaude_Install_DryRunSurfacesEnvNote verifies dry-run reports the env
+// change it would make, consistent with how other hook changes are reported.
+func TestClaude_Install_DryRunSurfacesEnvNote(t *testing.T) {
+	root := t.TempDir()
+	res, err := (&claudeInstaller{}).Install(root, Options{DryRun: true, Force: true})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	found := false
+	for _, n := range res.Notes {
+		if strings.Contains(n, "would set env.GG_AGENT") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("dry-run should note env change, got notes: %v", res.Notes)
+	}
+}
+
 // TestClaude_Install_UserPromptSubmitHook verifies that a fresh install writes
 // both the SessionStart and UserPromptSubmit hooks.
 func TestClaude_Install_UserPromptSubmitHook(t *testing.T) {
