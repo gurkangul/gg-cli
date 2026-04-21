@@ -299,6 +299,55 @@ func TestRecordCompact_OmittedOnNonCompact(t *testing.T) {
 	}
 }
 
+// ── RecordDupeCheck aggregation (TASK-268) ──────────────────────────────────
+
+func TestRecordDupeCheck_CountsAllChoiceKinds(t *testing.T) {
+	dir := t.TempDir()
+	// Mix of choices across two "bug-report" invocations — Summarize should
+	// bucket each choice into its own counter.
+	RecordDupeCheck(dir, "bug-report", "", 2, 0.91, DupeChoiceForce)
+	RecordDupeCheck(dir, "bug-report", "", 1, 0.86, DupeChoiceCancel)
+	RecordDupeCheck(dir, "bug-report", "", 3, 0.95, DupeChoiceAutoForce)
+	RecordDupeCheck(dir, "bug-report", "", 0, 0, DupeChoiceReuse) // threshold met but no matches left after filter
+	Record(dir, "status", "")                                     // unrelated — must not pollute dupe totals
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.DupeCheckCalls != 4 {
+		t.Errorf("DupeCheckCalls = %d, want 4", sum.DupeCheckCalls)
+	}
+	// MatchesHits counts only entries where matches_count > 0 (3 of 4).
+	if sum.DupeCheckMatchesHits != 3 {
+		t.Errorf("DupeCheckMatchesHits = %d, want 3 (only 3 had matches>0)", sum.DupeCheckMatchesHits)
+	}
+	if sum.DupeChoiceForce != 1 || sum.DupeChoiceCancel != 1 ||
+		sum.DupeChoiceAutoForce != 1 || sum.DupeChoiceReuse != 1 {
+		t.Errorf("choice buckets wrong: force=%d cancel=%d auto-force=%d reuse=%d",
+			sum.DupeChoiceForce, sum.DupeChoiceCancel,
+			sum.DupeChoiceAutoForce, sum.DupeChoiceReuse)
+	}
+}
+
+func TestRecordDupeCheck_OmittedFieldsOnNonDupeEntries(t *testing.T) {
+	dir := t.TempDir()
+	Record(dir, "status", "")
+
+	data, err := os.ReadFile(filePath(dir))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	// Every dupe-check field is omitempty — non-dupe-check entries must not
+	// leak them into the JSONL. A grep-happy user shouldn't see "dupe_check"
+	// on every row.
+	for _, field := range []string{`"dupe_check"`, `"matches_count"`, `"top_score"`, `"user_choice"`} {
+		if containsField(string(data), field) {
+			t.Errorf("non-dupe-check entry leaked %q into JSON: %s", field, data)
+		}
+	}
+}
+
 func containsField(s, f string) bool {
 	for i := 0; i+len(f) <= len(s); i++ {
 		if s[i:i+len(f)] == f {
