@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -42,6 +43,7 @@ var (
 	inboxIncludeAgents bool
 	inboxSinceCursor   bool
 	inboxAdvanceCursor bool
+	inboxCompact       bool
 )
 
 func init() {
@@ -54,6 +56,7 @@ func init() {
 	inboxCmd.Flags().BoolVar(&inboxIncludeAgents, "include-agents", false, "show agent-to-agent broadcasts (hidden by default)")
 	inboxCmd.Flags().BoolVar(&inboxSinceCursor, "since-cursor", false, "only show messages newer than the stored per-agent cursor")
 	inboxCmd.Flags().BoolVar(&inboxAdvanceCursor, "advance-cursor", false, "after render, advance the per-agent cursor to the newest message timestamp")
+	inboxCmd.Flags().BoolVar(&inboxCompact, "compact", false, "one line per message — drops timestamp precision and action-required split to preserve agent context window")
 	rootCmd.AddCommand(inboxCmd)
 }
 
@@ -172,7 +175,17 @@ func runInbox(cmd *cobra.Command, args []string) error {
 		return messages[i].CreatedAt > messages[j].CreatedAt
 	})
 
-	printMessages(messages, inboxGroupBy)
+	if isCompactActive(cmd) {
+		emitCompact(cmd, "inbox",
+			func(w io.Writer) {
+				myRole := strings.TrimSpace(os.Getenv("GG_ROLE"))
+				writeMessages(w, messages, inboxGroupBy, myRole)
+			},
+			func(w io.Writer) { writeInboxCompact(w, messages) },
+		)
+	} else {
+		printMessages(messages, inboxGroupBy)
+	}
 
 	// Advance cursor to the newest message shown (or now if no messages).
 	if inboxAdvanceCursor {
@@ -235,8 +248,13 @@ func advanceCursorToNow(_ *deps) {
 }
 
 func printMessages(messages []store.Message, groupBy string) {
-	myRole := strings.TrimSpace(os.Getenv("GG_ROLE"))
+	writeMessages(os.Stdout, messages, groupBy, strings.TrimSpace(os.Getenv("GG_ROLE")))
+}
 
+// writeMessages renders the default (rich) inbox view to w. Split from
+// printMessages so the compact-baseline measurement can capture the exact
+// bytes the default view would have printed without a stdout redirect.
+func writeMessages(w io.Writer, messages []store.Message, groupBy, myRole string) {
 	if groupBy == "sender" {
 		byRole := make(map[string][]store.Message)
 		var order []string
@@ -250,10 +268,10 @@ func printMessages(messages []store.Message, groupBy string) {
 		}
 		for _, role := range order {
 			msgs := byRole[role]
-			fmt.Printf("\nFrom: %s (%d)\n", role, len(msgs))
-			fmt.Println(strings.Repeat("─", 40))
+			fmt.Fprintf(w, "\nFrom: %s (%d)\n", role, len(msgs))
+			fmt.Fprintln(w, strings.Repeat("─", 40))
 			for _, m := range msgs {
-				printMessage(m, myRole)
+				writeMessage(w, m, myRole)
 			}
 		}
 		return
@@ -270,21 +288,30 @@ func printMessages(messages []store.Message, groupBy string) {
 			}
 		}
 		if len(actions) > 0 && len(infos) > 0 {
-			fmt.Printf("ASSIGNMENTS REQUIRING ACTION (%d):\n", len(actions))
+			fmt.Fprintf(w, "ASSIGNMENTS REQUIRING ACTION (%d):\n", len(actions))
 			for _, m := range actions {
-				printMessage(m, myRole)
+				writeMessage(w, m, myRole)
 			}
-			fmt.Printf("\nINFO (%d):\n", len(infos))
+			fmt.Fprintf(w, "\nINFO (%d):\n", len(infos))
 			for _, m := range infos {
-				printMessage(m, myRole)
+				writeMessage(w, m, myRole)
 			}
 			return
 		}
 	}
 
-	fmt.Printf("INBOX (%d unread):\n", len(messages))
+	fmt.Fprintf(w, "INBOX (%d unread):\n", len(messages))
 	for _, m := range messages {
-		printMessage(m, myRole)
+		writeMessage(w, m, myRole)
+	}
+}
+
+// writeInboxCompact emits one line per message — drops the action-required
+// split, the sender grouping, and the rich multi-line per-message format.
+func writeInboxCompact(w io.Writer, messages []store.Message) {
+	fmt.Fprintf(w, "inbox — %d unread\n", len(messages))
+	for _, m := range messages {
+		fmt.Fprintln(w, compactMessageLine(m))
 	}
 }
 
@@ -302,6 +329,10 @@ func isActionRequired(m store.Message, myRole string) bool {
 }
 
 func printMessage(m store.Message, myRole string) {
+	writeMessage(os.Stdout, m, myRole)
+}
+
+func writeMessage(w io.Writer, m store.Message, myRole string) {
 	prefix := ""
 	if myRole != "" {
 		if isActionRequired(m, myRole) {
@@ -310,14 +341,14 @@ func printMessage(m store.Message, myRole string) {
 			prefix = "[INFO] "
 		}
 	}
-	fmt.Printf("  %s[%s → %s] %s\n", prefix, m.FromRole, m.ToRole, highlightMentions(m.Content))
+	fmt.Fprintf(w, "  %s[%s → %s] %s\n", prefix, m.FromRole, m.ToRole, highlightMentions(m.Content))
 	if m.TaskID != "" {
-		fmt.Printf("    Task: %s\n", m.TaskID)
+		fmt.Fprintf(w, "    Task: %s\n", m.TaskID)
 	}
 	if m.CreatedAt != "" {
 		ts, err := time.Parse(time.RFC3339, m.CreatedAt)
 		if err == nil {
-			fmt.Printf("    %s\n", ts.Local().Format("2006-01-02 15:04"))
+			fmt.Fprintf(w, "    %s\n", ts.Local().Format("2006-01-02 15:04"))
 		}
 	}
 }

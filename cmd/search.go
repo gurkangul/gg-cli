@@ -132,7 +132,7 @@ func printSearchResults(cmd *cobra.Command, decisions []store.Decision, rejectio
 		if banner != "" {
 			fmt.Fprintln(cmd.OutOrStderr(), banner)
 		}
-		if searchCompact {
+		if isCompactActive(cmd) {
 			emitCompact(cmd, "search",
 				func(w io.Writer) { renderSearchDefault(w, decisions, rejections) },
 				func(w io.Writer) { renderSearchCompact(w, decisions, rejections) },
@@ -192,20 +192,6 @@ func renderSearchCompact(w io.Writer, decisions []store.Decision, rejections []s
 		fmt.Fprintln(w, "(no results)")
 		return
 	}
-	for _, dec := range decisions {
-		suffix := ""
-		if dec.TaskID != "" {
-			suffix = " →" + dec.TaskID
-		}
-		fmt.Fprintf(w, "D  %s  %s%s\n",
-			shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth), suffix)
-	}
-	for _, r := range rejections {
-		suffix := ""
-		if r.TaskID != "" {
-			suffix = " →" + r.TaskID
-		}
-		fmt.Fprintf(w, "R  %s  %s%s\n",
-			shortDate(r.CreatedAt), compactTrim(r.Approach, compactLineWidth), suffix)
-	}
+	writeCompactDecisions(w, decisions)
+	writeCompactRejections(w, rejections)
 }

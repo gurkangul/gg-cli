@@ -46,6 +46,10 @@ type Entry struct {
 	Compact      bool `json:"compact,omitempty"`
 	BytesOut     int  `json:"bytes_out,omitempty"`
 	BytesDefault int  `json:"bytes_default,omitempty"`
+	// RendererV stamps the compact-renderer version so aggregates across
+	// format changes can be bucketed. Zero = pre-v1 (unknown). Callers that
+	// use RecordCompact set this via the rendererV arg.
+	RendererV int `json:"renderer_v,omitempty"`
 	// --with-context fields (omitted when flag is not used).
 	WithContext       bool `json:"with_context,omitempty"`
 	ContextBlockBytes int  `json:"context_block_bytes,omitempty"`
@@ -103,8 +107,9 @@ func Record(runtimeDir, verb, fromFlag string) {
 // RecordCompact appends a telemetry entry with byte-count measurements for a
 // --compact invocation. bytesDefault is what the non-compact renderer would
 // have produced on the same data — callers must render both to compute the
-// baseline.
-func RecordCompact(runtimeDir, verb, fromFlag string, bytesOut, bytesDefault int) {
+// baseline. rendererV stamps the compact-output format version so aggregates
+// across a format change don't silently mix apples and oranges.
+func RecordCompact(runtimeDir, verb, fromFlag string, bytesOut, bytesDefault, rendererV int) {
 	recordEntry(runtimeDir, Entry{
 		Verb:         verb,
 		Origin:       classify(fromFlag),
@@ -112,6 +117,7 @@ func RecordCompact(runtimeDir, verb, fromFlag string, bytesOut, bytesDefault int
 		Compact:      true,
 		BytesOut:     bytesOut,
 		BytesDefault: bytesDefault,
+		RendererV:    rendererV,
 	})
 }
 
@@ -167,6 +173,10 @@ type WeeklySummary struct {
 	CompactCalls        int `json:"compact_calls"`
 	CompactBytesOut     int `json:"compact_bytes_out"`
 	CompactBytesDefault int `json:"compact_bytes_default"`
+	// CompactTokensSaved is a rough estimate (bytes/4) so agents and humans
+	// can read the dogfood benefit in the unit they actually care about.
+	// Computed at summarize time — not stored per-entry.
+	CompactTokensSaved int `json:"compact_tokens_saved"`
 	// WithContextCalls counts gg get --with-context invocations.
 	WithContextCalls      int `json:"with_context_calls"`
 	WithContextBytesTotal int `json:"with_context_bytes_total"`
@@ -222,6 +232,12 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 			sum.WithContextCalls++
 			sum.WithContextBytesTotal += e.ContextBlockBytes
 		}
+	}
+	if saved := sum.CompactBytesDefault - sum.CompactBytesOut; saved > 0 {
+		// 4 bytes ≈ 1 token — a coarse but stable heuristic across English
+		// and Latin-script languages. Turkish text leans slightly lower but
+		// the error stays well under the 10% noise floor of the metric.
+		sum.CompactTokensSaved = saved / 4
 	}
 	return sum, nil
 }

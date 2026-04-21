@@ -436,6 +436,11 @@ func TestCompactTrim(t *testing.T) {
 		{"this is longer than ten characters", 10, "this is l…"},
 		{"çalışmayıılık", 5, "çalı…"}, // multibyte safety
 		{"", 5, ""},
+		// Regression: n <= 0 must not panic (was out-of-range on runes[:-1]).
+		{"anything", 0, ""},
+		{"anything", -1, ""},
+		{"anything", 1, "…"},
+		{"", 1, ""},
 	}
 	for _, tc := range cases {
 		got := compactTrim(tc.in, tc.n)

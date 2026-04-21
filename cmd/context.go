@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -259,6 +260,29 @@ func runContextForTask(cmd *cobra.Command, taskID string) error {
 		"rejections": bundle.rejections,
 		"warnings":   errs,
 	}, func() {
+		if isCompactActive(cmd) {
+			emitCompact(cmd, "context",
+				func(w io.Writer) { renderForTask(w, tb, errs) },
+				func(w io.Writer) { renderForTaskCompact(w, tb, errs) },
+			)
+			return
+		}
 		renderForTask(cmd.OutOrStdout(), tb, errs)
 	})
+}
+
+// renderForTaskCompact emits the --for-task bundle as one line per item.
+func renderForTaskCompact(w io.Writer, tb taskContextBundle, errs []string) {
+	a := tb.anchor
+	fmt.Fprintf(w, "for-task: %s [%s/%s] %s — %d deps %dD %dR\n\n",
+		a.ID, a.Status, a.Priority, compactTrim(a.Title, compactLineWidth),
+		len(tb.deps), len(tb.bundle.decisions), len(tb.bundle.rejections))
+	for _, dep := range tb.deps {
+		fmt.Fprintln(w, compactTaskLine(dep))
+	}
+	writeCompactDecisions(w, tb.bundle.decisions)
+	writeCompactRejections(w, tb.bundle.rejections)
+	if len(errs) > 0 {
+		fmt.Fprintf(w, "\n! %s\n", strings.Join(errs, "; "))
+	}
 }

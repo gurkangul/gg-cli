@@ -34,6 +34,7 @@ var (
 	taskListReady       bool
 	taskListNeedsReview bool
 	taskListBlockers    bool
+	taskListCompact     bool
 	taskGetCompact      bool
 	taskGetWithCtx      bool
 )
@@ -43,6 +44,7 @@ func init() {
 	taskListCmd.Flags().BoolVar(&taskListReady, "ready", false, "show only pending tasks whose dependencies are all done")
 	taskListCmd.Flags().BoolVar(&taskListNeedsReview, "needs-review", false, "show done tasks awaiting review (review_status=none or pending)")
 	taskListCmd.Flags().BoolVar(&taskListBlockers, "blockers", false, "show tasks that are blocking other tasks (have --blocks targets)")
+	taskListCmd.Flags().BoolVar(&taskListCompact, "compact", false, "one line per task — drops author + block-reason detail to preserve agent context window")
 	taskGetCmd.Flags().BoolVar(&taskGetCompact, "compact", false, "one line summary — drops detail/tags/author to preserve agent context window")
 	taskGetCmd.Flags().BoolVar(&taskGetWithCtx, "with-context", false, "append === Related Context === block with top-3 semantically related items from the knowledge base")
 	taskCmd.AddCommand(taskListCmd)
@@ -147,17 +149,34 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 			}
 			return
 		}
-		for _, t := range tasks {
-			author := ""
-			if t.Author != "" {
-				author = " (" + t.Author + ")"
-			}
-			fmt.Printf("%s %s [%s] %s%s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title, author)
-			if t.Status == "blocked" && t.BlockReason != "" {
-				fmt.Printf("    ⚠ Blocked: %s\n", t.BlockReason)
-			}
+		if isCompactActive(cmd) {
+			emitCompact(cmd, "list",
+				func(w io.Writer) { renderTaskListDefault(w, tasks) },
+				func(w io.Writer) { renderTaskListCompact(w, tasks) },
+			)
+			return
 		}
+		renderTaskListDefault(os.Stdout, tasks)
 	})
+}
+
+func renderTaskListDefault(w io.Writer, tasks []store.Task) {
+	for _, t := range tasks {
+		author := ""
+		if t.Author != "" {
+			author = " (" + t.Author + ")"
+		}
+		fmt.Fprintf(w, "%s %s [%s] %s%s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title, author)
+		if t.Status == "blocked" && t.BlockReason != "" {
+			fmt.Fprintf(w, "    ⚠ Blocked: %s\n", t.BlockReason)
+		}
+	}
+}
+
+func renderTaskListCompact(w io.Writer, tasks []store.Task) {
+	for _, t := range tasks {
+		fmt.Fprintln(w, compactTaskLine(t))
+	}
 }
 
 func runTaskGet(cmd *cobra.Command, args []string) error {
@@ -187,21 +206,35 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 	}
 
 	return printJSON(t, func() {
-		if taskGetCompact {
+		// Render the with-context block into a buffer up front so both the
+		// compact and default paths can include it in their byte measurements
+		// consistently — otherwise --compact + --with-context would compare
+		// compact-no-ctx against default-no-ctx and overstate savings.
+		var ctxBlock bytes.Buffer
+		if taskGetWithCtx {
+			renderRelatedContext(&ctxBlock, relCtx)
+		}
+
+		if isCompactActive(cmd) {
 			emitCompact(cmd, "task",
-				func(w io.Writer) { renderTaskGetDefault(w, t) },
-				func(w io.Writer) { renderTaskGetCompact(w, t) },
+				func(w io.Writer) {
+					renderTaskGetDefault(w, t)
+					_, _ = w.Write(ctxBlock.Bytes())
+				},
+				func(w io.Writer) {
+					renderTaskGetCompact(w, t)
+					_, _ = w.Write(ctxBlock.Bytes())
+				},
 			)
 		} else {
 			renderTaskGetDefault(os.Stdout, t)
+			_, _ = os.Stdout.Write(ctxBlock.Bytes())
 		}
+
 		if taskGetWithCtx {
-			var block bytes.Buffer
-			renderRelatedContext(&block, relCtx)
-			_, _ = os.Stdout.Write(block.Bytes())
 			if cfg, cfgErr := config.Load(); cfgErr == nil {
 				if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
-					telemetry.RecordWithContext(rtDir, "task", "", block.Len())
+					telemetry.RecordWithContext(rtDir, "task", "", ctxBlock.Len())
 				}
 			}
 		}
@@ -310,17 +343,13 @@ func renderRelatedContext(w *bytes.Buffer, rc *relatedContext) {
 
 	var lines []string
 	for _, dec := range rc.decisions {
-		lines = append(lines, fmt.Sprintf("D  %s  %s", shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth)))
+		lines = append(lines, compactDecisionLine(dec))
 	}
 	for _, r := range rc.rejections {
-		lines = append(lines, fmt.Sprintf("R  %s  %s", shortDate(r.CreatedAt), compactTrim(r.Approach, compactLineWidth)))
+		lines = append(lines, compactRejectionLine(r))
 	}
 	for _, n := range rc.notes {
-		ref := ""
-		if n.TaskID != "" {
-			ref = " (" + n.TaskID + ")"
-		}
-		lines = append(lines, fmt.Sprintf("N  %s%s  %s", shortDate(n.CreatedAt), ref, compactTrim(n.Text, compactLineWidth)))
+		lines = append(lines, compactNoteLine(n))
 	}
 
 	// Enforce byte cap — stop adding lines once we'd exceed the limit.

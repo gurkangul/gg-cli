@@ -2,9 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg-cli/internal/store"
 )
 
 var bugListCmd = &cobra.Command{
@@ -21,10 +25,14 @@ var bugGetCmd = &cobra.Command{
 	RunE:  runBugGet,
 }
 
-var bugListStatus string
+var (
+	bugListStatus  string
+	bugListCompact bool
+)
 
 func init() {
 	bugListCmd.Flags().StringVar(&bugListStatus, "status", "", "filter by status: open, fixing, fixed, wontfix")
+	bugListCmd.Flags().BoolVar(&bugListCompact, "compact", false, "one line per bug — drops fix-summary to preserve agent context window")
 	bugCmd.AddCommand(bugListCmd)
 	bugCmd.AddCommand(bugGetCmd)
 }
@@ -53,13 +61,24 @@ func runBugList(cmd *cobra.Command, _ []string) error {
 			fmt.Println("No bugs found.")
 			return
 		}
-		for _, b := range bugs {
-			fmt.Printf("%s %s [%s/%s] %s\n", bugStatusIcon(b.Status), b.ID, b.Severity, b.Status, b.Title)
-			if b.Status == "fixed" && b.FixSummary != "" {
-				fmt.Printf("    ✓ Fix: %s\n", b.FixSummary)
-			}
+		if isCompactActive(cmd) {
+			emitCompact(cmd, "list",
+				func(w io.Writer) { renderBugListDefault(w, bugs) },
+				func(w io.Writer) { writeCompactBugs(w, bugs) },
+			)
+			return
 		}
+		renderBugListDefault(os.Stdout, bugs)
 	})
+}
+
+func renderBugListDefault(w io.Writer, bugs []store.Bug) {
+	for _, b := range bugs {
+		fmt.Fprintf(w, "%s %s [%s/%s] %s\n", bugStatusIcon(b.Status), b.ID, b.Severity, b.Status, b.Title)
+		if b.Status == "fixed" && b.FixSummary != "" {
+			fmt.Fprintf(w, "    ✓ Fix: %s\n", b.FixSummary)
+		}
+	}
 }
 
 func runBugGet(cmd *cobra.Command, args []string) error {

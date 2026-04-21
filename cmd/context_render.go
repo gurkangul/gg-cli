@@ -15,6 +15,12 @@ import (
 const compactLineWidth = 80
 
 func compactTrim(s string, n int) string {
+	if n <= 1 {
+		if n == 1 && s != "" {
+			return "…"
+		}
+		return ""
+	}
 	runes := []rune(s)
 	if len(runes) <= n {
 		return s
@@ -81,7 +87,7 @@ func printContextBundle(cmd *cobra.Command, query string, bundle contextBundle, 
 			)
 			return
 		}
-		if contextCompact {
+		if isCompactActive(cmd) {
 			emitCompact(cmd, "context",
 				func(w io.Writer) { renderContextDefault(w, query, bundle, errs) },
 				func(w io.Writer) { renderContextCompact(w, query, bundle, errs) },
@@ -192,42 +198,11 @@ func renderContextCompact(w io.Writer, query string, bundle contextBundle, errs 
 		len(bundle.decisions), len(bundle.rejections),
 		len(bundle.tasks), len(bundle.discussions), len(bundle.notes))
 
-	for _, dec := range bundle.decisions {
-		suffix := ""
-		if dec.TaskID != "" {
-			suffix = " →" + dec.TaskID
-		}
-		fmt.Fprintf(w, "D  %s  %s%s\n",
-			shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth), suffix)
-	}
-	for _, r := range bundle.rejections {
-		suffix := ""
-		if r.TaskID != "" {
-			suffix = " →" + r.TaskID
-		}
-		fmt.Fprintf(w, "R  %s  %s%s\n",
-			shortDate(r.CreatedAt), compactTrim(r.Approach, compactLineWidth), suffix)
-	}
-	for _, t := range bundle.tasks {
-		fmt.Fprintf(w, "T %s %s  %s (%s)\n",
-			taskStatusIcon(t.Status), t.ID, compactTrim(t.Title, compactLineWidth), t.Priority)
-	}
-	for _, disc := range bundle.discussions {
-		suffix := ""
-		if n := len(disc.Turns); n > 0 {
-			suffix = fmt.Sprintf(" (%d turns)", n)
-		}
-		fmt.Fprintf(w, "? %s %s  %s%s\n",
-			discStatusMark(disc.Status), disc.ID, compactTrim(disc.Topic, compactLineWidth), suffix)
-	}
-	for _, n := range bundle.notes {
-		taskRef := ""
-		if n.TaskID != "" {
-			taskRef = "  (" + n.TaskID + ")"
-		}
-		fmt.Fprintf(w, "N  %s%s  %s\n",
-			shortDate(n.CreatedAt), taskRef, compactTrim(n.Text, compactLineWidth))
-	}
+	writeCompactDecisions(w, bundle.decisions)
+	writeCompactRejections(w, bundle.rejections)
+	writeCompactTasks(w, bundle.tasks)
+	writeCompactDiscussions(w, bundle.discussions)
+	writeCompactNotes(w, bundle.notes)
 
 	if len(errs) > 0 {
 		fmt.Fprintf(w, "\n! %s\n", strings.Join(errs, "; "))
@@ -258,24 +233,14 @@ func renderForTask(w io.Writer, tb taskContextBundle, errs []string) {
 	if len(tb.bundle.decisions) > 0 {
 		fmt.Fprintf(w, "\nRELATED DECISIONS (%d):\n", len(tb.bundle.decisions))
 		for _, dec := range tb.bundle.decisions {
-			suffix := ""
-			if dec.TaskID != "" {
-				suffix = " →" + dec.TaskID
-			}
-			fmt.Fprintf(w, "  D  %s  %s%s\n",
-				shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth), suffix)
+			fmt.Fprintf(w, "  %s\n", compactDecisionLine(dec))
 		}
 	}
 
 	if len(tb.bundle.rejections) > 0 {
 		fmt.Fprintf(w, "\nRELATED REJECTIONS (%d):\n", len(tb.bundle.rejections))
 		for _, r := range tb.bundle.rejections {
-			suffix := ""
-			if r.TaskID != "" {
-				suffix = " →" + r.TaskID
-			}
-			fmt.Fprintf(w, "  R  %s  %s%s\n",
-				shortDate(r.CreatedAt), compactTrim(r.Approach, compactLineWidth), suffix)
+			fmt.Fprintf(w, "  %s\n", compactRejectionLine(r))
 		}
 	}
 

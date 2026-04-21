@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -25,6 +26,15 @@ var decideKeywords = []string{
 // message with a gg record call. A record created within this duration of the
 // message is considered coverage.
 const decideGapCoverageWindow = 2 * time.Hour
+
+// flaggedMsg is a message whose content matched the decide-language heuristic
+// but has no corresponding gg record within the coverage window.
+type flaggedMsg struct {
+	fromRole string
+	toRole   string
+	content  string
+	msgTime  time.Time
+}
 
 var auditDecideGapsCmd = &cobra.Command{
 	Use:   "decide-gaps",
@@ -116,12 +126,6 @@ func runAuditDecideGaps(cmd *cobra.Command, _ []string) error {
 		"system":      true,
 	}
 
-	type flaggedMsg struct {
-		fromRole string
-		toRole   string
-		content  string
-		msgTime  time.Time
-	}
 	var flagged []flaggedMsg
 	for _, m := range messages {
 		if systemRoles[m.FromRole] {
@@ -151,24 +155,35 @@ func runAuditDecideGaps(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	if auditDecideGapsCompact {
-		for _, f := range flagged {
-			fmt.Fprintf(w, "[%s] %s → %s: %s\n",
-				f.msgTime.Format("2006-01-02T15:04"),
-				f.fromRole, f.toRole,
-				truncate(f.content, 80))
-		}
+	if isCompactActive(cmd) {
+		emitCompact(cmd, "decide-gaps",
+			func(out io.Writer) { renderDecideGapsDefault(out, flagged, auditDecideGapsSince) },
+			func(out io.Writer) { renderDecideGapsCompact(out, flagged) },
+		)
 		return nil
 	}
 
+	renderDecideGapsDefault(w, flagged, auditDecideGapsSince)
+	return nil
+}
+
+func renderDecideGapsDefault(w io.Writer, flagged []flaggedMsg, since string) {
 	fmt.Fprintf(w, "decide-gaps: %d message(s) with decision-language but no gg record (last %s)\n\n",
-		len(flagged), auditDecideGapsSince)
+		len(flagged), since)
 	for _, f := range flagged {
 		fmt.Fprintf(w, "  [%s] %s → %s\n", f.msgTime.Format("2006-01-02 15:04"), f.fromRole, f.toRole)
 		fmt.Fprintf(w, "    %s\n\n", truncate(f.content, 120))
 	}
 	fmt.Fprintln(w, "Run `gg record \"<decision>\" --reason \"<why>\"` to capture the rationale.")
-	return nil
+}
+
+func renderDecideGapsCompact(w io.Writer, flagged []flaggedMsg) {
+	for _, f := range flagged {
+		fmt.Fprintf(w, "[%s] %s → %s: %s\n",
+			f.msgTime.Format("2006-01-02T15:04"),
+			f.fromRole, f.toRole,
+			truncate(f.content, 80))
+	}
 }
 
 func truncate(s string, max int) string {

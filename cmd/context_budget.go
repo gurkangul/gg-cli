@@ -36,22 +36,12 @@ func buildTieredItems(bundle contextBundle) []contextTieredItem {
 		if dec.Status == "superseded" {
 			tier = 3
 		}
-		suffix := ""
-		if dec.TaskID != "" {
-			suffix = " →" + dec.TaskID
-		}
-		line := fmt.Sprintf("[P%d] D  %s  %s%s", tier,
-			shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth), suffix)
+		line := fmt.Sprintf("[P%d] %s", tier, compactDecisionLine(dec))
 		items = append(items, contextTieredItem{tier: tier, line: line})
 	}
 
 	for _, r := range bundle.rejections {
-		suffix := ""
-		if r.TaskID != "" {
-			suffix = " →" + r.TaskID
-		}
-		line := fmt.Sprintf("[P2] R  %s  %s%s",
-			shortDate(r.CreatedAt), compactTrim(r.Approach, compactLineWidth), suffix)
+		line := fmt.Sprintf("[P2] %s", compactRejectionLine(r))
 		items = append(items, contextTieredItem{tier: 2, line: line})
 	}
 
@@ -63,8 +53,7 @@ func buildTieredItems(bundle contextBundle) []contextTieredItem {
 		case "done", "blocked", "ready_for_live":
 			tier = 3
 		}
-		line := fmt.Sprintf("[P%d] T %s %s  %s (%s)", tier,
-			taskStatusIcon(t.Status), t.ID, compactTrim(t.Title, compactLineWidth), t.Priority)
+		line := fmt.Sprintf("[P%d] %s", tier, compactTaskLine(t))
 		items = append(items, contextTieredItem{tier: tier, line: line})
 	}
 
@@ -76,22 +65,12 @@ func buildTieredItems(bundle contextBundle) []contextTieredItem {
 		case "dismissed":
 			tier = 4
 		}
-		suffix := ""
-		if n := len(disc.Turns); n > 0 {
-			suffix = fmt.Sprintf(" (%d turns)", n)
-		}
-		line := fmt.Sprintf("[P%d] ? %s %s  %s%s", tier,
-			discStatusMark(disc.Status), disc.ID, compactTrim(disc.Topic, compactLineWidth), suffix)
+		line := fmt.Sprintf("[P%d] %s", tier, compactDiscussionLine(disc))
 		items = append(items, contextTieredItem{tier: tier, line: line})
 	}
 
 	for _, n := range bundle.notes {
-		taskRef := ""
-		if n.TaskID != "" {
-			taskRef = "  (" + n.TaskID + ")"
-		}
-		line := fmt.Sprintf("[P4] N  %s%s  %s",
-			shortDate(n.CreatedAt), taskRef, compactTrim(n.Text, compactLineWidth))
+		line := fmt.Sprintf("[P4] %s", compactNoteLine(n))
 		items = append(items, contextTieredItem{tier: 4, line: line})
 	}
 

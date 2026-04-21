@@ -181,7 +181,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 	}
 
 	return printJSON(result, func() {
-		if impactCompact {
+		if isCompactActive(cmd) {
 			emitCompact(cmd, "impact",
 				func(w io.Writer) { renderImpactDefault(w, result) },
 				func(w io.Writer) { renderImpactCompact(w, result) },
@@ -275,26 +275,9 @@ func renderImpactCompact(w io.Writer, r impactResult) {
 			fmt.Fprintf(w, "S %s\n", name)
 		}
 	}
-	for _, dec := range r.Decisions {
-		suffix := ""
-		if dec.TaskID != "" {
-			suffix = " →" + dec.TaskID
-		}
-		fmt.Fprintf(w, "D  %s  %s%s\n",
-			shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth), suffix)
-	}
-	for _, t := range r.Tasks {
-		fmt.Fprintf(w, "T %s %s  %s (%s)\n",
-			taskStatusIcon(t.Status), t.ID, compactTrim(t.Title, compactLineWidth), t.Priority)
-	}
-	for _, rej := range r.Rejections {
-		suffix := ""
-		if rej.TaskID != "" {
-			suffix = " →" + rej.TaskID
-		}
-		fmt.Fprintf(w, "R  %s  %s%s\n",
-			shortDate(rej.CreatedAt), compactTrim(rej.Approach, compactLineWidth), suffix)
-	}
+	writeCompactDecisions(w, r.Decisions)
+	writeCompactTasks(w, r.Tasks)
+	writeCompactRejections(w, r.Rejections)
 	for _, b := range r.HistoricalBugs {
 		fmt.Fprintf(w, "B  %s  %s\n", b.BugID, compactTrim(b.Title, compactLineWidth))
 	}

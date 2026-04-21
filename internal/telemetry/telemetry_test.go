@@ -252,8 +252,8 @@ func TestRecord_OriginAgent_GGAgentEnv(t *testing.T) {
 func TestRecordCompact_AggregatesSizes(t *testing.T) {
 	dir := t.TempDir()
 
-	RecordCompact(dir, "context", "", 200, 1000)
-	RecordCompact(dir, "search", "", 150, 500)
+	RecordCompact(dir, "context", "", 200, 1000, 1)
+	RecordCompact(dir, "search", "", 150, 500, 1)
 	Record(dir, "status", "") // non-compact — must not pollute compact totals
 
 	sum, err := Summarize(dir)

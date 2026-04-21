@@ -100,5 +100,5 @@ func emitCompact(cmd *cobra.Command, verb string, renderDefault, renderCompact f
 	if f := cmd.Flags().Lookup("from"); f != nil {
 		fromFlag = f.Value.String()
 	}
-	telemetry.RecordCompact(runtimeDir, verb, fromFlag, out.Len(), baseline.Len())
+	telemetry.RecordCompact(runtimeDir, verb, fromFlag, out.Len(), baseline.Len(), compactRendererV)
 }

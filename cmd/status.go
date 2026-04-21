@@ -183,8 +183,9 @@ func runStatus(cmd *cobra.Command, args []string) error {
 					if tsum.CompactCalls > 0 && tsum.CompactBytesDefault > 0 {
 						saved := tsum.CompactBytesDefault - tsum.CompactBytesOut
 						pctSaved := float64(saved) / float64(tsum.CompactBytesDefault) * 100
-						fmt.Printf("Compact     %d calls, %s saved (avg %.0f%% reduction)\n",
-							tsum.CompactCalls, humanFileSize(int64(saved)), pctSaved)
+						fmt.Printf("Compact     %d calls, %s / ~%s tok saved (avg %.0f%% reduction)\n",
+							tsum.CompactCalls, humanFileSize(int64(saved)),
+							humanTokenCount(tsum.CompactTokensSaved), pctSaved)
 					}
 					fmt.Println()
 				}
