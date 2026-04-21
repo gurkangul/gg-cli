@@ -101,7 +101,7 @@ func runFullIndex(ctx context.Context, root, ggDir string, lang runner.Lang, r r
 		return fmt.Errorf("discover %s modules: %w", lang, err)
 	}
 	if len(moduleDirs) == 0 {
-		return fmt.Errorf("no %s modules found under %s — %s not present at root or within doctor.hook_install.max_depth subdirs", lang, root, manifestForLang(lang))
+		return fmt.Errorf("no %s modules found under %s — none of [%s] present at root or within doctor.hook_install.max_depth subdirs", lang, root, strings.Join(manifestsForLang(lang), ", "))
 	}
 
 	fmt.Printf("indexing %s (full, lang=%s, %d module(s)) ...\n", root, lang, len(moduleDirs))
@@ -237,7 +237,7 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 		return fmt.Errorf("discover %s modules: %w", lang, err)
 	}
 	if len(moduleDirs) == 0 {
-		return fmt.Errorf("no %s modules found under %s — %s not present at root or within doctor.hook_install.max_depth subdirs", lang, root, manifestForLang(lang))
+		return fmt.Errorf("no %s modules found under %s — none of [%s] present at root or within doctor.hook_install.max_depth subdirs", lang, root, strings.Join(manifestsForLang(lang), ", "))
 	}
 	for _, modDir := range moduleDirs {
 		if err := index(ctx, root, modDir, lang, r, gc, toInvalidate, headSHA); err != nil {
@@ -359,287 +359,21 @@ func readModulePath(root string) string {
 	return ""
 }
 
-// graphHandler implements parser.Handler, writing parsed nodes to Memgraph.
-type graphHandler struct {
-	gc               *graph.Client
-	root             string          // absolute project/gg root — all stored paths are relative to this
-	moduleDir        string          // absolute dir where scip-go ran (holds go.mod / package.json)
-	moduleRelRoot    string          // moduleDir relative to project root, forward slashes ("." for root-level module)
-	headSHA          string          // stamped on every node as indexed_at_commit
-	fileFilter       map[string]bool // if non-nil, only these project-relative paths are written
-	modulePath       string          // go module path read from go.mod (used for Package import_path)
-	files            int
-	symbols          int
-	refs             int
-	imports          int
-	skippedOutOfTree int // files skipped because their path escaped project root (e.g. go-build cache)
-
-	// BUG-013/014: per-run lookup tables built during indexing.
-	fileNodeByPath  map[string]*graph.Node // relPath → file node (with ID)
-	scipToFile      map[string]string      // scip symbol string → source relPath (for ref resolution)
-	seenImportEdges map[string]bool        // "fromID|toID" → written (dedup)
-	seenPackages    map[string]string      // import_path → package node ID
-	pendingRefs     []pendingRef
-}
-
-// pendingRef is a cross-file reference collected during OnReference and resolved after ParseFile.
-type pendingRef struct {
-	fromFileID string
-	scipSymbol string
-}
-
-func (h *graphHandler) OnFile(ctx context.Context, node *graph.Node) error {
-	rawPath, _ := node.Properties["path"].(string)
-	relPath, ok := normalizeProjectPath(h.root, h.moduleDir, rawPath)
-	if !ok {
-		// Path escapes project root (e.g. Go build-cache artefact like
-		// "../../Library/Caches/go-build/..") or is otherwise outside the tree.
-		// Skip silently — these aren't part of the project's source graph.
-		h.skippedOutOfTree++
-		return nil
-	}
-	if h.fileFilter != nil && !h.fileFilter[relPath] {
-		return nil
-	}
-	// Store project-relative paths for cross-machine portability (BUG-010 fix).
-	// CHANGED_CONTRACT.md §5 requires source_file on every node for reaping;
-	// relative form keeps the contract while making brain export git-safe.
-	node.Properties["path"] = relPath
-	node.Properties["source_file"] = relPath
-	if h.headSHA != "" {
-		node.Properties["indexed_at_commit"] = h.headSHA
-	}
-	if err := h.gc.UpsertNode(ctx, node, []string{"path"}); err != nil {
-		return err
-	}
-	h.fileNodeByPath[relPath] = node
-	h.files++
-
-	// BUG-014: create Package node and CONTAINS edge for this file.
-	// Use the module-relative path so the derived Go import path does not include
-	// the repo-relative module prefix (e.g. lift-cli/cmd → cmd under module root).
-	lang, _ := node.Properties["lang"].(string)
-	moduleRelPath := stripModulePrefix(relPath, h.moduleRelRoot)
-	pkgImportPath := derivePackagePath(h.modulePath, lang, moduleRelPath)
-	if pkgImportPath != "" {
-		pkgNode, err := h.upsertPackage(ctx, lang, pkgImportPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: upsert package %s: %v\n", pkgImportPath, err)
-		} else if pkgNode != nil && pkgNode.ID != "" && node.ID != "" {
-			edge := &graph.Edge{FromID: pkgNode.ID, ToID: node.ID, Type: graph.RelContains}
-			if err := h.gc.UpsertEdge(ctx, edge); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: upsert CONTAINS edge: %v\n", err)
-			}
-		}
-	}
-	return nil
-}
-
-func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNode *graph.Node, scipSymbol string) error {
-	// fileNode.Properties["path"] was normalised to relative by OnFile.
-	relPath, _ := fileNode.Properties["path"].(string)
-	if relPath == "" {
-		// File was skipped (out-of-tree); skip its symbols too.
-		return nil
-	}
-	if h.fileFilter != nil && !h.fileFilter[relPath] {
-		return nil
-	}
-	symNode.Properties["source_file"] = relPath
-	if h.headSHA != "" {
-		symNode.Properties["indexed_at_commit"] = h.headSHA
-	}
-	if err := h.gc.UpsertNode(ctx, symNode, []string{"name", "source_file"}); err != nil {
-		return err
-	}
-	// BUG-013: record scip→file mapping for cross-file reference resolution.
-	if scipSymbol != "" {
-		h.scipToFile[scipSymbol] = relPath
-	}
-	if fileNode.ID != "" && symNode.ID != "" {
-		edge := &graph.Edge{
-			FromID: fileNode.ID,
-			ToID:   symNode.ID,
-			Type:   graph.RelDefines,
-		}
-		if err := h.gc.UpsertEdge(ctx, edge); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: upsert DEFINES edge: %v\n", err)
-		}
-	}
-	h.symbols++
-	return nil
-}
-
-func (h *graphHandler) OnReference(ctx context.Context, fromFileNode *graph.Node, scipSymbol string) error {
-	h.refs++
-	// BUG-013: collect pending cross-file refs; flushed after ParseFile completes
-	// so all definitions are guaranteed to be in scipToFile before resolution.
-	if fromFileNode.ID != "" && scipSymbol != "" {
-		h.pendingRefs = append(h.pendingRefs, pendingRef{
-			fromFileID: fromFileNode.ID,
-			scipSymbol: scipSymbol,
-		})
-	}
-	return nil
-}
-
-// flushRefs resolves collected pending references and writes IMPORTS edges.
-// Must be called after ParseFile — at that point all definitions are in scipToFile.
-func (h *graphHandler) flushRefs(ctx context.Context) {
-	for _, ref := range h.pendingRefs {
-		targetFile := h.scipToFile[ref.scipSymbol]
-		if targetFile == "" {
-			continue // external/stdlib symbol — no node in this project's graph
-		}
-		targetNode := h.fileNodeByPath[targetFile]
-		if targetNode == nil || targetNode.ID == "" || targetNode.ID == ref.fromFileID {
-			continue // target not indexed or self-reference
-		}
-		edgeKey := ref.fromFileID + "|" + targetNode.ID
-		if h.seenImportEdges[edgeKey] {
-			continue
-		}
-		h.seenImportEdges[edgeKey] = true
-		edge := &graph.Edge{FromID: ref.fromFileID, ToID: targetNode.ID, Type: graph.RelImports}
-		if err := h.gc.UpsertEdge(ctx, edge); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: upsert IMPORTS edge: %v\n", err)
-		} else {
-			h.imports++
-		}
-	}
-}
-
-// upsertPackage creates or retrieves a Package node for the given import path.
-// Returns the node (with ID set) on success, nil if already seen this run.
-func (h *graphHandler) upsertPackage(ctx context.Context, lang, importPath string) (*graph.Node, error) {
-	if id, ok := h.seenPackages[importPath]; ok {
-		return &graph.Node{ID: id, Label: graph.LabelPackage}, nil
-	}
-	pkgName := importPath
-	if idx := strings.LastIndex(importPath, "/"); idx >= 0 {
-		pkgName = importPath[idx+1:]
-	}
-	node := graph.PackageNode(pkgName, lang, importPath)
-	if err := h.gc.UpsertNode(ctx, node, []string{"import_path"}); err != nil {
-		return nil, err
-	}
-	h.seenPackages[importPath] = node.ID
-	return node, nil
-}
-
-// derivePackagePath returns the canonical package import path for a source file.
-// For Go, it combines the module path with the file's directory segment.
-func derivePackagePath(modulePath, lang, relFilePath string) string {
-	dir := ""
-	if idx := strings.LastIndex(relFilePath, "/"); idx >= 0 {
-		dir = relFilePath[:idx]
-	}
-	if lang == "go" {
-		if modulePath == "" {
-			return dir
-		}
-		if dir == "" {
-			return modulePath // root package
-		}
-		return modulePath + "/" + dir
-	}
-	// TypeScript / Python: use directory path as package identifier.
-	if dir == "" {
-		return "."
-	}
-	return dir
-}
-
-// normalizeProjectPath accepts whatever the SCIP parser emitted for a file and
-// returns a cleaned project-relative path. Relative inputs are interpreted
-// against baseDir (scip-go's cwd — the module dir, which may be a subdirectory
-// of the project root in monorepos). Returns ok=false when the path escapes
-// the project root (absolute paths outside root, or rel paths that resolve
-// via "..") — callers should skip such files.
-func normalizeProjectPath(projectRoot, baseDir, raw string) (string, bool) {
-	if raw == "" {
-		return "", false
-	}
-	absRoot, err := filepath.Abs(projectRoot)
-	if err != nil {
-		return "", false
-	}
-	base := absRoot
-	if baseDir != "" {
-		absBase, baseErr := filepath.Abs(baseDir)
-		if baseErr != nil {
-			return "", false
-		}
-		base = absBase
-	}
-	var candidate string
-	if filepath.IsAbs(raw) {
-		candidate = filepath.Clean(raw)
-	} else {
-		candidate = filepath.Clean(filepath.Join(base, raw))
-	}
-	rel, err := filepath.Rel(absRoot, candidate)
-	if err != nil {
-		return "", false
-	}
-	// filepath.Rel can return "../.." when candidate escapes root.
-	if rel == "." || rel == "" {
-		return "", false
-	}
-	if strings.HasPrefix(rel, "..") {
-		return "", false
-	}
-	// Always use forward-slash paths — portable across OS.
-	return filepath.ToSlash(rel), true
-}
-
-// relForwardSlash returns target relative to base using forward slashes.
-// Returns "." when the paths are equivalent, or an error if target escapes base.
-func relForwardSlash(base, target string) (string, error) {
-	absBase, err := filepath.Abs(base)
-	if err != nil {
-		return "", err
-	}
-	absTarget, err := filepath.Abs(target)
-	if err != nil {
-		return "", err
-	}
-	rel, err := filepath.Rel(absBase, absTarget)
-	if err != nil {
-		return "", err
-	}
-	if strings.HasPrefix(rel, "..") {
-		return "", fmt.Errorf("%s escapes %s", target, base)
-	}
-	return filepath.ToSlash(rel), nil
-}
-
-// stripModulePrefix returns projectRelPath with the moduleRelRoot prefix
-// removed, producing a module-relative path. "." (root-level module) is a
-// no-op. Paths not under moduleRelRoot are returned unchanged (callers may
-// feed out-of-module files when multiple modules share a parser pass).
-func stripModulePrefix(projectRelPath, moduleRelRoot string) string {
-	if moduleRelRoot == "" || moduleRelRoot == "." {
-		return projectRelPath
-	}
-	if after, ok := strings.CutPrefix(projectRelPath, moduleRelRoot+"/"); ok {
-		return after
-	}
-	return projectRelPath
-}
-
-// manifestForLang returns the canonical manifest filename whose presence marks
-// a module/package root for the given language. Returns "" for unsupported langs.
-func manifestForLang(lang runner.Lang) string {
+// manifestsForLang returns the manifest filenames whose presence marks a
+// module/package root for the given language. Priority order: earlier entries
+// are preferred when multiple exist in the same dir. Python supports several
+// packaging conventions since many real projects predate pyproject.toml.
+// Returns nil for unsupported langs.
+func manifestsForLang(lang runner.Lang) []string {
 	switch lang {
 	case runner.LangGo:
-		return "go.mod"
+		return []string{"go.mod"}
 	case runner.LangTypeScript:
-		return "package.json"
+		return []string{"package.json"}
 	case runner.LangPython:
-		return "pyproject.toml"
+		return []string{"pyproject.toml", "setup.py", "setup.cfg", "Pipfile", "requirements.txt"}
 	}
-	return ""
+	return nil
 }
 
 // discoverModuleDirs walks the project root looking for language manifest
@@ -649,26 +383,37 @@ func manifestForLang(lang runner.Lang) string {
 // Walk depth and skip-directory list are shared with `gg doctor
 // --install-task-hooks` so monorepo heuristics stay consistent across commands.
 func discoverModuleDirs(projectRoot string, lang runner.Lang) ([]string, error) {
-	manifest := manifestForLang(lang)
-	if manifest == "" {
+	manifests := manifestsForLang(lang)
+	if len(manifests) == 0 {
 		return nil, fmt.Errorf("unsupported language %q", lang)
 	}
-	// Fast path: manifest at root → single-module project.
-	if _, err := os.Stat(filepath.Join(projectRoot, manifest)); err == nil {
-		return []string{projectRoot}, nil
+	// Fast path: any accepted manifest at root → single-module project.
+	for _, m := range manifests {
+		if _, err := os.Stat(filepath.Join(projectRoot, m)); err == nil {
+			return []string{projectRoot}, nil
+		}
 	}
 	skipDirs, maxDepth := hookInstallSettings()
-	relDirs, err := findManifestDirs(projectRoot, manifest, skipDirs, maxDepth)
-	if err != nil {
-		return nil, err
-	}
-	absDirs := make([]string, 0, len(relDirs))
-	for _, rel := range relDirs {
-		if rel == "." {
-			absDirs = append(absDirs, projectRoot)
-			continue
+	seen := make(map[string]bool)
+	var absDirs []string
+	for _, m := range manifests {
+		relDirs, err := findManifestDirs(projectRoot, m, skipDirs, maxDepth)
+		if err != nil {
+			return nil, err
 		}
-		absDirs = append(absDirs, filepath.Join(projectRoot, rel))
+		for _, rel := range relDirs {
+			var abs string
+			if rel == "." {
+				abs = projectRoot
+			} else {
+				abs = filepath.Join(projectRoot, rel)
+			}
+			if seen[abs] {
+				continue
+			}
+			seen[abs] = true
+			absDirs = append(absDirs, abs)
+		}
 	}
 	return absDirs, nil
 }

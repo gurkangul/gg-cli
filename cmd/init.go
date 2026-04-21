@@ -48,12 +48,20 @@ var initCmd = &cobra.Command{
 	RunE:  runInit,
 }
 
-var initSkipEnforcement bool
+var (
+	initSkipEnforcement bool
+	initWithIndex       bool
+	initNoIndex         bool
+)
 
 func init() {
 	rootCmd.AddCommand(initCmd)
 	initCmd.Flags().BoolVar(&initSkipEnforcement, "skip-enforcement", false,
 		"skip installing agent hooks and task-done gate scripts")
+	initCmd.Flags().BoolVar(&initWithIndex, "with-index", false,
+		"also run `gg index` after setup (non-interactive yes)")
+	initCmd.Flags().BoolVar(&initNoIndex, "no-index", false,
+		"skip the post-setup index prompt (non-interactive no)")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -222,7 +230,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	langHint := detectLangHint(cwd)
-	printBootstrapPrompt(detectAgentHint(installResults), langHint)
+	indexed := maybeRunIndex(cmd, langHint, composeOK)
+	printBootstrapPrompt(detectAgentHint(installResults), langHint, indexed)
 	return nil
 }
 
@@ -270,7 +279,7 @@ func detectLangHint(dir string) string {
 // chat to trigger gg protocol compliance on first use. When a SessionStart
 // hook is also installed, the block is reinforcement; for agents without a
 // hook surface (Codex, Zai), it is the primary handoff.
-func printBootstrapPrompt(agentHint, langHint string) {
+func printBootstrapPrompt(agentHint, langHint string, indexed bool) {
 	fmt.Println()
 	fmt.Println("Paste this into your AI agent's chat (works for any agent):")
 	fmt.Println()
@@ -278,8 +287,10 @@ func printBootstrapPrompt(agentHint, langHint string) {
 	fmt.Print(session.PasteBlock(agentHint))
 	fmt.Println("────────────────────────────────────────────────────────────")
 	fmt.Println()
-	fmt.Printf("Next: run `gg index --lang %s` to populate the code graph.\n", langHint)
-	fmt.Println()
+	if !indexed {
+		fmt.Printf("Next: run `gg index --lang %s` to populate the code graph.\n", langHint)
+		fmt.Println()
+	}
 	fmt.Println("Forgot the prompt? Run `gg doctor` — it shows it again.")
 	fmt.Println("Re-install hooks later: `gg doctor --install-agent-hooks`.")
 }

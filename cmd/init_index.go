@@ -1,0 +1,66 @@
+package cmd
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	"github.com/spf13/cobra"
+)
+
+// maybeRunIndex decides whether to invoke `gg index` after init, based on
+// flags, TTY detection, and service availability. Returns true if an index
+// run actually completed successfully so the bootstrap prompt can omit the
+// "Next: run gg index" suggestion.
+//
+// Decision precedence:
+//   - --no-index or !composeOK: skip silently (no services, no point)
+//   - --with-index: run without prompting
+//   - TTY stdin: prompt "Run `gg index --lang X` now? [Y/n]"
+//   - non-TTY default: skip (matches the 'interactive opt-in' project rule)
+func maybeRunIndex(cmd *cobra.Command, langHint string, composeOK bool) bool {
+	if initNoIndex || !composeOK {
+		return false
+	}
+	if initWithIndex && initNoIndex {
+		// Mutually exclusive but --no-index already returned above; this is
+		// defensive: prefer the more conservative choice if both are passed.
+		return false
+	}
+	shouldRun := initWithIndex
+	if !shouldRun {
+		if !isTerminal(os.Stdin) {
+			return false
+		}
+		fmt.Println()
+		fmt.Printf("Run `gg index --lang %s` now? This builds the code graph (5-10 min). [Y/n]: ", langHint)
+		line, err := newStdinReader().ReadString('\n')
+		// EOF with no content = closed stdin (e.g. /dev/null, test harness)
+		// — treat as decline, NOT as "user pressed Enter" (which defaults Y).
+		if errors.Is(err, io.EOF) && line == "" {
+			return false
+		}
+		answer := strings.ToLower(strings.TrimSpace(line))
+		switch answer {
+		case "", "y", "yes":
+			shouldRun = true
+		default:
+			shouldRun = false
+		}
+	}
+	if !shouldRun {
+		return false
+	}
+	fmt.Println()
+	fmt.Printf("Running `gg index --lang %s`...\n", langHint)
+	indexLang = langHint
+	indexChanged = false
+	if err := runIndex(cmd, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ gg index failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "  You can retry with: gg index --lang %s\n", langHint)
+		return false
+	}
+	return true
+}

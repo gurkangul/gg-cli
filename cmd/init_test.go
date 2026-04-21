@@ -171,6 +171,51 @@ func TestInit_EnforcementHooks_Idempotent(t *testing.T) {
 	}
 }
 
+// TestMaybeRunIndex_SkipWhenNoIndex verifies that --no-index prevents indexing
+// even if composeOK=true and TTY is available.
+func TestMaybeRunIndex_SkipWhenNoIndex(t *testing.T) {
+	orig := initNoIndex
+	defer func() { initNoIndex = orig }()
+	initNoIndex = true
+
+	result := maybeRunIndex(nil, "go", true)
+	if result {
+		t.Error("expected maybeRunIndex to return false when --no-index is set")
+	}
+}
+
+// TestMaybeRunIndex_SkipWhenComposeNotOK verifies that a missing Docker stack
+// short-circuits without prompting.
+func TestMaybeRunIndex_SkipWhenComposeNotOK(t *testing.T) {
+	orig := initNoIndex
+	defer func() { initNoIndex = orig }()
+	initNoIndex = false
+
+	result := maybeRunIndex(nil, "go", false)
+	if result {
+		t.Error("expected maybeRunIndex to return false when composeOK=false")
+	}
+}
+
+// TestMaybeRunIndex_SkipOnNonTTY verifies that non-interactive stdin skips
+// without prompting (CI / scripted init).
+func TestMaybeRunIndex_SkipOnNonTTY(t *testing.T) {
+	orig := initNoIndex
+	origWith := initWithIndex
+	defer func() {
+		initNoIndex = orig
+		initWithIndex = origWith
+	}()
+	initNoIndex = false
+	initWithIndex = false
+
+	// os.Stdin in test is a pipe, not a TTY — isTerminal returns false.
+	result := maybeRunIndex(nil, "go", true)
+	if result {
+		t.Error("expected maybeRunIndex to return false on non-TTY stdin")
+	}
+}
+
 // TestInit_EnforcementHooks_ReportLines verifies that RenderReport emits at
 // least one line per result.
 func TestInit_EnforcementHooks_ReportLines(t *testing.T) {
