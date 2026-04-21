@@ -93,6 +93,11 @@ type BugsConfig struct {
 	// RequireBrokenRef, when true, makes --repro-broken-ref mandatory on
 	// every `gg bug fix` call. Default false (warn-only) for back-compat.
 	RequireBrokenRef bool `yaml:"require_broken_ref"`
+	// DupeThreshold is the cosine-similarity threshold above which `gg bug report`
+	// warns about near-duplicate bugs. Valid range [0, 1]. Zero means "use the
+	// built-in default" (0.85). Lower values cast a wider net; raise to suppress
+	// false positives on small corpora.
+	DupeThreshold float64 `yaml:"dupe_threshold"`
 }
 
 // TasksConfig controls task-lifecycle enforcement gates.

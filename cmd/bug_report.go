@@ -25,6 +25,7 @@ var (
 	bugTaskID   string
 	bugFiles    string
 	bugSymbols  string
+	bugForce    bool
 )
 
 func init() {
@@ -34,6 +35,7 @@ func init() {
 	bugReportCmd.Flags().StringVar(&bugTaskID, "task", "", "link to a task (e.g. TASK-042)")
 	bugReportCmd.Flags().StringVar(&bugFiles, "files", "", "comma-separated source file paths this bug affects")
 	bugReportCmd.Flags().StringVar(&bugSymbols, "symbols", "", "comma-separated symbol names this bug affects")
+	bugReportCmd.Flags().BoolVar(&bugForce, "force", false, "skip duplicate-detection prompt and file anyway")
 	addFromFlag(bugReportCmd)
 	bugCmd.AddCommand(bugReportCmd)
 }
@@ -97,9 +99,20 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
-	if promptIfDuplicate(ctx, d, "bugs", vector) {
-		fmt.Println("Aborted — no bug reported.")
-		return nil
+	tags := parseTags(bugTags)
+	if !bugForce {
+		threshold := float32(dupThreshold)
+		if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Bugs.DupeThreshold > 0 {
+			threshold = float32(cfg.Bugs.DupeThreshold)
+		}
+		res := promptIfDuplicateThreshold(ctx, d, "bugs", vector, threshold)
+		if res.Abort {
+			fmt.Println("Aborted — no bug reported.")
+			return nil
+		}
+		if res.SawDup {
+			tags = appendUniq(tags, "dupe-acknowledged")
+		}
 	}
 
 	affectedFiles := normalizeBugFiles(parseTags(bugFiles))
@@ -109,7 +122,7 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		Title:           title,
 		Detail:          strings.TrimSpace(bugDetail),
 		Severity:        bugSeverity,
-		Tags:            parseTags(bugTags),
+		Tags:            tags,
 		TaskID:          taskID,
 		AffectedFiles:   affectedFiles,
 		AffectedSymbols: affectedSymbols,

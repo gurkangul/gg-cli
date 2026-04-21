@@ -13,6 +13,12 @@ const (
 	dupLimit     = uint64(3)
 )
 
+// dupResult carries the outcome of a duplicate-check prompt.
+type dupResult struct {
+	Abort  bool // caller should abort creation
+	SawDup bool // at least one candidate was found (used for auto-tagging)
+}
+
 // promptIfDuplicate searches for near-duplicates in the given kind's collection.
 // If candidates are found:
 //   - In a TTY: prints them and prompts the user to continue or abort.
@@ -22,13 +28,20 @@ const (
 // Errors from the dedup search are treated as non-fatal: a warning is printed
 // and creation continues, so a transient Qdrant glitch never blocks writes.
 func promptIfDuplicate(ctx context.Context, d *deps, kind string, vector []float32) (abort bool) {
-	cands, err := d.store.FindNearDups(ctx, kind, vector, dupThreshold, dupLimit)
+	return promptIfDuplicateThreshold(ctx, d, kind, vector, dupThreshold).Abort
+}
+
+// promptIfDuplicateThreshold is like promptIfDuplicate but uses a caller-supplied
+// similarity threshold and returns a dupResult so callers can react to the SawDup
+// signal (e.g. auto-append a "dupe-acknowledged" audit tag).
+func promptIfDuplicateThreshold(ctx context.Context, d *deps, kind string, vector []float32, threshold float32) dupResult {
+	cands, err := d.store.FindNearDups(ctx, kind, vector, threshold, dupLimit)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: dedup check failed: %v\n", err)
-		return false
+		return dupResult{}
 	}
 	if len(cands) == 0 {
-		return false
+		return dupResult{}
 	}
 
 	fmt.Fprintf(os.Stderr, "⚠  Similar %s already exist:\n", kind)
@@ -42,13 +55,14 @@ func promptIfDuplicate(ctx context.Context, d *deps, kind string, vector []float
 
 	if !isTerminal(os.Stdin) {
 		fmt.Fprintln(os.Stderr, "   (non-interactive — creating anyway)")
-		return false
+		return dupResult{SawDup: true}
 	}
 
 	fmt.Fprint(os.Stderr, "Create anyway? [y/N]: ")
 	line, _ := newStdinReader().ReadString('\n')
 	answer := strings.ToLower(strings.TrimSpace(line))
-	return answer != "y" && answer != "yes"
+	abort := answer != "y" && answer != "yes"
+	return dupResult{Abort: abort, SawDup: !abort}
 }
 
 // isTerminal reports whether f is a character device (i.e. a real terminal).
@@ -64,4 +78,14 @@ func isTerminal(f *os.File) bool {
 // Centralised here so dedup and init prompts use the same reader type.
 func newStdinReader() *bufio.Reader {
 	return bufio.NewReader(os.Stdin)
+}
+
+// appendUniq appends tag to tags only if it is not already present.
+func appendUniq(tags []string, tag string) []string {
+	for _, t := range tags {
+		if t == tag {
+			return tags
+		}
+	}
+	return append(tags, tag)
 }

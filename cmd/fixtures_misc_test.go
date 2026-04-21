@@ -314,6 +314,42 @@ func TestPromptIfDuplicate_StoreError(t *testing.T) {
 	}
 }
 
+func TestPromptIfDuplicateThreshold_StoreError(t *testing.T) {
+	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 19997}
+	sc, err := store.New(cfg, t.TempDir(), "test-dedup-thresh-proj")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer func() { _ = sc.Close() }()
+
+	d := &deps{store: sc, qdrantDown: true}
+	ctx := context.Background()
+
+	res := promptIfDuplicateThreshold(ctx, d, "bugs", make([]float32, store.VectorSize), 0.85)
+	if res.Abort || res.SawDup {
+		t.Errorf("expected zero dupResult on store error, got %+v", res)
+	}
+}
+
+// ── dedup.go: appendUniq ─────────────────────────────────────────────────────
+
+func TestAppendUniq(t *testing.T) {
+	got := appendUniq([]string{"a", "b"}, "c")
+	if len(got) != 3 || got[2] != "c" {
+		t.Errorf("expected [a b c], got %v", got)
+	}
+	// No duplicate added.
+	got2 := appendUniq(got, "b")
+	if len(got2) != 3 {
+		t.Errorf("expected no append for existing tag, got %v", got2)
+	}
+	// Nil slice.
+	got3 := appendUniq(nil, "x")
+	if len(got3) != 1 || got3[0] != "x" {
+		t.Errorf("expected [x], got %v", got3)
+	}
+}
+
 // ── impact command: store-down path ──────────────────────────────────────────
 
 func TestImpact_StoreDown(t *testing.T) {
