@@ -1,0 +1,115 @@
+=== qrmenu ===
+
+--- gg doctor ---
+  ✓ AGENTS.md                    /Users/gurkangul/my-projects/qrmenu/AGENTS.md
+  ✓ agents_schema                up to date (2.1)
+  ✓ index-state.json             present
+  ✓ .gg/.gitignore               aligned
+
+Outbox (index pipeline crash-safety):
+  ✓ outbox                       empty — stores consistent
+
+──────────────────────────────────────────────────
+All checks passed.
+  ⚠ 2 artifact(s) drifted from CLI templates — run `gg doctor --sync-artifacts` to inspect
+
+Paste this into your AI agent's chat (works for any agent):
+
+────────────────────────────────────────────────────────────
+I am operating inside a gg-cli enforced project.
+Before anything else:
+  1. export GG_AGENT=claude-code   # use your agent's name
+  2. Run: gg status
+  3. Read AGENTS.md at the repo root.
+  4. From now on use gg for every decision, task, rejection,
+     and cross-agent handoff. No exceptions.
+────────────────────────────────────────────────────────────
+
+Install agent hooks: `gg doctor --install-agent-hooks`
+
+--- gg audit inbox-obedience --since 7d ---
+Inbox Obedience  (window: 7d)
+────────────────────────────────────────────────────────────
+  Role              Received  Acknowledged    Ratio  Status
+────────────────────────────────────────────────────────────
+  all                    220           188      85%  OK
+  nuxt/devtools            1             1     100%  OK
+  nuxt/ui                  2             2     100%  OK
+
+--- gg audit file-size ---
+file-size: 9 violation(s)
+
+  FILE                                                           LINES   LIMIT
+  ------------------------------------------------------------  ------   -----
+  web/shared/types/api.ts                                         3973     500
+  backend/internal/core/order/repo.go                              707     500
+  web/.nuxt/types/imports.d.ts                                     589     500
+  backend/internal/core/staff/repo.go                              560     500
+  backend/internal/llm/openai/client.go                            528     500
+  backend/internal/plugin/entitlement/service.go                   521     500
+  backend/cmd/api/main.go                                          519     500
+  backend/internal/core/menu/handler.go                            516     500
+  web/.nuxt/ui/navigation-menu.ts                                  513     500
+
+Split oversized files into cohesive modules. Re-run to verify.
+
+--- gg doctor --bypass-audit --bypass-since 7d ---
+Bypass Audit
+──────────────────────────────────────────────────────────────────────
+  window: since 7d (cutoff 2026-04-13T18:27:56Z)
+  source: /Users/gurkangul/.gg/projects/deb51eae-09a8-43ec-9ea8-487d3396a527/state.json
+──────────────────────────────────────────────────────────────────────
+No bypass events recorded in this window. ✓
+
+--- gg status (tail — telemetry) ---
+North Star  Last 7d: 802 calls, 18% agent-initiated
+Compact     5 calls, 5.9 KB saved (avg 79% reduction)
+
+TASKS:
+  ○ Pending: 0  → In Progress: 0  ⚠ Blocked: 0  ✓ Done: 54
+
+MESSAGES:
+  Unread: 2
+  [developer → all] TASK-050 picked up — adding claude_bridge local dev latency warning to README + AGENTS.md
+  [developer → all] TASK-050 done — claude_bridge latency note in README + AGENTS.md
+  (run `gg inbox` to mark as read)
+
+RECENT DECISIONS:
+  • ai_waiter plugin SQL table-name audit: tool queries must use production schema names (categories, category_translations, menu_items, menu_item_translations) — plugin-local table naming with 'menu_' prefix was the TASK-041/042 root cause. Regression test pattern for plugin SQL: source-level forbidden-token assertion is cheap and deterministic when live-DB integration fixture is unavailable. Apply same pattern to future ai_waiter tool additions.
+    Tags: ai_waiter, sql, regression, plugin
+  • claude-max-api-proxy (npx claude-max-api-proxy <port>) seçildi — @anthropic-ai/claude-bridge yok, claude-bridge ters yön. claude-max-api-proxy Max subscription'ı OpenAI-compat olarak expose ediyor. Komut: npx claude-max-api-proxy 8052
+    Tags: backend, llm, claude_bridge, dx
+  • Claude Bridge yaklaşımı = Opsiyon A (OpenAI-compat proxy): qrmenu'nun mevcut claudebridge/client.go'su korunuyor, host'ta npx claude-bridge tool'u çalışacak. Alternatifler reddedildi: B (Go'da kendi bridge) erken karmaşıklık; C (borsa-analiz paylaşımı) repo coupling. Revisit trigger: claude-bridge npm paketi 6+ ay bakım görmüyor/yeni Claude CLI ile bozuluyor.
+    Tags: backend, llm, claude_bridge, architecture
+  • plugin routes must be mounted on router.With(tenant.Middleware) to resolve tenant for anonymous customers
+    Tags: backend, plugin, tenant, auth, public
+  • plugin migrations run in Bootstrap via runPluginMigrations (plugin_schema_migrations tracking table)
+    Tags: backend, plugin, migrations, infra
+
+TELEMETRY (last 7 days — 802 calls, 18% agent-initiated):
+  inbox            151
+  status           115
+  report           103
+  session-start    96
+  verify           60
+  track            50
+  tell             47
+  done             40
+  run-repros       38
+  create           25
+  get              23
+  ready-for-live   12
+  doctor           11
+  list             8
+  search           6
+  decide           4
+  reindex          4
+  decisions        3
+  backfill         1
+  file-size        1
+  impact           1
+  inbox-obedience  1
+  record           1
+  reindex-decisions 1
+
+File-size drift: 9 new violation(s) (baseline frozen at 0) — run `gg audit file-size`

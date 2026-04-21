@@ -1,0 +1,129 @@
+=== gg-cli ===
+
+--- gg doctor ---
+Project Structure:
+  ✓ AGENTS.md                    /Users/gurkangul/my-projects/gg-cli/AGENTS.md
+  ✓ agents_schema                up to date (2.1)
+  ✓ index-state.json             present
+  ~ .gg/.gitignore               missing — run `gg init` or `gg doctor --heal` to create
+
+Outbox (index pipeline crash-safety):
+  ✓ outbox                       empty — stores consistent
+
+──────────────────────────────────────────────────
+All checks passed.
+
+Paste this into your AI agent's chat (works for any agent):
+
+────────────────────────────────────────────────────────────
+I am operating inside a gg-cli enforced project.
+Before anything else:
+  1. export GG_AGENT=claude-code   # use your agent's name
+  2. Run: gg status
+  3. Read AGENTS.md at the repo root.
+  4. From now on use gg for every decision, task, rejection,
+     and cross-agent handoff. No exceptions.
+────────────────────────────────────────────────────────────
+
+Install agent hooks: `gg doctor --install-agent-hooks`
+
+--- gg audit inbox-obedience --since 7d ---
+Inbox Obedience  (window: 7d)
+────────────────────────────────────────────────────────────
+  Role              Received  Acknowledged    Ratio  Status
+────────────────────────────────────────────────────────────
+  all                    510           313      61%  OK
+  developer                1             1     100%  OK
+  gsd                      7             0       0%  ⚠ LOW
+  role                     5             5     100%  OK
+  sourcegraph/scip-python         1             1     100%  OK
+
+--- gg audit file-size ---
+file-size: 3 violation(s) (baseline frozen at 9 file(s))
+
+  FILE                                                           LINES   LIMIT
+  ------------------------------------------------------------  ------   -----
+  cmd/doctor.go                                                   1561     500 (baseline 1560)
+  internal/agenthooks/claude_test.go                               824     800
+  internal/agenthooks/claude.go                                    585     500 (baseline 582)
+
+Split oversized files into cohesive modules. Re-run to verify.
+
+--- gg doctor --bypass-audit --bypass-since 7d ---
+Bypass Audit
+──────────────────────────────────────────────────────────────────────
+  window: since 7d (cutoff 2026-04-13T18:27:53Z)
+  source: /Users/gurkangul/.gg/projects/65af2aa9-3ba2-4d31-817b-f2dd881bc199/state.json
+──────────────────────────────────────────────────────────────────────
+Summary:
+  pre-task-done                            1
+  pre-task-done-ready-for-live             1
+
+TS                    GATE                              TASK                ACTOR
+──────────────────────────────────────────────────────────────────────────────────────────
+2026-04-20            pre-task-done                     TASK-244            claude-code
+2026-04-20            pre-task-done-ready-for-live      TASK-244            claude-code
+──────────────────────────────────────────────────────────────────────────────────────────
+Total: 2 bypass event(s).
+
+--- gg status (tail — telemetry) ---
+RECENT REJECTIONS:
+  ✗ project_id yeniden sha256(name+root+time)[:12] ile üretilecek
+  ✗ Sessions/ ve state.json now
+  ✗ Skill Auto-Creation (Hermes-inspired) now
+  ✗ Tentacle scoped-context subsystem current form (5 files + 5 commands + Qdrant sync)
+  ✗ LLM cümle-seviyesi davranış enforcement — LLM non-deterministic, sadece tool-boundary (file write/edit) seviyesinde gerçek blok mümkün. Enforcement kavramını runtime prompt adherence'tan config-file guarantees'a indirgemek doğru yaklaşım.
+
+BUGS REOPENED (last 7d): 1
+  cmd                  2
+
+TELEMETRY (last 7 days — 2340 calls, 29% agent-initiated):
+  verify           319
+  get              233
+  done             203
+  tell             194
+  inbox            193
+  create           177
+  status           156
+  track            153
+  session-start    132
+  list             93
+  report           70
+  search           65
+  run-repros       54
+  doctor           49
+  ready-for-live   42
+  decisions        37
+  record           37
+  fix              15
+  impact           12
+  task             12
+  block            11
+  export           9
+  import           8
+  index            8
+  file-size        7
+  note             6
+  gaps             5
+  decide           4
+  open             4
+  reindex          4
+  resolve          4
+  show             4
+  start            3
+  dismiss          2
+  inbox-obedience  2
+  init             2
+  reject           2
+  wontfix          2
+  backfill         1
+  cancel           1
+  context          1
+  decide-gaps      1
+  help             1
+  reindex-decisions 1
+  watch-smoke      1
+
+⚠ Inbox obedience: agent "gsd" 0% (0/7) last 7d — run `gg audit inbox-obedience` for detail
+
+File-size drift: 3 new violation(s) (baseline frozen at 9) — run `gg audit file-size`

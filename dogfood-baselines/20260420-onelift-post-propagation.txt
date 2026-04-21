@@ -1,0 +1,18 @@
+=== onelift post-propagation ===
+--- file-size baseline ---
+{
+  "version": 1,
+  "captured_at": "2026-04-20T18:28:45Z",
+  "files": {
+    "lift-cli/internal/manifest/schemagen/types_gen.go": 596,
+    "lift-cli/test/e2e/regression_test.go": 1182
+  }
+}
+
+--- inbox obedience ---
+Inbox Obedience  (window: 7d)
+────────────────────────────────────────────────────────────
+  Role              Received  Acknowledged    Ratio  Status
+────────────────────────────────────────────────────────────
+  all                    608           524      86%  OK
+  developer               22            22     100%  OK
