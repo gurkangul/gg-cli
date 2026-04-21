@@ -53,6 +53,16 @@ type Entry struct {
 	// --with-context fields (omitted when flag is not used).
 	WithContext       bool `json:"with_context,omitempty"`
 	ContextBlockBytes int  `json:"context_block_bytes,omitempty"`
+	// Dupe-check fields (TASK-268). Set by RecordDupeCheck when `gg bug
+	// report` runs its advisory near-duplicate search. Omitted on all other
+	// entries so the JSONL stays clean.
+	DupeCheck    bool    `json:"dupe_check,omitempty"`
+	MatchesCount int     `json:"matches_count,omitempty"`
+	TopScore     float32 `json:"top_score,omitempty"`
+	// UserChoice is one of: reuse | force | cancel | auto-force.
+	// Lets `gg audit` retroactively measure how often agents override a dup
+	// warning vs. heed it — the feedback signal for threshold tuning.
+	UserChoice string `json:"user_choice,omitempty"`
 }
 
 func filePath(runtimeDir string) string {
@@ -121,6 +131,33 @@ func RecordCompact(runtimeDir, verb, fromFlag string, bytesOut, bytesDefault, re
 	})
 }
 
+// DupeCheck choice constants — one of these is recorded per RecordDupeCheck
+// call so `gg audit` can bucket "did the agent heed or override the warning?"
+const (
+	DupeChoiceReuse     = "reuse"      // user picked [n] append-note
+	DupeChoiceForce     = "force"      // user picked [f] file-anyway
+	DupeChoiceCancel    = "cancel"     // user picked [c] abort
+	DupeChoiceAutoForce = "auto-force" // non-TTY → auto-proceed
+)
+
+// RecordDupeCheck appends a telemetry entry for an advisory duplicate-check
+// run in `gg bug report` (TASK-267 / TASK-268). matchesCount is the number of
+// candidates that crossed the similarity threshold (0 means the check ran
+// but found nothing — still worth recording so threshold tuning has a
+// denominator). topScore is the highest cosine returned (0 when no matches).
+// userChoice is one of the DupeChoice* constants above.
+func RecordDupeCheck(runtimeDir, verb, fromFlag string, matchesCount int, topScore float32, userChoice string) {
+	recordEntry(runtimeDir, Entry{
+		Verb:         verb,
+		Origin:       classify(fromFlag),
+		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+		DupeCheck:    true,
+		MatchesCount: matchesCount,
+		TopScore:     topScore,
+		UserChoice:   userChoice,
+	})
+}
+
 // RecordWithContext appends a telemetry entry for a --with-context invocation.
 // contextBlockBytes is the size in bytes of the appended === Related Context === block.
 func RecordWithContext(runtimeDir, verb, fromFlag string, contextBlockBytes int) {
@@ -180,6 +217,16 @@ type WeeklySummary struct {
 	// WithContextCalls counts gg get --with-context invocations.
 	WithContextCalls      int `json:"with_context_calls"`
 	WithContextBytesTotal int `json:"with_context_bytes_total"`
+	// Dupe-check aggregates (TASK-268). Helps answer: "how often do agents
+	// file anyway after seeing a dup warning?" High force/cancel ratios
+	// argue the threshold is off; zero MatchesHits with non-zero Calls
+	// means the check is running but the threshold is too tight.
+	DupeCheckCalls       int `json:"dupe_check_calls"`
+	DupeCheckMatchesHits int `json:"dupe_check_matches_hits"` // calls where matches_count > 0
+	DupeChoiceReuse      int `json:"dupe_choice_reuse"`
+	DupeChoiceForce      int `json:"dupe_choice_force"`
+	DupeChoiceCancel     int `json:"dupe_choice_cancel"`
+	DupeChoiceAutoForce  int `json:"dupe_choice_auto_force"`
 }
 
 // Summarize reads the telemetry file and aggregates the last 7 days of data.
@@ -231,6 +278,22 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 		if e.WithContext {
 			sum.WithContextCalls++
 			sum.WithContextBytesTotal += e.ContextBlockBytes
+		}
+		if e.DupeCheck {
+			sum.DupeCheckCalls++
+			if e.MatchesCount > 0 {
+				sum.DupeCheckMatchesHits++
+			}
+			switch e.UserChoice {
+			case "reuse":
+				sum.DupeChoiceReuse++
+			case "force":
+				sum.DupeChoiceForce++
+			case "cancel":
+				sum.DupeChoiceCancel++
+			case "auto-force":
+				sum.DupeChoiceAutoForce++
+			}
 		}
 	}
 	if saved := sum.CompactBytesDefault - sum.CompactBytesOut; saved > 0 {

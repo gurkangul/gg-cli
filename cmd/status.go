@@ -113,6 +113,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 		bugCounts[s] = n
 	}
+	// Dupe-acknowledged count: bugs filed despite duplicate warning (advisory signal).
+	dupeAcknowledged, _ := d.store.CountBugsByTag(ctx, "dupe-acknowledged")
 
 	// Outbox backlog — pending Memgraph writes from crashed gg index runs.
 	// Unbounded growth signals that `gg doctor --reconcile` is never run.
@@ -187,6 +189,14 @@ func runStatus(cmd *cobra.Command, args []string) error {
 							tsum.CompactCalls, humanFileSize(int64(saved)),
 							humanTokenCount(tsum.CompactTokensSaved), pctSaved)
 					}
+					// Dupe-check pressure (TASK-268): how often agents pushed
+					// past a near-duplicate warning. High force ratio → raise
+					// the threshold; high cancel ratio → feature is working.
+					if tsum.DupeCheckMatchesHits > 0 {
+						fmt.Printf("Dupe-check  %d fires, cancel=%d force=%d auto-force=%d\n",
+							tsum.DupeCheckMatchesHits,
+							tsum.DupeChoiceCancel, tsum.DupeChoiceForce, tsum.DupeChoiceAutoForce)
+					}
 					fmt.Println()
 				}
 			}
@@ -214,6 +224,10 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			fmt.Println("\nBUGS:")
 			fmt.Printf("  ● Open: %d  ⚙ Fixing: %d  ↻ Reopened: %d  ✓ Fixed: %d  ⊘ Wontfix: %d\n",
 				bugCounts["open"], bugCounts["fixing"], bugCounts["reopened"], bugCounts["fixed"], bugCounts["wontfix"])
+			if dupeAcknowledged > 0 {
+				fmt.Printf("  ⓘ Dupe-acknowledged: %d  (filed despite similarity warning — run `gg search dupe-acknowledged` to review)\n",
+					dupeAcknowledged)
+			}
 		}
 
 		// Outbox — pending Memgraph writes. Any count > 0 is a signal the

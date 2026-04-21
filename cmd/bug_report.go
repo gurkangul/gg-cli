@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -9,6 +11,7 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/store"
+	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
 
 var bugReportCmd = &cobra.Command{
@@ -100,14 +103,40 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 	}
 
 	tags := parseTags(bugTags)
+	fromFlag := ""
+	if f := cmd.Flags().Lookup("from"); f != nil {
+		fromFlag = f.Value.String()
+	}
 	if !bugForce {
 		threshold := float32(dupThreshold)
 		if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Bugs.DupeThreshold > 0 {
 			threshold = float32(cfg.Bugs.DupeThreshold)
 		}
 		res := promptIfDuplicateThreshold(ctx, d, "bugs", vector, threshold)
+
+		// Telemetry — always record the dupe-check attempt (TASK-268) so
+		// `gg audit` can later measure force-vs-cancel ratio. Skip silently
+		// when config is unreachable, same as the compact path.
+		if res.UserChoice != "" {
+			if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil {
+				if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
+					telemetry.RecordDupeCheck(rtDir, "bug-report", fromFlag,
+						res.MatchesCount, res.TopScore, res.UserChoice)
+				}
+			}
+		}
+
 		if res.Abort {
-			fmt.Println("Aborted — no bug reported.")
+			if res.ReuseAsBugID != "" {
+				// Reuse-as-note flow: add a note linked to the existing bug.
+				if err := addDupeNote(ctx, d, res.ReuseAsBugID, title, vector); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: add note failed: %v\n", err)
+				} else {
+					fmt.Printf("Note added to %s — no duplicate bug created.\n", res.ReuseAsBugID)
+				}
+			} else {
+				fmt.Println("Aborted — no bug reported.")
+			}
 			return nil
 		}
 		if res.SawDup {
@@ -152,4 +181,16 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 	return printJSON(map[string]any{"id": id, "title": title, "severity": bugSeverity}, func() {
 		fmt.Printf("bug reported: %s — %s [%s]\n", id, title, bugSeverity)
 	})
+}
+
+// addDupeNote adds a note to the store linking the given title/vector to an
+// existing bug (reuse-as-note flow). The note is tagged with the bug ID and
+// "dupe-of" so it surfaces in semantic searches near the original bug.
+func addDupeNote(ctx context.Context, d *deps, bugID, title string, vector []float32) error {
+	n := store.Note{
+		Text: title,
+		Tags: []string{bugID, "dupe-of"},
+	}
+	_, err := d.store.AddNote(ctx, n, vector)
+	return err
 }

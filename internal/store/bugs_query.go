@@ -35,6 +35,16 @@ func (c *Client) CountBugs(ctx context.Context, statusFilter string) (uint64, er
 	return c.qc.Count(ctx, req)
 }
 
+// CountBugsByTag returns the number of bugs whose tags list contains tag.
+func (c *Client) CountBugsByTag(ctx context.Context, tag string) (uint64, error) {
+	return c.qc.Count(ctx, &qdrant.CountPoints{
+		CollectionName: c.collBugs(),
+		Filter: &qdrant.Filter{
+			Must: []*qdrant.Condition{qdrant.NewMatchKeyword("tags", tag)},
+		},
+	})
+}
+
 func bugFromPayload(pay map[string]*qdrant.Value) Bug {
 	return Bug{
 		ID:              pay["bug_id"].GetStringValue(),

@@ -17,6 +17,23 @@ const (
 type dupResult struct {
 	Abort  bool // caller should abort creation
 	SawDup bool // at least one candidate was found (used for auto-tagging)
+	// MatchesCount is the number of candidates that crossed the threshold.
+	// Zero means either the check ran and found nothing OR the check errored
+	// out silently. Callers recording telemetry can distinguish the two via
+	// the err path inside promptIfDuplicateThreshold (warning is printed).
+	MatchesCount int
+	// TopScore is the highest cosine returned from the dedup search, or 0
+	// when MatchesCount == 0. Surfaced so telemetry can bucket "did the
+	// threshold cast a wide or narrow net?" over time.
+	TopScore float32
+	// UserChoice is one of the telemetry.DupeChoice* constants describing
+	// how the prompt resolved. Empty string when no matches surfaced (no
+	// prompt fired). Callers pass this to telemetry.RecordDupeCheck.
+	UserChoice string
+	// ReuseAsBugID is set when the user chose "note" (reuse-as-note flow) and
+	// the caller should add a note linked to this existing bug ID instead of
+	// creating a new bug.
+	ReuseAsBugID string
 }
 
 // promptIfDuplicate searches for near-duplicates in the given kind's collection.
@@ -33,7 +50,11 @@ func promptIfDuplicate(ctx context.Context, d *deps, kind string, vector []float
 
 // promptIfDuplicateThreshold is like promptIfDuplicate but uses a caller-supplied
 // similarity threshold and returns a dupResult so callers can react to the SawDup
-// signal (e.g. auto-append a "dupe-acknowledged" audit tag).
+// signal (e.g. auto-append a "dupe-acknowledged" audit tag) and record telemetry.
+//
+// The dupResult carries enough context for a telemetry.RecordDupeCheck call —
+// callers are expected to make that recording (not this function) because
+// recording needs verb + fromFlag + runtimeDir from the calling command.
 func promptIfDuplicateThreshold(ctx context.Context, d *deps, kind string, vector []float32, threshold float32) dupResult {
 	cands, err := d.store.FindNearDups(ctx, kind, vector, threshold, dupLimit)
 	if err != nil {
@@ -53,16 +74,35 @@ func promptIfDuplicateThreshold(ctx context.Context, d *deps, kind string, vecto
 		fmt.Fprintf(os.Stderr, "   %-12s  %q  (similarity: %.0f%%)\n", c.ID, label, c.Score*100)
 	}
 
-	if !isTerminal(os.Stdin) {
-		fmt.Fprintln(os.Stderr, "   (non-interactive — creating anyway)")
-		return dupResult{SawDup: true}
+	res := dupResult{
+		SawDup:       true,
+		MatchesCount: len(cands),
+		TopScore:     cands[0].Score,
 	}
 
-	fmt.Fprint(os.Stderr, "Create anyway? [y/N]: ")
+	if !isTerminal(os.Stdin) {
+		fmt.Fprintln(os.Stderr, "   (non-interactive — creating anyway)")
+		res.UserChoice = "auto-force"
+		return res
+	}
+
+	// 3-way prompt: force-file / add-note-to-existing / cancel.
+	topID := cands[0].ID
+	fmt.Fprintf(os.Stderr, "[f]ile anyway / [n]ote on %s / [c]ancel: ", topID)
 	line, _ := newStdinReader().ReadString('\n')
 	answer := strings.ToLower(strings.TrimSpace(line))
-	abort := answer != "y" && answer != "yes"
-	return dupResult{Abort: abort, SawDup: !abort}
+	switch answer {
+	case "f", "force", "y", "yes":
+		res.UserChoice = "force"
+	case "n", "note":
+		res.Abort = true
+		res.UserChoice = "reuse"
+		res.ReuseAsBugID = topID
+	default: // "c", "cancel", "" (Enter)
+		res.Abort = true
+		res.UserChoice = "cancel"
+	}
+	return res
 }
 
 // isTerminal reports whether f is a character device (i.e. a real terminal).
