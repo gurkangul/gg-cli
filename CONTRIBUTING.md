@@ -44,6 +44,24 @@ gg init
 gg doctor
 ```
 
+`gg init` writes `~/.gg/docker-compose.yaml` the first time it runs — if the
+Qdrant/Memgraph containers aren't already up, it will start them. You only
+need the standalone `docker run` commands above if you want to run services
+outside gg's managed compose file.
+
+## Agent identity
+
+Most write commands (`gg task create/done`, `gg record`, `gg tell`, …) refuse
+to run without an agent identity, so telemetry can distinguish human calls
+from agent ones. Before running them, set:
+
+```sh
+export GG_AGENT=claude-code   # or cursor, codex, gsd, ...
+```
+
+Use your real agent name when contributing with an AI assistant — the
+identity lands in commit trails via `--from` and in decision records.
+
 ## Running tests
 
 Unit tests (no services required):
@@ -132,6 +150,28 @@ test(graph): add cross-project isolation integration test
 - Prefer small, composable functions over large method bodies.
 - No `TODO` stubs in submitted code — finish what you start.
 - Secrets and credentials must never appear in source or history. See [SECURITY.md](SECURITY.md).
+
+**File size limits** (enforced via `gg audit file-size` and the pre-task-done
+hook `30-file-size.sh`):
+
+- Source files (`.go`/`.ts`/`.js`/`.py`/`.rs`/`.java`): **500 lines max**.
+- Test files (`*_test.go`, `*.test.*`, `*.spec.*`): **800 lines max**.
+
+Oversized files must be split into cohesive modules — extract helpers, split
+by concern, no god-objects. Set `GG_FILE_SIZE_GATE=block` to turn the
+advisory hook into a hard fail locally.
+
+## Verify gates
+
+Before a task transitions to done, gg runs every executable `*.sh` under
+`.gg/hooks/pre-task-done.d/` in order. Any non-zero exit aborts the
+transition (exit code 7) and the task stays in its current state. Starter
+hooks are installed by `gg doctor --install-task-hooks` — detects Go
+(`go.mod`) and Node/Bun (`package.json`) and writes appropriate checks
+(`gofmt`, `go vet`, `go test`, type-check, lint).
+
+PostToolUse also runs `gg verify --file <path>` on writes — fast gofmt+vet
+per-file, budget ≤2s. Wired via `gg doctor --install-agent-hooks`.
 
 ## Code of Conduct
 

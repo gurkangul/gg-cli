@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -15,13 +16,54 @@ import (
 )
 
 // version is overridable at build time via -ldflags "-X ...cmd.version=vX.Y.Z".
+// When left as "dev", resolveVersion() fills in the module version and/or VCS
+// revision reported by `go install`, so a user who ran `go install .../cmd/gg@v0.3.0`
+// sees "v0.3.0" without any build-time flag wiring.
 var version = "dev"
+
+// resolveVersion returns the effective version string. Priority:
+//  1. Build-time override (ldflags -X cmd.version=...) — used by release builds.
+//  2. Module version from Go's build info (populated by `go install ...@vX.Y.Z`).
+//  3. VCS revision + modified flag (populated by `go install` from a git checkout).
+//  4. Literal "dev" as a final fallback.
+func resolveVersion() string {
+	if version != "dev" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	var rev, modified string
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			modified = s.Value
+		}
+	}
+	if rev != "" {
+		short := rev
+		if len(short) > 7 {
+			short = short[:7]
+		}
+		if modified == "true" {
+			return "dev-" + short + "-dirty"
+		}
+		return "dev-" + short
+	}
+	return "dev"
+}
 
 var rootCmd = &cobra.Command{
 	Use:           "gg",
 	Short:         "Shared brain for AI agents",
 	Long:          "GG — One brain, any agent. A shared knowledge base CLI for AI agents.",
-	Version:       version,
+	Version:       resolveVersion(),
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
