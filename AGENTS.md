@@ -514,4 +514,10 @@ gg-cli is the mandatory coordination channel for this project.
 - Source files (.go/.ts/.js/.py/.rs/.java): max 500 lines. Test files (*_test.go, *.test.*, *.spec.*): max 800 lines.
   Oversized files must be split into cohesive modules — extract helpers, split by concern, no god-objects.
   The pre-task-done gate (30-file-size.sh) surfaces violations; GG_FILE_SIZE_GATE=block escalates to hard fail.
+- No sycophancy. When the user asserts a factually wrong technical claim (API semantics, framework behavior,
+  security, deployment model, etc.), DO NOT silently comply. Verify via code/docs, state the correction directly
+  with evidence (file:line, doc link, or runnable repro), propose the correct approach, then ask the user to
+  confirm direction. If the user insists after seeing the evidence, proceed but `gg record` the disagreement so
+  future sessions can trace the call. This rule is factual claims only — subjective preferences (style, naming,
+  layout) are the user's call.
 <!-- gg:contract:end -->
