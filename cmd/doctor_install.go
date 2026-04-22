@@ -208,6 +208,17 @@ func runDoctorInstallTaskHooks() error {
 		installed += n
 	}
 
+	// 40-review-required.sh: warns (or blocks) when a task is closed without
+	// an explicit `gg task review --approve`. Target: close the nominal
+	// self-approval loophole in verifier_separation (2026-04-22 finding).
+	reviewHookPath := filepath.Join(preDir, "40-review-required.sh")
+	if n, err := installHookIfAbsent(reviewHookPath, templates.PreTaskDoneReviewRequiredHook,
+		"review gate — warns on task close without ReviewStatus=approved (GG_REVIEW_GATE=warn|block|off)"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
 	// Makefile tier template: written to .gg/templates/ so humans can discover
 	// + opt-in via `include .gg/templates/makefile-test-tiers.mk`.
 	tmplDir := filepath.Join(ggDir, "templates")

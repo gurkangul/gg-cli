@@ -126,8 +126,9 @@ func TestInit_EnforcementHooks_TaskHooksInstalled(t *testing.T) {
 		t.Errorf("expected gate scripts in pre-task-done.d, got none")
 	}
 
-	// Smoke-gate and decide-gate are always written regardless of language.
-	required := []string{"05-smoke-e2e.sh", "20-decide-capture.sh"}
+	// Smoke-gate, decide-gate, and review-gate are always written regardless
+	// of language.
+	required := []string{"05-smoke-e2e.sh", "20-decide-capture.sh", "40-review-required.sh"}
 	for _, name := range required {
 		p := filepath.Join(preDir, name)
 		if _, err := os.Stat(p); err != nil {

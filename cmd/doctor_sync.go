@@ -135,6 +135,8 @@ func artifactContent(key string) (string, bool) {
 		return templates.PreTaskDoneNodeHook, true
 	case "hooks/pre-task-done.d/20-decide-capture.sh":
 		return templates.PreTaskDoneDecideCaptureHook, true
+	case "hooks/pre-task-done.d/40-review-required.sh":
+		return templates.PreTaskDoneReviewRequiredHook, true
 	case "hooks/task-done.d/80-task-done-go.sh":
 		return templates.TaskDoneGoHook, true
 	case "templates/makefile-test-tiers.mk":
