@@ -20,7 +20,8 @@ project without the user cd'ing to each repo.
 
 Stages per project:
   1. gg doctor --check-contract --fix   (contract block drift repair)
-  2. gg doctor --install-agent-hooks    (idempotent hook refresh)
+  2. gg doctor --install-agent-hooks    (idempotent agent-hook refresh)
+  3. gg doctor --install-task-hooks     (idempotent task-hook refresh)
 
 Projects whose root directory no longer exists are skipped with a
 warning — prune them with 'gg system register --prune' after verifying.`,
@@ -74,6 +75,7 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 			fmt.Println("  (dry-run) would run: gg doctor --check-contract --fix")
 			if !systemSyncContractOnly {
 				fmt.Println("  (dry-run) would run: gg doctor --install-agent-hooks")
+				fmt.Println("  (dry-run) would run: gg doctor --install-task-hooks")
 			}
 			ok++
 			continue
@@ -87,6 +89,11 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 		if !systemSyncContractOnly {
 			if runErr := runGGIn(self, p.Root, "doctor", "--install-agent-hooks"); runErr != nil {
 				fmt.Printf("  ✗ agent-hook refresh failed: %v\n", runErr)
+				failed++
+				continue
+			}
+			if runErr := runGGIn(self, p.Root, "doctor", "--install-task-hooks"); runErr != nil {
+				fmt.Printf("  ✗ task-hook refresh failed: %v\n", runErr)
 				failed++
 				continue
 			}
