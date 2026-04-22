@@ -155,6 +155,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Register this project in ~/.gg/projects.json so `gg system sync` can
+	// propagate future contract/hook updates without the user scanning the
+	// filesystem for .gg/config.yaml manually. Re-init overwrites the entry.
+	if reg, regErr := config.LoadRegistry(); regErr == nil {
+		reg.Add(projectID, cwd)
+		if saveErr := reg.Save(); saveErr != nil {
+			fmt.Printf("⚠ registry update failed: %v\n", saveErr)
+		}
+	}
+
 	// .gg/.gitignore — prevent runtime state from leaking into the repo.
 	gitignorePath := filepath.Join(ggDir, ".gitignore")
 	if _, err := os.Stat(gitignorePath); err != nil {
