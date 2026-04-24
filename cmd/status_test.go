@@ -17,8 +17,8 @@ func TestStatus_RefetchRateWarn(t *testing.T) {
 	}
 
 	// Seed: 2 compact calls + 2 hydration calls → 100% re-fetch rate (>50% threshold).
-	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2)
-	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2)
+	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2, "")
+	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2, "")
 	telemetry.RecordHydration(rtDir, "get", "", 200)
 	telemetry.RecordHydration(rtDir, "get", "", 200)
 
@@ -39,10 +39,10 @@ func TestStatus_RefetchRateNoWarn(t *testing.T) {
 	}
 
 	// Seed: 4 compact calls + 1 hydration call → 25% re-fetch rate (<50% threshold).
-	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2)
-	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2)
-	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2)
-	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2)
+	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2, "")
+	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2, "")
+	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2, "")
+	telemetry.RecordCompact(rtDir, "get", "", 100, 200, 2, "")
 	telemetry.RecordHydration(rtDir, "get", "", 200)
 
 	out := captureStdout(t, func() {

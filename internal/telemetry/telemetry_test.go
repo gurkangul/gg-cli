@@ -252,8 +252,8 @@ func TestRecord_OriginAgent_GGAgentEnv(t *testing.T) {
 func TestRecordCompact_AggregatesSizes(t *testing.T) {
 	dir := t.TempDir()
 
-	RecordCompact(dir, "context", "", 200, 1000, 1)
-	RecordCompact(dir, "search", "", 150, 500, 1)
+	RecordCompact(dir, "context", "", 200, 1000, 1, "")
+	RecordCompact(dir, "search", "", 150, 500, 1, "")
 	Record(dir, "status", "") // non-compact — must not pollute compact totals
 
 	sum, err := Summarize(dir)
@@ -365,7 +365,7 @@ func containsField(s, f string) bool {
 func TestRecordHydration_NetSavingsPositive(t *testing.T) {
 	dir := t.TempDir()
 	// Compact saved 800 bytes gross; re-fetch pulled back 200 → net 600.
-	RecordCompact(dir, "context", "", 200, 1000, 1)
+	RecordCompact(dir, "context", "", 200, 1000, 1, "")
 	RecordHydration(dir, "get", "", 200)
 
 	sum, err := Summarize(dir)
@@ -390,7 +390,7 @@ func TestRecordHydration_NetSavingsPositive(t *testing.T) {
 func TestRecordHydration_NetSavingsNegative(t *testing.T) {
 	dir := t.TempDir()
 	// Compact saved only 100 bytes but re-fetch pulled back 300 → net −200.
-	RecordCompact(dir, "context", "", 900, 1000, 1)
+	RecordCompact(dir, "context", "", 900, 1000, 1, "")
 	RecordHydration(dir, "get", "", 300)
 
 	sum, err := Summarize(dir)
@@ -461,8 +461,8 @@ func TestRecordHydration_VerbBreakdown(t *testing.T) {
 func TestRecordHydration_RefetchRateThreshold(t *testing.T) {
 	dir := t.TempDir()
 	// 2 compact calls, 2 hydration calls → 100% re-fetch rate (>50%).
-	RecordCompact(dir, "get", "", 200, 1000, 2)
-	RecordCompact(dir, "get", "", 200, 1000, 2)
+	RecordCompact(dir, "get", "", 200, 1000, 2, "")
+	RecordCompact(dir, "get", "", 200, 1000, 2, "")
 	RecordHydration(dir, "get", "", 500)
 	RecordHydration(dir, "get", "", 500)
 
@@ -546,7 +546,7 @@ func TestRecordMissingHandler_OmittedOnNonMissingEntries(t *testing.T) {
 
 func TestRecordMissingHandler_ZeroWhenNoneRecorded(t *testing.T) {
 	dir := t.TempDir()
-	RecordCompact(dir, "context", "", 200, 1000, 1)
+	RecordCompact(dir, "context", "", 200, 1000, 1, "")
 	Record(dir, "status", "")
 
 	sum, err := Summarize(dir)
@@ -640,5 +640,116 @@ func TestRecord_WritesToRuntimeDir(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Fatal("telemetry file empty")
+	}
+}
+
+// ── GlyphOverheadBytesOf (TASK-281) ───────────────────────────────────────────
+
+func TestGlyphOverheadBytesOf_PureASCII(t *testing.T) {
+	// ASCII-only strings have zero overhead — every rune is 1 byte.
+	for _, s := range []string{"", "hello", "T ○ TASK-001", "->", "done"} {
+		// ASCII characters are <128, so ○ would not appear here — skip that one.
+		_ = s
+	}
+	if got := GlyphOverheadBytesOf("hello world"); got != 0 {
+		t.Errorf("GlyphOverheadBytesOf(\"hello world\") = %d, want 0", got)
+	}
+	if got := GlyphOverheadBytesOf(""); got != 0 {
+		t.Errorf("GlyphOverheadBytesOf(\"\") = %d, want 0", got)
+	}
+}
+
+func TestGlyphOverheadBytesOf_SingleGlyph(t *testing.T) {
+	// ✓ (U+2713) encodes as 3 UTF-8 bytes → overhead = 3-1 = 2.
+	if got := GlyphOverheadBytesOf("✓"); got != 2 {
+		t.Errorf("GlyphOverheadBytesOf(\"✓\") = %d, want 2", got)
+	}
+	// → (U+2192) also 3 bytes → overhead = 2.
+	if got := GlyphOverheadBytesOf("→"); got != 2 {
+		t.Errorf("GlyphOverheadBytesOf(\"→\") = %d, want 2", got)
+	}
+	// ○ (U+25CB) also 3 bytes → overhead = 2.
+	if got := GlyphOverheadBytesOf("○"); got != 2 {
+		t.Errorf("GlyphOverheadBytesOf(\"○\") = %d, want 2", got)
+	}
+}
+
+func TestGlyphOverheadBytesOf_MixedString(t *testing.T) {
+	// "T ✓ TASK-001  done (high)" — one glyph ✓ (overhead 2) plus ASCII.
+	s := "T ✓ TASK-001  done (high)"
+	if got := GlyphOverheadBytesOf(s); got != 2 {
+		t.Errorf("GlyphOverheadBytesOf(%q) = %d, want 2", s, got)
+	}
+}
+
+func TestGlyphOverheadBytesOf_MultipleGlyphs(t *testing.T) {
+	// "✓ → ○" — three 3-byte glyphs, each overhead 2 → total 6.
+	s := "✓ → ○"
+	if got := GlyphOverheadBytesOf(s); got != 6 {
+		t.Errorf("GlyphOverheadBytesOf(%q) = %d, want 6", s, got)
+	}
+}
+
+func TestGlyphOverheadBytesOf_StatusLine(t *testing.T) {
+	// Realistic compact status output line from gg status.
+	// "○ Pending: 8  → In Progress: 0  ⚠ Blocked: 0  ✓ Done: 280"
+	// Glyphs: ○(2) →(2) ⚠(2) ✓(2) = 8 bytes overhead.
+	s := "○ Pending: 8  → In Progress: 0  ⚠ Blocked: 0  ✓ Done: 280"
+	if got := GlyphOverheadBytesOf(s); got != 8 {
+		t.Errorf("GlyphOverheadBytesOf(status line) = %d, want 8", got)
+	}
+}
+
+func TestRecordCompact_GlyphOverheadAggregated(t *testing.T) {
+	dir := t.TempDir()
+	// Two compact calls: first with a glyph string, second with ASCII only.
+	// ✓ has overhead 2; total across both calls = 2.
+	RecordCompact(dir, "context", "", 100, 500, 1, "T ✓ TASK-001")
+	RecordCompact(dir, "search", "", 50, 200, 1, "no glyphs here")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.GlyphByteOverhead != 2 {
+		t.Errorf("GlyphByteOverhead = %d, want 2", sum.GlyphByteOverhead)
+	}
+	// 2 / 4 = 0 (integer division — overhead too small for a full token here).
+	if sum.GlyphTokenOverhead != 0 {
+		t.Errorf("GlyphTokenOverhead = %d, want 0 (2/4 rounds to 0)", sum.GlyphTokenOverhead)
+	}
+}
+
+func TestRecordCompact_GlyphOverheadLargeInput(t *testing.T) {
+	dir := t.TempDir()
+	// 100 copies of "✓" → overhead = 100 * 2 = 200 bytes → 200/4 = 50 tokens.
+	s := ""
+	for i := 0; i < 100; i++ {
+		s += "✓"
+	}
+	RecordCompact(dir, "context", "", len(s), len(s)+200, 1, s)
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.GlyphByteOverhead != 200 {
+		t.Errorf("GlyphByteOverhead = %d, want 200", sum.GlyphByteOverhead)
+	}
+	if sum.GlyphTokenOverhead != 50 {
+		t.Errorf("GlyphTokenOverhead = %d, want 50", sum.GlyphTokenOverhead)
+	}
+}
+
+func TestRecordCompact_GlyphOverheadOmittedOnNonCompact(t *testing.T) {
+	dir := t.TempDir()
+	Record(dir, "status", "")
+
+	data, err := os.ReadFile(filePath(dir))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if containsField(string(data), `"glyph_overhead_bytes"`) {
+		t.Errorf("non-compact entry must not contain glyph_overhead_bytes: %s", data)
 	}
 }

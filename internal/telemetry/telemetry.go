@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -69,6 +70,13 @@ type Entry struct {
 	// Lets `gg audit` retroactively measure how often agents override a dup
 	// warning vs. heed it — the feedback signal for threshold tuning.
 	UserChoice string `json:"user_choice,omitempty"`
+	// GlyphOverheadBytes is the extra byte cost that Unicode glyphs in the
+	// compact output contribute vs equivalent 1-byte ASCII placeholders — each
+	// non-ASCII rune adds (utf8.RuneLen(r) - 1) overhead bytes. Recorded per
+	// compact call so the weekly aggregate can answer "how many tokens do our
+	// glyphs cost vs a plain-ASCII compact renderer?"
+	// Omitted on non-compact entries and when the overhead is zero.
+	GlyphOverheadBytes int `json:"glyph_overhead_bytes,omitempty"`
 	// MissingHandler is set when compact mode was active but the command fell
 	// through to the default (non-compact) renderer — no emitCompact call was
 	// made. Verb identifies which command lacked a compact render path.
@@ -125,20 +133,41 @@ func Record(runtimeDir, verb, fromFlag string) {
 	})
 }
 
+// GlyphOverheadBytesOf returns the extra byte cost that Unicode glyphs in s
+// contribute vs equivalent 1-byte ASCII placeholders. For every non-ASCII rune
+// r the overhead is (utf8.RuneLen(r) - 1): a 3-byte BMP glyph like ✓ costs 2
+// extra bytes vs a single ASCII character at the same position.
+//
+// This is the denominator for the glyph-vs-ASCII token comparison surfaced in
+// `gg status`. It runs on the already-rendered compact output, so no
+// per-glyph allowlist is needed — any non-ASCII rune is measured directly.
+func GlyphOverheadBytesOf(s string) int {
+	overhead := 0
+	for _, r := range s {
+		if r >= utf8.RuneSelf {
+			overhead += utf8.RuneLen(r) - 1
+		}
+	}
+	return overhead
+}
+
 // RecordCompact appends a telemetry entry with byte-count measurements for a
 // --compact invocation. bytesDefault is what the non-compact renderer would
 // have produced on the same data — callers must render both to compute the
 // baseline. rendererV stamps the compact-output format version so aggregates
 // across a format change don't silently mix apples and oranges.
-func RecordCompact(runtimeDir, verb, fromFlag string, bytesOut, bytesDefault, rendererV int) {
+// compactOutput is the rendered compact string used to measure glyph overhead;
+// pass "" to skip glyph measurement (treated as zero overhead).
+func RecordCompact(runtimeDir, verb, fromFlag string, bytesOut, bytesDefault, rendererV int, compactOutput string) {
 	recordEntry(runtimeDir, Entry{
-		Verb:         verb,
-		Origin:       classify(fromFlag),
-		Timestamp:    time.Now().UTC().Format(time.RFC3339),
-		Compact:      true,
-		BytesOut:     bytesOut,
-		BytesDefault: bytesDefault,
-		RendererV:    rendererV,
+		Verb:               verb,
+		Origin:             classify(fromFlag),
+		Timestamp:          time.Now().UTC().Format(time.RFC3339),
+		Compact:            true,
+		BytesOut:           bytesOut,
+		BytesDefault:       bytesDefault,
+		RendererV:          rendererV,
+		GlyphOverheadBytes: GlyphOverheadBytesOf(compactOutput),
 	})
 }
 
@@ -285,6 +314,13 @@ type WeeklySummary struct {
 	// need compact render paths added.
 	MissingHandlerCalls      int            `json:"missing_handler_calls"`
 	MissingHandlerVerbCounts map[string]int `json:"missing_handler_verb_counts"`
+	// GlyphByteOverhead is the total extra bytes that Unicode glyphs in compact
+	// output cost vs equivalent 1-byte ASCII placeholders, summed across all
+	// compact calls in the window. GlyphTokenOverhead converts that to tokens
+	// (÷4). These fields let the `gg status` display answer "how much of the
+	// compact token budget is spent on glyph decoration?"
+	GlyphByteOverhead  int `json:"glyph_byte_overhead"`
+	GlyphTokenOverhead int `json:"glyph_token_overhead"`
 }
 
 // Summarize reads the telemetry file and aggregates the last 7 days of data.
@@ -340,6 +376,7 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 			sum.CompactCalls++
 			sum.CompactBytesOut += e.BytesOut
 			sum.CompactBytesDefault += e.BytesDefault
+			sum.GlyphByteOverhead += e.GlyphOverheadBytes
 		}
 		if e.Hydration {
 			sum.HydrationCalls++
@@ -377,6 +414,10 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 		// the error stays well under the 10% noise floor of the metric.
 		sum.CompactTokensSaved = saved / 4
 	}
+	// GlyphTokenOverhead: extra tokens spent on Unicode glyphs vs 1-byte ASCII.
+	// Uses the same bytes/4 heuristic. Even at zero calls this stays zero, so
+	// the gg status display can gate on CompactCalls > 0 before showing it.
+	sum.GlyphTokenOverhead = sum.GlyphByteOverhead / 4
 	// Net savings = gross bytes saved by compact - bytes fetched back by hydration.
 	// Can be negative when compact induces more re-fetching than it saves.
 	sum.NetSavingsBytes = (sum.CompactBytesDefault - sum.CompactBytesOut) - sum.HydrationBytesTotal

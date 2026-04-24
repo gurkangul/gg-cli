@@ -208,6 +208,13 @@ func runStatus(cmd *cobra.Command, args []string) error {
 								netSign, humanFileSize(int64(netBytes)),
 								netSign, humanTokenCount(netTok), refetchWarn)
 						}
+						if tsum.GlyphByteOverhead > 0 {
+							glyphPerCall := tsum.GlyphByteOverhead / tsum.CompactCalls
+							glyphTokPerCall := float64(glyphPerCall) / 4
+							fmt.Printf("  Glyphs    ~%s tok overhead vs ASCII (%d B/call, %.1f tok/call)\n",
+								humanTokenCount(tsum.GlyphTokenOverhead),
+								glyphPerCall, glyphTokPerCall)
+						}
 					}
 					// Dupe-check pressure (TASK-268): how often agents pushed
 					// past a near-duplicate warning. High force ratio → raise
