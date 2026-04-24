@@ -14,12 +14,20 @@ import (
 // It shells out to: cmux new-split, cmux send, cmux send-key,
 // cmux read-screen, cmux focus-pane, cmux close-surface.
 type cmuxTerminal struct {
-	mu   sync.Mutex
-	next atomic.Int64
+	mu     sync.Mutex
+	next   atomic.Int64
+	runner func(ctx context.Context, args ...string) ([]byte, error)
 }
 
 func newCmux() *cmuxTerminal {
-	return &cmuxTerminal{}
+	c := &cmuxTerminal{}
+	c.runner = c.execRun
+	return c
+}
+
+// newCmuxWithRunner returns a cmuxTerminal with a custom runner, for unit testing.
+func newCmuxWithRunner(r func(ctx context.Context, args ...string) ([]byte, error)) *cmuxTerminal {
+	return &cmuxTerminal{runner: r}
 }
 
 func (c *cmuxTerminal) NewSplit(ctx context.Context, opts SplitOpts) (SurfaceID, error) {
@@ -36,7 +44,7 @@ func (c *cmuxTerminal) NewSplit(ctx context.Context, opts SplitOpts) (SurfaceID,
 	if opts.Cmd != "" {
 		args = append(args, "--", opts.Cmd)
 	}
-	out, err := c.run(ctx, args...)
+	out, err := c.runner(ctx, args...)
 	if err != nil {
 		return "", err
 	}
@@ -48,27 +56,27 @@ func (c *cmuxTerminal) NewSplit(ctx context.Context, opts SplitOpts) (SurfaceID,
 }
 
 func (c *cmuxTerminal) Send(ctx context.Context, id SurfaceID, text string) error {
-	_, err := c.run(ctx, "send", string(id), text)
+	_, err := c.runner(ctx, "send", string(id), text)
 	return err
 }
 
 func (c *cmuxTerminal) SendKey(ctx context.Context, id SurfaceID, key string) error {
-	_, err := c.run(ctx, "send-key", string(id), key)
+	_, err := c.runner(ctx, "send-key", string(id), key)
 	return err
 }
 
 func (c *cmuxTerminal) ReadScreen(ctx context.Context, id SurfaceID) ([]byte, error) {
-	out, err := c.run(ctx, "read-screen", string(id))
+	out, err := c.runner(ctx, "read-screen", string(id))
 	return out, err
 }
 
 func (c *cmuxTerminal) Focus(ctx context.Context, id SurfaceID) error {
-	_, err := c.run(ctx, "focus-pane", string(id))
+	_, err := c.runner(ctx, "focus-pane", string(id))
 	return err
 }
 
 func (c *cmuxTerminal) Close(ctx context.Context, id SurfaceID) error {
-	_, err := c.run(ctx, "close-surface", string(id))
+	_, err := c.runner(ctx, "close-surface", string(id))
 	return err
 }
 
@@ -76,7 +84,7 @@ func (c *cmuxTerminal) Capabilities() Caps {
 	return Caps{CanReadScreen: true}
 }
 
-func (c *cmuxTerminal) run(ctx context.Context, args ...string) ([]byte, error) {
+func (c *cmuxTerminal) execRun(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "cmux", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
