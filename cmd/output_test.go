@@ -456,6 +456,14 @@ func TestCompactTrim(t *testing.T) {
 		{"discuss DISC-003 here", 25, "discuss DISC-003 here"}, // fits entirely (21 rune < 25)
 		// n too small to fit overhead — prefix clamped to 1.
 		{"x y TASK-042", 5, "x …(TASK-042)"},
+		// Multiple IDs beyond the cut point are all rescued.
+		// n=10: cutByteOffset=9; TASK-117 at 10 and TASK-203 at 23 both rescued.
+		// suffix=" …(TASK-117, TASK-203)"=22 runes; prefixLen=10-22<1→1
+		{"fixed see TASK-117 and TASK-203 too", 10, "f …(TASK-117, TASK-203)"},
+		// One ID inside cut (not rescued), one beyond (rescued).
+		// "see TASK-117 and TASK-203" n=15: TASK-117 at 4 < 14 → kept in prefix;
+		// TASK-203 at 17 >= 14 → rescued. prefixLen=15-12=3 → "see"
+		{"see TASK-117 and TASK-203", 15, "see …(TASK-203)"},
 	}
 	for _, tc := range cases {
 		got := compactTrim(tc.in, tc.n)

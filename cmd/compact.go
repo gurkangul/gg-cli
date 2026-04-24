@@ -16,7 +16,7 @@ import (
 // output changes meaningfully (drop/add a field, change separators, etc.) —
 // a constant-in-code invariant rather than a git-history diff, so
 // `gg status` can trust its "avg % reduction" metric.
-const compactRendererV = 1
+const compactRendererV = 2
 
 // isCompactActive returns true when the caller wants compact rendering.
 //

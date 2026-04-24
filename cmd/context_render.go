@@ -30,21 +30,24 @@ func compactTrim(s string, n int) string {
 	if len(runes) <= n {
 		return s
 	}
-	// String will be truncated. Scan the full string for GG IDs whose start
-	// index falls at or beyond runes[n-1] (the slot the ellipsis will occupy).
-	// IDs are ASCII, so byte positions from the regexp map directly to rune
-	// positions in the prefix — safe to compare directly.
+	// String will be truncated. Collect all GG IDs whose start byte falls at or
+	// beyond the cut point — rescue every one, not just the first. IDs are ASCII
+	// so byte positions from the regexp map 1:1 to rune positions in the prefix.
 	cutByteOffset := len(string(runes[:n-1])) // byte position of the cut point
-	if locs := ggIDPattern.FindStringIndex(s); locs != nil && locs[0] >= cutByteOffset {
-		m := s[locs[0]:locs[1]]
-		// Fit as much prefix as possible, then append the rescued ID.
-		// Reserve space for " …(ID)": 3 + len(ID) runes.
-		overhead := []rune(" …(" + m + ")")
+	var rescued []string
+	for _, loc := range ggIDPattern.FindAllStringIndex(s, -1) {
+		if loc[0] >= cutByteOffset {
+			rescued = append(rescued, s[loc[0]:loc[1]])
+		}
+	}
+	if len(rescued) > 0 {
+		suffix := " …(" + strings.Join(rescued, ", ") + ")"
+		overhead := []rune(suffix)
 		prefixLen := n - len(overhead)
 		if prefixLen < 1 {
 			prefixLen = 1
 		}
-		return string(runes[:prefixLen]) + string(overhead)
+		return string(runes[:prefixLen]) + suffix
 	}
 	return strings.TrimRight(string(runes[:n-1]), " ") + "…"
 }

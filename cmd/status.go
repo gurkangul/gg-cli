@@ -197,11 +197,16 @@ func runStatus(cmd *cobra.Command, args []string) error {
 								netBytes = -netBytes
 								netTok = -netTok
 							}
-							fmt.Printf("  Hydration %d re-fetches, %s back; net %s%s / ~%s%s tok\n",
-								tsum.HydrationCalls,
+							refetchPct := float64(tsum.HydrationCalls) / float64(tsum.CompactCalls) * 100
+							refetchWarn := ""
+							if refetchPct > 50 {
+								refetchWarn = " ⚠ drop-list muhtemelen agresif"
+							}
+							fmt.Printf("  Hydration %d re-fetches (%.0f%%), %s back; net %s%s / ~%s%s tok%s\n",
+								tsum.HydrationCalls, refetchPct,
 								humanFileSize(int64(tsum.HydrationBytesTotal)),
 								netSign, humanFileSize(int64(netBytes)),
-								netSign, humanTokenCount(netTok))
+								netSign, humanTokenCount(netTok), refetchWarn)
 						}
 					}
 					// Dupe-check pressure (TASK-268): how often agents pushed
