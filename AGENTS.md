@@ -301,11 +301,14 @@ found anchor is assigned a display label (AC-1, AC-2, …) for the
 failure message.
 
 Commit reference rules — the hook accepts **any one** of these per AC:
-- `AC-N:` anywhere in the commit body (preferred, e.g. `AC-1: implemented blocking logic`)
-- `N.` / `N)` / `N:` at the start of a commit line (numbered-list style)
-- `AC N` phrase in the commit body (e.g. `AC 1 is covered by Y`)
+- **(a)** `AC-N:` anywhere in the commit body (preferred, e.g. `AC-1: implemented blocking logic`)
+- **(b)** `N.` / `N)` / `N:` at the start of a commit line (numbered-list style)
+- **(c)** `AC N` phrase in the commit body (e.g. `AC 1 is covered by Y`)
+- **(d)** test name containing the AC number in the diff added lines or changed file paths: `func TestAC1_Something` or `TestAC1_something_test.go`; Gap items also match `TestGapA_*`
+- **(e)** func/comment reference in diff added lines: `func ac1_impl`, `// AC-1 <note>`, `// Gap A`, or `# AC-1 <note>`
 
-Exits 7 with an enumeration of unmatched ACs if any are unaccounted.
+All five rules are fully enforced — any one that fires satisfies the AC.
+Exits 7 with an enumeration of unmatched ACs if none fire for a given AC.
 
 **Passing commit example:**
 ```
@@ -329,9 +332,16 @@ Unmatched ACs (2 of 4):
   AC-2: bypass GG_ALLOW_INCOMPLETE_AC audited via gg record
   AC-3: integration test — 3 ACs + 2 refs blocks; 3 ACs + 3 refs passes
 To fix — pick any one format per AC:
-  (a) AC-N: line in commit body
-  (b) numbered reference at line start (e.g. "3. addressed via X")
-  (c) "AC N" phrase in commit body (e.g. "AC 3 is covered by Y")
+  (a) AC-N: line in commit body (e.g. "AC-2: implemented via X")
+       AC-2: <how this criterion was addressed>
+       AC-3: <how this criterion was addressed>
+  (b) numbered reference at line start (e.g. "2. addressed via X")
+  (c) "AC N" phrase in commit body (e.g. "AC 2 is covered by Y")
+  (d) test name in diff added lines or changed file paths: func TestAC2_YourTest
+  (e) func/comment in diff added lines: func ac2_impl or // AC-2 <note>
+
+To bypass (audited):
+  GG_ALLOW_INCOMPLETE_AC="<reason>" gg task done TASK-042 ...
 ```
 
 Modes (env `GG_AC_ATTESTATION`): `on` (default, blocking) | `warn` | `off`

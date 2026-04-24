@@ -256,22 +256,25 @@ fi
 printf '[ac-attestation] ⚠ %s: unmatched acceptance criteria:%s\n\n' \
   "$GG_TASK_ID" "$UNMATCHED" >&2
 
-printf 'To fix — pick any one format per AC:\n' >&2
-printf '  (a) AC-N: line in commit body (e.g. "AC-1: implemented via X")\n' >&2
+FIRST_NUM="$(printf '%s' "$ACS" | head -1 | cut -f1)"
+printf 'To fix — any one of (a)–(e) satisfies an AC:\n' >&2
+printf '  (a) AC-N: line in commit body — one per unmatched AC:\n' >&2
 while IFS="	" read -r NUM _; do
   [ -z "$NUM" ] && continue
   printf '       AC-%s: <how this criterion was addressed>\n' "$NUM" >&2
 done << ACEOF2
 $ACS
 ACEOF2
-printf '  (b) numbered reference at line start (e.g. "1. addressed via X")\n' >&2
+printf '  (b) numbered reference at line start (e.g. "%s. addressed via X")\n' \
+  "$FIRST_NUM" >&2
 printf '  (c) "AC N" phrase in commit body (e.g. "AC %s is covered by Y")\n' \
-  "$(printf '%s' "$ACS" | head -1 | cut -f1)" >&2
-printf '  (d) test name in diff: func TestAC%s_YourTest (added line)\n' \
-  "$(printf '%s' "$ACS" | head -1 | cut -f1)" >&2
-printf '  (e) func/comment in diff: func ac%s_impl or // AC-%s <note>\n' \
-  "$(printf '%s' "$ACS" | head -1 | cut -f1)" \
-  "$(printf '%s' "$ACS" | head -1 | cut -f1)" >&2
+  "$FIRST_NUM" >&2
+printf '  (d) test name in diff added lines or changed file paths:\n' >&2
+printf '       func TestAC%s_YourTest  or  TestAC%s_something_test.go\n' \
+  "$FIRST_NUM" "$FIRST_NUM" >&2
+printf '  (e) func/comment in diff added lines:\n' >&2
+printf '       func ac%s_impl  or  // AC-%s <note>  or  # AC-%s <note>\n' \
+  "$FIRST_NUM" "$FIRST_NUM" "$FIRST_NUM" >&2
 
 printf '\nTo bypass (audited):\n  GG_ALLOW_INCOMPLETE_AC="<reason>" gg task done %s ...\n' \
   "$GG_TASK_ID" >&2
