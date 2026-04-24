@@ -67,31 +67,44 @@ func TestSummarizeSessions_SingleSession_Aggregates(t *testing.T) {
 func TestSummarizeSessions_TwoSessions_PercentilesDistinct(t *testing.T) {
 	dir := t.TempDir()
 
-	// Session A: 200 bytes out
-	t.Setenv("CLAUDE_SESSION_ID", "sess-a")
-	RecordCompact(dir, "context", "", 200, 1000, 1, "")
-
-	// Session B: 800 bytes out
-	t.Setenv("CLAUDE_SESSION_ID", "sess-b")
-	RecordCompact(dir, "search", "", 800, 2000, 1, "")
+	// Four sessions with bytes [100, 200, 500, 2000] (sorted).
+	// nearest-rank: p50 → ceil(0.50*4)-1 = ceil(2.0)-1 = 1 → 200 bytes
+	//               p95 → ceil(0.95*4)-1 = ceil(3.8)-1 = 3 → 2000 bytes
+	// wantP50 != wantP95, which catches p50/p95 index-swap bugs that a 2-element
+	// dataset cannot expose (both values would still differ but in an arbitrary order).
+	sessions := []struct {
+		id    string
+		bytes int
+	}{
+		{"sess-a", 100},
+		{"sess-b", 200},
+		{"sess-c", 500},
+		{"sess-d", 2000},
+	}
+	for _, s := range sessions {
+		t.Setenv("CLAUDE_SESSION_ID", s.id)
+		RecordCompact(dir, "context", "", s.bytes, s.bytes*5, 1, "")
+	}
 
 	ss, err := SummarizeSessions(dir, time.Now().UTC().AddDate(0, 0, -7))
 	if err != nil {
 		t.Fatalf("SummarizeSessions: %v", err)
 	}
-	if ss.ActiveSessions != 2 {
-		t.Errorf("ActiveSessions = %d, want 2", ss.ActiveSessions)
+	if ss.ActiveSessions != 4 {
+		t.Errorf("ActiveSessions = %d, want 4", ss.ActiveSessions)
 	}
-	// sorted bytes: [200, 800]. nearest-rank: p50→ceil(1.0)-1=0→200; p95→ceil(1.9)-1=1→800.
 	wantP50 := float64(200) / 1024.0
-	wantP95 := float64(800) / 1024.0
+	wantP95 := float64(2000) / 1024.0
 	if ss.P50CumulativeKB != wantP50 {
 		t.Errorf("P50CumulativeKB = %.4f, want %.4f", ss.P50CumulativeKB, wantP50)
 	}
 	if ss.P95CumulativeKB != wantP95 {
 		t.Errorf("P95CumulativeKB = %.4f, want %.4f", ss.P95CumulativeKB, wantP95)
 	}
-	// avg calls: (1+1)/2 = 1.0
+	if wantP50 == wantP95 {
+		t.Fatal("test invariant violated: wantP50 must != wantP95 to catch swap bugs")
+	}
+	// avg calls: (1+1+1+1)/4 = 1.0
 	if ss.AvgCompactCallsPerSession != 1.0 {
 		t.Errorf("AvgCompactCallsPerSession = %.1f, want 1.0", ss.AvgCompactCallsPerSession)
 	}
