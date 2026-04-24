@@ -39,7 +39,7 @@ var (
 )
 
 func init() {
-	spawnWorkerCmd.Flags().StringVar(&spawnWorkerAgent, "agent", "", "agent command to run in the new pane (default: $GG_SPAWN_AGENT or 'claude')")
+	spawnWorkerCmd.Flags().StringVar(&spawnWorkerAgent, "agent", "", "agent command to run in the new pane (default: $GG_SPAWN_AGENT or 'gsd')")
 	spawnWorkerCmd.Flags().StringVar(&spawnWorkerTaskID, "task", "", "task ID to assign to this worker (e.g. TASK-042)")
 	spawnWorkerCmd.Flags().StringArrayVar(&spawnWorkerEnvs, "env", nil, "KEY=VALUE env vars to set in the worker pane (repeatable)")
 	spawnWorkerCmd.Flags().StringVar(&spawnWorkerDir, "split", "vertical", "pane split direction: horizontal (below) or vertical (right, default)")

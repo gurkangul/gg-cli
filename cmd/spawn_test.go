@@ -7,8 +7,8 @@ import (
 // TestSpawnAgentDefault verifies fallback behaviour for the agent default.
 func TestSpawnAgentDefault_Fallback(t *testing.T) {
 	t.Setenv("GG_SPAWN_AGENT", "")
-	if got := spawnAgentDefault(); got != "claude" {
-		t.Errorf("spawnAgentDefault() = %q, want %q", got, "claude")
+	if got := spawnAgentDefault(); got != "gsd" {
+		t.Errorf("spawnAgentDefault() = %q, want %q", got, "gsd")
 	}
 }
 

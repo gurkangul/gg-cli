@@ -35,12 +35,12 @@ Typical flow:
 }
 
 // spawnAgentDefault is the agent command used when --agent is not specified.
-// Reads GG_SPAWN_AGENT env var, falls back to "claude".
+// Reads GG_SPAWN_AGENT env var, falls back to "gsd".
 func spawnAgentDefault() string {
 	if v := os.Getenv("GG_SPAWN_AGENT"); v != "" {
 		return v
 	}
-	return "claude"
+	return "gsd"
 }
 
 // spawnRuntimeDir resolves the runtime dir or returns a user-friendly error.

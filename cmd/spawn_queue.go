@@ -55,7 +55,7 @@ var (
 )
 
 func init() {
-	spawnQueueStartCmd.Flags().StringVar(&spawnQueueAgent, "agent", "", "agent command for worker panes (default: $GG_SPAWN_AGENT or 'claude')")
+	spawnQueueStartCmd.Flags().StringVar(&spawnQueueAgent, "agent", "", "agent command for worker panes (default: $GG_SPAWN_AGENT or 'gsd')")
 	spawnQueueStartCmd.Flags().IntVar(&spawnQueueMaxTasks, "max-tasks", 0, "stop after processing this many tasks (0 = no limit)")
 	spawnQueueStartCmd.Flags().IntVar(&spawnQueuePollSecs, "poll", 30, "seconds between liveness checks while a worker is running")
 	spawnQueueCmd.AddCommand(spawnQueueStartCmd)
