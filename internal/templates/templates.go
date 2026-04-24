@@ -36,6 +36,9 @@ var PreTaskDoneDecideCaptureHook string
 //go:embed pre-task-done-review-required.sh
 var PreTaskDoneReviewRequiredHook string
 
+//go:embed pre-task-done-master-guard.sh
+var PreTaskDoneMasterGuardHook string
+
 //go:embed 90-bug-repros.sh
 var BugReprosHook string
 
@@ -64,6 +67,7 @@ func ArtifactSHAs() map[string]string {
 		"hooks/pre-task-done.d/20-decide-capture.sh":   PreTaskDoneDecideCaptureHook,
 		"hooks/pre-task-done.d/30-file-size.sh":        FileSizeGateHook,
 		"hooks/pre-task-done.d/40-review-required.sh":  PreTaskDoneReviewRequiredHook,
+		"hooks/pre-task-done.d/50-master-guard.sh":     PreTaskDoneMasterGuardHook,
 		"hooks/task-done.d/80-task-done-go.sh":   TaskDoneGoHook,
 		"templates/makefile-test-tiers.mk":       MakefileTestTiers,
 	}
