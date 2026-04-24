@@ -498,6 +498,100 @@ func blockOnMissingRef() error {
 	}
 }
 
+// runACAttestationHookWithFiles creates a temp git repo, writes files, commits, and
+// runs the hook. files is a map of filename → content; commitMsg is used verbatim.
+// Returns combined output and exit code.
+func runACAttestationHookWithFiles(t *testing.T, taskJSON, commitMsg string, files map[string]string) (string, int) {
+	t.Helper()
+	hookPath := hookACAttestationPath(t)
+	dir := t.TempDir()
+	runIn := func(name string, args ...string) {
+		t.Helper()
+		c := exec.Command(name, args...)
+		c.Dir = dir
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Logf("git %v: %s", args, out)
+		}
+	}
+	runIn("git", "init", "-b", "main")
+	runIn("git", "config", "user.email", "test@example.com")
+	runIn("git", "config", "user.name", "Test")
+	for name, content := range files {
+		_ = os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644)
+	}
+	runIn("git", "add", ".")
+	runIn("git", "commit", "-m", commitMsg)
+
+	binDir := filepath.Join(dir, "fakebin")
+	_ = os.MkdirAll(binDir, 0o755)
+	jsonFile := filepath.Join(dir, "task.json")
+	_ = os.WriteFile(jsonFile, []byte(taskJSON), 0o644)
+	_ = os.WriteFile(filepath.Join(binDir, "gg"), []byte("#!/bin/sh\ncat "+jsonFile+"\n"), 0o755)
+
+	env := append(os.Environ(),
+		"GG_TASK_ID=TASK-TEST", "GG_TASK_SUMMARY=test summary",
+		"GG_PROJECT_ID=test-project", "GG_ACTOR=developer",
+		"PATH="+binDir+":"+os.Getenv("PATH"), "HOME="+dir,
+	)
+	cmd := exec.Command("/bin/sh", hookPath)
+	cmd.Env = env
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code = exitErr.ExitCode()
+		} else {
+			code = -1
+		}
+	}
+	return string(out), code
+}
+
+// TestACAttestation_DiffTestGap_Passes: Gap A item; diff has TestGapA_ — rule (d-gap).
+// Detail has only the Gap A line (no duplicate bullet) so exactly one AC is extracted.
+func TestACAttestation_DiffTestGap_Passes(t *testing.T) {
+	detail := "Gap A: no cross-process flock — only in-process sync.Map"
+	files := map[string]string{
+		"flock_test.go": "package main\n\nfunc TestGapA_FixesCrossProcess(t *testing.T) {}\n",
+	}
+	out, code := runACAttestationHookWithFiles(t, taskJSONWith(detail), "fix: implement cross-process flock", files)
+	if code != 0 {
+		t.Errorf("expected exit 0 (TestGapA_ in diff → rule d-gap), got %d\noutput:\n%s", code, out)
+	}
+}
+
+// TestACAttestation_DiffGapComment_Passes: Gap B item; diff has "// Gap B" comment — rule (e-gap).
+// Gap A is attested via commit body so only Gap B depends on the comment.
+func TestACAttestation_DiffGapComment_Passes(t *testing.T) {
+	detail := "Gap A: word-boundary regex too broad\nGap B: no cross-process flock"
+	files := map[string]string{
+		"flock.go": "package main\n\n// Gap B fixed by syscall.Flock\nfunc lockSurface() error { return nil }\n",
+	}
+	commitMsg := "fix: add cross-process flock\n\nAC-1: Gap A word-boundary fix applied"
+	out, code := runACAttestationHookWithFiles(t, taskJSONWith(detail), commitMsg, files)
+	if code != 0 {
+		t.Errorf("expected exit 0 (// Gap B comment → rule e-gap), got %d\noutput:\n%s", code, out)
+	}
+}
+
+// TestACAttestation_FilePathTestAC_Passes: file path TestAC1_gate_test.go satisfies
+// rule (d) file-path branch even when diff lines use a generic function name.
+func TestACAttestation_FilePathTestAC_Passes(t *testing.T) {
+	detail := "ACCEPTANCE\n- gate blocks when commit omits AC reference"
+	files := map[string]string{
+		"TestAC1_gate_test.go": "package main\n\nfunc TestGateBehaviour(t *testing.T) {}\n",
+	}
+	out, code := runACAttestationHookWithFiles(t, taskJSONWith(detail), "test: add gate test file", files)
+	if code != 0 {
+		t.Errorf("expected exit 0 (TestAC1 in file path → rule d file-path), got %d\noutput:\n%s", code, out)
+	}
+	if !strings.Contains(out, "test file path") {
+		t.Errorf("expected 'test file path' in output, got:\n%s", out)
+	}
+}
+
 // TestACAttestation_Bypass_EmitsGGRecord: when GG_ALLOW_INCOMPLETE_AC is set,
 // the hook must call `gg record` with tags "bypass,ac-attestation,<task-id>"
 // and the reason string. A recording fake-gg stub captures the invocation.

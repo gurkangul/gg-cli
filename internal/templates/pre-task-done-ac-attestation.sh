@@ -9,8 +9,9 @@
 #   (a) Commit message body contains "AC-N:" where N is the AC number
 #   (b) Commit message body contains a numbered reference "N:" or "N)" at line start
 #   (c) Commit message body contains "AC N" (with space, case-insensitive)
-#   (d) Diff (git show HEAD) contains a test name matching TestACN_* or Test_ACN_*
-#   (e) Diff (git show HEAD) contains func/comment with ac<N>_ prefix or "// AC-N"
+#   (d) Diff content (git log -1 -p) or test file paths (git log -1 --name-only)
+#       contain a test name matching TestACN_* or TestGapN_*
+#   (e) Diff content contains func/comment with ac<N>_ prefix, "// AC-N", "// Gap N"
 #
 # Modes (via GG_AC_ATTESTATION env var):
 #   on    (default) — block (exit 7) when ACs are unaccounted
@@ -77,20 +78,22 @@ fi
 #   (5) "- " bullet lines elsewhere (lower priority, deduplicated)
 #
 # Items are collected in priority order; duplicates suppressed by text.
-# The output is tab-separated: sequential_number\ttext
+# The output is tab-separated: sequential_number\ttext\tgap_label
+# gap_label is the Gap letter/number (e.g. "A", "B", "1") for Gap-style items,
+# or empty for all other item types. Used by diff-scan rules to match TestGapA_* patterns.
 ACS=$(printf '%s' "$DETAIL" | $PY -c "
 import sys, re
 
 text = sys.stdin.read()
 lines = text.splitlines()
 seen = set()
-acs = []
+acs = []   # list of (text, gap_label)
 
-def add(t):
+def add(t, gap_label=''):
     t = t.strip()
     if t and t not in seen:
         seen.add(t)
-        acs.append(t)
+        acs.append((t, gap_label))
 
 # Pass 1: explicit AC-N: anchors anywhere (e.g. 'AC-1: something')
 for line in lines:
@@ -102,7 +105,8 @@ for line in lines:
 for line in lines:
     m = re.match(r'^\s*(?:\*{1,2})?Gap\s+([A-Z0-9]+)(?:\*{1,2})?[:\s]+(.*)', line, re.IGNORECASE)
     if m:
-        add(('Gap ' + m.group(1) + ': ' + m.group(2)).strip(': '))
+        label = m.group(1).upper()
+        add(('Gap ' + m.group(1) + ': ' + m.group(2)).strip(': '), label)
 
 # Pass 3: numbered items at line start — '1. text', '1) text', '1: text'
 for line in lines:
@@ -130,8 +134,8 @@ for line in lines:
     if s.startswith('- '):
         add(s[2:].strip())
 
-for i, ac in enumerate(acs, 1):
-    print(str(i) + '\t' + ac)
+for i, (ac, gap_label) in enumerate(acs, 1):
+    print(str(i) + '\t' + ac + '\t' + gap_label)
 " 2>/dev/null || true)
 
 if [ -z "$ACS" ]; then
@@ -142,21 +146,25 @@ fi
 AC_COUNT=$(printf '%s\n' "$ACS" | grep -c '.' || echo 0)
 echo "[ac-attestation] $GG_TASK_ID: found $AC_COUNT acceptance criterion/criteria"
 
-# ── 4. Get commit message and diff ───────────────────────────────────────────
+# ── 4. Get commit message, changed file paths, and diff content ──────────────
 COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null || true)
 if [ -z "$COMMIT_MSG" ]; then
   echo "[ac-attestation] ✓ $GG_TASK_ID: no commits — skipping"
   exit 0
 fi
 
-# git show HEAD includes both the commit message and the unified diff.
-# Works on the very first commit (no parent); diff HEAD~1 would fail there.
-COMMIT_DIFF=$(git show HEAD 2>/dev/null || true)
+# Changed file paths — used to detect test file names like ac1_test.go or TestAC1.
+# Works on the very first commit (no parent; --name-only with -1 handles root commits).
+COMMIT_FILES=$(git log -1 --name-only --pretty="" 2>/dev/null || true)
+
+# Unified diff content — used to detect added lines with test names and comments.
+# git log -1 -p is equivalent to git show HEAD but more portable for first commits.
+COMMIT_DIFF=$(git log -1 -p 2>/dev/null || true)
 
 # ── 5. Check each AC against commit message and diff ──────────────────────────
 UNMATCHED=""
 
-while IFS="	" read -r NUM AC_TEXT; do
+while IFS="	" read -r NUM AC_TEXT GAP_LABEL; do
   [ -z "$NUM" ] && continue
 
   # Rule (a): explicit "AC-N:" in commit message (case-insensitive)
@@ -177,18 +185,47 @@ while IFS="	" read -r NUM AC_TEXT; do
     continue
   fi
 
-  # Rule (d): test function name containing AC number — TestACN_* or Test_ACN_*
-  # Matches lines added in the diff (+...) to avoid false positives from context.
-  if printf '%s' "$COMMIT_DIFF" | grep -qiE "^\+[^+].*[Tt]est_?[Aa][Cc]${NUM}[_A-Za-z]"; then
+  # Rule (d): test name containing AC number — TestACN_* (case-insensitive).
+  # Filters out +++ diff headers before matching so file-path headers don't false-positive.
+  # Also scans changed file paths from git log --name-only.
+  if printf '%s' "$COMMIT_DIFF" | grep -v "^+++" | grep -qiE "^\+.*[Tt]est_?[Aa][Cc]${NUM}[_A-Z0-9]"; then
     echo "[ac-attestation]   AC-${NUM}: ✓ (test name TestAC${NUM}_ in diff)"
     continue
   fi
+  if printf '%s' "$COMMIT_FILES" | grep -qiE "[Tt]est_?[Aa][Cc]${NUM}[_A-Z0-9]"; then
+    echo "[ac-attestation]   AC-${NUM}: ✓ (test file path TestAC${NUM}_ in changed files)"
+    continue
+  fi
 
-  # Rule (e): func/comment reference — func ac<N>_, // AC-N, /* AC-N, or # AC-N
-  # Use ^\+ (not ^\+[^+]) so the // or /* characters are not consumed by [^+].
-  if printf '%s' "$COMMIT_DIFF" | grep -qiE "^\+(func[[:space:]]+[a-zA-Z]*[Aa][Cc]${NUM}_|.*//[[:space:]]*AC-${NUM}([^0-9]|$)|.*/\*[[:space:]]*AC-${NUM}([^0-9]|$)|.*#[[:space:]]*AC-${NUM}([^0-9]|$))"; then
+  # Rule (d-gap): TestGapLABEL_* in diff added lines or file paths (Gap items only).
+  if [ -n "$GAP_LABEL" ]; then
+    if printf '%s' "$COMMIT_DIFF" | grep -v "^+++" | grep -qiE "^\+.*[Tt]est[Gg]ap${GAP_LABEL}[_A-Z0-9]"; then
+      echo "[ac-attestation]   AC-${NUM}: ✓ (test name TestGap${GAP_LABEL}_ in diff)"
+      continue
+    fi
+    if printf '%s' "$COMMIT_FILES" | grep -qiE "[Tt]est[Gg]ap${GAP_LABEL}[_A-Z0-9]"; then
+      echo "[ac-attestation]   AC-${NUM}: ✓ (test file path TestGap${GAP_LABEL}_ in changed files)"
+      continue
+    fi
+  fi
+
+  # Rule (e): func/comment reference in added diff lines.
+  # Filter out +++ header lines first (grep -v "^+++"), then match on added lines (^\+).
+  if printf '%s' "$COMMIT_DIFF" | grep -v "^+++" | grep -qiE "^\+(.*func[[:space:]]+[a-zA-Z]*[Aa][Cc]${NUM}_|.*//[[:space:]]*AC-${NUM}([^0-9]|$)|.*/\*[[:space:]]*AC-${NUM}([^0-9]|$)|.*#[[:space:]]*AC-${NUM}([^0-9]|$))"; then
     echo "[ac-attestation]   AC-${NUM}: ✓ (func/comment AC-${NUM} in diff)"
     continue
+  fi
+
+  # Rule (e-gap): // Gap LABEL or # Gap LABEL in added diff lines (Gap items only).
+  if [ -n "$GAP_LABEL" ]; then
+    if printf '%s' "$COMMIT_DIFF" | grep -v "^+++" | grep -qiE "^\+.*//[[:space:]]*Gap[[:space:]]+${GAP_LABEL}([^A-Z0-9]|$)"; then
+      echo "[ac-attestation]   AC-${NUM}: ✓ (// Gap ${GAP_LABEL} comment in diff)"
+      continue
+    fi
+    if printf '%s' "$COMMIT_DIFF" | grep -v "^+++" | grep -qiE "^\+.*#[[:space:]]*Gap[[:space:]]+${GAP_LABEL}([^A-Z0-9]|$)"; then
+      echo "[ac-attestation]   AC-${NUM}: ✓ (# Gap ${GAP_LABEL} comment in diff)"
+      continue
+    fi
   fi
 
   echo "[ac-attestation]   AC-${NUM}: ✗ not referenced — ${AC_TEXT}"
