@@ -82,10 +82,9 @@ func TestSummarizeSessions_TwoSessions_PercentilesDistinct(t *testing.T) {
 	if ss.ActiveSessions != 2 {
 		t.Errorf("ActiveSessions = %d, want 2", ss.ActiveSessions)
 	}
-	// sorted bytes: [200, 800]. p50idx(2)=1 → 800; p95idx(2)=1 → 800.
-	// (2*50/100=1, 2*95/100=1)
-	wantP50 := float64(800) / 1024.0
-	wantP95 := float64(800) / 1024.0
+	// sorted bytes: [200, 800]. p50idx(2)=(2-1)*50/100=0 → 200; p95idx(2)=(2-1)*95/100=0 → 200.
+	wantP50 := float64(200) / 1024.0
+	wantP95 := float64(200) / 1024.0
 	if ss.P50CumulativeKB != wantP50 {
 		t.Errorf("P50CumulativeKB = %.4f, want %.4f", ss.P50CumulativeKB, wantP50)
 	}
@@ -214,11 +213,11 @@ func TestP50P95Idx_SingleElement(t *testing.T) {
 }
 
 func TestP50P95Idx_TwentyElements(t *testing.T) {
-	// For n=20: p50 = 20*50/100 = 10, p95 = 20*95/100 = 19.
-	if p50idx(20) != 10 {
-		t.Errorf("p50idx(20) = %d, want 10", p50idx(20))
+	// For n=20: p50idx = (20-1)*50/100 = 9, p95idx = (20-1)*95/100 = 18.
+	if p50idx(20) != 9 {
+		t.Errorf("p50idx(20) = %d, want 9", p50idx(20))
 	}
-	if p95idx(20) != 19 {
-		t.Errorf("p95idx(20) = %d, want 19", p95idx(20))
+	if p95idx(20) != 18 {
+		t.Errorf("p95idx(20) = %d, want 18", p95idx(20))
 	}
 }

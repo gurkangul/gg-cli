@@ -131,17 +131,15 @@ func sortInts(a []int) {
 }
 
 func p50idx(n int) int {
-	i := (n * 50) / 100
-	if i >= n {
-		i = n - 1
+	if n <= 1 {
+		return 0
 	}
-	return i
+	return (n - 1) * 50 / 100
 }
 
 func p95idx(n int) int {
-	i := (n * 95) / 100
-	if i >= n {
-		i = n - 1
+	if n <= 1 {
+		return 0
 	}
-	return i
+	return (n - 1) * 95 / 100
 }
