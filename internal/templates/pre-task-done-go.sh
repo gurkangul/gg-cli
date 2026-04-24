@@ -24,7 +24,17 @@ go build ./...
 echo "[verify] (__GG_SUBDIR__) go vet ./..."
 go vet ./...
 
+# When running inside a hook invoked by gg task done (GG_INSIDE_HOOK=1), the
+# parent gg process holds live connections. Use -short to skip tests that
+# access real project state (git log, Qdrant) and would race the parent.
+TEST_FLAGS="-count=1 -timeout 120s"
+if [ "${GG_INSIDE_HOOK:-0}" = "1" ]; then
+  TEST_FLAGS="$TEST_FLAGS -short"
+  echo "[verify] (__GG_SUBDIR__) running in hook context — using -short to skip live-state tests"
+fi
+
 echo "[verify] (__GG_SUBDIR__) go test ./..."
-go test ./... -count=1 -timeout 120s
+# shellcheck disable=SC2086
+go test ./... $TEST_FLAGS
 
 echo "[verify] ✓ all checks passed for $GG_TASK_ID"
