@@ -30,9 +30,11 @@ warning — prune them with 'gg system register --prune' after verifying.`,
 }
 
 var (
-	systemSyncDryRun         bool
-	systemSyncContractOnly   bool
-	systemSyncSkipMasterRole bool
+	systemSyncDryRun              bool
+	systemSyncContractOnly        bool
+	systemSyncSkipMasterRole      bool
+	systemSyncContractForceReset  bool
+	systemSyncMasterRoleForceReset bool
 )
 
 func init() {
@@ -42,6 +44,10 @@ func init() {
 		"skip the agent-hook refresh stage (faster when only the contract changed)")
 	systemSyncCmd.Flags().BoolVar(&systemSyncSkipMasterRole, "skip-master-role", false,
 		"skip the master-role block sync stage")
+	systemSyncCmd.Flags().BoolVar(&systemSyncContractForceReset, "contract-force-reset", false,
+		"pass --force-reset to gg doctor --check-contract --fix (overwrites manually-edited contract blocks)")
+	systemSyncCmd.Flags().BoolVar(&systemSyncMasterRoleForceReset, "master-role-force-reset", false,
+		"pass --force-reset to gg doctor --check-master-role --fix (overwrites manually-edited master-role blocks)")
 	systemCmd.AddCommand(systemSyncCmd)
 }
 
@@ -76,9 +82,17 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 		}
 
 		if systemSyncDryRun {
-			fmt.Println("  (dry-run) would run: gg doctor --check-contract --fix")
+			contractCmd := "gg doctor --check-contract --fix"
+			if systemSyncContractForceReset {
+				contractCmd += " --force-reset"
+			}
+			fmt.Printf("  (dry-run) would run: %s\n", contractCmd)
 			if !systemSyncSkipMasterRole {
-				fmt.Println("  (dry-run) would run: gg doctor --check-master-role --fix")
+				masterRoleCmd := "gg doctor --check-master-role --fix"
+				if systemSyncMasterRoleForceReset {
+					masterRoleCmd += " --force-reset"
+				}
+				fmt.Printf("  (dry-run) would run: %s\n", masterRoleCmd)
 			}
 			if !systemSyncContractOnly {
 				fmt.Println("  (dry-run) would run: gg doctor --install-agent-hooks")
@@ -88,13 +102,21 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 			continue
 		}
 
-		if runErr := runGGIn(self, p.Root, "doctor", "--check-contract", "--fix"); runErr != nil {
+		contractArgs := []string{"doctor", "--check-contract", "--fix"}
+		if systemSyncContractForceReset {
+			contractArgs = append(contractArgs, "--force-reset")
+		}
+		if runErr := runGGIn(self, p.Root, contractArgs...); runErr != nil {
 			fmt.Printf("  ✗ contract sync failed: %v\n", runErr)
 			failed++
 			continue
 		}
 		if !systemSyncSkipMasterRole {
-			if runErr := runGGIn(self, p.Root, "doctor", "--check-master-role", "--fix"); runErr != nil {
+			masterRoleArgs := []string{"doctor", "--check-master-role", "--fix"}
+			if systemSyncMasterRoleForceReset {
+				masterRoleArgs = append(masterRoleArgs, "--force-reset")
+			}
+			if runErr := runGGIn(self, p.Root, masterRoleArgs...); runErr != nil {
 				fmt.Printf("  ✗ master-role sync failed: %v\n", runErr)
 				failed++
 				continue
