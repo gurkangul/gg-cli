@@ -185,9 +185,9 @@ func runStatus(cmd *cobra.Command, args []string) error {
 					if tsum.CompactCalls > 0 && tsum.CompactBytesDefault > 0 {
 						saved := tsum.CompactBytesDefault - tsum.CompactBytesOut
 						pctSaved := float64(saved) / float64(tsum.CompactBytesDefault) * 100
-						fmt.Printf("Compact     %d calls, %s / ~%s tok (est.) saved (avg %.0f%% reduction)\n",
+						fmt.Printf("Compact     %d calls, %s / ~%s tok (est. calibrated: %d bytes/tok) saved (avg %.0f%% reduction)\n",
 							tsum.CompactCalls, humanFileSize(int64(saved)),
-							humanTokenCount(tsum.CompactTokensSaved), pctSaved)
+							humanTokenCount(tsum.CompactTokensSaved), telemetry.CorpusCalibration.Rounded, pctSaved)
 						if tsum.HydrationCalls > 0 {
 							netBytes := tsum.NetSavingsBytes
 							netTok := tsum.NetTokensSaved
@@ -202,17 +202,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 							if refetchPct > 50 {
 								refetchWarn = " ⚠ drop-list muhtemelen agresif"
 							}
-							fmt.Printf("  Hydration %d re-fetches (%.0f%%), %s back; net %s%s / ~%s%s tok (est.)%s\n",
+							fmt.Printf("  Hydration %d re-fetches (%.0f%%), %s back; net %s%s / ~%s%s tok (est. calibrated: %d bytes/tok)%s\n",
 								tsum.HydrationCalls, refetchPct,
 								humanFileSize(int64(tsum.HydrationBytesTotal)),
 								netSign, humanFileSize(int64(netBytes)),
-								netSign, humanTokenCount(netTok), refetchWarn)
+								netSign, humanTokenCount(netTok), telemetry.CorpusCalibration.Rounded, refetchWarn)
 						}
 						if tsum.GlyphByteOverhead > 0 {
 							glyphPerCall := tsum.GlyphByteOverhead / tsum.CompactCalls
 							glyphTokPerCall := float64(glyphPerCall) / float64(telemetry.BytesPerToken)
-							fmt.Printf("  Glyphs    ~%s tok (est.) overhead vs ASCII (%d B/call, %.1f tok/call)\n",
-								humanTokenCount(tsum.GlyphTokenOverhead),
+							fmt.Printf("  Glyphs    ~%s tok (est. calibrated: %d bytes/tok) overhead vs ASCII (%d B/call, %.1f tok/call)\n",
+								humanTokenCount(tsum.GlyphTokenOverhead), telemetry.CorpusCalibration.Rounded,
 								glyphPerCall, glyphTokPerCall)
 						}
 					}
