@@ -53,8 +53,8 @@ func (t *tmuxTerminal) NewSplit(ctx context.Context, opts SplitOpts) (SurfaceID,
 }
 
 func (t *tmuxTerminal) Send(ctx context.Context, id SurfaceID, text string) error {
-	// The trailing "" is a literal key that prevents tmux interpreting the text as a key name.
-	_, err := t.runner(ctx, "send-keys", "-t", string(id), text, "")
+	// -l sends text literally, preventing tmux from interpreting it as a key name.
+	_, err := t.runner(ctx, "send-keys", "-l", "-t", string(id), text)
 	return err
 }
 

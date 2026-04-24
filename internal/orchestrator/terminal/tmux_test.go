@@ -140,11 +140,12 @@ func TestTmux_Send(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := r.calls[0]
-	if args[0] != "send-keys" || args[1] != "-t" || args[2] != "%3" || args[3] != "hello world" {
+	// Expected: send-keys -l -t %3 <text>
+	if args[0] != "send-keys" || args[1] != "-l" || args[2] != "-t" || args[3] != "%3" || args[4] != "hello world" {
 		t.Fatalf("unexpected args: %v", args)
 	}
-	if args[4] != "" {
-		t.Fatalf("expected trailing empty key literal, got %q", args[4])
+	if len(args) != 5 {
+		t.Fatalf("expected exactly 5 args, got %d: %v", len(args), args)
 	}
 }
 
