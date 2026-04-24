@@ -59,10 +59,13 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 	}
 
 	return printJSON(map[string]any{
-		"total":       sum.Total,
-		"agent_calls": sum.AgentCalls,
-		"human_calls": sum.HumanCalls,
-		"verb_counts": sum.VerbCounts,
+		"total":                 sum.Total,
+		"agent_calls":           sum.AgentCalls,
+		"human_calls":           sum.HumanCalls,
+		"verb_counts":           sum.VerbCounts,
+		"hydration_calls":       sum.HydrationCalls,
+		"hydration_verb_counts": sum.HydrationVerbCounts,
+		"net_savings_bytes":     sum.NetSavingsBytes,
 	}, func() {
 		if sum.Total == 0 {
 			fmt.Println("No telemetry recorded in the last 7 days.")
@@ -105,6 +108,31 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 			}
 			fmt.Printf("\n--compact: %d calls saved %d bytes / ~%s tok (%d%%)\n",
 				sum.CompactCalls, saved, humanTokenCount(sum.CompactTokensSaved), pct)
+		}
+		if sum.HydrationCalls > 0 {
+			fmt.Printf("re-fetch: %d calls", sum.HydrationCalls)
+			if len(sum.HydrationVerbCounts) > 0 {
+				type vc struct{ verb string; count int }
+				var vcs []vc
+				for v, c := range sum.HydrationVerbCounts {
+					vcs = append(vcs, vc{v, c})
+				}
+				sort.Slice(vcs, func(i, j int) bool {
+					if vcs[i].count != vcs[j].count {
+						return vcs[i].count > vcs[j].count
+					}
+					return vcs[i].verb < vcs[j].verb
+				})
+				fmt.Printf("  (")
+				for i, v := range vcs {
+					if i > 0 {
+						fmt.Printf(", ")
+					}
+					fmt.Printf("%s=%d", v.verb, v.count)
+				}
+				fmt.Printf(")")
+			}
+			fmt.Println()
 		}
 		if sum.WithContextCalls > 0 {
 			fmt.Printf("--with-context: %d calls, %d bytes total context\n",

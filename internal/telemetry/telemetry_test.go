@@ -434,6 +434,27 @@ func TestRecordHydration_NoCompact_NetZero(t *testing.T) {
 	}
 }
 
+func TestRecordHydration_VerbBreakdown(t *testing.T) {
+	dir := t.TempDir()
+	RecordHydration(dir, "get", "", 100)
+	RecordHydration(dir, "get", "", 200)
+	RecordHydration(dir, "decisions", "", 150)
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.HydrationCalls != 3 {
+		t.Errorf("HydrationCalls = %d, want 3", sum.HydrationCalls)
+	}
+	if sum.HydrationVerbCounts["get"] != 2 {
+		t.Errorf("HydrationVerbCounts[get] = %d, want 2", sum.HydrationVerbCounts["get"])
+	}
+	if sum.HydrationVerbCounts["decisions"] != 1 {
+		t.Errorf("HydrationVerbCounts[decisions] = %d, want 1", sum.HydrationVerbCounts["decisions"])
+	}
+}
+
 func TestPathResolver_UsesRuntimeDir(t *testing.T) {
 	dir := t.TempDir()
 	got := filePath(dir)

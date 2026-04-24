@@ -241,10 +241,14 @@ type WeeklySummary struct {
 	// full-render sizes fetched back. NetSavingsBytes and NetTokensSaved subtract
 	// the re-fetched bytes from the gross compact savings — a negative net means
 	// compaction induced more fetching than it saved.
-	HydrationCalls      int `json:"hydration_calls"`
-	HydrationBytesTotal int `json:"hydration_bytes_total"`
-	NetSavingsBytes     int `json:"net_savings_bytes"`
-	NetTokensSaved      int `json:"net_tokens_saved"`
+	// NOTE: aggregate approach — no per-ID causation tracking (ring-buffer
+	// deferred). Any full-record fetch counts as hydration regardless of
+	// whether a compact call preceded it for that specific ID.
+	HydrationCalls      int            `json:"hydration_calls"`
+	HydrationBytesTotal int            `json:"hydration_bytes_total"`
+	HydrationVerbCounts map[string]int `json:"hydration_verb_counts"`
+	NetSavingsBytes     int            `json:"net_savings_bytes"`
+	NetTokensSaved      int            `json:"net_tokens_saved"`
 	// Dupe-check aggregates (TASK-268). Helps answer: "how often do agents
 	// file anyway after seeing a dup warning?" High force/cancel ratios
 	// argue the threshold is off; zero MatchesHits with non-zero Calls
@@ -276,7 +280,7 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 		return nil, err
 	}
 
-	sum := &WeeklySummary{VerbCounts: map[string]int{}}
+	sum := &WeeklySummary{VerbCounts: map[string]int{}, HydrationVerbCounts: map[string]int{}}
 
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		line = strings.TrimSpace(line)
@@ -306,6 +310,7 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 		if e.Hydration {
 			sum.HydrationCalls++
 			sum.HydrationBytesTotal += e.BytesHydrated
+			sum.HydrationVerbCounts[e.Verb]++
 		}
 		if e.WithContext {
 			sum.WithContextCalls++
