@@ -5,8 +5,8 @@
 // File layout under ~/.gg/projects/<project_id>/spawn/:
 //
 //	heartbeat.json  — master session liveness (written by `gg spawn heartbeat`)
-//	session.json    — current queue-runner state (written by `gg spawn queue`)
-//	workers/        — one file per active worker pane (surface ID → task ID)
+//	queue.json      — current queue-runner state (written by `gg spawn queue start`)
+//	panes.json      — flat array of active worker panes (written by `gg spawn worker`)
 package spawn
 
 import (
@@ -21,11 +21,11 @@ import (
 // HeartbeatFile is the name of the liveness file under the spawn dir.
 const HeartbeatFile = "heartbeat.json"
 
-// SessionFile is the name of the queue runner state file under the spawn dir.
-const SessionFile = "session.json"
+// QueueFile is the name of the queue runner state file under the spawn dir.
+const QueueFile = "queue.json"
 
-// WorkersDir is the subdirectory holding per-worker surface files.
-const WorkersDir = "workers"
+// PanesFile is the flat JSON array of active worker panes under the spawn dir.
+const PanesFile = "panes.json"
 
 // StaleDuration is how long without a heartbeat before the master is
 // considered dead. The master calls `gg spawn heartbeat` to reset this.
@@ -53,12 +53,14 @@ type QueueSession struct {
 	Completed []string `json:"completed"`
 	// Skipped lists task IDs that were skipped (blocked/failed) this run.
 	Skipped []string `json:"skipped"`
-	// Current is the task ID currently being worked on (empty if idle).
-	Current string `json:"current,omitempty"`
+	// CurrentTask is the task ID currently being worked on (empty if idle).
+	CurrentTask string `json:"current_task,omitempty"`
+	// Paused is set true when the queue is suspended via `gg spawn queue pause`.
+	Paused bool `json:"paused,omitempty"`
 }
 
-// WorkerEntry records a live worker pane.
-type WorkerEntry struct {
+// WorkerPane records a live worker pane. Stored as elements of panes.json.
+type WorkerPane struct {
 	// SurfaceID is the opaque terminal pane handle.
 	SurfaceID string `json:"surface_id"`
 	// TaskID is the task the worker is handling.
@@ -74,10 +76,9 @@ func Dir(runtimeDir string) string {
 	return filepath.Join(runtimeDir, "spawn")
 }
 
-// ensureDir creates the spawn directory (and workers/ sub-dir) if absent.
+// ensureDir creates the spawn directory if absent.
 func ensureDir(runtimeDir string) error {
-	spawnDir := Dir(runtimeDir)
-	if err := os.MkdirAll(filepath.Join(spawnDir, WorkersDir), 0o700); err != nil {
+	if err := os.MkdirAll(Dir(runtimeDir), 0o700); err != nil {
 		return fmt.Errorf("create spawn dir: %w", err)
 	}
 	return nil
@@ -128,91 +129,113 @@ func IsMasterAlive(runtimeDir string) (bool, string) {
 	return true, ""
 }
 
-// WriteSession writes the queue runner session state.
-func WriteSession(runtimeDir string, s *QueueSession) error {
+// WriteQueue writes the queue runner session state to queue.json.
+func WriteQueue(runtimeDir string, s *QueueSession) error {
 	if err := ensureDir(runtimeDir); err != nil {
 		return err
 	}
 	s.UpdatedAt = time.Now().UTC()
-	return writeJSON(filepath.Join(Dir(runtimeDir), SessionFile), s)
+	return writeJSON(filepath.Join(Dir(runtimeDir), QueueFile), s)
 }
 
-// ReadSession reads the queue runner session state. Returns ErrNoSession when
-// no session exists.
-func ReadSession(runtimeDir string) (*QueueSession, error) {
-	path := filepath.Join(Dir(runtimeDir), SessionFile)
+// ReadQueue reads the queue runner session state. Returns ErrNoQueue when
+// no queue.json exists.
+func ReadQueue(runtimeDir string) (*QueueSession, error) {
+	path := filepath.Join(Dir(runtimeDir), QueueFile)
 	var s QueueSession
 	if err := readJSON(path, &s); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, ErrNoSession
+			return nil, ErrNoQueue
 		}
 		return nil, err
 	}
 	return &s, nil
 }
 
-// RegisterWorker writes a worker entry to the workers/ dir.
-func RegisterWorker(runtimeDir string, w WorkerEntry) error {
-	if err := ensureDir(runtimeDir); err != nil {
-		return err
-	}
-	// Use task ID as file name — one active worker per task is the invariant.
-	name := sanitizeFilename(w.TaskID) + ".json"
-	return writeJSON(filepath.Join(Dir(runtimeDir), WorkersDir, name), w)
-}
-
-// RemoveWorker deletes a worker entry (called after the worker pane exits).
-func RemoveWorker(runtimeDir, taskID string) error {
-	name := sanitizeFilename(taskID) + ".json"
-	path := filepath.Join(Dir(runtimeDir), WorkersDir, name)
+// DeleteQueue removes queue.json (called on queue cancel).
+func DeleteQueue(runtimeDir string) error {
+	path := filepath.Join(Dir(runtimeDir), QueueFile)
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
 }
 
-// ListWorkers returns all registered worker entries.
-func ListWorkers(runtimeDir string) ([]WorkerEntry, error) {
-	dir := filepath.Join(Dir(runtimeDir), WorkersDir)
-	entries, err := os.ReadDir(dir)
+// readPanes reads panes.json, returning an empty slice if the file is absent.
+func readPanes(runtimeDir string) ([]WorkerPane, error) {
+	path := filepath.Join(Dir(runtimeDir), PanesFile)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	var workers []WorkerEntry
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		var w WorkerEntry
-		if rErr := readJSON(filepath.Join(dir, e.Name()), &w); rErr == nil {
-			workers = append(workers, w)
+	var panes []WorkerPane
+	if err := json.Unmarshal(b, &panes); err != nil {
+		return nil, fmt.Errorf("parse panes.json: %w", err)
+	}
+	return panes, nil
+}
+
+// writePanes writes panes.json.
+func writePanes(runtimeDir string, panes []WorkerPane) error {
+	if err := ensureDir(runtimeDir); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(panes, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal panes: %w", err)
+	}
+	path := filepath.Join(Dir(runtimeDir), PanesFile)
+	if err := os.WriteFile(path, append(b, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+// RegisterPane adds a worker pane to panes.json.
+func RegisterPane(runtimeDir string, w WorkerPane) error {
+	panes, err := readPanes(runtimeDir)
+	if err != nil {
+		return err
+	}
+	// Remove any stale entry for the same task ID before adding.
+	filtered := panes[:0]
+	for _, p := range panes {
+		if p.TaskID != w.TaskID {
+			filtered = append(filtered, p)
 		}
 	}
-	return workers, nil
+	filtered = append(filtered, w)
+	return writePanes(runtimeDir, filtered)
+}
+
+// RemovePane removes a worker pane from panes.json by task ID.
+func RemovePane(runtimeDir, taskID string) error {
+	panes, err := readPanes(runtimeDir)
+	if err != nil {
+		return err
+	}
+	filtered := panes[:0]
+	for _, p := range panes {
+		if p.TaskID != taskID {
+			filtered = append(filtered, p)
+		}
+	}
+	return writePanes(runtimeDir, filtered)
+}
+
+// ListPanes returns all registered worker panes from panes.json.
+func ListPanes(runtimeDir string) ([]WorkerPane, error) {
+	return readPanes(runtimeDir)
 }
 
 // ErrNoHeartbeat is returned when no heartbeat file exists.
 var ErrNoHeartbeat = errors.New("no heartbeat file")
 
-// ErrNoSession is returned when no session file exists.
-var ErrNoSession = errors.New("no spawn session")
-
-// sanitizeFilename replaces characters that are unsafe in filenames.
-func sanitizeFilename(s string) string {
-	out := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' {
-			out = append(out, c)
-		} else {
-			out = append(out, '_')
-		}
-	}
-	return string(out)
-}
+// ErrNoQueue is returned when no queue.json exists.
+var ErrNoQueue = errors.New("no queue session")
 
 func writeJSON(path string, v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")

@@ -39,6 +39,18 @@ var PreTaskDoneReviewRequiredHook string
 //go:embed pre-task-done-master-guard.sh
 var PreTaskDoneMasterGuardHook string
 
+//go:embed worker-liveness-check.sh
+var WorkerLivenessCheckHook string
+
+//go:embed 50-master-guard.sh
+var MasterGuardPreToolUseHook string
+
+//go:embed 45-queue-advance.sh
+var QueueAdvanceHook string
+
+//go:embed 46-worker-heartbeat.sh
+var WorkerHeartbeatHook string
+
 //go:embed 90-bug-repros.sh
 var BugReprosHook string
 
@@ -68,6 +80,10 @@ func ArtifactSHAs() map[string]string {
 		"hooks/pre-task-done.d/30-file-size.sh":        FileSizeGateHook,
 		"hooks/pre-task-done.d/40-review-required.sh":  PreTaskDoneReviewRequiredHook,
 		"hooks/pre-task-done.d/50-master-guard.sh":     PreTaskDoneMasterGuardHook,
+		"hooks/pre-task-done.d/50-worker-liveness-check.sh": WorkerLivenessCheckHook,
+		"hooks/pre-tool-use.d/50-master-guard.sh":           MasterGuardPreToolUseHook,
+		"hooks/task-done.d/45-queue-advance.sh":             QueueAdvanceHook,
+		"hooks/task-done.d/46-worker-heartbeat.sh":          WorkerHeartbeatHook,
 		"hooks/task-done.d/80-task-done-go.sh":   TaskDoneGoHook,
 		"templates/makefile-test-tiers.mk":       MakefileTestTiers,
 	}

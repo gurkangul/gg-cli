@@ -66,27 +66,19 @@ func TestIsMasterAlive_NoFile(t *testing.T) {
 func TestIsMasterAlive_Stale(t *testing.T) {
 	dir := t.TempDir()
 
-	// Write a heartbeat then manually backdate the file.
 	if err := spawn.WriteHeartbeat(dir, "claude-code"); err != nil {
 		t.Fatal(err)
 	}
 
-	// Overwrite with a stale timestamp directly.
 	staleTime := time.Now().Add(-10 * time.Minute)
 	hbPath := filepath.Join(spawn.Dir(dir), spawn.HeartbeatFile)
 
-	// Round-trip: read, adjust UpdatedAt, write back.
 	hb, err := spawn.ReadHeartbeat(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	hb.UpdatedAt = staleTime
-	b, err := os.ReadFile(hbPath)
-	_ = b
-	_ = err
+	_ = hb
 
-	// Write a fresh file with stale timestamp via the unexported json path.
-	// We test via the public API by mutating the file.
 	content := `{"pid":1,"agent":"claude-code","updated_at":"` + staleTime.UTC().Format(time.RFC3339) + `"}`
 	if err := os.WriteFile(hbPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -96,26 +88,25 @@ func TestIsMasterAlive_Stale(t *testing.T) {
 	if alive {
 		t.Errorf("expected stale heartbeat to report not-alive; reason=%s", reason)
 	}
-	_ = hb
 }
 
-func TestWriteReadSession(t *testing.T) {
+func TestWriteReadQueue(t *testing.T) {
 	dir := t.TempDir()
 
 	s := &spawn.QueueSession{
-		Agent:     "claude",
-		StartedAt: time.Now().UTC(),
-		Completed: []string{"TASK-001"},
-		Skipped:   []string{"TASK-002"},
-		Current:   "TASK-003",
+		Agent:       "claude",
+		StartedAt:   time.Now().UTC(),
+		Completed:   []string{"TASK-001"},
+		Skipped:     []string{"TASK-002"},
+		CurrentTask: "TASK-003",
 	}
-	if err := spawn.WriteSession(dir, s); err != nil {
-		t.Fatalf("WriteSession: %v", err)
+	if err := spawn.WriteQueue(dir, s); err != nil {
+		t.Fatalf("WriteQueue: %v", err)
 	}
 
-	got, err := spawn.ReadSession(dir)
+	got, err := spawn.ReadQueue(dir)
 	if err != nil {
-		t.Fatalf("ReadSession: %v", err)
+		t.Fatalf("ReadQueue: %v", err)
 	}
 	if got.Agent != s.Agent {
 		t.Errorf("Agent = %q, want %q", got.Agent, s.Agent)
@@ -123,72 +114,111 @@ func TestWriteReadSession(t *testing.T) {
 	if len(got.Completed) != 1 || got.Completed[0] != "TASK-001" {
 		t.Errorf("Completed = %v, want [TASK-001]", got.Completed)
 	}
-	if got.Current != "TASK-003" {
-		t.Errorf("Current = %q, want TASK-003", got.Current)
+	if got.CurrentTask != "TASK-003" {
+		t.Errorf("CurrentTask = %q, want TASK-003", got.CurrentTask)
 	}
 }
 
-func TestReadSession_NotExist(t *testing.T) {
+func TestReadQueue_NotExist(t *testing.T) {
 	dir := t.TempDir()
-	_, err := spawn.ReadSession(dir)
-	if !errors.Is(err, spawn.ErrNoSession) {
-		t.Errorf("got %v, want ErrNoSession", err)
+	_, err := spawn.ReadQueue(dir)
+	if !errors.Is(err, spawn.ErrNoQueue) {
+		t.Errorf("got %v, want ErrNoQueue", err)
 	}
 }
 
-func TestRegisterRemoveWorker(t *testing.T) {
+func TestDeleteQueue(t *testing.T) {
+	dir := t.TempDir()
+	s := &spawn.QueueSession{Agent: "claude", StartedAt: time.Now().UTC()}
+	if err := spawn.WriteQueue(dir, s); err != nil {
+		t.Fatal(err)
+	}
+	if err := spawn.DeleteQueue(dir); err != nil {
+		t.Fatalf("DeleteQueue: %v", err)
+	}
+	_, err := spawn.ReadQueue(dir)
+	if !errors.Is(err, spawn.ErrNoQueue) {
+		t.Errorf("expected ErrNoQueue after delete, got %v", err)
+	}
+}
+
+func TestRegisterRemovePane(t *testing.T) {
 	dir := t.TempDir()
 
-	w := spawn.WorkerEntry{
+	w := spawn.WorkerPane{
 		SurfaceID: "surface-abc",
 		TaskID:    "TASK-042",
 		Agent:     "claude",
 		SpawnedAt: time.Now().UTC(),
 	}
-	if err := spawn.RegisterWorker(dir, w); err != nil {
-		t.Fatalf("RegisterWorker: %v", err)
+	if err := spawn.RegisterPane(dir, w); err != nil {
+		t.Fatalf("RegisterPane: %v", err)
 	}
 
-	workers, err := spawn.ListWorkers(dir)
+	panes, err := spawn.ListPanes(dir)
 	if err != nil {
-		t.Fatalf("ListWorkers: %v", err)
+		t.Fatalf("ListPanes: %v", err)
 	}
-	if len(workers) != 1 {
-		t.Fatalf("expected 1 worker, got %d", len(workers))
+	if len(panes) != 1 {
+		t.Fatalf("expected 1 pane, got %d", len(panes))
 	}
-	if workers[0].TaskID != "TASK-042" {
-		t.Errorf("TaskID = %q, want TASK-042", workers[0].TaskID)
-	}
-
-	if err := spawn.RemoveWorker(dir, "TASK-042"); err != nil {
-		t.Fatalf("RemoveWorker: %v", err)
+	if panes[0].TaskID != "TASK-042" {
+		t.Errorf("TaskID = %q, want TASK-042", panes[0].TaskID)
 	}
 
-	workers, err = spawn.ListWorkers(dir)
-	if err != nil {
-		t.Fatal(err)
+	if err := spawn.RemovePane(dir, "TASK-042"); err != nil {
+		t.Fatalf("RemovePane: %v", err)
 	}
-	if len(workers) != 0 {
-		t.Errorf("expected 0 workers after removal, got %d", len(workers))
-	}
-}
 
-func TestListWorkers_EmptyDir(t *testing.T) {
-	dir := t.TempDir()
-	workers, err := spawn.ListWorkers(dir)
+	panes, err = spawn.ListPanes(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if workers != nil {
-		t.Errorf("expected nil slice for empty dir, got %v", workers)
+	if len(panes) != 0 {
+		t.Errorf("expected 0 panes after removal, got %d", len(panes))
 	}
 }
 
-func TestRemoveWorker_NotExist(t *testing.T) {
+func TestRegisterPane_Idempotent(t *testing.T) {
 	dir := t.TempDir()
-	// Should not error when file doesn't exist.
-	if err := spawn.RemoveWorker(dir, "TASK-999"); err != nil {
-		t.Errorf("RemoveWorker non-existent: %v", err)
+
+	w := spawn.WorkerPane{SurfaceID: "pane-1", TaskID: "TASK-001", Agent: "claude", SpawnedAt: time.Now().UTC()}
+	if err := spawn.RegisterPane(dir, w); err != nil {
+		t.Fatal(err)
+	}
+	// Re-register same task ID — should replace, not duplicate.
+	w2 := spawn.WorkerPane{SurfaceID: "pane-2", TaskID: "TASK-001", Agent: "claude", SpawnedAt: time.Now().UTC()}
+	if err := spawn.RegisterPane(dir, w2); err != nil {
+		t.Fatal(err)
+	}
+
+	panes, err := spawn.ListPanes(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(panes) != 1 {
+		t.Errorf("expected 1 pane after idempotent register, got %d", len(panes))
+	}
+	if panes[0].SurfaceID != "pane-2" {
+		t.Errorf("SurfaceID = %q, want pane-2", panes[0].SurfaceID)
+	}
+}
+
+func TestListPanes_Empty(t *testing.T) {
+	dir := t.TempDir()
+	panes, err := spawn.ListPanes(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if panes != nil {
+		t.Errorf("expected nil slice for empty dir, got %v", panes)
+	}
+}
+
+func TestRemovePane_NotExist(t *testing.T) {
+	dir := t.TempDir()
+	if err := spawn.RemovePane(dir, "TASK-999"); err != nil {
+		t.Errorf("RemovePane non-existent: %v", err)
 	}
 }
 

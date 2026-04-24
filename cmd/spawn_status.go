@@ -31,10 +31,10 @@ func runSpawnStatus(_ *cobra.Command, _ []string) error {
 	alive, aliveReason := spawn.IsMasterAlive(rt)
 
 	// Queue session.
-	sess, sessErr := spawn.ReadSession(rt)
+	sess, sessErr := spawn.ReadQueue(rt)
 
-	// Workers.
-	workers, workersErr := spawn.ListWorkers(rt)
+	// Worker panes.
+	workers, workersErr := spawn.ListPanes(rt)
 
 	return printJSON(buildSpawnStatusJSON(hb, alive, sess, workers), func() {
 		// --- Heartbeat ---
@@ -57,15 +57,19 @@ func runSpawnStatus(_ *cobra.Command, _ []string) error {
 
 		// --- Queue session ---
 		fmt.Println("── Queue Session ──")
-		if errors.Is(sessErr, spawn.ErrNoSession) {
-			fmt.Println("  No active queue session. Run 'gg spawn queue' to start one.")
+		if errors.Is(sessErr, spawn.ErrNoQueue) {
+			fmt.Println("  No active queue session. Run 'gg spawn queue start' to start one.")
 		} else if sessErr != nil {
 			fmt.Printf("  session error: %v\n", sessErr)
 		} else {
 			dur := time.Since(sess.StartedAt).Round(time.Second)
-			fmt.Printf("  Agent: %s  Running: %s\n", sess.Agent, dur)
-			if sess.Current != "" {
-				fmt.Printf("  Current task: %s\n", sess.Current)
+			pausedSuffix := ""
+			if sess.Paused {
+				pausedSuffix = " [PAUSED]"
+			}
+			fmt.Printf("  Agent: %s  Running: %s%s\n", sess.Agent, dur, pausedSuffix)
+			if sess.CurrentTask != "" {
+				fmt.Printf("  Current task: %s\n", sess.CurrentTask)
 			}
 			fmt.Printf("  Completed: %d  Skipped: %d\n", len(sess.Completed), len(sess.Skipped))
 		}
@@ -86,7 +90,7 @@ func runSpawnStatus(_ *cobra.Command, _ []string) error {
 	})
 }
 
-func buildSpawnStatusJSON(hb *spawn.Heartbeat, alive bool, sess *spawn.QueueSession, workers []spawn.WorkerEntry) map[string]any {
+func buildSpawnStatusJSON(hb *spawn.Heartbeat, alive bool, sess *spawn.QueueSession, workers []spawn.WorkerPane) map[string]any {
 	out := map[string]any{
 		"master_alive": alive,
 	}

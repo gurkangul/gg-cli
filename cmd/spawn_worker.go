@@ -94,17 +94,17 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Register the worker in the runtime spawn dir.
+	// Register the worker pane in panes.json.
 	rt, rtErr := spawnRuntimeDir()
 	if rtErr == nil {
-		w := spawn.WorkerEntry{
+		w := spawn.WorkerPane{
 			SurfaceID: string(surfaceID),
 			TaskID:    taskID,
 			Agent:     agentCmd,
 			SpawnedAt: time.Now().UTC(),
 		}
-		if regErr := spawn.RegisterWorker(rt, w); regErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ worker registration failed: %v\n", regErr)
+		if regErr := spawn.RegisterPane(rt, w); regErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ pane registration failed: %v\n", regErr)
 		}
 	}
 
