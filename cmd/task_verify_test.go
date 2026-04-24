@@ -377,3 +377,49 @@ func TestFirstLine(t *testing.T) {
 		}
 	}
 }
+
+// ── TASK-308: GG_INSIDE_HOOK env propagation ─────────────────────────────────
+
+// TestTaskHookEnv_GGInsideHookSet verifies that taskHookEnv sets GG_INSIDE_HOOK=1
+// so hook scripts and tests they invoke know they are running inside gg task done.
+// This is the root-cause fix for the race where go test ./... inside 10-go-verify.sh
+// conflicted with the parent gg process (tests accessing live project state saw
+// stale or conflicting Qdrant/git state).
+func TestTaskHookEnv_GGInsideHookSet(t *testing.T) {
+	env := taskHookEnv("TASK-308", "fix hook race", "proj-123")
+	got, ok := env["GG_INSIDE_HOOK"]
+	if !ok {
+		t.Fatal("taskHookEnv must include GG_INSIDE_HOOK key")
+	}
+	if got != "1" {
+		t.Errorf("GG_INSIDE_HOOK: got %q, want \"1\"", got)
+	}
+}
+
+// TestRunGateHooks_GGInsideHookPropagated verifies that runGateHooks passes
+// GG_INSIDE_HOOK=1 to the hook script's environment. We install a hook that
+// writes the value of GG_INSIDE_HOOK to a sentinel file, then assert the file
+// contains "1".
+func TestRunGateHooks_GGInsideHookPropagated(t *testing.T) {
+	ggDir := setupGGDir(t)
+
+	sentinel := filepath.Join(t.TempDir(), "inside_hook_value")
+	hookBody := "printf '%s' \"$GG_INSIDE_HOOK\" > " + sentinel
+	writePreTaskDoneHook(t, ggDir, "01-check-env.sh", hookBody)
+
+	cmd := &cobra.Command{}
+	cmd.SetErr(&bytes.Buffer{})
+
+	rej := runGateHooks(cmd, nil, "pre-task-done", "TASK-308", "test summary")
+	if rej != nil {
+		t.Fatalf("expected hook to pass, got rejection: %+v", rej)
+	}
+
+	data, err := os.ReadFile(sentinel)
+	if err != nil {
+		t.Fatalf("sentinel file not written — hook did not run: %v", err)
+	}
+	if string(data) != "1" {
+		t.Errorf("GG_INSIDE_HOOK in hook env: got %q, want \"1\"", string(data))
+	}
+}

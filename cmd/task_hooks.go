@@ -60,6 +60,11 @@ func taskHookEnv(taskID, summary, projectID string) map[string]string {
 		"GG_TASK_SUMMARY": summary,
 		"GG_PROJECT_ID":   projectID,
 		"GG_ACTOR":        actor,
+		// GG_INSIDE_HOOK=1 signals to tests and tools that they are running
+		// inside a pre-task-done hook invoked by the parent gg process. Tests
+		// that access live project state (git, Qdrant) should skip when this
+		// is set to avoid racing with the parent process.
+		"GG_INSIDE_HOOK": "1",
 	}
 }
 

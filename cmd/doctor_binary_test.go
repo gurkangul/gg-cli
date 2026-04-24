@@ -43,6 +43,9 @@ func TestIsGGCLISourceDir(t *testing.T) {
 // TestHeadCommitEpoch verifies that headCommitEpoch returns a plausible Unix
 // timestamp from the real gg-cli repo (the test runs inside the repo root).
 func TestHeadCommitEpoch(t *testing.T) {
+	if testing.Short() || os.Getenv("GG_INSIDE_HOOK") == "1" {
+		t.Skip("skipping live-git test in short/hook mode")
+	}
 	// Locate the repo root by walking up from the test binary's working dir.
 	// In `go test ./cmd/...`, the cwd is the package directory.
 	repoRoot, err := filepath.Abs("..")
