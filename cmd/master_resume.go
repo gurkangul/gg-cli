@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -65,7 +66,7 @@ func runMasterResume(cmd *cobra.Command, _ []string) error {
 		if d.qdrantDown {
 			qdrantNote = "(Qdrant unreachable — tasks/inbox/decisions unavailable)"
 		} else if d.qdrantSlow {
-			qdrantNote = "(Qdrant slow — results may be incomplete)"
+			qdrantNote = "(Qdrant slow — tasks/inbox/decisions unavailable)"
 		} else {
 			ctx, cancel := withTimeout(cmd.Context())
 			defer cancel()
@@ -95,7 +96,8 @@ func runMasterResume(cmd *cobra.Command, _ []string) error {
 		gitLines, hb, alive, sess, workers,
 		pendingTasks, readyTasks, messages, decisions,
 	), func() {
-		printMasterResume(
+		w := cmd.OutOrStdout()
+		printMasterResume(w,
 			gitLines, hb, hbErr, alive, aliveReason,
 			sess, sessErr, workers, workersErr,
 			pendingTasks, readyTasks, messages, decisions,
@@ -121,6 +123,7 @@ func recentGitLog() []string {
 }
 
 func printMasterResume(
+	w io.Writer,
 	gitLines []string,
 	hb *spawn.Heartbeat, hbErr error, alive bool, aliveReason string,
 	sess *spawn.QueueSession, sessErr error,
@@ -130,131 +133,135 @@ func printMasterResume(
 	decisions []store.Decision,
 	qdrantNote string,
 ) {
-	sep := func(title string) { fmt.Printf("\n══ %s ══\n", title) }
+	sep := func(title string) { fmt.Fprintf(w, "\n══ %s ══\n", title) }
 
 	// 1. Git log
 	sep("Recent Commits (git log --oneline -10)")
 	if len(gitLines) == 0 {
-		fmt.Println("  (unavailable)")
+		fmt.Fprintln(w, "  (unavailable)")
 	} else {
 		for _, l := range gitLines {
-			fmt.Printf("  %s\n", l)
+			fmt.Fprintf(w, "  %s\n", l)
 		}
 	}
 
 	// 2. Master liveness
 	sep("Master Liveness")
-	if errors.Is(hbErr, spawn.ErrNoHeartbeat) {
-		fmt.Println("  No heartbeat — master has not run `gg spawn heartbeat`.")
-	} else if hbErr != nil {
-		fmt.Printf("  heartbeat error: %v\n", hbErr)
-	} else {
+	if hbErr != nil {
+		if errors.Is(hbErr, spawn.ErrNoHeartbeat) {
+			fmt.Fprintln(w, "  No heartbeat — master has not run `gg spawn heartbeat`.")
+		} else {
+			fmt.Fprintf(w, "  heartbeat error: %v\n", hbErr)
+		}
+	} else if hb != nil {
 		icon := "✓"
 		if !alive {
 			icon = "✗"
 		}
 		age := time.Since(hb.UpdatedAt).Round(time.Second)
-		fmt.Printf("  %s last seen %s ago (agent: %s)\n", icon, age, hb.Agent)
+		fmt.Fprintf(w, "  %s last seen %s ago (agent: %s)\n", icon, age, hb.Agent)
 		if !alive {
-			fmt.Printf("    reason: %s\n", aliveReason)
+			fmt.Fprintf(w, "    reason: %s\n", aliveReason)
 		}
 	}
 
 	// Queue session
 	sep("Queue Session")
-	if errors.Is(sessErr, spawn.ErrNoQueue) {
-		fmt.Println("  No active queue session.")
-	} else if sessErr != nil {
-		fmt.Printf("  error: %v\n", sessErr)
-	} else {
+	if sessErr != nil {
+		if errors.Is(sessErr, spawn.ErrNoQueue) {
+			fmt.Fprintln(w, "  No active queue session.")
+		} else {
+			fmt.Fprintf(w, "  error: %v\n", sessErr)
+		}
+	} else if sess != nil {
 		dur := time.Since(sess.StartedAt).Round(time.Second)
 		paused := ""
 		if sess.Paused {
 			paused = " [PAUSED]"
 		}
-		fmt.Printf("  Agent: %s  Running: %s%s\n", sess.Agent, dur, paused)
+		fmt.Fprintf(w, "  Agent: %s  Running: %s%s\n", sess.Agent, dur, paused)
 		if sess.CurrentTask != "" {
-			fmt.Printf("  Current task: %s\n", sess.CurrentTask)
+			fmt.Fprintf(w, "  Current task: %s\n", sess.CurrentTask)
 		}
-		fmt.Printf("  Completed: %d  Skipped: %d\n", len(sess.Completed), len(sess.Skipped))
+		fmt.Fprintf(w, "  Completed: %d  Skipped: %d\n", len(sess.Completed), len(sess.Skipped))
 		if len(sess.Completed) > 0 {
-			fmt.Printf("  Completed IDs: %s\n", strings.Join(sess.Completed, ", "))
+			fmt.Fprintf(w, "  Completed IDs: %s\n", strings.Join(sess.Completed, ", "))
 		}
 	}
 
 	// Active worker panes
 	sep("Active Worker Panes")
 	if workersErr != nil {
-		fmt.Printf("  error: %v\n", workersErr)
+		fmt.Fprintf(w, "  error: %v\n", workersErr)
 	} else if len(workers) == 0 {
-		fmt.Println("  (none)")
+		fmt.Fprintln(w, "  (none)")
 	} else {
-		for _, w := range workers {
-			age := time.Since(w.SpawnedAt).Round(time.Second)
-			state := string(w.State)
+		for _, wp := range workers {
+			age := time.Since(wp.SpawnedAt).Round(time.Second)
+			state := string(wp.State)
 			if state == "" {
 				state = "working"
 			}
-			fmt.Printf("  ● %s  task: %s  pane: %s  age: %s  state: %s\n",
-				w.Agent, w.TaskID, w.SurfaceID, age, state)
+			fmt.Fprintf(w, "  ● %s  task: %s  pane: %s  age: %s  state: %s\n",
+				wp.Agent, wp.TaskID, wp.SurfaceID, age, state)
 		}
 	}
 
 	if qdrantNote != "" {
 		sep("Qdrant State")
-		fmt.Printf("  %s\n", qdrantNote)
+		fmt.Fprintf(w, "  %s\n", qdrantNote)
 		return
 	}
 
 	// 3. Pending tasks
 	sep(fmt.Sprintf("Pending Tasks (up to %d)", masterResumeMaxPendingTasks))
 	if len(pendingTasks) == 0 {
-		fmt.Println("  (none)")
+		fmt.Fprintln(w, "  (none)")
 	} else {
 		for _, t := range pendingTasks {
-			fmt.Printf("  %s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
+			fmt.Fprintf(w, "  %s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
 		}
 	}
 
 	// 4. Ready-for-live tasks
 	sep("Ready-for-Live Tasks (awaiting master review)")
 	if len(readyTasks) == 0 {
-		fmt.Println("  (none)")
+		fmt.Fprintln(w, "  (none)")
 	} else {
 		for _, t := range readyTasks {
 			plan := ""
 			if t.ReadyForLivePlan != "" {
 				plan = " — " + t.ReadyForLivePlan
 			}
-			fmt.Printf("  ◉ %s [%s] %s%s\n", t.ID, t.Priority, t.Title, plan)
+			fmt.Fprintf(w, "  ◉ %s [%s] %s%s\n", t.ID, t.Priority, t.Title, plan)
 		}
 	}
 
 	// 5. Inbox (including agent messages, peek)
 	sep("Unread Inbox (all audiences, peek)")
 	if len(messages) == 0 {
-		fmt.Println("  (empty)")
+		fmt.Fprintln(w, "  (empty)")
 	} else {
 		for _, m := range messages {
 			audience := ""
 			if m.Audience == "agents" {
 				audience = " [agent]"
 			}
-			fmt.Printf("  [%s → %s]%s %s\n", m.FromRole, m.ToRole, audience, compactTrim(m.Content, 100))
+			fmt.Fprintf(w, "  [%s → %s]%s %s\n", m.FromRole, m.ToRole, audience, compactTrim(m.Content, 100))
 		}
 	}
 
 	// 6. Recent decisions
 	sep("Recent Decisions (latest 10)")
 	if len(decisions) == 0 {
-		fmt.Println("  (none)")
+		fmt.Fprintln(w, "  (none)")
 	} else {
 		for _, dec := range decisions {
 			tags := ""
 			if len(dec.Tags) > 0 {
 				tags = " [" + strings.Join(dec.Tags, ",") + "]"
 			}
-			fmt.Printf("  D  %s  %s%s\n", dec.CreatedAt[:10], compactTrim(dec.Text, 80), tags)
+			fmt.Fprintf(w, "  D  %s  %s%s\n", shortDate(dec.CreatedAt), compactTrim(dec.Text, 80), tags)
 		}
 	}
 }
@@ -269,13 +276,33 @@ func buildMasterResumeJSON(
 	messages []store.Message,
 	decisions []store.Decision,
 ) map[string]any {
+	// Normalise nil slices to empty arrays so the JSON output is stable
+	// (null vs [] matters to callers parsing --json output).
+	if gitLines == nil {
+		gitLines = []string{}
+	}
+	if workers == nil {
+		workers = []spawn.WorkerPane{}
+	}
+	if pendingTasks == nil {
+		pendingTasks = []store.Task{}
+	}
+	if readyTasks == nil {
+		readyTasks = []store.Task{}
+	}
+	if messages == nil {
+		messages = []store.Message{}
+	}
+	if decisions == nil {
+		decisions = []store.Decision{}
+	}
 	out := map[string]any{
-		"git_log":         gitLines,
-		"master_alive":    alive,
-		"workers":         workers,
-		"pending_tasks":   pendingTasks,
-		"ready_for_live":  readyTasks,
-		"inbox_messages":  messages,
+		"git_log":          gitLines,
+		"master_alive":     alive,
+		"workers":          workers,
+		"pending_tasks":    pendingTasks,
+		"ready_for_live":   readyTasks,
+		"inbox_messages":   messages,
 		"recent_decisions": decisions,
 	}
 	if hb != nil {

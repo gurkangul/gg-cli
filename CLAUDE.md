@@ -126,4 +126,36 @@ unit-of-work invariant: pane ≡ task, closed pane ≡ approved task.
 
 The master's credibility comes from catching problems early, being honest about trade-offs, and never
 rubber-stamping. The worker's credibility comes from ACs met without silent narrowing.
+
+### Master resume protocol (handoff between sessions)
+
+When a fresh Opus session starts and the user types a continuation signal (e.g. "devam", "resume",
+"continue"), the master must re-hydrate from gg-cli rather than ask the user to re-explain. Run this
+exact sequence:
+
+```
+1. git log --oneline -10                            # recent commits + what landed
+2. gg spawn status                                  # active workers, heartbeat age, current queue session
+3. gg task list --status pending | head -20         # remaining backlog
+4. gg task list --status ready_for_live             # anything waiting for Opus lifecycle
+5. gg inbox --include-agents --peek                 # developer signals needing attention
+6. gg search "master-role OR pane-lifecycle OR auto-task-solve" --compact    # latest policy state
+7. cat ~/.gg/projects/<project-id>/spawn/panes.json  # pane → task mapping
+```
+
+Then decide:
+- **If `ready_for_live` tasks with pending review:** that's the next action — review the commit, close
+  the lifecycle, close the pane via `cmux close-surface --surface <id>`, clear panes.json entry.
+- **If an active worker pane is listed:** resume monitoring that pane at 90–180s cadence (per the v2
+  cmux-trigger + pane-lifecycle clauses above).
+- **If queue is empty but pending tasks exist:** pick the next code-implementation task (skip dogfood /
+  measurement tasks) and `gg spawn worker --task TASK-N` — one pane per task, lifecycle tied to pane
+  lifecycle.
+
+The master does NOT ask the user which task to pick or what state to resume from — gg-cli has the
+answer. The user's "devam" means "trust the recorded state, continue the loop."
+
+Session continuity works because the unit of truth is gg's append-only store, not in-memory context:
+decisions, task states, commits, heartbeat, pane registry, and CLAUDE.md policy all survive a session
+boundary. A new master can pick up where the previous one left off in under 30 seconds.
 <!-- gg:master-role:end -->
