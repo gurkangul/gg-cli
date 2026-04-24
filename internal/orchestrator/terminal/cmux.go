@@ -31,52 +31,71 @@ func newCmuxWithRunner(r func(ctx context.Context, args ...string) ([]byte, erro
 }
 
 func (c *cmuxTerminal) NewSplit(ctx context.Context, opts SplitOpts) (SurfaceID, error) {
-	args := []string{"new-split"}
-	if opts.Dir == SplitVertical {
-		args = append(args, "--vertical")
+	// cmux new-split requires a positional direction: left|right|up|down.
+	// Map SplitDir: vertical → "right" (side-by-side), horizontal → "down" (above/below).
+	dir := "right"
+	if opts.Dir == SplitHorizontal {
+		dir = "down"
 	}
+	args := []string{"new-split", dir}
 	if opts.Percent > 0 {
 		args = append(args, fmt.Sprintf("--percent=%d", opts.Percent))
 	}
 	for _, e := range opts.Env {
 		args = append(args, "--env="+e)
 	}
-	if opts.Cmd != "" {
-		args = append(args, "--", opts.Cmd)
-	}
+	// Note: cmux new-split does not accept a trailing command — opts.Cmd is
+	// delivered via Send() after the pane opens (see cmd/spawn_worker.go).
 	out, err := c.runner(ctx, args...)
 	if err != nil {
 		return "", err
 	}
-	id := SurfaceID(strings.TrimSpace(string(out)))
+	// cmux new-split output shape: "OK surface:N workspace:M\n".
+	// Extract the surface:N token so downstream --surface=<id> calls work.
+	id := parseSurfaceID(string(out))
 	if id == "" {
-		return "", fmt.Errorf("cmux new-split returned empty surface id")
+		return "", fmt.Errorf("cmux new-split returned unparseable output: %q", strings.TrimSpace(string(out)))
 	}
 	return id, nil
 }
 
+// parseSurfaceID extracts the "surface:N" ref from cmux new-split output.
+// Output format: "OK surface:29 workspace:1" (or bare "surface:29" in older builds).
+func parseSurfaceID(out string) SurfaceID {
+	for _, tok := range strings.Fields(out) {
+		if strings.HasPrefix(tok, "surface:") {
+			return SurfaceID(tok)
+		}
+	}
+	return ""
+}
+
+// cmux CLI quirk: --flag=value form mis-parses (treats positional args as the
+// flag value). Pass --flag and value as separate tokens instead.
+
 func (c *cmuxTerminal) Send(ctx context.Context, id SurfaceID, text string) error {
-	_, err := c.runner(ctx, "send", string(id), text)
+	_, err := c.runner(ctx, "send", "--surface", string(id), text)
 	return err
 }
 
 func (c *cmuxTerminal) SendKey(ctx context.Context, id SurfaceID, key string) error {
-	_, err := c.runner(ctx, "send-key", string(id), key)
+	_, err := c.runner(ctx, "send-key", "--surface", string(id), key)
 	return err
 }
 
 func (c *cmuxTerminal) ReadScreen(ctx context.Context, id SurfaceID) ([]byte, error) {
-	out, err := c.runner(ctx, "read-screen", string(id))
+	out, err := c.runner(ctx, "read-screen", "--surface", string(id))
 	return out, err
 }
 
 func (c *cmuxTerminal) Focus(ctx context.Context, id SurfaceID) error {
-	_, err := c.runner(ctx, "focus-pane", string(id))
+	// Note: focus-pane uses --pane flag (not --surface like the other ops).
+	_, err := c.runner(ctx, "focus-pane", "--pane", string(id))
 	return err
 }
 
 func (c *cmuxTerminal) Close(ctx context.Context, id SurfaceID) error {
-	_, err := c.runner(ctx, "close-surface", string(id))
+	_, err := c.runner(ctx, "close-surface", "--surface", string(id))
 	return err
 }
 

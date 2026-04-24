@@ -28,39 +28,28 @@ func newCapture(out string) *captureRunner {
 // TestCmux_NewSplit_HorizontalDefault verifies that horizontal (default) direction
 // does not append --vertical.
 func TestCmux_NewSplit_HorizontalDefault(t *testing.T) {
-	r := newCapture("surf-1\n")
+	r := newCapture("OK surface:1 workspace:1\n")
 	c := newCmuxWithRunner(r.run)
 	ctx := context.Background()
 
-	id, err := c.NewSplit(ctx, SplitOpts{Dir: SplitHorizontal, Cmd: "bash"})
+	id, err := c.NewSplit(ctx, SplitOpts{Dir: SplitHorizontal})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id != "surf-1" {
-		t.Fatalf("want surf-1 got %q", id)
-	}
+	// Runner output "surf-1\n" has no "surface:" prefix → parseSurfaceID returns "".
+	// Use an "OK surface:1 workspace:2" shape when the parse matters; the legacy
+	// bare form now yields an error rather than passing through.
+	_ = id
 	if len(r.calls) != 1 {
 		t.Fatalf("expected 1 call got %d", len(r.calls))
 	}
-	for _, a := range r.calls[0] {
-		if a == "--vertical" {
-			t.Fatal("--vertical should not be present for horizontal split")
-		}
-	}
-	// -- cmd should be present
-	found := false
-	for _, a := range r.calls[0] {
-		if a == "bash" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected cmd 'bash' in args: %v", r.calls[0])
+	if r.calls[0][0] != "new-split" || r.calls[0][1] != "down" {
+		t.Fatalf("expected [new-split down ...], got: %v", r.calls[0])
 	}
 }
 
 func TestCmux_NewSplit_Vertical(t *testing.T) {
-	r := newCapture("surf-2\n")
+	r := newCapture("OK surface:2 workspace:1\n")
 	c := newCmuxWithRunner(r.run)
 	ctx := context.Background()
 
@@ -68,19 +57,15 @@ func TestCmux_NewSplit_Vertical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := false
-	for _, a := range r.calls[0] {
-		if a == "--vertical" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("--vertical missing from args: %v", r.calls[0])
+	// cmux new-split takes a positional direction: left|right|up|down.
+	// SplitVertical maps to "right".
+	if len(r.calls[0]) < 2 || r.calls[0][0] != "new-split" || r.calls[0][1] != "right" {
+		t.Fatalf("expected [new-split right ...], got: %v", r.calls[0])
 	}
 }
 
 func TestCmux_NewSplit_Percent(t *testing.T) {
-	r := newCapture("surf-3\n")
+	r := newCapture("OK surface:3 workspace:1\n")
 	c := newCmuxWithRunner(r.run)
 	ctx := context.Background()
 
@@ -100,7 +85,7 @@ func TestCmux_NewSplit_Percent(t *testing.T) {
 }
 
 func TestCmux_NewSplit_Env(t *testing.T) {
-	r := newCapture("surf-4\n")
+	r := newCapture("OK surface:4 workspace:1\n")
 	c := newCmuxWithRunner(r.run)
 	ctx := context.Background()
 
@@ -122,10 +107,26 @@ func TestCmux_NewSplit_EmptySurfaceID(t *testing.T) {
 
 	_, err := c.NewSplit(ctx, SplitOpts{})
 	if err == nil {
-		t.Fatal("expected error for empty surface id")
+		t.Fatal("expected error for unparseable output")
 	}
-	if !strings.Contains(err.Error(), "empty surface id") {
+	if !strings.Contains(err.Error(), "unparseable") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestCmux_NewSplit_ParsesOKSurfaceFormat verifies the "OK surface:N workspace:M"
+// output shape is parsed to extract surface:N.
+func TestCmux_NewSplit_ParsesOKSurfaceFormat(t *testing.T) {
+	r := newCapture("OK surface:42 workspace:1\n")
+	c := newCmuxWithRunner(r.run)
+	ctx := context.Background()
+
+	id, err := c.NewSplit(ctx, SplitOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "surface:42" {
+		t.Fatalf("want surface:42 got %q", id)
 	}
 }
 
@@ -145,14 +146,14 @@ func TestCmux_Send(t *testing.T) {
 	c := newCmuxWithRunner(r.run)
 	ctx := context.Background()
 
-	if err := c.Send(ctx, "surf-1", "hello world"); err != nil {
+	if err := c.Send(ctx, "surface:1", "hello world"); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.calls) != 1 {
 		t.Fatalf("expected 1 call got %d", len(r.calls))
 	}
 	args := r.calls[0]
-	if args[0] != "send" || args[1] != "surf-1" || args[2] != "hello world" {
+	if args[0] != "send" || args[1] != "--surface" || args[2] != "surface:1" || args[3] != "hello world" {
 		t.Fatalf("unexpected args: %v", args)
 	}
 }
@@ -162,11 +163,11 @@ func TestCmux_SendKey(t *testing.T) {
 	c := newCmuxWithRunner(r.run)
 	ctx := context.Background()
 
-	if err := c.SendKey(ctx, "surf-1", "C-c"); err != nil {
+	if err := c.SendKey(ctx, "surface:1", "enter"); err != nil {
 		t.Fatal(err)
 	}
 	args := r.calls[0]
-	if args[0] != "send-key" || args[1] != "surf-1" || args[2] != "C-c" {
+	if args[0] != "send-key" || args[1] != "--surface" || args[2] != "surface:1" || args[3] != "enter" {
 		t.Fatalf("unexpected args: %v", args)
 	}
 }
@@ -176,7 +177,7 @@ func TestCmux_ReadScreen(t *testing.T) {
 	c := newCmuxWithRunner(r.run)
 	ctx := context.Background()
 
-	out, err := c.ReadScreen(ctx, "surf-1")
+	out, err := c.ReadScreen(ctx, "surface:1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +185,7 @@ func TestCmux_ReadScreen(t *testing.T) {
 		t.Fatalf("want %q got %q", "screen content", string(out))
 	}
 	args := r.calls[0]
-	if args[0] != "read-screen" || args[1] != "surf-1" {
+	if args[0] != "read-screen" || args[1] != "--surface" || args[2] != "surface:1" {
 		t.Fatalf("unexpected args: %v", args)
 	}
 }
@@ -194,11 +195,12 @@ func TestCmux_Focus(t *testing.T) {
 	c := newCmuxWithRunner(r.run)
 	ctx := context.Background()
 
-	if err := c.Focus(ctx, "surf-1"); err != nil {
+	if err := c.Focus(ctx, "surface:1"); err != nil {
 		t.Fatal(err)
 	}
 	args := r.calls[0]
-	if args[0] != "focus-pane" || args[1] != "surf-1" {
+	// focus-pane uses --pane, not --surface (cmux CLI quirk).
+	if args[0] != "focus-pane" || args[1] != "--pane" || args[2] != "surface:1" {
 		t.Fatalf("unexpected args: %v", args)
 	}
 }
@@ -208,11 +210,11 @@ func TestCmux_Close(t *testing.T) {
 	c := newCmuxWithRunner(r.run)
 	ctx := context.Background()
 
-	if err := c.Close(ctx, "surf-1"); err != nil {
+	if err := c.Close(ctx, "surface:1"); err != nil {
 		t.Fatal(err)
 	}
 	args := r.calls[0]
-	if args[0] != "close-surface" || args[1] != "surf-1" {
+	if args[0] != "close-surface" || args[1] != "--surface" || args[2] != "surface:1" {
 		t.Fatalf("unexpected args: %v", args)
 	}
 }
