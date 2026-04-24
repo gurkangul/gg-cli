@@ -87,6 +87,7 @@ import sys, re
 text = sys.stdin.read()
 lines = text.splitlines()
 seen = set()
+seen_gap_labels = set()   # dedup Gap items by label, not full text
 acs = []   # list of (text, gap_label)
 
 def add(t, gap_label=''):
@@ -102,10 +103,14 @@ for line in lines:
         add(m.group(2).strip() or 'AC-' + m.group(1))
 
 # Pass 2: Gap lines — 'Gap A:', 'Gap B:', 'Gap 1:', '**Gap A**' etc.
+# Dedup by label: first occurrence of 'Gap A' wins; later narrative mentions are skipped.
 for line in lines:
     m = re.match(r'^\s*(?:\*{1,2})?Gap\s+([A-Z0-9]+)(?:\*{1,2})?[:\s]+(.*)', line, re.IGNORECASE)
     if m:
         label = m.group(1).upper()
+        if label in seen_gap_labels:
+            continue
+        seen_gap_labels.add(label)
         add(('Gap ' + m.group(1) + ': ' + m.group(2)).strip(': '), label)
 
 # Pass 3: numbered items at line start — '1. text', '1) text', '1: text'

@@ -230,6 +230,17 @@ func runDoctorInstallTaskHooks() error {
 		installed += n
 	}
 
+	// 60-lint-gate.sh: blocks when golangci-lint produces MORE issues than the
+	// grandfathered baseline in .gg/lint-baseline.json. Initialise the baseline
+	// with: gg doctor --capture-lint-baseline
+	lintGatePath := filepath.Join(preDir, "60-lint-gate.sh")
+	if n, err := installHookIfAbsent(lintGatePath, templates.PreTaskDoneLintGateHook,
+		"lint gate — blocks when golangci-lint issue count exceeds baseline (GG_LINT_GATE=on|warn|off); capture baseline: gg doctor --capture-lint-baseline"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
 	// Makefile tier template: written to .gg/templates/ so humans can discover
 	// + opt-in via `include .gg/templates/makefile-test-tiers.mk`.
 	tmplDir := filepath.Join(ggDir, "templates")

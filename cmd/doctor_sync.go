@@ -1,10 +1,15 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gurkangul/gg-cli/internal/artifacts"
 	"github.com/gurkangul/gg-cli/internal/config"
@@ -141,6 +146,8 @@ func artifactContent(key string) (string, bool) {
 		return templates.FileSizeGateHook, true
 	case "hooks/pre-task-done.d/50-ac-attestation.sh":
 		return templates.PreTaskDoneACAttestationHook, true
+	case "hooks/pre-task-done.d/60-lint-gate.sh":
+		return templates.PreTaskDoneLintGateHook, true
 	case "hooks/pre-task-done.d/50-worker-liveness-check.sh":
 		return templates.WorkerLivenessCheckHook, true
 	case "hooks/pre-tool-use.d/50-master-guard.sh":
@@ -183,5 +190,66 @@ func runDoctorSyncBaseline() error {
 	}
 
 	fmt.Printf("file-size baseline updated: %d file(s) grandfathered in .gg/file-size-baseline.json\n", len(b.Files))
+	return nil
+}
+
+// lintBaseline is the JSON shape written to .gg/lint-baseline.json.
+type lintBaseline struct {
+	Version     int    `json:"version"`
+	CapturedAt  string `json:"captured_at"`
+	IssueCount  int    `json:"issue_count"`
+}
+
+// runDoctorCaptureLintBaseline runs golangci-lint, counts the current issues,
+// and writes the result to .gg/lint-baseline.json. The hook (60-lint-gate.sh)
+// reads this file to determine whether a new commit introduced regressions.
+func runDoctorCaptureLintBaseline() error {
+	ggDir, err := config.GGDir()
+	if err != nil {
+		return fmt.Errorf("not inside a gg project (run `gg init` first): %w", err)
+	}
+
+	// Check golangci-lint is available.
+	if _, lookErr := exec.LookPath("golangci-lint"); lookErr != nil {
+		return fmt.Errorf("golangci-lint not found — install via https://golangci-lint.run/usage/install/")
+	}
+
+	fmt.Println("Running golangci-lint to capture baseline...")
+	// golangci-lint exits non-zero when there are issues — that is expected.
+	// We only treat it as a fatal error when the binary crashes (non-zero exit
+	// AND no output produced at all).
+	out, runErr := exec.Command("golangci-lint", "run", "./...").Output() //nolint:gosec
+	rawOutput := strings.TrimSpace(string(out))
+	if runErr != nil && rawOutput == "" {
+		// ExitError with no stdout usually means binary crash or wrong flags.
+		return fmt.Errorf("golangci-lint failed to run: %w", runErr)
+	}
+
+	// Parse the "N issues:" summary line that golangci-lint emits at the end of
+	// its run. This is stable across v1 and v2 regardless of output format flags.
+	issueCount := 0
+	summaryRe := regexp.MustCompile(`(?m)^(\d+) issues?:`)
+	if m := summaryRe.FindStringSubmatch(rawOutput); m != nil {
+		issueCount, _ = strconv.Atoi(m[1])
+	}
+
+	b := lintBaseline{
+		Version:    1,
+		CapturedAt: time.Now().UTC().Format(time.RFC3339),
+		IssueCount: issueCount,
+	}
+	data, marshalErr := json.MarshalIndent(b, "", "  ")
+	if marshalErr != nil {
+		return fmt.Errorf("marshal baseline: %w", marshalErr)
+	}
+	baselinePath := filepath.Join(ggDir, "lint-baseline.json")
+	if writeErr := os.WriteFile(baselinePath, append(data, '\n'), 0o644); writeErr != nil {
+		return fmt.Errorf("write %s: %w", baselinePath, writeErr)
+	}
+
+	fmt.Printf("lint baseline captured: %d issue(s) grandfathered in %s\n", issueCount, baselinePath)
+	if issueCount > 0 {
+		fmt.Println("New commits must not increase this count (60-lint-gate.sh blocks `gg task done` on regressions).")
+	}
 	return nil
 }

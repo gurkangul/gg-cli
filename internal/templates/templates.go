@@ -63,6 +63,9 @@ var SmokeE2EHook string
 //go:embed 30-file-size.sh
 var FileSizeGateHook string
 
+//go:embed pre-task-done-lint-gate.sh
+var PreTaskDoneLintGateHook string
+
 //go:embed makefile-test-tiers.mk
 var MakefileTestTiers string
 
@@ -83,6 +86,7 @@ func ArtifactSHAs() map[string]string {
 		"hooks/pre-task-done.d/30-file-size.sh":        FileSizeGateHook,
 		"hooks/pre-task-done.d/40-review-required.sh":  PreTaskDoneReviewRequiredHook,
 		"hooks/pre-task-done.d/50-ac-attestation.sh":   PreTaskDoneACAttestationHook,
+		"hooks/pre-task-done.d/60-lint-gate.sh":        PreTaskDoneLintGateHook,
 		"hooks/pre-task-done.d/50-worker-liveness-check.sh": WorkerLivenessCheckHook,
 		"hooks/pre-tool-use.d/50-master-guard.sh":           MasterGuardPreToolUseHook,
 		"hooks/task-done.d/45-queue-advance.sh":             QueueAdvanceHook,

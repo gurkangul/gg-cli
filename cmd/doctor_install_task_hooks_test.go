@@ -466,3 +466,85 @@ func TestWrapLegacyPostHook_BodyWithoutShebang_WrapsCleanly(t *testing.T) {
 		t.Errorf("expected 1 shebang from wrapper, got %d:\n%s", n, got)
 	}
 }
+
+// ── lint gate tests (TASK-301) ────────────────────────────────────────────────
+
+// 60-lint-gate.sh is always installed alongside the other language-agnostic
+// gates. It self-skips at runtime when no lint-baseline.json is present.
+func TestInstallTaskHooks_LintGate_AlwaysInstalled(t *testing.T) {
+	f := newHookInstallFixture(t, false, false)
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+	lintPath := filepath.Join(f.preDir, "60-lint-gate.sh")
+	if !installerShebang(t, lintPath) {
+		t.Errorf("expected lint gate at %s", lintPath)
+	}
+	// Must be executable.
+	info, err := os.Stat(lintPath)
+	if err != nil {
+		t.Fatalf("stat %s: %v", lintPath, err)
+	}
+	if info.Mode()&0o100 == 0 {
+		t.Errorf("%s should be executable, got mode %v", lintPath, info.Mode())
+	}
+}
+
+// Lint gate is also installed alongside Go-project hooks.
+func TestInstallTaskHooks_LintGate_InstalledWithGoProject(t *testing.T) {
+	f := newHookInstallFixture(t, true, false)
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+	lintPath := filepath.Join(f.preDir, "60-lint-gate.sh")
+	if !installerShebang(t, lintPath) {
+		t.Errorf("expected lint gate at %s", lintPath)
+	}
+}
+
+// Lint gate content must reference the baseline file path and the bypass env var.
+func TestInstallTaskHooks_LintGate_ContentHasKeySignals(t *testing.T) {
+	f := newHookInstallFixture(t, false, false)
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(f.preDir, "60-lint-gate.sh"))
+	if err != nil {
+		t.Fatalf("read lint hook: %v", err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		"lint-baseline.json",
+		"GG_LINT_GATE",
+		"GG_ALLOW_LINT_REGRESSIONS",
+		"golangci-lint",
+		"issue_count",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("lint gate hook missing expected content %q", body)
+		}
+	}
+}
+
+// Idempotency: re-running installer must not overwrite user edits to lint gate.
+func TestInstallTaskHooks_LintGate_Idempotent(t *testing.T) {
+	f := newHookInstallFixture(t, false, false)
+	if err := os.MkdirAll(f.preDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	custom := filepath.Join(f.preDir, "60-lint-gate.sh")
+	customBody := "#!/bin/sh\n# user override — must survive reinstall\nexit 0\n"
+	if err := os.WriteFile(custom, []byte(customBody), 0o755); err != nil {
+		t.Fatalf("write custom lint gate: %v", err)
+	}
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+	got, err := os.ReadFile(custom)
+	if err != nil {
+		t.Fatalf("read post-install: %v", err)
+	}
+	if string(got) != customBody {
+		t.Errorf("installer overwrote user edits to lint gate")
+	}
+}

@@ -42,8 +42,9 @@ var (
 	doctorCheckContract      bool
 	doctorContractFix        bool
 	doctorContractForceReset bool
-	doctorSyncBaseline       bool
-	doctorCheckMasterRole    bool
+	doctorSyncBaseline         bool
+	doctorCaptureLintBaseline  bool
+	doctorCheckMasterRole      bool
 )
 
 func init() {
@@ -85,6 +86,8 @@ func init() {
 		"with --check-contract --fix: overwrite manually-edited (DRIFTED) contract blocks")
 	doctorCmd.Flags().BoolVar(&doctorSyncBaseline, "sync-baseline", false,
 		"rescan project and refresh .gg/file-size-baseline.json with current line counts")
+	doctorCmd.Flags().BoolVar(&doctorCaptureLintBaseline, "capture-lint-baseline", false,
+		"run golangci-lint and write .gg/lint-baseline.json; the 60-lint-gate.sh pre-done hook uses this to block new warnings")
 	doctorCmd.Flags().BoolVar(&doctorCheckMasterRole, "check-master-role", false,
 		"compare the managed master-role block in CLAUDE.md against the current template (exit 1 on drift); combine with --fix to repair")
 	rootCmd.AddCommand(doctorCmd)
@@ -180,6 +183,9 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	}
 	if doctorSyncBaseline {
 		return runDoctorSyncBaseline()
+	}
+	if doctorCaptureLintBaseline {
+		return runDoctorCaptureLintBaseline()
 	}
 
 	fmt.Println("GG Doctor")
