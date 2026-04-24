@@ -66,39 +66,74 @@ if [ -z "$DETAIL" ]; then
   exit 0
 fi
 
-# ── 3. Parse ACCEPTANCE bullet points ─────────────────────────────────────────
-# Extract lines from the ACCEPTANCE section. Only "- " bullet lines count as
-# ACs — this prevents ordinary prose containing "AC" as a substring from
-# producing false positives.
+# ── 3. Parse AC-like anchors from anywhere in Detail ──────────────────────────
+# Extracts ALL enumerable criteria from the Detail field regardless of section:
+#   (1) Explicit "AC-N:" lines (standalone or prefixed)
+#   (2) "Gap A / Gap B / Gap N" lines
+#   (3) Numbered-item lines at line start: "1." / "1)" / "1:"
+#   (4) "- " bullet lines under ACCEPTANCE/CRITERIA/TESTS/CRITERIA heading
+#   (5) "- " bullet lines elsewhere (lower priority, deduplicated)
+#
+# Items are collected in priority order; duplicates suppressed by text.
+# The output is tab-separated: sequential_number\ttext
 ACS=$(printf '%s' "$DETAIL" | $PY -c "
 import sys, re
 
 text = sys.stdin.read()
-
-# Locate the ACCEPTANCE block (case-insensitive standalone heading)
-m = re.search(r'(?im)^ACCEPTANCE(?:\s+(?:CRITERIA|TESTS?))?\s*$', text)
-if not m:
-    sys.exit(0)
-
-after = text[m.end():]
-
+lines = text.splitlines()
+seen = set()
 acs = []
-for line in after.splitlines():
-    stripped = line.strip()
-    if not stripped:
-        continue
-    if stripped.startswith('- '):
-        acs.append(stripped[2:].strip())
-    elif acs:
-        # First non-bullet, non-blank line after bullets = new section
-        break
+
+def add(t):
+    t = t.strip()
+    if t and t not in seen:
+        seen.add(t)
+        acs.append(t)
+
+# Pass 1: explicit AC-N: anchors anywhere (e.g. 'AC-1: something')
+for line in lines:
+    m = re.match(r'^\s*AC-(\d+)[:\s]+(.*)', line, re.IGNORECASE)
+    if m:
+        add(m.group(2).strip() or 'AC-' + m.group(1))
+
+# Pass 2: Gap lines — 'Gap A:', 'Gap B:', 'Gap 1:', '**Gap A**' etc.
+for line in lines:
+    m = re.match(r'^\s*(?:\*{1,2})?Gap\s+([A-Z0-9]+)(?:\*{1,2})?[:\s]+(.*)', line, re.IGNORECASE)
+    if m:
+        add(('Gap ' + m.group(1) + ': ' + m.group(2)).strip(': '))
+
+# Pass 3: numbered items at line start — '1. text', '1) text', '1: text'
+for line in lines:
+    m = re.match(r'^\s*(\d+)[.):\s]\s+(.+)', line)
+    if m:
+        add(m.group(2).strip())
+
+# Pass 4: '- ' bullets under ACCEPTANCE / CRITERIA / TESTS heading
+acc_m = re.search(r'(?im)^ACCEPTANCE(?:\s+(?:CRITERIA|TESTS?))?\s*$', text)
+if acc_m:
+    after = text[acc_m.end():]
+    for line in after.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith('- '):
+            add(s[2:].strip())
+        elif acs:
+            # Non-blank, non-bullet after bullets = new section
+            break
+
+# Pass 5: all remaining '- ' bullets not already captured
+for line in lines:
+    s = line.strip()
+    if s.startswith('- '):
+        add(s[2:].strip())
 
 for i, ac in enumerate(acs, 1):
     print(str(i) + '\t' + ac)
 " 2>/dev/null || true)
 
 if [ -z "$ACS" ]; then
-  echo "[ac-attestation] ✓ $GG_TASK_ID: no ACCEPTANCE bullets found — nothing to attest"
+  echo "[ac-attestation] ✓ $GG_TASK_ID: no AC anchors found in Detail — nothing to attest"
   exit 0
 fi
 

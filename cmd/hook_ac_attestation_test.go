@@ -270,3 +270,87 @@ func TestACAttestation_NumberedLine_AlternativeStyle(t *testing.T) {
 		t.Errorf("expected exit 0 (numbered-line style attestation), got %d\noutput:\n%s", code, out)
 	}
 }
+
+// TestACAttestation_GapFormat_Blocks: Detail uses "Gap A:" / "Gap B:" style
+// (like TASK-297). Both must be attested; only Gap A is covered → block.
+func TestACAttestation_GapFormat_Blocks(t *testing.T) {
+	detail := `WHY
+Gap A: word-boundary regex was too broad
+Gap B: no cross-process file flock — only in-process sync.Map
+
+ACCEPTANCE
+- gaps resolved`
+	j := taskJSONWith(detail)
+	commitMsg := `fix: resolve Gap A via word-boundary regex
+
+AC-1: Gap A word-boundary fix applied in cmux.go`
+
+	out, code := runACAttestationHook(t, j, commitMsg, nil)
+	if code != 7 {
+		t.Errorf("expected exit 7 (Gap B not referenced), got %d\noutput:\n%s", code, out)
+	}
+	if !strings.Contains(out, "Gap B") {
+		t.Errorf("output should mention unmatched Gap B, got:\n%s", out)
+	}
+}
+
+// TestACAttestation_GapFormat_Passes: Gap A and Gap B both attested.
+func TestACAttestation_GapFormat_Passes(t *testing.T) {
+	detail := `Gap A: word-boundary regex was too broad
+Gap B: no cross-process file flock
+
+ACCEPTANCE
+- both gaps resolved`
+	j := taskJSONWith(detail)
+	commitMsg := `fix: resolve both gaps
+
+AC-1: Gap A fixed via word-boundary regex in cmux.go
+AC-2: Gap B fixed via syscall.Flock in terminal/flock.go
+AC-3: both gaps resolved`
+
+	out, code := runACAttestationHook(t, j, commitMsg, nil)
+	if code != 0 {
+		t.Errorf("expected exit 0 (all items attested), got %d\noutput:\n%s", code, out)
+	}
+}
+
+// TestACAttestation_BulletsOutsideAcceptance: "- " bullets in a WHY section
+// (not under ACCEPTANCE heading) are still extracted and must be attested.
+func TestACAttestation_BulletsOutsideAcceptance(t *testing.T) {
+	detail := `WHY
+- silent AC narrowing happened 3 times
+- each cost 1-2 rework cycles
+
+WHAT
+New hook blocks on unattested ACs.`
+	j := taskJSONWith(detail)
+	// Only attest AC-1; AC-2 unmatched → should block.
+	commitMsg := `feat: add attestation hook
+
+AC-1: silent narrowing prevented by gate`
+
+	out, code := runACAttestationHook(t, j, commitMsg, nil)
+	if code != 7 {
+		t.Errorf("expected exit 7 (AC-2 from WHY bullets not attested), got %d\noutput:\n%s", code, out)
+	}
+}
+
+// TestACAttestation_NumberedItemsOutsideACSection: numbered items in WHAT
+// block (not under ACCEPTANCE) are also extracted.
+func TestACAttestation_NumberedItemsOutsideACSection(t *testing.T) {
+	detail := `WHAT
+1. Parse task Detail for AC anchors
+2. Check commit message for each
+3. Exit 7 when any unmatched`
+	j := taskJSONWith(detail)
+	commitMsg := `feat: implement gate
+
+AC-1: parser extracts all AC anchors
+AC-2: commit check implemented
+AC-3: exit 7 on unmatched`
+
+	out, code := runACAttestationHook(t, j, commitMsg, nil)
+	if code != 0 {
+		t.Errorf("expected exit 0 (all 3 numbered items attested), got %d\noutput:\n%s", code, out)
+	}
+}
