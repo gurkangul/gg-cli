@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gurkangul/gg-cli/internal/orchestrator/locks"
 )
@@ -165,40 +164,59 @@ func TestCollisionListError(t *testing.T) {
 	}
 }
 
-// TestConcurrentAcquire exercises Acquire and Release from multiple goroutines
-// simultaneously. Run with -race to detect data races in the atomic-write path.
+// TestConcurrentAcquire verifies that exactly one goroutine wins when N goroutines
+// race to claim the same overlapping path. All losers must receive a CollisionList,
+// not a data race or corrupted store.
+//
+// Smoke-check: temporarily removing the s.mu.Lock/defer lines from Acquire causes
+// this test to either fail the "exactly 1 winner" assertion or be caught by -race.
 func TestConcurrentAcquire(t *testing.T) {
+	const goroutines = 12
+	const sharedPath = "cmd/shared.go"
+
 	s := newStore(t)
 
-	const goroutines = 8
-	var wg sync.WaitGroup
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		winners []string
+		losers  []string
+	)
 	wg.Add(goroutines)
 
 	for i := 0; i < goroutines; i++ {
 		go func(n int) {
 			defer wg.Done()
 			taskID := fmt.Sprintf("TASK-%03d", n)
-			path := fmt.Sprintf("file%d.go", n)
+			err := s.Acquire(taskID, []string{sharedPath}, false)
 
-			// Each goroutine claims its own unique path — no collisions expected.
-			if err := s.Acquire(taskID, []string{path}, false); err != nil {
-				// Collision between the same-named tasks on retry is acceptable
-				// but should not be a data race.
-				return
+			mu.Lock()
+			defer mu.Unlock()
+			if err == nil {
+				winners = append(winners, taskID)
+			} else if _, ok := err.(locks.CollisionList); ok {
+				losers = append(losers, taskID)
+			} else {
+				t.Errorf("goroutine %d: unexpected error type %T: %v", n, err, err)
 			}
-			// Brief pause to overlap with other goroutines.
-			time.Sleep(time.Duration(n%3) * time.Millisecond)
-			_ = s.Release(taskID)
 		}(i)
 	}
 
 	wg.Wait()
 
-	// After all goroutines finish, the store should be consistent (no panics,
-	// no corruption). We can't assert exact count because goroutines race to
-	// release, but ReadAll must not error.
-	_, err := s.ReadAll()
+	if len(winners) != 1 {
+		t.Fatalf("expected exactly 1 winner, got %d: %v", len(winners), winners)
+	}
+	if len(losers) != goroutines-1 {
+		t.Fatalf("expected %d losers, got %d", goroutines-1, len(losers))
+	}
+
+	// Store must still be consistent — only the winner's claim should remain.
+	all, err := s.ReadAll()
 	if err != nil {
 		t.Fatalf("ReadAll after concurrent run: %v", err)
+	}
+	if len(all) != 1 || all[0].TaskID != winners[0] {
+		t.Fatalf("expected 1 claim for %s, got %+v", winners[0], all)
 	}
 }
