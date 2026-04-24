@@ -592,6 +592,50 @@ func TestACAttestation_FilePathTestAC_Passes(t *testing.T) {
 	}
 }
 
+// TestACAttestation_TestNameProof: commit adds a TestAC2_* function; no "AC-2:" in
+// commit body. Rule (d) should fire on the diff and satisfy AC-2.
+func TestACAttestation_TestNameProof(t *testing.T) {
+	detail := `ACCEPTANCE
+- hook blocks when commit omits AC reference
+- test name in diff counts as proof`
+	files := map[string]string{
+		"gate_test.go": `package main
+
+func TestAC2_DiffTestNameProof(t *testing.T) {
+	// verifies AC-2: test name in diff satisfies the attestation gate
+}
+`,
+	}
+	// Commit body only references AC-1; AC-2 proof comes from diff test name.
+	commitMsg := "feat: add attestation proof via test name\n\nAC-1: hook blocks when commit omits AC reference"
+	out, code := runACAttestationHookWithFiles(t, taskJSONWith(detail), commitMsg, files)
+	if code != 0 {
+		t.Errorf("expected exit 0 (TestAC2_ in diff satisfies rule d for AC-2), got %d\noutput:\n%s", code, out)
+	}
+}
+
+// TestACAttestation_CommentProof: commit adds a "// AC-1 …" comment near edited code;
+// no "AC-1:" in commit body. Rule (e) should fire on the diff and satisfy AC-1.
+func TestACAttestation_CommentProof(t *testing.T) {
+	detail := `ACCEPTANCE
+- hook blocks when commit omits AC reference`
+	files := map[string]string{
+		"impl.go": `package main
+
+// AC-1 covered by this blocking implementation
+func blockOnMissingRef() error {
+	return nil
+}
+`,
+	}
+	// Commit body has no AC reference; proof is the comment in the diff.
+	commitMsg := "feat: implement blocking logic"
+	out, code := runACAttestationHookWithFiles(t, taskJSONWith(detail), commitMsg, files)
+	if code != 0 {
+		t.Errorf("expected exit 0 (// AC-1 comment in diff satisfies rule e), got %d\noutput:\n%s", code, out)
+	}
+}
+
 // TestACAttestation_Bypass_EmitsGGRecord: when GG_ALLOW_INCOMPLETE_AC is set,
 // the hook must call `gg record` with tags "bypass,ac-attestation,<task-id>"
 // and the reason string. A recording fake-gg stub captures the invocation.
