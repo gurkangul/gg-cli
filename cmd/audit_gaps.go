@@ -204,6 +204,7 @@ func runAuditGaps(cmd *cobra.Command, _ []string) error {
 	}
 
 	if auditGapsCompact {
+		emitCompactMissing(cmd, "gaps")
 		for _, f := range gaps {
 			fmt.Fprintln(w, f)
 		}

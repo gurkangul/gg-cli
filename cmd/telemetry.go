@@ -59,13 +59,15 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 	}
 
 	return printJSON(map[string]any{
-		"total":                 sum.Total,
-		"agent_calls":           sum.AgentCalls,
-		"human_calls":           sum.HumanCalls,
-		"verb_counts":           sum.VerbCounts,
-		"hydration_calls":       sum.HydrationCalls,
-		"hydration_verb_counts": sum.HydrationVerbCounts,
-		"net_savings_bytes":     sum.NetSavingsBytes,
+		"total":                        sum.Total,
+		"agent_calls":                  sum.AgentCalls,
+		"human_calls":                  sum.HumanCalls,
+		"verb_counts":                  sum.VerbCounts,
+		"hydration_calls":              sum.HydrationCalls,
+		"hydration_verb_counts":        sum.HydrationVerbCounts,
+		"net_savings_bytes":            sum.NetSavingsBytes,
+		"missing_handler_calls":        sum.MissingHandlerCalls,
+		"missing_handler_verb_counts":  sum.MissingHandlerVerbCounts,
 	}, func() {
 		if sum.Total == 0 {
 			fmt.Println("No telemetry recorded in the last 7 days.")
@@ -155,6 +157,32 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 				sum.DupeCheckCalls, sum.DupeCheckMatchesHits,
 				sum.DupeChoiceCancel, sum.DupeChoiceForce,
 				sum.DupeChoiceAutoForce, sum.DupeChoiceReuse)
+		}
+		if sum.MissingHandlerCalls > 0 {
+			type vc struct {
+				verb  string
+				count int
+			}
+			var verbs []vc
+			for v, c := range sum.MissingHandlerVerbCounts {
+				verbs = append(verbs, vc{v, c})
+			}
+			sort.Slice(verbs, func(i, j int) bool {
+				if verbs[i].count != verbs[j].count {
+					return verbs[i].count > verbs[j].count
+				}
+				return verbs[i].verb < verbs[j].verb
+			})
+			fmt.Printf("missing compact handler: %d calls", sum.MissingHandlerCalls)
+			fmt.Printf("  (")
+			for i, v := range verbs {
+				if i > 0 {
+					fmt.Printf(", ")
+				}
+				fmt.Printf("%s=%d", v.verb, v.count)
+			}
+			fmt.Printf(")\n")
+			fmt.Printf("  ⚠ these verbs have compact active but no compact render path — add emitCompact\n")
 		}
 	})
 }

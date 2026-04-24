@@ -499,6 +499,82 @@ func TestPathResolver_UsesRuntimeDir(t *testing.T) {
 	}
 }
 
+// ── RecordMissingHandler aggregation (TASK-283) ────────────────────────────────
+
+func TestRecordMissingHandler_CountsAndBucketsVerbs(t *testing.T) {
+	dir := t.TempDir()
+	RecordMissingHandler(dir, "gaps", "")
+	RecordMissingHandler(dir, "gaps", "")
+	RecordMissingHandler(dir, "file-size", "")
+	Record(dir, "status", "") // unrelated — must not pollute missing-handler totals
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.Total != 4 {
+		t.Errorf("Total = %d, want 4", sum.Total)
+	}
+	if sum.MissingHandlerCalls != 3 {
+		t.Errorf("MissingHandlerCalls = %d, want 3", sum.MissingHandlerCalls)
+	}
+	if sum.MissingHandlerVerbCounts["gaps"] != 2 {
+		t.Errorf("MissingHandlerVerbCounts[gaps] = %d, want 2", sum.MissingHandlerVerbCounts["gaps"])
+	}
+	if sum.MissingHandlerVerbCounts["file-size"] != 1 {
+		t.Errorf("MissingHandlerVerbCounts[file-size] = %d, want 1", sum.MissingHandlerVerbCounts["file-size"])
+	}
+	// Non-missing-handler entries must not leak into the counter.
+	if sum.MissingHandlerVerbCounts["status"] != 0 {
+		t.Errorf("status should not appear in MissingHandlerVerbCounts, got %d", sum.MissingHandlerVerbCounts["status"])
+	}
+}
+
+func TestRecordMissingHandler_OmittedOnNonMissingEntries(t *testing.T) {
+	dir := t.TempDir()
+	Record(dir, "status", "")
+
+	data, err := os.ReadFile(filePath(dir))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	// The omitempty tag must keep non-missing-handler entries clean.
+	if containsField(string(data), `"missing_handler"`) {
+		t.Errorf("non-missing-handler entry leaked %q into JSON: %s", `"missing_handler"`, data)
+	}
+}
+
+func TestRecordMissingHandler_ZeroWhenNoneRecorded(t *testing.T) {
+	dir := t.TempDir()
+	RecordCompact(dir, "context", "", 200, 1000, 1)
+	Record(dir, "status", "")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.MissingHandlerCalls != 0 {
+		t.Errorf("MissingHandlerCalls = %d, want 0 when none recorded", sum.MissingHandlerCalls)
+	}
+	if len(sum.MissingHandlerVerbCounts) != 0 {
+		t.Errorf("MissingHandlerVerbCounts = %v, want empty map", sum.MissingHandlerVerbCounts)
+	}
+}
+
+func TestRecordMissingHandler_ClassifiesOriginCorrectly(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GG_ROLE", "developer")
+	RecordMissingHandler(dir, "gaps", "")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.AgentCalls != 1 {
+		t.Errorf("AgentCalls = %d, want 1 (origin should be agent when GG_ROLE set)", sum.AgentCalls)
+	}
+}
+
 func TestRecord_WritesToRuntimeDir(t *testing.T) {
 	runtimeDir := t.TempDir()
 	Record(runtimeDir, "status", "")

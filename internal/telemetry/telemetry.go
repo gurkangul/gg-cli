@@ -69,6 +69,11 @@ type Entry struct {
 	// Lets `gg audit` retroactively measure how often agents override a dup
 	// warning vs. heed it — the feedback signal for threshold tuning.
 	UserChoice string `json:"user_choice,omitempty"`
+	// MissingHandler is set when compact mode was active but the command fell
+	// through to the default (non-compact) renderer — no emitCompact call was
+	// made. Verb identifies which command lacked a compact render path.
+	// Omitted on all other entries so the JSONL stays clean.
+	MissingHandler bool `json:"missing_handler,omitempty"`
 }
 
 func filePath(runtimeDir string) string {
@@ -176,6 +181,21 @@ func RecordWithContext(runtimeDir, verb, fromFlag string, contextBlockBytes int)
 	})
 }
 
+// RecordMissingHandler appends a telemetry entry for a command invocation where
+// compact mode was active (via GG_AGENT/GG_ROLE/--compact flag) but the command
+// fell through to its default renderer because no compact render path exists.
+// This surfaces which verbs still need compact implementations so the gap can be
+// prioritised — "compact requested but silently ignored" shows up in
+// `gg telemetry summary` as missing_handler_calls by verb.
+func RecordMissingHandler(runtimeDir, verb, fromFlag string) {
+	recordEntry(runtimeDir, Entry{
+		Verb:           verb,
+		Origin:         classify(fromFlag),
+		Timestamp:      time.Now().UTC().Format(time.RFC3339),
+		MissingHandler: true,
+	})
+}
+
 // RecordHydration appends a telemetry entry for a full-record re-fetch that
 // follows compact display. bytesHydrated is the full-render size of the fetched
 // record — this is charged against gross compact savings to compute net savings.
@@ -259,6 +279,12 @@ type WeeklySummary struct {
 	DupeChoiceForce      int `json:"dupe_choice_force"`
 	DupeChoiceCancel     int `json:"dupe_choice_cancel"`
 	DupeChoiceAutoForce  int `json:"dupe_choice_auto_force"`
+	// MissingHandlerCalls counts entries where compact was active but the
+	// command had no compact render path (TASK-283). MissingHandlerVerbCounts
+	// breaks these down by verb so maintainers can identify which commands
+	// need compact render paths added.
+	MissingHandlerCalls      int            `json:"missing_handler_calls"`
+	MissingHandlerVerbCounts map[string]int `json:"missing_handler_verb_counts"`
 }
 
 // Summarize reads the telemetry file and aggregates the last 7 days of data.
@@ -274,13 +300,21 @@ func Summarize(runtimeDir string) (*WeeklySummary, error) {
 func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 	data, err := os.ReadFile(filePath(runtimeDir))
 	if os.IsNotExist(err) {
-		return &WeeklySummary{VerbCounts: map[string]int{}}, nil
+		return &WeeklySummary{
+			VerbCounts:               map[string]int{},
+			HydrationVerbCounts:      map[string]int{},
+			MissingHandlerVerbCounts: map[string]int{},
+		}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	sum := &WeeklySummary{VerbCounts: map[string]int{}, HydrationVerbCounts: map[string]int{}}
+	sum := &WeeklySummary{
+		VerbCounts:               map[string]int{},
+		HydrationVerbCounts:      map[string]int{},
+		MissingHandlerVerbCounts: map[string]int{},
+	}
 
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		line = strings.TrimSpace(line)
@@ -331,6 +365,10 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 			case "auto-force":
 				sum.DupeChoiceAutoForce++
 			}
+		}
+		if e.MissingHandler {
+			sum.MissingHandlerCalls++
+			sum.MissingHandlerVerbCounts[e.Verb]++
 		}
 	}
 	if saved := sum.CompactBytesDefault - sum.CompactBytesOut; saved > 0 {

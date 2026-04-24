@@ -73,6 +73,27 @@ func printJSON(v any, fallback func()) error {
 	return nil
 }
 
+// emitCompactMissing records a telemetry "missing handler" entry — compact mode
+// was active for this call but the command has no compact render path and fell
+// through to the default renderer. Call this at the entry point of any command
+// that registers --compact but has not yet implemented emitCompact, so the gap
+// is visible in `gg telemetry summary` under missing_handler_verb_counts.
+func emitCompactMissing(cmd *cobra.Command, verb string) {
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	runtimeDir, err := cfg.RuntimeDir()
+	if err != nil {
+		return
+	}
+	fromFlag := ""
+	if f := cmd.Flags().Lookup("from"); f != nil {
+		fromFlag = f.Value.String()
+	}
+	telemetry.RecordMissingHandler(runtimeDir, verb, fromFlag)
+}
+
 // emitHydration records a telemetry entry for a full-record fetch that follows
 // compact display. render is called to measure the byte size of the full output
 // that was (or will be) printed. verb should match the compact verb that
