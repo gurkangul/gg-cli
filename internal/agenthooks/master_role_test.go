@@ -174,22 +174,96 @@ func TestFixMasterRole_RefusesDriftedWithoutForceReset(t *testing.T) {
 	}
 }
 
-// TestFixMasterRole_ForceResetOnDrifted verifies that DRIFTED files cannot be
-// silently repaired by replaceOrAppendBlock — the caller must fix the malformed
-// markers manually before force-reset can succeed. This matches the contract
-// block behaviour: forceReset skips the refusal message but the underlying
-// file I/O still errors on malformed marker pairs.
+// TestFixMasterRole_ForceResetOnDrifted verifies that --force-reset repairs
+// malformed (DRIFTED) files by stripping orphaned marker fragments and
+// appending the clean block.
 func TestFixMasterRole_ForceResetOnDrifted(t *testing.T) {
 	dir := t.TempDir()
-	// Only begin marker — DRIFTED. replaceOrAppendBlock will error.
+	// Only begin marker — DRIFTED state.
 	drifted := MasterRoleBlockBegin + "\nbody without end\n"
 	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(drifted), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
-	_, err := FixMasterRole(dir, true)
-	if err == nil {
-		t.Error("expected error when force-reset on malformed (begin-only) file")
+	lines, err := FixMasterRole(dir, true)
+	if err != nil {
+		t.Fatalf("FixMasterRole --force-reset on DRIFTED: %v", err)
+	}
+
+	fixed := false
+	for _, l := range lines {
+		if strings.Contains(l, "DRIFTED") && strings.Contains(l, "fixed") {
+			fixed = true
+		}
+	}
+	if !fixed {
+		t.Errorf("expected DRIFTED→fixed message; lines: %v", lines)
+	}
+
+	// File should now pass CheckMasterRole as OK.
+	r := CheckMasterRole(dir)
+	if r.Status != MasterRoleOK {
+		t.Errorf("after force-reset: status = %s, want OK", r.Status)
+	}
+}
+
+func TestCheckMasterRole_Extended(t *testing.T) {
+	dir := t.TempDir()
+	// Block has all template lines PLUS extra local content.
+	extended := MasterRoleBlockBegin + "\n" + MasterRoleBody() + "\n## Our team: architect reviews DB migrations first\n" + MasterRoleBlockEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(extended), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	r := CheckMasterRole(dir)
+	if r.Status != MasterRoleEXTENDED {
+		t.Errorf("want MasterRoleEXTENDED, got %s", r.Status)
+	}
+}
+
+func TestFixMasterRole_ExtendedBacksUpAndFixes(t *testing.T) {
+	dir := t.TempDir()
+	// Create extended block: template + local addition.
+	extended := MasterRoleBlockBegin + "\n" + MasterRoleBody() + "\n## Local Team Rule\nSome rule.\n" + MasterRoleBlockEnd + "\n"
+	claudeMD := filepath.Join(dir, "CLAUDE.md")
+	if err := os.WriteFile(claudeMD, []byte(extended), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	lines, err := FixMasterRole(dir, false)
+	if err != nil {
+		t.Fatalf("FixMasterRole on EXTENDED: %v", err)
+	}
+
+	// Backup should exist.
+	backupFound := false
+	for _, l := range lines {
+		if strings.Contains(l, "backed up") {
+			backupFound = true
+		}
+	}
+	if !backupFound {
+		t.Errorf("expected backup message in output; lines: %v", lines)
+	}
+
+	// File should now be OK.
+	r := CheckMasterRole(dir)
+	if r.Status != MasterRoleOK {
+		t.Errorf("after EXTENDED fix: status = %s, want OK", r.Status)
+	}
+
+	// Backup file should contain the original extended content.
+	backupDir := filepath.Join(dir, ".gg", "backups")
+	entries, readErr := os.ReadDir(backupDir)
+	if readErr != nil {
+		t.Fatalf("backup dir not created: %v", readErr)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one backup file")
+	}
+	backupContent, _ := os.ReadFile(filepath.Join(backupDir, entries[0].Name()))
+	if !strings.Contains(string(backupContent), "Local Team Rule") {
+		t.Error("backup file should contain original extended content")
 	}
 }
 

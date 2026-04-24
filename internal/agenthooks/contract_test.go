@@ -228,3 +228,73 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+func TestIsSuperset_TrueWhenLocalHasAllTemplateLines(t *testing.T) {
+	template := "line A\nline B\nline C\n"
+	local := "line A\nline B\nline C\nlocal addition\n"
+	if !isSuperset(local, template) {
+		t.Error("isSuperset should return true when local is a strict superset")
+	}
+}
+
+func TestIsSuperset_FalseWhenLocalMissingTemplateLine(t *testing.T) {
+	template := "line A\nline B\nline C\n"
+	local := "line A\nline C\n"
+	if isSuperset(local, template) {
+		t.Error("isSuperset should return false when local is missing a template line")
+	}
+}
+
+func TestForceStripAndAppend_CleansOrphanedBeginMarker(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "AGENTS.md")
+	drifted := "# Head\n\n" + ContractBlockBegin + "\norphaned body\n"
+	if err := os.WriteFile(path, []byte(drifted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	block := ContractBlock()
+	if err := forceStripAndAppend(path, ContractBlockBegin, ContractBlockEnd, block); err != nil {
+		t.Fatalf("forceStripAndAppend: %v", err)
+	}
+
+	raw, _ := os.ReadFile(path)
+	content := string(raw)
+	if strings.Count(content, ContractBlockBegin) != 1 {
+		t.Errorf("expected exactly one begin marker; got:\n%s", content)
+	}
+	if strings.Count(content, ContractBlockEnd) != 1 {
+		t.Errorf("expected exactly one end marker; got:\n%s", content)
+	}
+	if !strings.Contains(content, "# Head") {
+		t.Error("pre-existing content should be preserved")
+	}
+}
+
+func TestBackupFile_CreatesBackupInGGBackupsDir(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "AGENTS.md")
+	original := "original content\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	backupPath, err := backupFile(dir, path)
+	if err != nil {
+		t.Fatalf("backupFile: %v", err)
+	}
+
+	raw, readErr := os.ReadFile(backupPath)
+	if readErr != nil {
+		t.Fatalf("backup file not readable: %v", readErr)
+	}
+	if string(raw) != original {
+		t.Errorf("backup content = %q, want %q", string(raw), original)
+	}
+	if !strings.Contains(backupPath, ".gg/backups") {
+		t.Errorf("backup path %q should be under .gg/backups", backupPath)
+	}
+	if !strings.HasSuffix(backupPath, "AGENTS.md") {
+		t.Errorf("backup filename %q should end with original filename", backupPath)
+	}
+}

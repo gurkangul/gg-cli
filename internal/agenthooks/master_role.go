@@ -36,10 +36,11 @@ func MasterRoleVersion() string {
 type MasterRoleDriftStatus int
 
 const (
-	MasterRoleOK      MasterRoleDriftStatus = iota // block present, hash matches current
-	MasterRoleSTALE                                // block present, hash differs
-	MasterRoleMISSING                              // markers absent
-	MasterRoleDRIFTED                              // one marker present but not the other (malformed)
+	MasterRoleOK       MasterRoleDriftStatus = iota // block present, hash matches current
+	MasterRoleSTALE                                 // block present, hash differs
+	MasterRoleMISSING                               // markers absent
+	MasterRoleDRIFTED                               // one marker present but not the other (malformed)
+	MasterRoleEXTENDED                              // both markers present, local body is strict superset of template
 )
 
 func (s MasterRoleDriftStatus) String() string {
@@ -52,6 +53,8 @@ func (s MasterRoleDriftStatus) String() string {
 		return "MISSING"
 	case MasterRoleDRIFTED:
 		return "DRIFTED"
+	case MasterRoleEXTENDED:
+		return "EXTENDED"
 	default:
 		return "UNKNOWN"
 	}
@@ -95,6 +98,8 @@ func CheckMasterRole(projectRoot string) MasterRoleCheckResult {
 		r.FoundVersion = fmt.Sprintf("%x", h)
 		if r.FoundVersion == want {
 			r.Status = MasterRoleOK
+		} else if isSuperset(body, templates.MasterRole) {
+			r.Status = MasterRoleEXTENDED
 		} else {
 			r.Status = MasterRoleSTALE
 		}
@@ -105,8 +110,10 @@ func CheckMasterRole(projectRoot string) MasterRoleCheckResult {
 	return r
 }
 
-// FixMasterRole repairs STALE and MISSING entries. DRIFTED entries are skipped
-// unless forceReset is true. Returns per-action strings for reporting.
+// FixMasterRole repairs STALE, MISSING, EXTENDED, and DRIFTED entries.
+// DRIFTED entries require forceReset=true. EXTENDED entries are always backed
+// up to projectRoot/.gg/backups/ before overwriting. Returns per-action
+// strings for reporting.
 func FixMasterRole(projectRoot string, forceReset bool) ([]string, error) {
 	r := CheckMasterRole(projectRoot)
 	var lines []string
@@ -120,15 +127,24 @@ func FixMasterRole(projectRoot string, forceReset bool) ([]string, error) {
 			return lines, fmt.Errorf("CLAUDE.md: %w", err)
 		}
 		lines = append(lines, fmt.Sprintf("  ✓ %s  CLAUDE.md — %s", r.Status, act))
+	case MasterRoleEXTENDED:
+		backupPath, backupErr := backupFile(projectRoot, r.Path)
+		if backupErr != nil {
+			return lines, fmt.Errorf("CLAUDE.md: backup failed: %w", backupErr)
+		}
+		act, _, err := writeMasterRoleBlock(r.Path, false)
+		if err != nil {
+			return lines, fmt.Errorf("CLAUDE.md: %w", err)
+		}
+		lines = append(lines, fmt.Sprintf("  ✓ EXTENDED→fixed  CLAUDE.md — %s (local additions backed up to %s)", act, backupPath))
 	case MasterRoleDRIFTED:
 		if !forceReset {
 			lines = append(lines, "  ✗ DRIFTED  CLAUDE.md — markers malformed, rerun with --force-reset to overwrite")
 		} else {
-			act, _, err := writeMasterRoleBlock(r.Path, false)
-			if err != nil {
+			if err := forceStripAndAppend(r.Path, MasterRoleBlockBegin, MasterRoleBlockEnd, MasterRoleBlock()); err != nil {
 				return lines, fmt.Errorf("CLAUDE.md: %w", err)
 			}
-			lines = append(lines, fmt.Sprintf("  ✓ DRIFTED→fixed  CLAUDE.md — %s", act))
+			lines = append(lines, "  ✓ DRIFTED→fixed  CLAUDE.md — malformed markers stripped, block rewritten")
 		}
 	}
 	return lines, nil

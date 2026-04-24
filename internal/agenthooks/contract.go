@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gurkangul/gg-cli/internal/templates"
 )
@@ -14,10 +16,11 @@ import (
 type ContractDriftStatus int
 
 const (
-	ContractOK      ContractDriftStatus = iota // block present, hash matches current
-	ContractSTALE                              // block present, hash differs
-	ContractMISSING                            // markers absent
-	ContractDRIFTED                            // one marker present but not the other (malformed)
+	ContractOK       ContractDriftStatus = iota // block present, hash matches current
+	ContractSTALE                               // block present, hash differs
+	ContractMISSING                             // markers absent
+	ContractDRIFTED                             // one marker present but not the other (malformed)
+	ContractEXTENDED                            // both markers present, local body is strict superset of template
 )
 
 func (s ContractDriftStatus) String() string {
@@ -30,6 +33,8 @@ func (s ContractDriftStatus) String() string {
 		return "MISSING"
 	case ContractDRIFTED:
 		return "DRIFTED"
+	case ContractEXTENDED:
+		return "EXTENDED"
 	default:
 		return "UNKNOWN"
 	}
@@ -89,6 +94,8 @@ func CheckContract(projectRoot string) []ContractCheckResult {
 			r.FoundVersion = fmt.Sprintf("%x", h)
 			if r.FoundVersion == want {
 				r.Status = ContractOK
+			} else if isSuperset(body, templates.AgentContract) {
+				r.Status = ContractEXTENDED
 			} else {
 				r.Status = ContractSTALE
 			}
@@ -101,8 +108,10 @@ func CheckContract(projectRoot string) []ContractCheckResult {
 	return results
 }
 
-// FixContract repairs STALE and MISSING entries. DRIFTED entries are skipped
-// unless forceReset is true. Returns per-agent action strings for reporting.
+// FixContract repairs STALE, MISSING, EXTENDED, and DRIFTED entries. DRIFTED
+// entries require forceReset=true. EXTENDED entries are always backed up to
+// projectRoot/.gg/backups/ before overwriting. Returns per-agent action
+// strings for reporting.
 func FixContract(projectRoot string, forceReset bool) ([]string, error) {
 	checks := CheckContract(projectRoot)
 	var lines []string
@@ -117,26 +126,35 @@ func FixContract(projectRoot string, forceReset bool) ([]string, error) {
 				return lines, fmt.Errorf("%s: %w", r.AgentName, err)
 			}
 			lines = append(lines, fmt.Sprintf("  ✓ %s  %s — %s", r.Status, r.AgentName, act))
+		case ContractEXTENDED:
+			backupPath, backupErr := backupFile(projectRoot, r.Path)
+			if backupErr != nil {
+				return lines, fmt.Errorf("%s: backup failed: %w", r.AgentName, backupErr)
+			}
+			act, _, err := writeContractBlock(r.Path, false)
+			if err != nil {
+				return lines, fmt.Errorf("%s: %w", r.AgentName, err)
+			}
+			lines = append(lines, fmt.Sprintf("  ✓ EXTENDED→fixed  %s — %s (local additions backed up to %s)", r.AgentName, act, backupPath))
 		case ContractDRIFTED:
 			if !forceReset {
 				lines = append(lines, fmt.Sprintf("  ✗ DRIFTED  %s — markers malformed, rerun with --force-reset to overwrite", r.AgentName))
 			} else {
-				act, _, err := writeContractBlock(r.Path, false)
-				if err != nil {
+				if err := forceStripAndAppend(r.Path, ContractBlockBegin, ContractBlockEnd, ContractBlock()); err != nil {
 					return lines, fmt.Errorf("%s: %w", r.AgentName, err)
 				}
-				lines = append(lines, fmt.Sprintf("  ✓ DRIFTED→fixed  %s — %s", r.AgentName, act))
+				lines = append(lines, fmt.Sprintf("  ✓ DRIFTED→fixed  %s — malformed markers stripped, block rewritten", r.AgentName))
 			}
 		}
 	}
 	return lines, nil
 }
 
-// HasDrift returns true if any registered agent has a STALE or MISSING contract.
-// Used by session-start to emit a one-line warning without blocking startup.
+// HasDrift returns true if any registered agent has a STALE, MISSING, or
+// EXTENDED contract. Used by session-start to emit a one-line warning.
 func HasDrift(projectRoot string) bool {
 	for _, r := range CheckContract(projectRoot) {
-		if r.Status == ContractSTALE || r.Status == ContractMISSING {
+		if r.Status == ContractSTALE || r.Status == ContractMISSING || r.Status == ContractEXTENDED {
 			return true
 		}
 	}
@@ -202,6 +220,63 @@ func replaceOrAppendBlock(content, begin, end, managed string) (string, bool, er
 		}
 		return content + sep + managed, true, nil
 	}
+}
+
+// isSuperset reports whether localBody contains every non-empty line from
+// templateBody. Used to detect LOCAL-EXTENDED state: the user added content
+// inside the managed block on top of the template.
+func isSuperset(localBody, templateBody string) bool {
+	for _, line := range strings.Split(templateBody, "\n") {
+		if line == "" {
+			continue
+		}
+		if !strings.Contains(localBody, line) {
+			return false
+		}
+	}
+	return true
+}
+
+// forceStripAndAppend removes any fragment of begin/end markers from the file
+// and appends a clean managed block. Used by --force-reset when the file has
+// malformed (DRIFTED) markers that replaceOrAppendBlock cannot repair.
+func forceStripAndAppend(path, begin, end, block string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	content := string(raw)
+
+	// Strip all occurrences of both marker strings so the file is clean.
+	content = strings.ReplaceAll(content, begin, "")
+	content = strings.ReplaceAll(content, end, "")
+
+	// Trim any resulting double-blank-lines at the end for tidiness.
+	content = strings.TrimRight(content, "\n")
+
+	sep := "\n\n"
+	if content == "" {
+		sep = ""
+	}
+	content = content + sep + block
+
+	return writeFile(path, content)
+}
+
+// backupFile writes a copy of path into projectRoot/.gg/backups/ with a
+// timestamp prefix and returns the backup path.
+func backupFile(projectRoot, path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	ts := time.Now().UTC().Format("20060102T150405Z")
+	base := ts + "-" + filepath.Base(path)
+	backupPath := filepath.Join(projectRoot, ".gg", "backups", base)
+	if err := writeFile(backupPath, string(raw)); err != nil {
+		return "", err
+	}
+	return backupPath, nil
 }
 
 // writeContractBlock writes ContractBlock() into the file at path using the

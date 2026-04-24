@@ -187,6 +187,104 @@ func TestFixContract_RefusesDriftedWithoutForceReset(t *testing.T) {
 	}
 }
 
+func TestFixContract_ForceResetOnDrifted(t *testing.T) {
+	dir := t.TempDir()
+	// Only begin marker — DRIFTED.
+	drifted := ContractBlockBegin + "\nbody without end\n"
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(drifted), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	lines, err := FixContract(dir, true)
+	if err != nil {
+		t.Fatalf("FixContract --force-reset on DRIFTED: %v", err)
+	}
+
+	fixed := false
+	for _, l := range lines {
+		if contains(l, "DRIFTED") && contains(l, "fixed") {
+			fixed = true
+		}
+	}
+	if !fixed {
+		t.Errorf("expected DRIFTED→fixed message; lines: %v", lines)
+	}
+
+	// claude entry should now be OK.
+	results := CheckContract(dir)
+	for _, r := range results {
+		if r.AgentName == "claude" && r.Status != ContractOK {
+			t.Errorf("after force-reset: claude status = %s, want OK", r.Status)
+		}
+	}
+}
+
+func TestCheckContract_Extended(t *testing.T) {
+	dir := t.TempDir()
+	// Block has all template lines PLUS extra local content.
+	extended := ContractBlockBegin + "\n" + ContractBody() + "\n## Local addition\nSome rule.\n" + ContractBlockEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(extended), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	results := CheckContract(dir)
+	var found *ContractCheckResult
+	for i := range results {
+		if results[i].AgentName == "claude" {
+			found = &results[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("no result for claude")
+	}
+	if found.Status != ContractEXTENDED {
+		t.Errorf("want ContractEXTENDED, got %s", found.Status)
+	}
+}
+
+func TestFixContract_ExtendedBacksUpAndFixes(t *testing.T) {
+	dir := t.TempDir()
+	extended := ContractBlockBegin + "\n" + ContractBody() + "\n## Local Team Rule\nSome rule.\n" + ContractBlockEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(extended), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	lines, err := FixContract(dir, false)
+	if err != nil {
+		t.Fatalf("FixContract on EXTENDED: %v", err)
+	}
+
+	backupFound := false
+	for _, l := range lines {
+		if contains(l, "backed up") {
+			backupFound = true
+		}
+	}
+	if !backupFound {
+		t.Errorf("expected backup message in output; lines: %v", lines)
+	}
+
+	results := CheckContract(dir)
+	for _, r := range results {
+		if r.AgentName == "claude" && r.Status != ContractOK {
+			t.Errorf("after EXTENDED fix: claude status = %s, want OK", r.Status)
+		}
+	}
+}
+
+func TestHasDrift_TrueWhenExtended(t *testing.T) {
+	dir := t.TempDir()
+	extended := ContractBlockBegin + "\n" + ContractBody() + "\n## Local addition\n" + ContractBlockEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(extended), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if !HasDrift(dir) {
+		t.Error("expected HasDrift=true when contract is EXTENDED")
+	}
+}
+
 func TestHasDrift_TrueWhenMissing(t *testing.T) {
 	dir := t.TempDir()
 	if !HasDrift(dir) {
