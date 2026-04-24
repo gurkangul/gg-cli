@@ -2,34 +2,39 @@ package terminal
 
 import (
 	"context"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 )
 
-// agentBusyMarkers are substrings that appear in the visible terminal content
-// while a known agent REPL (claude-code, GSD/pi) is mid-turn.  Their presence
-// means the pane is processing; their absence suggests the turn is complete and
-// the REPL is waiting for the next user message.
-//
-// Markers are matched case-insensitively against the last non-blank line(s) of
-// the screen capture.
-var agentBusyMarkers = []string{
+// agentBusyExact are substrings matched anywhere in the tail content (case-insensitive).
+// These are precise enough that a false positive is extremely unlikely.
+var agentBusyExact = []string{
 	// Claude Code spinner runes (Braille patterns used by the TUI)
 	"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
 	// Claude Code active-turn labels
 	"thinking…", "thinking...",
 	// GSD / pi active labels
 	"working…", "working...",
-	"running", "executing",
 	// Generic agent busy signals
 	"tool call", "tool_call",
+}
+
+// agentBusyWordBounded are matched only at word boundaries so that common
+// English words embedded in paths, identifiers, or log lines are not false
+// positives (e.g. "outrunning", "test_executing.sh", "task-running").
+var agentBusyWordBounded = []*regexp.Regexp{
+	// "running" / "executing" as whole words (case-insensitive via (?i))
+	regexp.MustCompile(`(?i)\brunning\b`),
+	regexp.MustCompile(`(?i)\bexecuting\b`),
 }
 
 // IsAgentIdle reports whether the screen content suggests the embedded agent
 // REPL has finished its current turn and is waiting for a new user message.
 //
-// The heuristic inspects the last few non-blank lines: if any busy marker is
+// The heuristic inspects the last five non-blank lines: if any busy marker is
 // present the pane is considered active.  An empty screen is treated as idle
 // (no agent started, or cleared).
 func IsAgentIdle(screen []byte) bool {
@@ -45,11 +50,22 @@ func IsAgentIdle(screen []byte) bool {
 		}
 	}
 	lower := strings.ToLower(strings.Join(tail, "\n"))
-	for _, marker := range agentBusyMarkers {
+
+	// Exact substring matches (precise markers).
+	for _, marker := range agentBusyExact {
 		if strings.Contains(lower, strings.ToLower(marker)) {
 			return false
 		}
 	}
+
+	// Word-bounded matches (generic markers that need anchoring).
+	combined := strings.Join(tail, "\n")
+	for _, re := range agentBusyWordBounded {
+		if re.MatchString(combined) {
+			return false
+		}
+	}
+
 	return true
 }
 
@@ -57,6 +73,28 @@ func IsAgentIdle(screen []byte) bool {
 // Long enough for the REPL stdin handler to register the Enter, short enough
 // to be invisible in the normal flow.
 const wakeDelay = 150 * time.Millisecond
+
+// surfaceLocks provides per-surface mutual exclusion for WakeAndSend so that
+// concurrent callers for the same surface cannot interleave the wake-Enter and
+// the text payload.
+var surfaceLocks = &lockMap{}
+
+type lockMap struct {
+	mu    sync.Mutex
+	locks map[SurfaceID]*sync.Mutex
+}
+
+func (m *lockMap) get(id SurfaceID) *sync.Mutex {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.locks == nil {
+		m.locks = make(map[SurfaceID]*sync.Mutex)
+	}
+	if m.locks[id] == nil {
+		m.locks[id] = &sync.Mutex{}
+	}
+	return m.locks[id]
+}
 
 // WakeAndSend ensures a new agent turn is started in the target pane and then
 // delivers text.  When the pane appears idle (turn complete), it sends a bare
@@ -66,7 +104,16 @@ const wakeDelay = 150 * time.Millisecond
 //
 // A follow-up Enter is always sent after text so the agent processes the message.
 // Returns the first error encountered; subsequent operations are skipped.
+//
+// WakeAndSend serialises concurrent callers per surface: the lock prevents a
+// second caller from interleaving its wake-Enter with the first caller's text
+// send, which would corrupt the agent's stdin.
 func WakeAndSend(ctx context.Context, term Terminal, id SurfaceID, text string) error {
+	// Acquire the per-surface lock before touching the terminal.
+	lock := surfaceLocks.get(id)
+	lock.Lock()
+	defer lock.Unlock()
+
 	// Read screen to determine pane state.  Failures are treated as "unknown /
 	// possibly idle" — we issue the wake sequence on the safe side.
 	idle := true

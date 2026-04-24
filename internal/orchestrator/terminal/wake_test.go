@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -79,6 +80,50 @@ func TestIsAgentIdle_MarkerBeyondScanWindow(t *testing.T) {
 	// lines, so the spinner falls outside the window.
 	if !IsAgentIdle(screen) {
 		t.Fatal("busy marker >5 non-blank lines from bottom should be outside scan window")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IsAgentIdle — word-boundary anchoring for "running" / "executing"
+// ---------------------------------------------------------------------------
+
+func TestIsAgentIdle_RunningAsWholeWord(t *testing.T) {
+	screen := []byte("running test suite\n")
+	if IsAgentIdle(screen) {
+		t.Fatal("standalone 'running' should be detected as busy")
+	}
+}
+
+func TestIsAgentIdle_ExecutingAsWholeWord(t *testing.T) {
+	screen := []byte("Executing pipeline step\n")
+	if IsAgentIdle(screen) {
+		t.Fatal("standalone 'Executing' should be detected as busy")
+	}
+}
+
+func TestIsAgentIdle_RunningEmbeddedInWord(t *testing.T) {
+	// "outrunning" contains "running" but is not a standalone word → idle.
+	screen := []byte("benchmark outrunning baseline by 3x\n")
+	if !IsAgentIdle(screen) {
+		t.Fatal("'running' embedded inside 'outrunning' should not trigger busy")
+	}
+}
+
+func TestIsAgentIdle_ExecutingEmbeddedInPath(t *testing.T) {
+	// "test_executing.sh" contains "executing" mid-token → idle.
+	screen := []byte("Loaded test_executing.sh\n")
+	if !IsAgentIdle(screen) {
+		t.Fatal("'executing' inside identifier 'test_executing.sh' should not trigger busy")
+	}
+}
+
+func TestIsAgentIdle_RunningEmbeddedInHyphenatedIdentifier(t *testing.T) {
+	// "task-running-tests" — hyphens are not \w; \b fires at the hyphen boundary.
+	// "running" here is between hyphens so word-boundary anchoring DOES match it.
+	// This is intentional: "task-running-tests" in agent output suggests activity.
+	screen := []byte("task-running-tests: 3 passed\n")
+	if IsAgentIdle(screen) {
+		t.Fatal("'running' between hyphens should trigger busy (hyphen is a word boundary)")
 	}
 }
 
@@ -176,6 +221,102 @@ func TestWakeAndSend_ReadScreenFailureFallsBackToIdlePath(t *testing.T) {
 	}
 	if !foundWake {
 		t.Fatalf("expected wake SendKey before Send, calls: %v", calls)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WakeAndSend — per-surface lock (concurrent nudges must not interleave)
+// ---------------------------------------------------------------------------
+
+func TestWakeAndSend_ConcurrentNudgesSamePane_AreSerialised(t *testing.T) {
+	// Two goroutines call WakeAndSend for the same surface concurrently.
+	// Without the per-surface lock the wake-Enter from one caller can land
+	// between the text-send and the submit-Enter of the other.  With the lock
+	// each caller's (ReadScreen, wake-Enter?, Send, Enter) sequence must be
+	// contiguous in the Calls log.
+	//
+	// We use an idle pane so both callers go through the wake path, making
+	// interleaving maximally likely without the lock.
+
+	// Reset the global lock map between sub-tests to avoid state leakage.
+	surfaceLocks = &lockMap{}
+
+	f := NewFake()
+	ctx := context.Background()
+	id, _ := f.NewSplit(ctx, SplitOpts{})
+	f.SetScreen(id, []byte("idle\n> "))
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			_ = WakeAndSend(ctx, f, id, "msg")
+		}()
+	}
+	wg.Wait()
+
+	// Verify the call log: every Send("msg") must be immediately preceded by
+	// a SendKey("enter") that is the wake Enter (not the submit Enter from a
+	// different goroutine's sequence).  Concretely: search for each Send and
+	// verify that the call two positions before it is a SendKey(enter) [wake]
+	// and the call one position after it is a SendKey(enter) [submit].
+	calls := filterCalls(f.Calls, id)
+	for i, c := range calls {
+		if c.Method != "Send" || c.Arg != "msg" {
+			continue
+		}
+		// i-1 must be SendKey(enter) [wake]; i+1 must be SendKey(enter) [submit].
+		if i < 2 {
+			t.Errorf("Send at index %d has no room for preceding ReadScreen+wake", i)
+			continue
+		}
+		wakeCall := calls[i-1]
+		if wakeCall.Method != "SendKey" || wakeCall.Arg != "enter" {
+			t.Errorf("call before Send[%d] is %+v, want SendKey(enter) [wake]", i, wakeCall)
+		}
+		if i+1 >= len(calls) {
+			t.Errorf("Send at index %d has no following submit Enter", i)
+			continue
+		}
+		submitCall := calls[i+1]
+		if submitCall.Method != "SendKey" || submitCall.Arg != "enter" {
+			t.Errorf("call after Send[%d] is %+v, want SendKey(enter) [submit]", i, submitCall)
+		}
+	}
+}
+
+func TestWakeAndSend_ConcurrentNudgesDifferentPanes_DoNotBlock(t *testing.T) {
+	// Two goroutines targeting different surfaces must not block each other.
+	surfaceLocks = &lockMap{}
+
+	f := NewFake()
+	ctx := context.Background()
+	id1, _ := f.NewSplit(ctx, SplitOpts{})
+	id2, _ := f.NewSplit(ctx, SplitOpts{})
+	f.SetScreen(id1, []byte("idle\n"))
+	f.SetScreen(id2, []byte("idle\n"))
+
+	start := time.Now()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_ = WakeAndSend(ctx, f, id1, "a")
+	}()
+	go func() {
+		defer wg.Done()
+		_ = WakeAndSend(ctx, f, id2, "b")
+	}()
+	wg.Wait()
+	elapsed := time.Since(start)
+
+	// Both calls go through the idle path (wakeDelay each).  If they ran
+	// sequentially, elapsed ≥ 2*wakeDelay.  With separate locks they overlap
+	// and elapsed should be < 2*wakeDelay.
+	if elapsed >= 2*wakeDelay {
+		t.Errorf("different-pane nudges appear to have serialised (elapsed %v ≥ 2×%v)", elapsed, wakeDelay)
 	}
 }
 
