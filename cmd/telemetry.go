@@ -53,7 +53,7 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 	}
 
 	if telemetry.IsDisabled() {
-		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Telemetry is disabled — no data collected.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: Telemetry is disabled — no data collected.")
 		fmt.Fprintln(cmd.ErrOrStderr(), "  Re-enable by unsetting GG_TELEMETRY=0 or removing telemetry.enabled: false from .gg/config.yaml.")
 		return nil
 	}
@@ -145,7 +145,7 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 			}
 			fmt.Println()
 			if refetchPct > 50 {
-				fmt.Printf("  ⚠ re-fetch rate >50%% — compact may be inducing more fetches than it saves\n")
+				fmt.Printf("  warning: re-fetch rate >50%% — compact may be inducing more fetches than it saves\n")
 			}
 		}
 		if sum.WithContextCalls > 0 {
@@ -182,7 +182,7 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("%s=%d", v.verb, v.count)
 			}
 			fmt.Printf(")\n")
-			fmt.Printf("  ⚠ these verbs have compact active but no compact render path — add emitCompact\n")
+			fmt.Printf("  warning: these verbs have compact active but no compact render path — add emitCompact\n")
 		}
 	})
 }

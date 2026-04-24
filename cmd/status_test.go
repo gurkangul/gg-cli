@@ -26,8 +26,8 @@ func TestStatus_RefetchRateWarn(t *testing.T) {
 		_, _, _ = execCmd(t, "telemetry", "summary")
 	})
 
-	if !strings.Contains(out, "⚠") {
-		t.Errorf("expected refetch-rate warning (⚠) in output when rate=100%%; got:\n%s", out)
+	if !strings.Contains(out, "warning: re-fetch rate >50%") {
+		t.Errorf("expected refetch-rate warning in output when rate=100%%; got:\n%s", out)
 	}
 }
 

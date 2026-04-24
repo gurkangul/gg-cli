@@ -53,6 +53,14 @@ func isCompactActive(cmd *cobra.Command) bool {
 	// skips this (callers should supply a cmd) — there's no safe default
 	// without knowing whether a compact path exists.
 	if cmd == nil || cmd.Flags().Lookup("compact") == nil {
+		// Compact was implicitly requested by the agent environment but this
+		// command has no compact render path — record the gap so maintainers
+		// can prioritise adding emitCompact to the missing command.
+		if cmd != nil &&
+			(strings.TrimSpace(os.Getenv("GG_ROLE")) != "" ||
+				strings.TrimSpace(os.Getenv("GG_AGENT")) != "") {
+			emitCompactMissing(cmd, cmd.Name())
+		}
 		return false
 	}
 	if strings.TrimSpace(os.Getenv("GG_ROLE")) != "" ||

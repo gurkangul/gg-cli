@@ -575,6 +575,61 @@ func TestRecordMissingHandler_ClassifiesOriginCorrectly(t *testing.T) {
 	}
 }
 
+// TestRecordMissingHandler_OldEntriesExcluded verifies that MissingHandler
+// entries older than 7 days are not counted by Summarize, consistent with the
+// behaviour of every other entry type.
+func TestRecordMissingHandler_OldEntriesExcluded(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a stale missing-handler entry (>7 days ago) directly.
+	oldEntry := `{"verb":"gaps","origin":"agent","ts":"` +
+		time.Now().AddDate(0, 0, -8).UTC().Format(time.RFC3339) +
+		`","missing_handler":true}` + "\n"
+	if err := os.WriteFile(filePath(dir), []byte(oldEntry), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Write a recent missing-handler entry.
+	RecordMissingHandler(dir, "gaps", "")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.MissingHandlerCalls != 1 {
+		t.Errorf("MissingHandlerCalls = %d, want 1 (old entry should be excluded)", sum.MissingHandlerCalls)
+	}
+	if sum.MissingHandlerVerbCounts["gaps"] != 1 {
+		t.Errorf("MissingHandlerVerbCounts[gaps] = %d, want 1", sum.MissingHandlerVerbCounts["gaps"])
+	}
+}
+
+// TestRecordMissingHandler_AgentEnvTriggers verifies that an agent environment
+// variable (GG_ROLE or GG_AGENT) causes RecordMissingHandler to classify the
+// entry as agent-initiated, and that the entry appears in Summarize under
+// MissingHandlerVerbCounts for the given verb.
+func TestRecordMissingHandler_AgentEnvTriggers(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GG_ROLE", "developer")
+	t.Setenv("GG_AGENT", "")
+
+	RecordMissingHandler(dir, "file-size", "")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.MissingHandlerCalls != 1 {
+		t.Errorf("MissingHandlerCalls = %d, want 1", sum.MissingHandlerCalls)
+	}
+	if sum.MissingHandlerVerbCounts["file-size"] != 1 {
+		t.Errorf("MissingHandlerVerbCounts[file-size] = %d, want 1", sum.MissingHandlerVerbCounts["file-size"])
+	}
+	if sum.AgentCalls != 1 {
+		t.Errorf("AgentCalls = %d, want 1 (GG_ROLE set → agent origin)", sum.AgentCalls)
+	}
+}
+
 func TestRecord_WritesToRuntimeDir(t *testing.T) {
 	runtimeDir := t.TempDir()
 	Record(runtimeDir, "status", "")
