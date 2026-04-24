@@ -120,6 +120,42 @@ dropped so a failed broadcast never masks the underlying verify failure.
 | `7` | `ExitVerifyFailed` | Pre-task-done hook rejected the transition; task state unchanged. |
 | `130` | `ExitSignal` | Interrupted (Ctrl+C). |
 
+## AC attestation gate — simplified detection rationale
+
+The original TASK-300 spec described detection rules in three broad buckets:
+
+- **(a)** explicit `AC-N:` line in commit body
+- **(b)** test name containing the AC number
+- **(c)** file path or function reference implementing the AC
+
+The shipped hook (`50-ac-attestation.sh`) applies five concrete rules. The
+mapping from spec buckets to shipped rules is:
+
+| Spec bucket | Shipped rules |
+|-------------|---------------|
+| (a) commit-body text | (a) `AC-N:` line, (b) `N.`/`N)` numbered line, (c) `AC N` phrase |
+| (b) test name | (d) `TestACN_*` or `TestGapN_*` in diff added lines or changed file paths |
+| (c) file/func ref | (e) `func acN_*`, `// AC-N`, `// Gap N` in diff added lines |
+
+**Why the simplification:** the original (b)/(c) categories were implemented
+as diff-content scans rather than static file-path heuristics. Static
+file-path detection (e.g. "does `ac1_feature.go` exist in the repo?") was
+considered but deferred for two reasons:
+
+1. **Portability.** `git log -1 --name-only` is universally available in the
+   hook environment; reading the working tree requires knowing the repo root
+   and introduces edge cases around untracked files, renames, and submodules.
+2. **Signal quality.** A file existing in the tree doesn't prove the commit
+   *in question* touched it. Diff-content scanning (`git log -1 -p`) ties the
+   evidence to the specific commit, preventing stale-file false positives.
+
+The narrowing from "file path or function reference" to "added lines in the
+commit diff" is deliberately tighter — it avoids matching unchanged files from
+prior commits. This is a pragmatic trade-off, not an accidental omission.
+Follow-on work (TASK-312) may extend the parser to distinguish FIX-step
+bullets from ACCEPTANCE bullets; detection rule expansion can be revisited
+then.
+
 ## Troubleshooting
 
 - **Exit 7 in CI with no clear cause.** Grep stderr for
