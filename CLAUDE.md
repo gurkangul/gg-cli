@@ -24,7 +24,7 @@ gg-cli is the mandatory coordination channel for this project.
   layout) are the user's call.
 <!-- gg:contract:end -->
 
-<!-- gg:master-role:begin v1 -->
+<!-- gg:master-role:begin v2 -->
 ## MASTER ROLE (Opus — auto-task-solve mode)
 
 When running as the master (claude-code / Opus) coordinating worker sessions (GSD / Sonnet), the master is
@@ -58,6 +58,22 @@ the master owns review, architectural integrity, and spec compliance.
    `gg record` the trade-off with rationale + a follow-up task. Never silently lower the bar. This
    transparency is the master's integrity marker.
 
+7. **Pre-review spec-count attestation** — before running the code-reviewer subagent, extract the AC
+   count from the task Detail (numbered list / `AC-1:` / `Gap-A` headers). Grep the commit body and
+   changed test names for each AC reference. If any AC is unmentioned, reject immediately — no full
+   review needed (deterministic check, saves subagent cost). The 50-ac-attestation.sh hook enforces
+   this mechanically; the master must not bypass it.
+
+8. **Binary freshness before live smoke** — before `gg task done` + live verification, run
+   `gg doctor --check-binary`. If the binary is stale, run `go install ./cmd/gg` first. Never run
+   `--help` or any live smoke test against a stale binary; stale binaries have silently masked regressions
+   in prior sessions.
+
+9. **Worker commit AC-enumeration** (new worker contract) — worker commit bodies SHOULD include an
+   `AC-N: <evidence>` line per acceptance criterion. Master REJECTS commits lacking this enumeration
+   when the task has ≥2 ACs. Exception: single-AC tasks and trivial typo/comment fixes. A missing
+   AC line is treated as undocumented narrowing until proven otherwise.
+
 ### Tools the master uses (not exhaustive)
 
 - `gg inbox`, `gg tell`, `gg task get/review/done/ready-for-live`, `gg record` — coordination primitives
@@ -88,20 +104,24 @@ the master owns review, architectural integrity, and spec compliance.
 The worker is a running REPL inside a cmux pane. It only reads input that is typed into its pane.
 Inbox polling from the worker's side is not guaranteed.
 
-**To actually make the worker do work, master MUST type into the worker's cmux pane:**
+**To actually make the worker do work, use `gg spawn nudge`:**
 
 ```
-cmux send --surface <pane-id> "<prompt text>"
-cmux send-key --surface <pane-id> enter
+gg spawn nudge --surface <pane-id> "<prompt text>"
 ```
+
+`gg spawn nudge` handles idle-wake (raises the pane if asleep) + cross-process lock, then types the
+prompt into the pane. Raw `cmux send --surface <id> "<text>" && cmux send-key enter` silently fails
+on idle REPLs — the pane appears to receive the text but the agent never acts (observed in TASK-292
+rework cycle). Always use `gg spawn nudge` for triggering worker action.
 
 Pattern per master action:
 - **Spawning initial work:** `gg spawn worker --task TASK-N` already does this (bootstraps agent +
   sends task prompt). Nothing else required.
 - **Reject + rework:** always DUAL-write — (a) `gg task review TASK-N --reject` for the record,
-  (b) `cmux send --surface <pane> "<rework prompt>"` + `cmux send-key enter` to trigger the worker.
+  (b) `gg spawn nudge --surface <pane> "<rework prompt>"` to trigger the worker.
   Skipping step (b) leaves the worker idle after rejection.
-- **Ambiguity answer:** same — `gg tell` for record, `cmux send` to trigger response.
+- **Ambiguity answer:** same — `gg tell` for record, `gg spawn nudge` to trigger response.
 
 ### Pane lifecycle = task lifecycle
 
@@ -111,7 +131,7 @@ One worker pane per task. The pane lives exactly as long as the task is in progr
 open pane (gg spawn worker)
     → worker implements + commits + signals
     → master reviews (code-reviewer subagent)
-    → master rejects → cmux send rework prompt → worker iterates (SAME pane)
+    → master rejects → gg spawn nudge rework prompt → worker iterates (SAME pane)
     → master approves → gg task review/ready-for-live/done
     → master closes pane (cmux close-surface --surface <id>)
     → master clears panes.json entry
@@ -120,7 +140,7 @@ open pane (gg spawn worker)
 ```
 
 **The master never accepts "done" until the reviewer subagent says APPROVE.** Rework continues in
-the same pane with direct `cmux send` prompts until quality is met. When master issues
+the same pane with `gg spawn nudge` prompts until quality is met. When master issues
 `gg task done`, the pane gets closed and a fresh one spawns for the next task. This is the
 unit-of-work invariant: pane ≡ task, closed pane ≡ approved task.
 

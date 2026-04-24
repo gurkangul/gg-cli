@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	MasterRoleBlockBegin = "<!-- gg:master-role:begin v1 -->"
+	MasterRoleBlockBegin = "<!-- gg:master-role:begin v2 -->"
 	MasterRoleBlockEnd   = "<!-- gg:master-role:end -->"
 )
 
