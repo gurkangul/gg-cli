@@ -382,8 +382,8 @@ func TestRecordHydration_NetSavingsPositive(t *testing.T) {
 	if sum.NetSavingsBytes != 600 {
 		t.Errorf("NetSavingsBytes = %d, want 600", sum.NetSavingsBytes)
 	}
-	if sum.NetTokensSaved != 150 {
-		t.Errorf("NetTokensSaved = %d, want 150 (600/4)", sum.NetTokensSaved)
+	if want := 600 / BytesPerToken; sum.NetTokensSaved != want {
+		t.Errorf("NetTokensSaved = %d, want %d (600/BytesPerToken)", sum.NetTokensSaved, want)
 	}
 }
 
@@ -714,15 +714,15 @@ func TestRecordCompact_GlyphOverheadAggregated(t *testing.T) {
 	if sum.GlyphByteOverhead != 2 {
 		t.Errorf("GlyphByteOverhead = %d, want 2", sum.GlyphByteOverhead)
 	}
-	// 2 / 4 = 0 (integer division — overhead too small for a full token here).
-	if sum.GlyphTokenOverhead != 0 {
-		t.Errorf("GlyphTokenOverhead = %d, want 0 (2/4 rounds to 0)", sum.GlyphTokenOverhead)
+	// 2 / BytesPerToken = 0 (integer division — overhead too small for a full token).
+	if want := 2 / BytesPerToken; sum.GlyphTokenOverhead != want {
+		t.Errorf("GlyphTokenOverhead = %d, want %d (2/BytesPerToken)", sum.GlyphTokenOverhead, want)
 	}
 }
 
 func TestRecordCompact_GlyphOverheadLargeInput(t *testing.T) {
 	dir := t.TempDir()
-	// 100 copies of "✓" → overhead = 100 * 2 = 200 bytes → 200/4 = 50 tokens.
+	// 100 copies of "✓" → overhead = 100 * 2 = 200 bytes → 200/BytesPerToken tokens.
 	s := ""
 	for i := 0; i < 100; i++ {
 		s += "✓"
@@ -736,8 +736,8 @@ func TestRecordCompact_GlyphOverheadLargeInput(t *testing.T) {
 	if sum.GlyphByteOverhead != 200 {
 		t.Errorf("GlyphByteOverhead = %d, want 200", sum.GlyphByteOverhead)
 	}
-	if sum.GlyphTokenOverhead != 50 {
-		t.Errorf("GlyphTokenOverhead = %d, want 50", sum.GlyphTokenOverhead)
+	if want := 200 / BytesPerToken; sum.GlyphTokenOverhead != want {
+		t.Errorf("GlyphTokenOverhead = %d, want %d (200/BytesPerToken)", sum.GlyphTokenOverhead, want)
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
 
 // contextTieredItem is a single renderable item with a priority tier.
@@ -18,9 +20,9 @@ type contextTieredItem struct {
 	line string // pre-rendered compact line
 }
 
-// approxTokens estimates the token cost of a string (4 chars ≈ 1 token).
+// approxTokens estimates the token cost of a string using BytesPerToken.
 func approxTokens(s string) int {
-	n := len(s) / 4
+	n := len(s) / telemetry.BytesPerToken
 	if n == 0 {
 		n = 1
 	}

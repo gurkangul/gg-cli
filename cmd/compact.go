@@ -228,12 +228,12 @@ func writeCompactBugs(w io.Writer, bs []store.Bug) {
 }
 
 // humanTokenCount prints a token count with a K suffix for >1000 —
-// agents skim for order-of-magnitude ("~12K tok saved") not exact precision.
+// agents skim for order-of-magnitude ("~12K tok est.") not exact precision.
 //
 // Visual discontinuity at the 10K boundary is intentional: below 10K we keep
 // one decimal of resolution (9.9K), at/above 10K we drop to integer (10K).
-// The jump from "9.9K" to "10K" (not "10.0K") is minor and acceptable — the
-// metric is approximate (bytes/4) so extra precision would be misleading.
+// The jump from "9.9K" to "10K" (not "10.0K") is acceptable — the metric is
+// a bytes/BytesPerToken estimate, so extra precision would be misleading.
 func humanTokenCount(n int) string {
 	if n < 1000 {
 		return fmt.Sprintf("%d", n)

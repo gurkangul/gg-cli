@@ -108,7 +108,7 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 			if sum.CompactBytesDefault > 0 {
 				pct = 100 * saved / sum.CompactBytesDefault
 			}
-			fmt.Printf("\n--compact: %d calls saved %d bytes / ~%s tok (%d%%)\n",
+			fmt.Printf("\n--compact: %d calls saved %d bytes / ~%s tok (est.) (%d%%)\n",
 				sum.CompactCalls, saved, humanTokenCount(sum.CompactTokensSaved), pct)
 		}
 		if sum.HydrationCalls > 0 {

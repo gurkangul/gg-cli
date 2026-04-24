@@ -29,6 +29,16 @@ const (
 	fileName    = "telemetry.jsonl"
 	originAgent = "agent"
 	originHuman = "human"
+
+	// BytesPerToken is the bytes-per-token divisor used for all token estimates
+	// in compact telemetry. Compact output is code-heavy ASCII (IDs, dates,
+	// short titles) and mixed English/Turkish prose. Empirical tokenization of
+	// representative gg compact lines yields ~3 chars/token, so 3 is more
+	// accurate than the generic English-prose value of 4.
+	//
+	// All callers that display a token count should label it "(est.)" so users
+	// understand this is a heuristic, not a precise tiktoken count.
+	BytesPerToken = 3
 )
 
 // configExplicitDisabled is true when .gg/config.yaml contains
@@ -424,18 +434,15 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 		}
 	}
 	if saved := sum.CompactBytesDefault - sum.CompactBytesOut; saved > 0 {
-		// 4 bytes ≈ 1 token — a coarse but stable heuristic across English
-		// and Latin-script languages. Turkish text leans slightly lower but
-		// the error stays well under the 10% noise floor of the metric.
-		sum.CompactTokensSaved = saved / 4
+		sum.CompactTokensSaved = saved / BytesPerToken
 	}
 	// GlyphTokenOverhead: extra tokens spent on Unicode glyphs vs 1-byte ASCII.
-	// Uses the same bytes/4 heuristic. Even at zero calls this stays zero, so
-	// the gg status display can gate on CompactCalls > 0 before showing it.
-	sum.GlyphTokenOverhead = sum.GlyphByteOverhead / 4
+	// Uses the same BytesPerToken estimate. Even at zero calls this stays zero,
+	// so the gg status display can gate on CompactCalls > 0 before showing it.
+	sum.GlyphTokenOverhead = sum.GlyphByteOverhead / BytesPerToken
 	// Net savings = gross bytes saved by compact - bytes fetched back by hydration.
 	// Can be negative when compact induces more re-fetching than it saves.
 	sum.NetSavingsBytes = (sum.CompactBytesDefault - sum.CompactBytesOut) - sum.HydrationBytesTotal
-	sum.NetTokensSaved = sum.NetSavingsBytes / 4
+	sum.NetTokensSaved = sum.NetSavingsBytes / BytesPerToken
 	return sum, nil
 }
