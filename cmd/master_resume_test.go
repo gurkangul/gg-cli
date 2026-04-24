@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +14,88 @@ import (
 	"github.com/gurkangul/gg-cli/internal/orchestrator/spawn"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
+
+// ── fetchMasterDecisions unit tests ──────────────────────────────────────────
+
+// fakeDecisionFetcher records which method was called and with what args.
+type fakeDecisionFetcher struct {
+	searchCalled bool
+	searchVector []float32
+	searchLimit  uint64
+	listCalled   bool
+	listLimit    int
+	result       []store.Decision
+}
+
+func (f *fakeDecisionFetcher) SearchDecisions(_ context.Context, vec []float32, limit uint64) ([]store.Decision, error) {
+	f.searchCalled = true
+	f.searchVector = vec
+	f.searchLimit = limit
+	return f.result, nil
+}
+
+func (f *fakeDecisionFetcher) ListDecisions(_ context.Context, limit int) ([]store.Decision, error) {
+	f.listCalled = true
+	f.listLimit = limit
+	return f.result, nil
+}
+
+// fakeEmbedder returns a fixed vector when Generate is called.
+type fakeEmbedder struct {
+	vec []float32
+}
+
+func (e *fakeEmbedder) Generate(_ context.Context, _ string) ([]float32, error) {
+	return e.vec, nil
+}
+
+// TestFetchMasterDecisions_WithEmbedder verifies that when an embedder is
+// available, SearchDecisions is called with limit 5 and the embedded vector.
+func TestFetchMasterDecisions_WithEmbedder(t *testing.T) {
+	knownVec := []float32{0.1, 0.2, 0.3}
+	fetcher := &fakeDecisionFetcher{result: []store.Decision{{Text: "decision-A"}}}
+	emb := &fakeEmbedder{vec: knownVec}
+
+	got, err := fetchMasterDecisions(context.Background(), emb, fetcher)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !fetcher.searchCalled {
+		t.Error("SearchDecisions was not called when embedder was provided")
+	}
+	if fetcher.listCalled {
+		t.Error("ListDecisions should not be called when embedder is available")
+	}
+	if fetcher.searchLimit != 5 {
+		t.Errorf("SearchDecisions limit = %d, want 5", fetcher.searchLimit)
+	}
+	if len(got) == 0 || got[0].Text != "decision-A" {
+		t.Errorf("unexpected result: %v", got)
+	}
+}
+
+// TestFetchMasterDecisions_NilEmbedder verifies that when the embedder is nil,
+// ListDecisions is called with limit 5.
+func TestFetchMasterDecisions_NilEmbedder(t *testing.T) {
+	fetcher := &fakeDecisionFetcher{result: []store.Decision{{Text: "decision-B"}}}
+
+	got, err := fetchMasterDecisions(context.Background(), nil, fetcher)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fetcher.searchCalled {
+		t.Error("SearchDecisions should not be called when embedder is nil")
+	}
+	if !fetcher.listCalled {
+		t.Error("ListDecisions was not called when embedder is nil")
+	}
+	if fetcher.listLimit != 5 {
+		t.Errorf("ListDecisions limit = %d, want 5", fetcher.listLimit)
+	}
+	if len(got) == 0 || got[0].Text != "decision-B" {
+		t.Errorf("unexpected result: %v", got)
+	}
+}
 
 // TestMasterResume_NoGGDir verifies that the command returns a config error
 // when there is no .gg directory in the working directory.

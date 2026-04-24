@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,30 @@ import (
 )
 
 const masterResumeMaxPendingTasks = 20
+
+// masterDecisionFetcher is the minimal interface needed by fetchMasterDecisions.
+// It is satisfied by *store.Client and by the fake in tests.
+type masterDecisionFetcher interface {
+	SearchDecisions(ctx context.Context, vector []float32, limit uint64) ([]store.Decision, error)
+	ListDecisions(ctx context.Context, limit int) ([]store.Decision, error)
+}
+
+// masterEmbedder is the minimal interface needed for embedding in master resume.
+type masterEmbedder interface {
+	Generate(ctx context.Context, text string) ([]float32, error)
+}
+
+// fetchMasterDecisions returns the top 5 decisions most relevant to "master-role"
+// when an embedder is available, falling back to the 5 most recent decisions.
+func fetchMasterDecisions(ctx context.Context, emb masterEmbedder, fetcher masterDecisionFetcher) ([]store.Decision, error) {
+	if emb != nil {
+		vec, err := emb.Generate(ctx, "master-role")
+		if err == nil {
+			return fetcher.SearchDecisions(ctx, vec, 5)
+		}
+	}
+	return fetcher.ListDecisions(ctx, 5)
+}
 
 var masterResumeCmd = &cobra.Command{
 	Use:   "resume",
@@ -64,7 +89,7 @@ func runMasterResume(cmd *cobra.Command, _ []string) error {
 	panesRaw, panesRawErr := os.ReadFile(panesPath)
 
 	// 3-6. Qdrant-backed state — tolerate Qdrant down.
-	d, depsErr := loadDepsReadOnly(false)
+	d, depsErr := loadDepsReadOnly(true)
 	var pendingTasks, readyTasks []store.Task
 	var messages []store.Message
 	var decisions []store.Decision
@@ -98,8 +123,9 @@ func runMasterResume(cmd *cobra.Command, _ []string) error {
 				messages = allMessages
 			}
 
-			// Recent decisions — newest 10.
-			decisions, _ = d.store.ListDecisions(ctx, 10)
+			// Top 5 master-role decisions: semantic search when embedder is
+			// available, fall back to the 5 most recent otherwise.
+			decisions, _ = fetchMasterDecisions(ctx, d.embedder, d.store)
 		}
 	} else {
 		qdrantNote = fmt.Sprintf("(store unavailable: %v)", depsErr)
@@ -267,8 +293,8 @@ func printMasterResume(
 		}
 	}
 
-	// 6. Recent decisions
-	sep("Recent Decisions (latest 10)")
+	// 6. Top 5 master-role decisions (semantic search when embedder available)
+	sep("Top 5 Master-Role Decisions")
 	if len(decisions) == 0 {
 		fmt.Fprintln(w, "  (none)")
 	} else {
