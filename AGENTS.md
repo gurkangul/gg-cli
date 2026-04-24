@@ -286,26 +286,52 @@ structured parsers can both react:
 
 The AC attestation hook catches *silent AC narrowing* — committing without
 demonstrating coverage of each acceptance criterion in the task spec. It
-blocks `gg task done` when any AC listed in the task's `ACCEPTANCE` section
-is not referenced in the commit message.
+blocks `gg task done` when any AC anchor found in the task Detail is not
+referenced in the commit message.
 
-How it works:
-- Reads the task's `ACCEPTANCE` bullet points via `gg task get $GG_TASK_ID --json`
-- Assigns each bullet a number: AC-1, AC-2, …
-- Checks the `git log -1 --pretty=%B` output for references:
-  - `AC-N:` anywhere in the commit body (preferred, e.g. `AC-1: implemented blocking logic`)
-  - `N:` or `N)` at the start of a commit line (numbered-list style)
-  - `AC N` (with space) in the commit body
-- Exits 7 with an enumeration of unmatched ACs if any are unaccounted
+How it works — parser (5 ordered passes over the entire Detail text):
+1. Explicit `AC-N:` lines anywhere (e.g. `AC-1: something`)
+2. `Gap A / Gap B / Gap N` style lines — common in gap-tracking tasks
+3. `FIX N` lines — common in bug-fix tasks
+4. Numbered items at line start: `1.`, `1)`, `1:` (in any section)
+5. `- ` bullets under an `ACCEPTANCE` heading (fallback)
 
-Worker protocol — include AC references in every commit message:
+Anchors are deduplicated by text; the pass order is priority only. Each
+found anchor is assigned a display label (AC-1, AC-2, …) for the
+failure message.
+
+Commit reference rules — the hook accepts **any one** of these per AC:
+- `AC-N:` anywhere in the commit body (preferred, e.g. `AC-1: implemented blocking logic`)
+- `N.` / `N)` / `N:` at the start of a commit line (numbered-list style)
+- `AC N` phrase in the commit body (e.g. `AC 1 is covered by Y`)
+
+Exits 7 with an enumeration of unmatched ACs if any are unaccounted.
+
+**Passing commit example:**
 ```
 feat(TASK-042): implement AC attestation hook
 
-AC-1: hook exits 7 when ACCEPTANCE bullets not in commit; tested in cmd/hook_ac_attestation_test.go
+AC-1: hook exits 7 when anchors not in commit; tested in cmd/hook_ac_attestation_test.go
 AC-2: bypass GG_ALLOW_INCOMPLETE_AC audited via gg record
 AC-3: integration test — 3 ACs + 2 refs blocks; 3 ACs + 3 refs passes
 AC-4: documented in AGENTS.md
+```
+
+**Failing commit example** (two ACs unaccounted — hook blocks with exit 7):
+```
+feat(TASK-042): partial work
+
+Only covered AC-1 here.
+```
+```
+[pre-task-done] AC attestation FAILED for TASK-042
+Unmatched ACs (2 of 4):
+  AC-2: bypass GG_ALLOW_INCOMPLETE_AC audited via gg record
+  AC-3: integration test — 3 ACs + 2 refs blocks; 3 ACs + 3 refs passes
+To fix — pick any one format per AC:
+  (a) AC-N: line in commit body
+  (b) numbered reference at line start (e.g. "3. addressed via X")
+  (c) "AC N" phrase in commit body (e.g. "AC 3 is covered by Y")
 ```
 
 Modes (env `GG_AC_ATTESTATION`): `on` (default, blocking) | `warn` | `off`

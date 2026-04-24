@@ -199,13 +199,17 @@ fi
 printf '[ac-attestation] ⚠ %s: unmatched acceptance criteria:%s\n\n' \
   "$GG_TASK_ID" "$UNMATCHED" >&2
 
-printf 'To fix: add "AC-N: <evidence>" lines to your commit message body:\n' >&2
+printf 'To fix — pick any one format per AC:\n' >&2
+printf '  (a) AC-N: line in commit body (e.g. "AC-1: implemented via X")\n' >&2
 while IFS="	" read -r NUM _; do
   [ -z "$NUM" ] && continue
-  printf '  AC-%s: <how this criterion was addressed>\n' "$NUM" >&2
+  printf '       AC-%s: <how this criterion was addressed>\n' "$NUM" >&2
 done << ACEOF2
 $ACS
 ACEOF2
+printf '  (b) numbered reference at line start (e.g. "1. addressed via X")\n' >&2
+printf '  (c) "AC N" phrase in commit body (e.g. "AC %s is covered by Y")\n' \
+  "$(printf '%s' "$ACS" | head -1 | cut -f1)" >&2
 
 printf '\nTo bypass (audited):\n  GG_ALLOW_INCOMPLETE_AC="<reason>" gg task done %s ...\n' \
   "$GG_TASK_ID" >&2
