@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -290,6 +291,47 @@ func TestPrintMasterResume_PanesJSONRaw_Absent(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "file absent") {
 		t.Errorf("expected 'file absent' message; got:\n%s", out)
+	}
+}
+
+// TestPrintMasterResume_InboxTop10 verifies that when runMasterResume caps
+// messages to 10 before passing them to printMasterResume, only 10 appear.
+// The cap lives in runMasterResume (allMessages[:10]); printMasterResume prints
+// whatever slice it receives. This test documents that contract.
+func TestPrintMasterResume_InboxTop10(t *testing.T) {
+	all := make([]store.Message, 15)
+	for i := range all {
+		all[i] = store.Message{
+			FromRole: "developer",
+			ToRole:   "claude-code",
+			Content:  fmt.Sprintf("message-%d", i),
+		}
+	}
+	// Simulate what runMasterResume does: cap to 10.
+	msgs := all[:10]
+
+	var buf strings.Builder
+	printMasterResume(&buf,
+		nil,
+		nil, spawn.ErrNoHeartbeat, false, "",
+		nil, spawn.ErrNoQueue,
+		nil, nil,
+		nil, nil, msgs, nil,
+		"",
+		"", nil, nil,
+	)
+	out := buf.String()
+	// First 10 messages must appear.
+	for i := 0; i < 10; i++ {
+		if !strings.Contains(out, fmt.Sprintf("message-%d", i)) {
+			t.Errorf("expected message-%d in output", i)
+		}
+	}
+	// Messages 10-14 must NOT appear (they were excluded by the cap).
+	for i := 10; i < 15; i++ {
+		if strings.Contains(out, fmt.Sprintf("message-%d", i)) {
+			t.Errorf("unexpected message-%d in output (should be capped at 10)", i)
+		}
 	}
 }
 

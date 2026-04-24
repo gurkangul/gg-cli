@@ -90,8 +90,13 @@ func runMasterResume(cmd *cobra.Command, _ []string) error {
 
 			readyTasks, _ = d.store.ListTasks(ctx, "ready_for_live")
 
-			// Inbox: include agent messages, peek (no mark-as-read).
-			messages, _ = d.store.GetInbox(ctx, "", false)
+			// Inbox: include agent messages, peek (no mark-as-read). Cap at 10.
+			allMessages, _ := d.store.GetInbox(ctx, "", false)
+			if len(allMessages) > 10 {
+				messages = allMessages[:10]
+			} else {
+				messages = allMessages
+			}
 
 			// Recent decisions — newest 10.
 			decisions, _ = d.store.ListDecisions(ctx, 10)
@@ -248,8 +253,8 @@ func printMasterResume(
 		}
 	}
 
-	// 5. Inbox (including agent messages, peek)
-	sep("Unread Inbox (all audiences, peek)")
+	// 5. Inbox (including agent messages, peek, top 10)
+	sep("Unread Inbox (all audiences, peek, top 10)")
 	if len(messages) == 0 {
 		fmt.Fprintln(w, "  (empty)")
 	} else {
