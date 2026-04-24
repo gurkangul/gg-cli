@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -55,6 +57,12 @@ func runMasterResume(cmd *cobra.Command, _ []string) error {
 	sess, sessErr := spawn.ReadQueue(rt)
 	workers, workersErr := spawn.ListPanes(rt)
 
+	// 7. panes.json raw content — read independently so the master always sees
+	// the exact file bytes (pane → task mapping), matching the CLAUDE.md protocol
+	// which specifies `cat ~/.gg/projects/<id>/spawn/panes.json`.
+	panesPath := filepath.Join(spawn.Dir(rt), spawn.PanesFile)
+	panesRaw, panesRawErr := os.ReadFile(panesPath)
+
 	// 3-6. Qdrant-backed state — tolerate Qdrant down.
 	d, depsErr := loadDepsReadOnly(false)
 	var pendingTasks, readyTasks []store.Task
@@ -95,6 +103,7 @@ func runMasterResume(cmd *cobra.Command, _ []string) error {
 	return printJSON(buildMasterResumeJSON(
 		gitLines, hb, alive, sess, workers,
 		pendingTasks, readyTasks, messages, decisions,
+		panesRaw,
 	), func() {
 		w := cmd.OutOrStdout()
 		printMasterResume(w,
@@ -102,6 +111,7 @@ func runMasterResume(cmd *cobra.Command, _ []string) error {
 			sess, sessErr, workers, workersErr,
 			pendingTasks, readyTasks, messages, decisions,
 			qdrantNote,
+			panesPath, panesRaw, panesRawErr,
 		)
 	})
 }
@@ -132,6 +142,7 @@ func printMasterResume(
 	messages []store.Message,
 	decisions []store.Decision,
 	qdrantNote string,
+	panesPath string, panesRaw []byte, panesRawErr error,
 ) {
 	sep := func(title string) { fmt.Fprintf(w, "\n══ %s ══\n", title) }
 
@@ -264,6 +275,18 @@ func printMasterResume(
 			fmt.Fprintf(w, "  D  %s  %s%s\n", shortDate(dec.CreatedAt), compactTrim(dec.Text, 80), tags)
 		}
 	}
+
+	// 7. panes.json raw — exact file content for pane→task mapping (mirrors the
+	// `cat ~/.gg/projects/<id>/spawn/panes.json` step in the CLAUDE.md protocol).
+	sep(fmt.Sprintf("panes.json raw (%s)", panesPath))
+	switch {
+	case panesRawErr != nil && os.IsNotExist(panesRawErr):
+		fmt.Fprintln(w, "  (file absent — no active worker panes registered)")
+	case panesRawErr != nil:
+		fmt.Fprintf(w, "  error reading panes.json: %v\n", panesRawErr)
+	default:
+		fmt.Fprintf(w, "%s\n", panesRaw)
+	}
 }
 
 // buildMasterResumeJSON constructs the JSON payload for --json mode.
@@ -275,6 +298,7 @@ func buildMasterResumeJSON(
 	pendingTasks, readyTasks []store.Task,
 	messages []store.Message,
 	decisions []store.Decision,
+	panesRaw []byte,
 ) map[string]any {
 	// Normalise nil slices to empty arrays so the JSON output is stable
 	// (null vs [] matters to callers parsing --json output).
@@ -296,6 +320,12 @@ func buildMasterResumeJSON(
 	if decisions == nil {
 		decisions = []store.Decision{}
 	}
+	// panes_json_raw: include raw bytes as a JSON string so callers get exactly
+	// what `cat panes.json` would produce. Nil (file absent) becomes "".
+	panesRawStr := ""
+	if panesRaw != nil {
+		panesRawStr = string(panesRaw)
+	}
 	out := map[string]any{
 		"git_log":          gitLines,
 		"master_alive":     alive,
@@ -304,6 +334,7 @@ func buildMasterResumeJSON(
 		"ready_for_live":   readyTasks,
 		"inbox_messages":   messages,
 		"recent_decisions": decisions,
+		"panes_json_raw":   panesRawStr,
 	}
 	if hb != nil {
 		out["heartbeat"] = hb

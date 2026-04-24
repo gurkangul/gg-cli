@@ -99,7 +99,7 @@ func TestMasterResume_WithHeartbeat(t *testing.T) {
 // produces empty arrays (not null) for all nil slice inputs, and that
 // the serialised JSON round-trips correctly.
 func TestBuildMasterResumeJSON_StableArrays(t *testing.T) {
-	payload := buildMasterResumeJSON(nil, nil, false, nil, nil, nil, nil, nil, nil)
+	payload := buildMasterResumeJSON(nil, nil, false, nil, nil, nil, nil, nil, nil, nil)
 
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -146,7 +146,7 @@ func TestRecentGitLog_NotInRepo(t *testing.T) {
 // JSON arrays rather than JSON null values.
 func TestBuildMasterResumeJSON_NilSlices(t *testing.T) {
 	out := buildMasterResumeJSON(
-		nil, nil, false, nil, nil, nil, nil, nil, nil,
+		nil, nil, false, nil, nil, nil, nil, nil, nil, nil,
 	)
 	sliceFields := []string{"git_log", "workers", "pending_tasks", "ready_for_live", "inbox_messages", "recent_decisions"}
 	for _, field := range sliceFields {
@@ -165,7 +165,7 @@ func TestBuildMasterResumeJSON_NilSlices(t *testing.T) {
 // is present in the output map.
 func TestBuildMasterResumeJSON_HeartbeatIncluded(t *testing.T) {
 	hb := &spawn.Heartbeat{Agent: "opus", PID: 1}
-	out := buildMasterResumeJSON(nil, hb, true, nil, nil, nil, nil, nil, nil)
+	out := buildMasterResumeJSON(nil, hb, true, nil, nil, nil, nil, nil, nil, nil)
 	if _, ok := out["heartbeat"]; !ok {
 		t.Error("heartbeat field missing when heartbeat is non-nil")
 	}
@@ -178,7 +178,7 @@ func TestBuildMasterResumeJSON_HeartbeatIncluded(t *testing.T) {
 // session appears in the output map.
 func TestBuildMasterResumeJSON_QueueSessionIncluded(t *testing.T) {
 	sess := &spawn.QueueSession{Agent: "gsd", StartedAt: time.Now()}
-	out := buildMasterResumeJSON(nil, nil, false, sess, nil, nil, nil, nil, nil)
+	out := buildMasterResumeJSON(nil, nil, false, sess, nil, nil, nil, nil, nil, nil)
 	if _, ok := out["queue_session"]; !ok {
 		t.Error("queue_session field missing when session is non-nil")
 	}
@@ -201,6 +201,7 @@ func TestPrintMasterResume_ShortCreatedAt(t *testing.T) {
 		nil, nil,
 		nil, nil, nil, decisions,
 		"",
+		"", nil, nil,
 	)
 	if !strings.Contains(buf.String(), "some decision") {
 		t.Errorf("expected decision text in output; got:\n%s", buf.String())
@@ -220,6 +221,7 @@ func TestPrintMasterResume_EmptyDecisionCreatedAt(t *testing.T) {
 		nil, nil,
 		nil, nil, nil, decisions,
 		"",
+		"", nil, nil,
 	)
 	if !strings.Contains(buf.String(), "another decision") {
 		t.Errorf("expected decision text in output; got:\n%s", buf.String())
@@ -238,6 +240,7 @@ func TestPrintMasterResume_QdrantNoteHidesQdrantSections(t *testing.T) {
 		nil, nil,
 		tasks, nil, nil, nil,
 		"(Qdrant unreachable — tasks/inbox/decisions unavailable)",
+		"", nil, nil,
 	)
 	out := buf.String()
 	if strings.Contains(out, "TASK-001") {
@@ -245,5 +248,65 @@ func TestPrintMasterResume_QdrantNoteHidesQdrantSections(t *testing.T) {
 	}
 	if !strings.Contains(out, "Qdrant unreachable") {
 		t.Errorf("expected qdrant note in output; got:\n%s", out)
+	}
+}
+
+// TestPrintMasterResume_PanesJSONRaw_Present verifies that raw panes.json
+// content (section 7) is printed verbatim when the file exists.
+func TestPrintMasterResume_PanesJSONRaw_Present(t *testing.T) {
+	rawContent := `[{"task_id":"TASK-042","surface_id":"gsd-1","agent":"claude"}]`
+	var buf strings.Builder
+	printMasterResume(&buf,
+		nil,
+		nil, spawn.ErrNoHeartbeat, false, "",
+		nil, spawn.ErrNoQueue,
+		nil, nil,
+		nil, nil, nil, nil,
+		"",
+		"/tmp/fake/panes.json", []byte(rawContent), nil,
+	)
+	out := buf.String()
+	if !strings.Contains(out, "panes.json raw") {
+		t.Errorf("expected 'panes.json raw' section header; got:\n%s", out)
+	}
+	if !strings.Contains(out, "TASK-042") {
+		t.Errorf("expected raw panes content in output; got:\n%s", out)
+	}
+}
+
+// TestPrintMasterResume_PanesJSONRaw_Absent verifies that a missing panes.json
+// prints the "file absent" message rather than an error.
+func TestPrintMasterResume_PanesJSONRaw_Absent(t *testing.T) {
+	var buf strings.Builder
+	printMasterResume(&buf,
+		nil,
+		nil, spawn.ErrNoHeartbeat, false, "",
+		nil, spawn.ErrNoQueue,
+		nil, nil,
+		nil, nil, nil, nil,
+		"",
+		"/tmp/fake/panes.json", nil, os.ErrNotExist,
+	)
+	out := buf.String()
+	if !strings.Contains(out, "file absent") {
+		t.Errorf("expected 'file absent' message; got:\n%s", out)
+	}
+}
+
+// TestBuildMasterResumeJSON_PanesRaw verifies that raw panes content is present
+// in the JSON output map as a string field.
+func TestBuildMasterResumeJSON_PanesRaw(t *testing.T) {
+	rawContent := []byte(`[{"task_id":"TASK-042"}]`)
+	out := buildMasterResumeJSON(nil, nil, false, nil, nil, nil, nil, nil, nil, rawContent)
+	v, ok := out["panes_json_raw"]
+	if !ok {
+		t.Fatal("panes_json_raw field missing from JSON output")
+	}
+	s, ok := v.(string)
+	if !ok {
+		t.Fatalf("panes_json_raw should be string, got %T", v)
+	}
+	if !strings.Contains(s, "TASK-042") {
+		t.Errorf("panes_json_raw missing expected content; got: %q", s)
 	}
 }
