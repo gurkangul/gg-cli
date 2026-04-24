@@ -178,7 +178,15 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 		}
 
 		// Check advisory collision before spawning.
-		collisions, collErr := lockStore.CheckConflicts(nil, task.ID)
+		// PathsFor returns the paths this task already claimed in a prior run (e.g.
+		// on resume). For a first-time dispatch, paths is nil and CheckConflicts is
+		// a no-op — the worker registers its paths via `gg task claim-files` after
+		// it determines which files it will touch.
+		taskPaths, pathErr := lockStore.PathsFor(task.ID)
+		if pathErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ lock path lookup for %s: %v\n", task.ID, pathErr)
+		}
+		collisions, collErr := lockStore.CheckConflicts(taskPaths, task.ID)
 		if collErr != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ lock check for %s: %v\n", task.ID, collErr)
 		}
