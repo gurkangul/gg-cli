@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"time"
 
@@ -10,6 +11,9 @@ import (
 
 	"github.com/gurkangul/gg-cli/internal/store"
 )
+
+// taskIDRe matches the first TASK-NNN reference in a string.
+var taskIDRe = regexp.MustCompile(`(?i)\bTASK-\d+\b`)
 
 // Rework-rate thresholds: fraction of task decisions that reference rework.
 // >20% means the team is iterating heavily; >40% means design-before-commit.
@@ -128,6 +132,9 @@ func computeDogfoodMetrics(days int, tasks []store.Task, decisions []store.Decis
 
 	// Rework rate: among decisions linked to any task in the window,
 	// how many reference a rework iteration ("rework-N" or "rework " prefix).
+	// Task attribution: dec.TaskID (explicit --task flag) OR a TASK-NNN reference
+	// in dec.Tags OR a TASK-NNN match in dec.Text. Most gg record calls omit
+	// --task but embed the task ID in the text or tags.
 	totalDec := 0
 	reworkDec := 0
 	gapDec := 0
@@ -136,7 +143,7 @@ func computeDogfoodMetrics(days int, tasks []store.Task, decisions []store.Decis
 		if err != nil || ts.Before(cutoff) {
 			continue
 		}
-		if dec.TaskID == "" {
+		if !decisionHasTaskRef(dec) {
 			continue
 		}
 		totalDec++
@@ -170,6 +177,20 @@ func computeDogfoodMetrics(days int, tasks []store.Task, decisions []store.Decis
 		DoneTaskIDs:     len(doneTasks),
 		GapRate:         gapRate,
 	}
+}
+
+// decisionHasTaskRef returns true when a decision can be attributed to a task.
+// Priority: explicit TaskID field → TASK-NNN in Tags → TASK-NNN in Text.
+func decisionHasTaskRef(dec store.Decision) bool {
+	if dec.TaskID != "" {
+		return true
+	}
+	for _, tag := range dec.Tags {
+		if taskIDRe.MatchString(tag) {
+			return true
+		}
+	}
+	return taskIDRe.MatchString(dec.Text)
 }
 
 func renderDogfoodDefault(w io.Writer, m dogfoodMetrics) {

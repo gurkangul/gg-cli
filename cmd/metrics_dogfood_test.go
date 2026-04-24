@@ -129,16 +129,76 @@ func TestComputeDogfood_DecisionsOutsideWindow(t *testing.T) {
 	}
 }
 
-// TestComputeDogfood_DecisionsWithoutTaskID — decisions not linked to a task
-// should not count in rework/gap totals.
-func TestComputeDogfood_DecisionsWithoutTaskID(t *testing.T) {
+// TestComputeDogfood_DecisionsWithoutTaskRef — decisions with no task reference
+// in TaskID, Tags, or Text should not count in rework/gap totals.
+func TestComputeDogfood_DecisionsWithoutTaskRef(t *testing.T) {
 	decisions := []store.Decision{
+		// No TaskID, no TASK-NNN in text or tags — excluded.
 		{ID: "d1", TaskID: "", Text: "rework pattern noted in arch discussion", CreatedAt: nowMinus(2)},
-		{ID: "d2", TaskID: "TASK-1", Text: "TASK-1 accepted", CreatedAt: nowMinus(1)},
+		// Explicit TaskID — included.
+		{ID: "d2", TaskID: "TASK-1", Text: "accepted", CreatedAt: nowMinus(1)},
 	}
 	m := computeDogfoodMetrics(14, nil, decisions)
 	if m.TotalDecisions != 1 {
 		t.Errorf("TotalDecisions: got %d, want 1 (unlinked decision excluded)", m.TotalDecisions)
+	}
+}
+
+// TestComputeDogfood_DecisionAttributedViaText — decisions with a TASK-NNN
+// reference in their text but no explicit TaskID should be counted.
+func TestComputeDogfood_DecisionAttributedViaText(t *testing.T) {
+	decisions := []store.Decision{
+		// TASK-NNN in text, no explicit TaskID → should be counted.
+		{ID: "d1", TaskID: "", Text: "TASK-42 rework-2: re-implemented AC-1", CreatedAt: nowMinus(2)},
+		// No reference anywhere → excluded.
+		{ID: "d2", TaskID: "", Text: "arch discussion about layers", CreatedAt: nowMinus(1)},
+	}
+	m := computeDogfoodMetrics(14, nil, decisions)
+	if m.TotalDecisions != 1 {
+		t.Errorf("TotalDecisions: got %d, want 1 (text-attributed decision counted)", m.TotalDecisions)
+	}
+	if m.ReworkDecisions != 1 {
+		t.Errorf("ReworkDecisions: got %d, want 1", m.ReworkDecisions)
+	}
+}
+
+// TestComputeDogfood_DecisionAttributedViaTags — decisions with a TASK-NNN tag
+// but no explicit TaskID or text reference should be counted.
+func TestComputeDogfood_DecisionAttributedViaTags(t *testing.T) {
+	decisions := []store.Decision{
+		// TASK-NNN in tags, no explicit TaskID → should be counted.
+		{ID: "d1", TaskID: "", Tags: []string{"TASK-99", "accept-with-gap"}, Text: "accept-with-gap: known gap", CreatedAt: nowMinus(2)},
+		// No reference anywhere → excluded.
+		{ID: "d2", TaskID: "", Tags: []string{"architecture"}, Text: "use postgres", CreatedAt: nowMinus(1)},
+	}
+	m := computeDogfoodMetrics(14, nil, decisions)
+	if m.TotalDecisions != 1 {
+		t.Errorf("TotalDecisions: got %d, want 1 (tag-attributed decision counted)", m.TotalDecisions)
+	}
+	if m.GapDecisions != 1 {
+		t.Errorf("GapDecisions: got %d, want 1", m.GapDecisions)
+	}
+}
+
+// TestDecisionHasTaskRef — unit test for the attribution helper directly.
+func TestDecisionHasTaskRef(t *testing.T) {
+	cases := []struct {
+		dec  store.Decision
+		want bool
+	}{
+		{store.Decision{TaskID: "TASK-1"}, true},
+		{store.Decision{Tags: []string{"TASK-42", "rework"}}, true},
+		{store.Decision{Text: "TASK-303 done — velocity shipped"}, true},
+		{store.Decision{Text: "task-5 done"}, true}, // case-insensitive
+		{store.Decision{Text: "arch discussion, no task ref"}, false},
+		{store.Decision{Tags: []string{"rework", "architecture"}}, false},
+		{store.Decision{}, false},
+	}
+	for _, c := range cases {
+		got := decisionHasTaskRef(c.dec)
+		if got != c.want {
+			t.Errorf("decisionHasTaskRef(%+v): got %v, want %v", c.dec, got, c.want)
+		}
 	}
 }
 
