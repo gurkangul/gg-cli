@@ -47,13 +47,18 @@ func TestBytesPerTokenFor(t *testing.T) {
 		}
 	})
 
-	t.Run("typical compact line is near 3 bytes per token", func(t *testing.T) {
-		// Representative gg compact output. BytesPerToken=3 was chosen empirically;
-		// this test verifies the heuristic lands in [2,4].
-		line := "○ TASK-285 [low] Compact: token tahmini disclaimer + BytesPerToken calibration"
-		ratio := BytesPerTokenFor(line)
-		if ratio < 2 || ratio > 5 {
-			t.Errorf("BytesPerTokenFor(compact line) = %d, want in [2,5]", ratio)
+	t.Run("known compact corpus pins near 4 bytes per token", func(t *testing.T) {
+		// Pinned from corpus measurement: 25-line golden corpus → 4.024 bytes/token → rounded=4.
+		// Epsilon ±0.5 allows minor corpus drift; re-run TestEmitCalibrationFactor if it breaks.
+		want := 4.0
+		epsilon := 0.5
+		samples := loadCorpusGolden(t)
+		r := CalibrateCorpus(samples)
+		if r.TotalTokens == 0 {
+			t.Fatal("corpus returned 0 tokens")
+		}
+		if r.Ratio < want-epsilon || r.Ratio > want+epsilon {
+			t.Errorf("corpus ratio = %.3f, want %.1f ±%.1f — re-run TestEmitCalibrationFactor to recalibrate", r.Ratio, want, epsilon)
 		}
 	})
 
