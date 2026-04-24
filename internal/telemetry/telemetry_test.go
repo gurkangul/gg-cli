@@ -780,8 +780,12 @@ func TestSummarize_CalibrationFactor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Summarize dir2: %v", err)
 	}
-	if want := 100 / BytesPerToken; sum2.CompactTokensSaved != want {
-		t.Errorf("CompactTokensSaved = %d, want %d (100/BytesPerToken=%d, not CalibrationFactor=%d)",
-			sum2.CompactTokensSaved, want, BytesPerToken, sum2.CalibrationFactor)
+	// 100 bytes / BytesPerToken(3) = 33. Pinned to a concrete number so a
+	// change to BytesPerToken makes the test fail loudly rather than silently
+	// tracking the divisor.
+	const wantTokensSaved = 33 // 100 / 3
+	if sum2.CompactTokensSaved != wantTokensSaved {
+		t.Errorf("CompactTokensSaved = %d, want %d (100 bytes / BytesPerToken=%d); if BytesPerToken changed, update this pin",
+			sum2.CompactTokensSaved, wantTokensSaved, BytesPerToken)
 	}
 }
