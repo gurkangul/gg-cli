@@ -355,6 +355,149 @@ AC-3: exit 7 on unmatched`
 	}
 }
 
+// TestACAttestation_DiffTestName_Passes: AC-1 has no commit-body reference but
+// the diff contains a test function "TestAC1_BlocksOnMissingRef" — rule (d).
+func TestACAttestation_DiffTestName_Passes(t *testing.T) {
+	hookPath := hookACAttestationPath(t)
+
+	dir := t.TempDir()
+
+	runIn := func(name string, args ...string) {
+		t.Helper()
+		c := exec.Command(name, args...)
+		c.Dir = dir
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Logf("git setup %v: %s", args, out)
+		}
+	}
+	runIn("git", "init", "-b", "main")
+	runIn("git", "config", "user.email", "test@example.com")
+	runIn("git", "config", "user.name", "Test")
+
+	// Write a file that contains a test function name matching AC-1.
+	testFile := filepath.Join(dir, "hook_test.go")
+	_ = os.WriteFile(testFile, []byte(`package main
+
+func TestAC1_BlocksOnMissingRef(t *testing.T) {
+	// verifies AC-1: hook blocks when commit omits AC reference
+}
+`), 0o644)
+	runIn("git", "add", ".")
+	// Commit message intentionally does NOT reference AC-1 in body.
+	runIn("git", "commit", "-m", "feat: add attestation hook test")
+
+	taskJSON := taskJSONWith(`ACCEPTANCE
+- hook blocks when commit omits AC reference`)
+
+	binDir := filepath.Join(dir, "fakebin")
+	_ = os.MkdirAll(binDir, 0o755)
+	jsonFile := filepath.Join(dir, "task.json")
+	_ = os.WriteFile(jsonFile, []byte(taskJSON), 0o644)
+	fakeGG := filepath.Join(binDir, "gg")
+	_ = os.WriteFile(fakeGG, []byte("#!/bin/sh\ncat "+jsonFile+"\n"), 0o755)
+
+	env := os.Environ()
+	env = append(env,
+		"GG_TASK_ID=TASK-TEST",
+		"GG_TASK_SUMMARY=test summary",
+		"GG_PROJECT_ID=test-project",
+		"GG_ACTOR=developer",
+		"PATH="+binDir+":"+os.Getenv("PATH"),
+		"HOME="+dir,
+	)
+	cmd := exec.Command("/bin/sh", hookPath)
+	cmd.Env = env
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
+		}
+	}
+	if exitCode != 0 {
+		t.Errorf("expected exit 0 (TestAC1_ in diff satisfies rule d), got %d\noutput:\n%s", exitCode, string(out))
+	}
+	if !strings.Contains(string(out), "test name") {
+		t.Errorf("expected 'test name' in output to confirm rule (d) matched, got:\n%s", string(out))
+	}
+}
+
+// TestACAttestation_DiffComment_Passes: AC-1 has no commit-body reference but
+// the diff contains "// AC-1 covered by implementation" — rule (e).
+func TestACAttestation_DiffComment_Passes(t *testing.T) {
+	hookPath := hookACAttestationPath(t)
+
+	dir := t.TempDir()
+
+	runIn := func(name string, args ...string) {
+		t.Helper()
+		c := exec.Command(name, args...)
+		c.Dir = dir
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Logf("git setup %v: %s", args, out)
+		}
+	}
+	runIn("git", "init", "-b", "main")
+	runIn("git", "config", "user.email", "test@example.com")
+	runIn("git", "config", "user.name", "Test")
+
+	// Write a file containing a // AC-1 comment.
+	srcFile := filepath.Join(dir, "attestation.go")
+	_ = os.WriteFile(srcFile, []byte(`package main
+
+// AC-1 covered by this implementation
+func blockOnMissingRef() error {
+	return nil
+}
+`), 0o644)
+	runIn("git", "add", ".")
+	// Commit message intentionally does NOT reference AC-1 in body.
+	runIn("git", "commit", "-m", "feat: implement blocking logic")
+
+	taskJSON := taskJSONWith(`ACCEPTANCE
+- hook blocks when commit omits AC reference`)
+
+	binDir := filepath.Join(dir, "fakebin")
+	_ = os.MkdirAll(binDir, 0o755)
+	jsonFile := filepath.Join(dir, "task.json")
+	_ = os.WriteFile(jsonFile, []byte(taskJSON), 0o644)
+	fakeGG := filepath.Join(binDir, "gg")
+	_ = os.WriteFile(fakeGG, []byte("#!/bin/sh\ncat "+jsonFile+"\n"), 0o755)
+
+	env := os.Environ()
+	env = append(env,
+		"GG_TASK_ID=TASK-TEST",
+		"GG_TASK_SUMMARY=test summary",
+		"GG_PROJECT_ID=test-project",
+		"GG_ACTOR=developer",
+		"PATH="+binDir+":"+os.Getenv("PATH"),
+		"HOME="+dir,
+	)
+	cmd := exec.Command("/bin/sh", hookPath)
+	cmd.Env = env
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
+		}
+	}
+	if exitCode != 0 {
+		t.Errorf("expected exit 0 (// AC-1 comment in diff satisfies rule e), got %d\noutput:\n%s", exitCode, string(out))
+	}
+	if !strings.Contains(string(out), "func/comment") {
+		t.Errorf("expected 'func/comment' in output to confirm rule (e) matched, got:\n%s", string(out))
+	}
+}
+
 // TestACAttestation_Bypass_EmitsGGRecord: when GG_ALLOW_INCOMPLETE_AC is set,
 // the hook must call `gg record` with tags "bypass,ac-attestation,<task-id>"
 // and the reason string. A recording fake-gg stub captures the invocation.

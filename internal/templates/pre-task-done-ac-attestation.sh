@@ -9,6 +9,8 @@
 #   (a) Commit message body contains "AC-N:" where N is the AC number
 #   (b) Commit message body contains a numbered reference "N:" or "N)" at line start
 #   (c) Commit message body contains "AC N" (with space, case-insensitive)
+#   (d) Diff (git show HEAD) contains a test name matching TestACN_* or Test_ACN_*
+#   (e) Diff (git show HEAD) contains func/comment with ac<N>_ prefix or "// AC-N"
 #
 # Modes (via GG_AC_ATTESTATION env var):
 #   on    (default) — block (exit 7) when ACs are unaccounted
@@ -140,14 +142,18 @@ fi
 AC_COUNT=$(printf '%s\n' "$ACS" | grep -c '.' || echo 0)
 echo "[ac-attestation] $GG_TASK_ID: found $AC_COUNT acceptance criterion/criteria"
 
-# ── 4. Get commit message ─────────────────────────────────────────────────────
+# ── 4. Get commit message and diff ───────────────────────────────────────────
 COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null || true)
 if [ -z "$COMMIT_MSG" ]; then
   echo "[ac-attestation] ✓ $GG_TASK_ID: no commits — skipping"
   exit 0
 fi
 
-# ── 5. Check each AC against commit message ───────────────────────────────────
+# git show HEAD includes both the commit message and the unified diff.
+# Works on the very first commit (no parent); diff HEAD~1 would fail there.
+COMMIT_DIFF=$(git show HEAD 2>/dev/null || true)
+
+# ── 5. Check each AC against commit message and diff ──────────────────────────
 UNMATCHED=""
 
 while IFS="	" read -r NUM AC_TEXT; do
@@ -168,6 +174,20 @@ while IFS="	" read -r NUM AC_TEXT; do
   # Rule (c): "AC N" (with space, case-insensitive, not followed by more digits)
   if printf '%s' "$COMMIT_MSG" | grep -qiE "AC[[:space:]]+${NUM}([^0-9]|$)"; then
     echo "[ac-attestation]   AC-${NUM}: ✓ (AC ${NUM} in commit)"
+    continue
+  fi
+
+  # Rule (d): test function name containing AC number — TestACN_* or Test_ACN_*
+  # Matches lines added in the diff (+...) to avoid false positives from context.
+  if printf '%s' "$COMMIT_DIFF" | grep -qiE "^\+[^+].*[Tt]est_?[Aa][Cc]${NUM}[_A-Za-z]"; then
+    echo "[ac-attestation]   AC-${NUM}: ✓ (test name TestAC${NUM}_ in diff)"
+    continue
+  fi
+
+  # Rule (e): func/comment reference — func ac<N>_, // AC-N, /* AC-N, or # AC-N
+  # Use ^\+ (not ^\+[^+]) so the // or /* characters are not consumed by [^+].
+  if printf '%s' "$COMMIT_DIFF" | grep -qiE "^\+(func[[:space:]]+[a-zA-Z]*[Aa][Cc]${NUM}_|.*//[[:space:]]*AC-${NUM}([^0-9]|$)|.*/\*[[:space:]]*AC-${NUM}([^0-9]|$)|.*#[[:space:]]*AC-${NUM}([^0-9]|$))"; then
+    echo "[ac-attestation]   AC-${NUM}: ✓ (func/comment AC-${NUM} in diff)"
     continue
   fi
 
@@ -209,6 +229,11 @@ $ACS
 ACEOF2
 printf '  (b) numbered reference at line start (e.g. "1. addressed via X")\n' >&2
 printf '  (c) "AC N" phrase in commit body (e.g. "AC %s is covered by Y")\n' \
+  "$(printf '%s' "$ACS" | head -1 | cut -f1)" >&2
+printf '  (d) test name in diff: func TestAC%s_YourTest (added line)\n' \
+  "$(printf '%s' "$ACS" | head -1 | cut -f1)" >&2
+printf '  (e) func/comment in diff: func ac%s_impl or // AC-%s <note>\n' \
+  "$(printf '%s' "$ACS" | head -1 | cut -f1)" \
   "$(printf '%s' "$ACS" | head -1 | cut -f1)" >&2
 
 printf '\nTo bypass (audited):\n  GG_ALLOW_INCOMPLETE_AC="<reason>" gg task done %s ...\n' \
