@@ -204,8 +204,9 @@ func renderDashboard(_ *cobra.Command, rt string, paneStates map[string]*workerD
 		ansiReset)
 	fmt.Println(strings.Repeat("─", 100))
 
-	for _, p := range panes {
-		effectiveState := effectivePaneState(&p)
+	for i := range panes {
+		p := &panes[i]
+		effectiveState := effectivePaneState(p)
 		color := stateColor(effectiveState)
 
 		// Detect collision-risk: does this pane's task have path overlap with another?

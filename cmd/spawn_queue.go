@@ -35,7 +35,7 @@ var spawnQueueStartCmd = &cobra.Command{
 	Short: "Begin a new parallel queue run",
 	Long: `Drain the pending task queue by spawning worker panes in parallel.
 
-Up to GG_QUEUE_MAX workers run simultaneously (default: 3). For each
+Up to --max-concurrent workers run simultaneously (default: GG_QUEUE_MAX env, else 3). For each
 pending task the runner:
   1. Verifies master liveness (heartbeat must be fresh)
   2. Checks advisory file-lock collision (locks.json); blocks on conflict
@@ -45,7 +45,7 @@ pending task the runner:
   5. When the worker pane exits, advances to the next pending task
 
 Queue state is persisted at ~/.gg/projects/<id>/spawn/queue.json.
-Active workers cap: GG_QUEUE_MAX env var (integer, default 3).`,
+Active workers cap: --max-concurrent flag > GG_QUEUE_MAX env var > default 3.`,
 	RunE: runSpawnQueueStart,
 }
 
@@ -61,6 +61,7 @@ func init() {
 	spawnQueueStartCmd.Flags().IntVar(&spawnQueueMaxTasks, "max-tasks", 0, "stop after processing this many tasks (0 = no limit)")
 	spawnQueueStartCmd.Flags().IntVar(&spawnQueuePollSecs, "poll", 30, "seconds between liveness checks while a worker is running")
 	spawnQueueStartCmd.Flags().BoolVar(&spawnQueueForce, "force", false, "override advisory file-lock collisions (logs override, continues spawn)")
+	spawnQueueStartCmd.Flags().IntVar(&spawnQueueMaxConcurrent, "max-concurrent", 0, "max simultaneous workers (default: GG_QUEUE_MAX or 3)")
 	spawnQueueCmd.AddCommand(spawnQueueStartCmd)
 }
 
@@ -135,6 +136,11 @@ func runSpawnQueueResume(cmd *cobra.Command, _ []string) error {
 		sess.Agent = spawnQueueAgent
 	}
 	sess.Paused = false
+	// Transient-skipped tasks (advisory collision) are eligible for retry on resume.
+	if len(sess.SkippedTransient) > 0 {
+		fmt.Printf("→ Returning %d transient-skipped task(s) to queue for retry.\n", len(sess.SkippedTransient))
+		sess.SkippedTransient = nil
+	}
 
 	masterAgent := masterAgentTag()
 	if hbErr := spawn.WriteHeartbeat(rt, masterAgent); hbErr != nil {

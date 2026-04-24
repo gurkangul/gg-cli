@@ -23,9 +23,18 @@ import (
 	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
 
-// maxConcurrent returns the effective worker cap from GG_QUEUE_MAX or the
-// compiled default.
+// spawnQueueMaxConcurrent is set by the --max-concurrent flag on 'gg spawn queue start'.
+// 0 means "use GG_QUEUE_MAX or the compiled default".
+var spawnQueueMaxConcurrent int
+
+// maxConcurrent returns the effective worker cap, in priority order:
+//  1. --max-concurrent flag (when > 0)
+//  2. GG_QUEUE_MAX environment variable
+//  3. compiled default (DefaultMaxConcurrent = 3)
 func maxConcurrent() int {
+	if spawnQueueMaxConcurrent > 0 {
+		return spawnQueueMaxConcurrent
+	}
 	if v := os.Getenv("GG_QUEUE_MAX"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
@@ -82,7 +91,9 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 				wg.Done()
 				<-sem
 				_ = spawn.RemovePane(rt, res.taskID)
-				_ = lockStore.Release(res.taskID)
+				if rErr := lockStore.Release(res.taskID); rErr != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "⚠ release lock for %s: %v\n", res.taskID, rErr)
+				}
 
 				mu.Lock()
 				delete(activeByTask, res.taskID)
@@ -95,6 +106,10 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 					_ = spawn.WriteQueue(rt, sess)
 					wg.Wait()
 					return nil
+				case workerExitContextDone:
+					// Context cancelled — don't count as completed or skipped.
+					sess.CurrentTask = ""
+					_ = spawn.WriteQueue(rt, sess)
 				default:
 					sess.Completed = appendUniqID(sess.Completed, res.taskID)
 					sess.CurrentTask = res.taskID
@@ -168,8 +183,8 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ lock check for %s: %v\n", task.ID, collErr)
 		}
 		if len(collisions) > 0 && !spawnQueueForce {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ %s skipped: %s\n", task.ID, collisions.Error())
-			sess.Skipped = appendUniqID(sess.Skipped, task.ID)
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ %s collision-skipped (transient): %s\n", task.ID, collisions.Error())
+			sess.SkippedTransient = appendUniqID(sess.SkippedTransient, task.ID)
 			_ = spawn.WriteQueue(rt, sess)
 			<-sem
 			continue
@@ -207,13 +222,20 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 
 	// Wait for all in-flight workers to finish.
 	wg.Wait()
-	// Drain remaining results.
+	// Drain remaining results — must check reason, same as the hot loop.
 	close(results)
 	for res := range results {
-		sess.Completed = appendUniqID(sess.Completed, res.taskID)
-		processed++
-		_ = lockStore.Release(res.taskID)
+		if rErr := lockStore.Release(res.taskID); rErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ release lock for %s: %v\n", res.taskID, rErr)
+		}
 		_ = spawn.RemovePane(rt, res.taskID)
+		switch res.reason {
+		case workerExitStalemaster, workerExitContextDone:
+			// Stale/cancelled workers are not counted as completed.
+		default:
+			sess.Completed = appendUniqID(sess.Completed, res.taskID)
+			processed++
+		}
 	}
 
 	sess.CurrentTask = ""
@@ -240,12 +262,18 @@ func isQueueCancelled(err error, current *spawn.QueueSession) bool {
 
 // buildSkipSet builds the combined skip set from the session plus currently
 // active tasks, so we don't pick up a task that's already being worked on.
+// SkippedTransient tasks are included so they aren't re-tried while the
+// conflicting task is still running; on the next queue resume they are cleared.
 func buildSkipSet(sess *spawn.QueueSession, active map[string]bool) map[string]bool {
-	s := make(map[string]bool, len(sess.Completed)+len(sess.Skipped)+len(active))
+	total := len(sess.Completed) + len(sess.Skipped) + len(sess.SkippedTransient) + len(active)
+	s := make(map[string]bool, total)
 	for _, id := range sess.Completed {
 		s[id] = true
 	}
 	for _, id := range sess.Skipped {
+		s[id] = true
+	}
+	for _, id := range sess.SkippedTransient {
 		s[id] = true
 	}
 	for id := range active {

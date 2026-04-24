@@ -60,8 +60,11 @@ type QueueSession struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	// Completed lists task IDs finished during this queue run.
 	Completed []string `json:"completed"`
-	// Skipped lists task IDs that were skipped (blocked/failed) this run.
+	// Skipped lists task IDs permanently skipped (spawn error, repeated collision).
 	Skipped []string `json:"skipped"`
+	// SkippedTransient lists task IDs skipped due to a transient advisory
+	// collision. On resume these are returned to the pending queue for retry.
+	SkippedTransient []string `json:"skipped_transient,omitempty"`
 	// CurrentTask is the task ID currently being worked on (empty if idle).
 	CurrentTask string `json:"current_task,omitempty"`
 	// Paused is set true when the queue is suspended via `gg spawn queue pause`.

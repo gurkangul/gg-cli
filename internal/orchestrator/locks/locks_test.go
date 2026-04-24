@@ -1,9 +1,11 @@
 package locks_test
 
 import (
-	"os"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gurkangul/gg-cli/internal/orchestrator/locks"
 )
@@ -104,17 +106,10 @@ func TestNoPathsRelease(t *testing.T) {
 func TestReadAllAbsent(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nonexistent")
 	s := locks.New(dir)
-	// dir doesn't exist yet — ReadAll should return nil, nil.
+	// dir doesn't exist yet — ReadAll must return nil, nil (absent = empty).
 	claims, err := s.ReadAll()
-	if err == nil {
-		// Fine: dir not existing is treated as empty.
-		t.Log("expected nil error for absent locks file")
-	}
 	if err != nil {
-		// Also acceptable: some OS errors on ReadFile.
-		if !os.IsNotExist(err) {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		t.Fatalf("ReadAll on absent dir: expected nil error, got %v", err)
 	}
 	if len(claims) != 0 {
 		t.Fatalf("expected 0 claims for absent file, got %d", len(claims))
@@ -167,5 +162,43 @@ func TestCollisionListError(t *testing.T) {
 	msg := multi.Error()
 	if msg == "" {
 		t.Fatal("expected non-empty multi-collision error")
+	}
+}
+
+// TestConcurrentAcquire exercises Acquire and Release from multiple goroutines
+// simultaneously. Run with -race to detect data races in the atomic-write path.
+func TestConcurrentAcquire(t *testing.T) {
+	s := newStore(t)
+
+	const goroutines = 8
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(n int) {
+			defer wg.Done()
+			taskID := fmt.Sprintf("TASK-%03d", n)
+			path := fmt.Sprintf("file%d.go", n)
+
+			// Each goroutine claims its own unique path — no collisions expected.
+			if err := s.Acquire(taskID, []string{path}, false); err != nil {
+				// Collision between the same-named tasks on retry is acceptable
+				// but should not be a data race.
+				return
+			}
+			// Brief pause to overlap with other goroutines.
+			time.Sleep(time.Duration(n%3) * time.Millisecond)
+			_ = s.Release(taskID)
+		}(i)
+	}
+
+	wg.Wait()
+
+	// After all goroutines finish, the store should be consistent (no panics,
+	// no corruption). We can't assert exact count because goroutines race to
+	// release, but ReadAll must not error.
+	_, err := s.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll after concurrent run: %v", err)
 	}
 }

@@ -39,11 +39,6 @@ Examples:
 
 var taskClaimForce bool
 
-func init() {
-	taskClaimFilesCmd.Flags().BoolVar(&taskClaimForce, "force", false, "override existing claims from other tasks (logs collision, writes anyway)")
-	taskCmd.AddCommand(taskClaimFilesCmd)
-}
-
 func runTaskClaimFiles(_ *cobra.Command, args []string) error {
 	taskID := strings.ToUpper(strings.TrimSpace(args[0]))
 	paths := args[1:]
@@ -107,10 +102,6 @@ var taskReleaseFilesCmd = &cobra.Command{
 	},
 }
 
-func init() {
-	taskCmd.AddCommand(taskReleaseFilesCmd)
-}
-
 // taskListClaimsCmd shows all active advisory claims.
 var taskListClaimsCmd = &cobra.Command{
 	Use:   "list-claims",
@@ -119,6 +110,9 @@ var taskListClaimsCmd = &cobra.Command{
 }
 
 func init() {
+	taskClaimFilesCmd.Flags().BoolVar(&taskClaimForce, "force", false, "override existing claims from other tasks (logs collision, writes anyway)")
+	taskCmd.AddCommand(taskClaimFilesCmd)
+	taskCmd.AddCommand(taskReleaseFilesCmd)
 	taskCmd.AddCommand(taskListClaimsCmd)
 }
 
