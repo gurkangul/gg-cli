@@ -3,7 +3,11 @@
 // are blocked with a clear collision error unless --force is passed.
 //
 // Claim state lives at ~/.gg/projects/<project_id>/spawn/locks.json as a flat
-// JSON array — no daemon, no kernel lock, pure advisory.
+// JSON array. Concurrent safety is provided at two levels:
+//   - In-process: sync.Mutex serialises all Store operations within one binary.
+//   - Cross-process: locks.json.lock sibling file is held via syscall.Flock
+//     (LOCK_EX) for the duration of every read-modify-write cycle, preventing
+//     races between the `gg task claim-files` CLI and the parallel pool.
 package locks
 
 import (
@@ -12,6 +16,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"syscall"
 	"time"
 )
 
@@ -57,6 +63,7 @@ func (cl CollisionList) Error() string {
 
 // Store manages advisory claims for a single project's spawn directory.
 type Store struct {
+	mu       sync.Mutex
 	spawnDir string
 }
 
@@ -69,8 +76,47 @@ func (s *Store) path() string {
 	return filepath.Join(s.spawnDir, LocksFile)
 }
 
+func (s *Store) lockPath() string {
+	return s.path() + ".lock"
+}
+
+// withFlock acquires an exclusive advisory flock on the sibling .lock file,
+// calls fn, then releases the lock. The lock file is created if absent.
+// This serialises cross-process RMW cycles on locks.json.
+func (s *Store) withFlock(fn func() error) error {
+	if err := os.MkdirAll(s.spawnDir, 0o700); err != nil {
+		return fmt.Errorf("create spawn dir: %w", err)
+	}
+	f, err := os.OpenFile(s.lockPath(), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("open flock file: %w", err)
+	}
+	defer f.Close() //nolint:errcheck
+
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("flock acquire: %w", err)
+	}
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
+
+	return fn()
+}
+
 // ReadAll returns all active claims. Returns nil slice when the file is absent.
 func (s *Store) ReadAll() ([]Claim, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var result []Claim
+	err := s.withFlock(func() error {
+		var err error
+		result, err = s.readAllLocked()
+		return err
+	})
+	return result, err
+}
+
+// readAllLocked reads claims without acquiring any lock — must be called with
+// both the in-process mutex and the flock already held.
+func (s *Store) readAllLocked() ([]Claim, error) {
 	b, err := os.ReadFile(s.path())
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -85,11 +131,9 @@ func (s *Store) ReadAll() ([]Claim, error) {
 	return claims, nil
 }
 
-// writeAll writes the full claims slice atomically (via temp file + rename).
-func (s *Store) writeAll(claims []Claim) error {
-	if err := os.MkdirAll(s.spawnDir, 0o700); err != nil {
-		return fmt.Errorf("create spawn dir: %w", err)
-	}
+// writeAllLocked writes the full claims slice atomically (tmp + rename).
+// Must be called with both the in-process mutex and the flock already held.
+func (s *Store) writeAllLocked(claims []Claim) error {
 	b, err := json.MarshalIndent(claims, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal locks: %w", err)
@@ -110,99 +154,124 @@ func (s *Store) writeAll(claims []Claim) error {
 // CheckConflicts returns collisions between paths and currently active claims,
 // ignoring any claim held by excludeTaskID (so a task may re-claim its own files).
 func (s *Store) CheckConflicts(paths []string, excludeTaskID string) (CollisionList, error) {
-	claims, err := s.ReadAll()
-	if err != nil {
-		return nil, err
-	}
-
-	// Build a flat map: path → holder task ID.
-	held := make(map[string]string, len(claims)*4)
-	for _, c := range claims {
-		if c.TaskID == excludeTaskID {
-			continue
-		}
-		for _, p := range c.Paths {
-			held[p] = c.TaskID
-		}
-	}
-
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var collisions CollisionList
-	for _, p := range paths {
-		if holder, ok := held[p]; ok {
-			collisions = append(collisions, Collision{Path: p, HeldBy: holder})
+	err := s.withFlock(func() error {
+		claims, err := s.readAllLocked()
+		if err != nil {
+			return err
 		}
-	}
-	return collisions, nil
+		held := make(map[string]string, len(claims)*4)
+		for _, c := range claims {
+			if c.TaskID == excludeTaskID {
+				continue
+			}
+			for _, p := range c.Paths {
+				held[p] = c.TaskID
+			}
+		}
+		for _, p := range paths {
+			if holder, ok := held[p]; ok {
+				collisions = append(collisions, Collision{Path: p, HeldBy: holder})
+			}
+		}
+		return nil
+	})
+	return collisions, err
 }
 
 // Acquire records a claim for taskID over paths, replacing any prior claim for
 // that task. It checks conflicts first; returns CollisionList on conflict.
 // Pass force=true to skip the conflict check (logs the override, writes anyway).
+// The entire check-then-write cycle is atomic across processes via flock.
 func (s *Store) Acquire(taskID string, paths []string, force bool) error {
-	if !force {
-		collisions, err := s.CheckConflicts(paths, taskID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.withFlock(func() error {
+		claims, err := s.readAllLocked()
 		if err != nil {
 			return err
 		}
-		if len(collisions) > 0 {
-			return collisions
+
+		if !force {
+			held := make(map[string]string, len(claims)*4)
+			for _, c := range claims {
+				if c.TaskID == taskID {
+					continue
+				}
+				for _, p := range c.Paths {
+					held[p] = c.TaskID
+				}
+			}
+			var collisions CollisionList
+			for _, p := range paths {
+				if holder, ok := held[p]; ok {
+					collisions = append(collisions, Collision{Path: p, HeldBy: holder})
+				}
+			}
+			if len(collisions) > 0 {
+				return collisions
+			}
 		}
-	}
 
-	claims, err := s.ReadAll()
-	if err != nil {
-		return err
-	}
-
-	// Remove any existing claim for this task.
-	filtered := claims[:0]
-	for _, c := range claims {
-		if c.TaskID != taskID {
-			filtered = append(filtered, c)
+		// Remove any existing claim for this task.
+		filtered := claims[:0]
+		for _, c := range claims {
+			if c.TaskID != taskID {
+				filtered = append(filtered, c)
+			}
 		}
-	}
-
-	if len(paths) > 0 {
-		filtered = append(filtered, Claim{
-			TaskID:    taskID,
-			Paths:     paths,
-			ClaimedAt: time.Now().UTC(),
-		})
-	}
-
-	return s.writeAll(filtered)
+		if len(paths) > 0 {
+			filtered = append(filtered, Claim{
+				TaskID:    taskID,
+				Paths:     paths,
+				ClaimedAt: time.Now().UTC(),
+			})
+		}
+		return s.writeAllLocked(filtered)
+	})
 }
 
 // Release removes any claim held by taskID. No-op if the task has no claim.
 func (s *Store) Release(taskID string) error {
-	claims, err := s.ReadAll()
-	if err != nil {
-		return err
-	}
-
-	filtered := claims[:0]
-	for _, c := range claims {
-		if c.TaskID != taskID {
-			filtered = append(filtered, c)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.withFlock(func() error {
+		claims, err := s.readAllLocked()
+		if err != nil {
+			return err
 		}
-	}
-
-	if len(filtered) == len(claims) {
-		return nil // nothing changed
-	}
-	return s.writeAll(filtered)
+		filtered := claims[:0]
+		for _, c := range claims {
+			if c.TaskID != taskID {
+				filtered = append(filtered, c)
+			}
+		}
+		if len(filtered) == len(claims) {
+			return nil // nothing changed
+		}
+		return s.writeAllLocked(filtered)
+	})
 }
 
 // PathsFor returns the paths claimed by taskID, or nil if it has no claim.
 func (s *Store) PathsFor(taskID string) ([]string, error) {
-	claims, err := s.ReadAll()
-	if err != nil {
-		return nil, err
-	}
-	for _, c := range claims {
-		if c.TaskID == taskID {
-			return c.Paths, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var result []string
+	err := s.withFlock(func() error {
+		claims, err := s.readAllLocked()
+		if err != nil {
+			return err
 		}
-	}
-	return nil, nil
+		for _, c := range claims {
+			if c.TaskID == taskID {
+				result = c.Paths
+				return nil
+			}
+		}
+		return nil
+	})
+	return result, err
 }
