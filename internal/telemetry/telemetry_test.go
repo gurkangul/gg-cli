@@ -455,6 +455,41 @@ func TestRecordHydration_VerbBreakdown(t *testing.T) {
 	}
 }
 
+// TestRecordHydration_RefetchRateThreshold verifies that when HydrationCalls
+// exceeds 50% of CompactCalls the signal is reflected in the summary fields
+// that the gg telemetry summary warning depends on.
+func TestRecordHydration_RefetchRateThreshold(t *testing.T) {
+	dir := t.TempDir()
+	// 2 compact calls, 2 hydration calls → 100% re-fetch rate (>50%).
+	RecordCompact(dir, "get", "", 200, 1000, 2)
+	RecordCompact(dir, "get", "", 200, 1000, 2)
+	RecordHydration(dir, "get", "", 500)
+	RecordHydration(dir, "get", "", 500)
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.CompactCalls != 2 {
+		t.Errorf("CompactCalls = %d, want 2", sum.CompactCalls)
+	}
+	if sum.HydrationCalls != 2 {
+		t.Errorf("HydrationCalls = %d, want 2", sum.HydrationCalls)
+	}
+	// refetchPct = 100*2/2 = 100 > 50
+	refetchPct := 0
+	if sum.CompactCalls > 0 {
+		refetchPct = 100 * sum.HydrationCalls / sum.CompactCalls
+	}
+	if refetchPct <= 50 {
+		t.Errorf("refetchPct = %d, want >50", refetchPct)
+	}
+	// gross saved = (1000-200)*2 = 1600; hydration = 1000; net = 600
+	if sum.NetSavingsBytes != 600 {
+		t.Errorf("NetSavingsBytes = %d, want 600", sum.NetSavingsBytes)
+	}
+}
+
 func TestPathResolver_UsesRuntimeDir(t *testing.T) {
 	dir := t.TempDir()
 	got := filePath(dir)

@@ -110,21 +110,30 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 				sum.CompactCalls, saved, humanTokenCount(sum.CompactTokensSaved), pct)
 		}
 		if sum.HydrationCalls > 0 {
-			fmt.Printf("re-fetch: %d calls", sum.HydrationCalls)
+			netStr := ""
+			if sum.NetSavingsBytes >= 0 {
+				netStr = fmt.Sprintf(", net %s saved", humanFileSize(int64(sum.NetSavingsBytes)))
+			} else {
+				netStr = fmt.Sprintf(", net %s overfetch", humanFileSize(int64(-sum.NetSavingsBytes)))
+			}
+			refetchPct := 0
+			if sum.CompactCalls > 0 {
+				refetchPct = 100 * sum.HydrationCalls / sum.CompactCalls
+			}
+			fmt.Printf("re-fetch: %d calls (%d%% of compact%s)", sum.HydrationCalls, refetchPct, netStr)
 			if len(sum.HydrationVerbCounts) > 0 {
-				type vc struct{ verb string; count int }
-				var vcs []vc
+				var hvc []vc
 				for v, c := range sum.HydrationVerbCounts {
-					vcs = append(vcs, vc{v, c})
+					hvc = append(hvc, vc{v, c})
 				}
-				sort.Slice(vcs, func(i, j int) bool {
-					if vcs[i].count != vcs[j].count {
-						return vcs[i].count > vcs[j].count
+				sort.Slice(hvc, func(i, j int) bool {
+					if hvc[i].count != hvc[j].count {
+						return hvc[i].count > hvc[j].count
 					}
-					return vcs[i].verb < vcs[j].verb
+					return hvc[i].verb < hvc[j].verb
 				})
 				fmt.Printf("  (")
-				for i, v := range vcs {
+				for i, v := range hvc {
 					if i > 0 {
 						fmt.Printf(", ")
 					}
@@ -133,6 +142,9 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 				fmt.Printf(")")
 			}
 			fmt.Println()
+			if refetchPct > 50 {
+				fmt.Printf("  ⚠ re-fetch rate >50%% — compact may be inducing more fetches than it saves\n")
+			}
 		}
 		if sum.WithContextCalls > 0 {
 			fmt.Printf("--with-context: %d calls, %d bytes total context\n",
