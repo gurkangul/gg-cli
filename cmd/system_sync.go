@@ -13,15 +13,16 @@ import (
 
 var systemSyncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Propagate latest gg artifacts (contract + hooks) to every registered project",
+	Short: "Propagate latest gg artifacts (contract + master-role + hooks) to every registered project",
 	Long: `Iterates ~/.gg/projects.json and runs doctor --fix in each project so
-contract updates baked into a new gg binary reach every host-local
-project without the user cd'ing to each repo.
+contract and master-role updates baked into a new gg binary reach every
+host-local project without the user cd'ing to each repo.
 
 Stages per project:
-  1. gg doctor --check-contract --fix   (contract block drift repair)
-  2. gg doctor --install-agent-hooks    (idempotent agent-hook refresh)
-  3. gg doctor --install-task-hooks     (idempotent task-hook refresh)
+  1. gg doctor --check-contract --fix      (contract block drift repair)
+  2. gg doctor --check-master-role --fix   (master-role block drift repair)
+  3. gg doctor --install-agent-hooks       (idempotent agent-hook refresh)
+  4. gg doctor --install-task-hooks        (idempotent task-hook refresh)
 
 Projects whose root directory no longer exists are skipped with a
 warning — prune them with 'gg system register --prune' after verifying.`,
@@ -29,8 +30,9 @@ warning — prune them with 'gg system register --prune' after verifying.`,
 }
 
 var (
-	systemSyncDryRun       bool
-	systemSyncContractOnly bool
+	systemSyncDryRun         bool
+	systemSyncContractOnly   bool
+	systemSyncSkipMasterRole bool
 )
 
 func init() {
@@ -38,6 +40,8 @@ func init() {
 		"print what would change without writing")
 	systemSyncCmd.Flags().BoolVar(&systemSyncContractOnly, "contract-only", false,
 		"skip the agent-hook refresh stage (faster when only the contract changed)")
+	systemSyncCmd.Flags().BoolVar(&systemSyncSkipMasterRole, "skip-master-role", false,
+		"skip the master-role block sync stage")
 	systemCmd.AddCommand(systemSyncCmd)
 }
 
@@ -73,6 +77,9 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 
 		if systemSyncDryRun {
 			fmt.Println("  (dry-run) would run: gg doctor --check-contract --fix")
+			if !systemSyncSkipMasterRole {
+				fmt.Println("  (dry-run) would run: gg doctor --check-master-role --fix")
+			}
 			if !systemSyncContractOnly {
 				fmt.Println("  (dry-run) would run: gg doctor --install-agent-hooks")
 				fmt.Println("  (dry-run) would run: gg doctor --install-task-hooks")
@@ -85,6 +92,13 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("  ✗ contract sync failed: %v\n", runErr)
 			failed++
 			continue
+		}
+		if !systemSyncSkipMasterRole {
+			if runErr := runGGIn(self, p.Root, "doctor", "--check-master-role", "--fix"); runErr != nil {
+				fmt.Printf("  ✗ master-role sync failed: %v\n", runErr)
+				failed++
+				continue
+			}
 		}
 		if !systemSyncContractOnly {
 			if runErr := runGGIn(self, p.Root, "doctor", "--install-agent-hooks"); runErr != nil {

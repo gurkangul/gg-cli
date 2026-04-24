@@ -43,6 +43,7 @@ var (
 	doctorContractFix        bool
 	doctorContractForceReset bool
 	doctorSyncBaseline       bool
+	doctorCheckMasterRole    bool
 )
 
 func init() {
@@ -84,6 +85,8 @@ func init() {
 		"with --check-contract --fix: overwrite manually-edited (DRIFTED) contract blocks")
 	doctorCmd.Flags().BoolVar(&doctorSyncBaseline, "sync-baseline", false,
 		"rescan project and refresh .gg/file-size-baseline.json with current line counts")
+	doctorCmd.Flags().BoolVar(&doctorCheckMasterRole, "check-master-role", false,
+		"compare the managed master-role block in CLAUDE.md against the current template (exit 1 on drift); combine with --fix to repair")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -171,6 +174,9 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	}
 	if doctorCheckContract {
 		return runDoctorCheckContract(doctorContractFix, doctorContractForceReset)
+	}
+	if doctorCheckMasterRole {
+		return runDoctorCheckMasterRole(doctorContractFix, doctorContractForceReset)
 	}
 	if doctorSyncBaseline {
 		return runDoctorSyncBaseline()

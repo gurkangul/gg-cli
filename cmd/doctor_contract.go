@@ -9,6 +9,46 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 )
 
+// runDoctorCheckMasterRole checks the managed master-role block in CLAUDE.md
+// and reports drift. With fix=true it repairs STALE and MISSING entries.
+// DRIFTED entries require forceReset=true to overwrite.
+func runDoctorCheckMasterRole(fix, forceReset bool) error {
+	projectRoot, err := config.FindRoot()
+	if err != nil {
+		return err
+	}
+
+	if fix {
+		lines, fixErr := agenthooks.FixMasterRole(projectRoot, forceReset)
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		if fixErr != nil {
+			return fixErr
+		}
+	}
+
+	r := agenthooks.CheckMasterRole(projectRoot)
+
+	fmt.Printf("Master-role check  (version %s)\n", agenthooks.MasterRoleVersion()[:12])
+	fmt.Println(strings.Repeat("─", 50))
+
+	marker := "✓"
+	if r.Status != agenthooks.MasterRoleOK {
+		marker = "✗"
+	}
+	shortPath := r.Path
+	if rel, relErr := filepath.Rel(projectRoot, r.Path); relErr == nil {
+		shortPath = rel
+	}
+	fmt.Printf("  %s  %-8s  %s\n", marker, r.Status, shortPath)
+
+	if r.Status != agenthooks.MasterRoleOK {
+		return fmt.Errorf("master-role drift detected — run `gg doctor --check-master-role --fix` to repair")
+	}
+	return nil
+}
+
 // runDoctorCheckContract checks the managed contract block in each agent's
 // entry-point file and reports drift. With fix=true it repairs STALE and MISSING
 // entries. DRIFTED entries require forceReset=true to overwrite.
