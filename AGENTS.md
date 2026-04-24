@@ -282,6 +282,37 @@ structured parsers can both react:
    never masks the verify failure. Set `GG_NO_AUTO_NOTIFY=1` to suppress the
    broadcast (CI, reentrant hook scripts, tests).
 
+**AC attestation gate (`50-ac-attestation.sh`):**
+
+The AC attestation hook catches *silent AC narrowing* — committing without
+demonstrating coverage of each acceptance criterion in the task spec. It
+blocks `gg task done` when any AC listed in the task's `ACCEPTANCE` section
+is not referenced in the commit message.
+
+How it works:
+- Reads the task's `ACCEPTANCE` bullet points via `gg task get $GG_TASK_ID --json`
+- Assigns each bullet a number: AC-1, AC-2, …
+- Checks the `git log -1 --pretty=%B` output for references:
+  - `AC-N:` anywhere in the commit body (preferred, e.g. `AC-1: implemented blocking logic`)
+  - `N:` or `N)` at the start of a commit line (numbered-list style)
+  - `AC N` (with space) in the commit body
+- Exits 7 with an enumeration of unmatched ACs if any are unaccounted
+
+Worker protocol — include AC references in every commit message:
+```
+feat(TASK-042): implement AC attestation hook
+
+AC-1: hook exits 7 when ACCEPTANCE bullets not in commit; tested in cmd/hook_ac_attestation_test.go
+AC-2: bypass GG_ALLOW_INCOMPLETE_AC audited via gg record
+AC-3: integration test — 3 ACs + 2 refs blocks; 3 ACs + 3 refs passes
+AC-4: documented in AGENTS.md
+```
+
+Modes (env `GG_AC_ATTESTATION`): `on` (default, blocking) | `warn` | `off`
+
+Bypass: `GG_ALLOW_INCOMPLETE_AC="<reason>" gg task done TASK-NNN ...` — the
+bypass is audited via `gg record` so it appears in future `gg search` results.
+
 ## BUG FIX PRE-FLIGHT (mandatory before `gg bug fix`)
 
 Bugs regress when agents edit code without knowing the blast radius. These

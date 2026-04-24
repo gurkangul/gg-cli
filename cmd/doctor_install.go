@@ -219,6 +219,17 @@ func runDoctorInstallTaskHooks() error {
 		installed += n
 	}
 
+	// 50-ac-attestation.sh: blocks when the task's ACCEPTANCE bullets are not
+	// referenced in the commit message. Catches silent AC narrowing — where a
+	// worker commits addressing only some ACs and claims done.
+	acAttestationPath := filepath.Join(preDir, "50-ac-attestation.sh")
+	if n, err := installHookIfAbsent(acAttestationPath, templates.PreTaskDoneACAttestationHook,
+		"AC attestation gate — blocks when ACCEPTANCE bullets not referenced in commit (GG_AC_ATTESTATION=on|warn|off)"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
 	// Makefile tier template: written to .gg/templates/ so humans can discover
 	// + opt-in via `include .gg/templates/makefile-test-tiers.mk`.
 	tmplDir := filepath.Join(ggDir, "templates")
