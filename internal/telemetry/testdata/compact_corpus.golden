@@ -1,0 +1,40 @@
+# Representative gg compact output lines used for BytesPerToken calibration.
+# Each non-comment, non-blank line is one corpus sample.
+# Update this file when gg's output format changes significantly.
+
+# Task list lines (○ = pending, ✓ = done, ⚙ = in-progress, ⚠ = blocked)
+○ TASK-285 [low] Compact: token tahmini disclaimer + tokenizer kalibrasyon
+○ TASK-291 [medium] Terminal adapter integration tests (cmux + tmux) via GG_INTEGRATION gate
+○ TASK-292 [medium] gg master resume command — structured session-handoff dump
+○ TASK-293 [medium] gg system sync: propagate gg:master-role block to all registered projects
+○ TASK-120 [high] Dogfood gg-cli in a real project for 2 weeks
+○ TASK-276 [high] fix parallel mutex + cross-process flock on locks store
+✓ TASK-283 [medium] cmux send --surface flag + agent bootstrap sequence
+⚙ TASK-289 [medium] TASK-289 scope expansion: flag-pattern fix + agent-bootstrap sequence
+
+# Decision compact lines
+D  2026-04-24  master resume protocol — 7-command pipeline for session-handoff
+D  2026-04-24  TASK-285 commit a30c6b3, tests green (27 pkgs)
+D  2026-04-24  Master-role v1 policy extended: cmux trigger + pane lifecycle invariant
+D  2026-04-17  LLM cümle-seviyesi davranış enforcement — LLM non-deterministic
+
+# Rejection lines
+R  2026-04-17  LLM cümle-seviyesi davranış enforcement — sadece tool-boundary seviyesinde
+R  2026-04-10  Sessions/ ve state.json now
+R  2026-04-10  Skill Auto-Creation (Hermes-inspired) now
+
+# Status / telemetry summary lines
+Compact  426 calls, 1.2 MB / ~327K tok saved (avg 65% reduction)
+Hydration 4 re-fetches (1%), 618 B back; net 1.2 MB / ~326K tok
+North Star  Last 7d: 4615 calls, 67% agent-initiated
+TASKS:   ○ Pending: 9  → In Progress: 0  ⚠ Blocked: 0  ✓ Done: 283
+
+# Commit / impact footer lines
+✓ done  83c3a7d  test(locks): rewrite TestConcurrentAcquire to exercise real collision enforcement
+✓ done  39dd7ab  fix(parallel): drain-loop reason + flock path
+impact cmd/index.go:   4 deps, 12 symbols, 1 related decision (DEC-042)
+impact internal/graph: 2 deps, 8 symbols, 0 related decisions
+
+# Mixed Turkish + ASCII (common in this project)
+D  2026-04-24  TASK-285 commit 37d6e90, calibrate.go tokenizer wrapper, tests green (27 pkgs)
+R  2026-04-10  project_id yeniden sha256(name+root+time)[:12] ile üretilecek

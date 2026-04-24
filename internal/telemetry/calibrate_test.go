@@ -1,7 +1,10 @@
 package telemetry
 
 import (
+	"bufio"
 	"math"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -114,22 +117,40 @@ func TestCalibrateCorpus(t *testing.T) {
 	})
 }
 
+// loadCorpusGolden reads testdata/compact_corpus.golden and returns non-blank,
+// non-comment lines as the calibration corpus. Comments start with '#'.
+func loadCorpusGolden(t *testing.T) []string {
+	t.Helper()
+	f, err := os.Open("testdata/compact_corpus.golden")
+	if err != nil {
+		t.Fatalf("loadCorpusGolden: %v", err)
+	}
+	defer f.Close()
+
+	var lines []string
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatalf("loadCorpusGolden scan: %v", err)
+	}
+	return lines
+}
+
 // TestCalibrateCorpus_CurrentConstantIsValid documents that BytesPerToken=3
 // is within the plausible range for gg's mixed compact output. If this test
 // fails after a corpus update, recalibrate the constant.
+// The corpus is loaded from testdata/compact_corpus.golden — update that file
+// when gg's output format changes significantly.
 func TestCalibrateCorpus_CurrentConstantIsValid(t *testing.T) {
-	// Broader corpus including status lines, task lists, decision compacts.
-	samples := []string{
-		"○ TASK-285 [low] Compact: token tahmini disclaimer + tokenizer kalibrasyon",
-		"○ TASK-291 [medium] Terminal adapter integration tests (cmux + tmux) via GG_INTEGRATION gate",
-		"○ TASK-292 [medium] gg master resume command — structured session-handoff dump",
-		"D  2026-04-24  TASK-285 commit a30c6b3, tests green",
-		"R  2026-04-17  LLM cümle-seviyesi davranış enforcement — LLM non-deterministic",
-		"Compact  426 calls, 1.2 MB / ~327K tok saved (avg 65% reduction)",
-		"Hydration 4 re-fetches (1%), 618 B back; net 1.2 MB / ~326K tok",
-		"North Star  Last 7d: 4615 calls, 67% agent-initiated",
-		"✓ done  83c3a7d  test(locks): rewrite TestConcurrentAcquire",
-		"impact cmd/index.go:   4 deps, 12 symbols, 1 related decision (DEC-042)",
+	samples := loadCorpusGolden(t)
+	if len(samples) == 0 {
+		t.Fatal("corpus golden file is empty — add representative compact lines")
 	}
 	r := CalibrateCorpus(samples)
 	// BytesPerToken=3 should be within ±1 of the measured rounded ratio.
