@@ -789,3 +789,5 @@ func TestSummarize_CalibrationFactor(t *testing.T) {
 			sum2.CompactTokensSaved, wantTokensSaved, BytesPerToken)
 	}
 }
+
+// (session tests moved to session_test.go)

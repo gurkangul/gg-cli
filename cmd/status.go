@@ -216,6 +216,18 @@ func runStatus(cmd *cobra.Command, args []string) error {
 								glyphPerCall, glyphTokPerCall)
 						}
 					}
+					// Session compact pressure (TASK-286): p50/p95 cumulative
+					// context per session + threshold warning when sessions
+					// are consuming >100 KB of compact output.
+					if ssum, sErr := telemetry.SummarizeSessions(rtDir, time.Now().UTC().AddDate(0, 0, -7)); sErr == nil && ssum.ActiveSessions > 0 {
+						fmt.Printf("  Sessions    %d active, avg %.1f compact calls/session, p50 %.1f KB p95 %.1f KB cumulative\n",
+							ssum.ActiveSessions, ssum.AvgCompactCallsPerSession,
+							ssum.P50CumulativeKB, ssum.P95CumulativeKB)
+						if ssum.OverThresholdCount > 0 {
+							fmt.Printf("  ⚠ Sessions  %d session(s) exceeded 100 KB compact output — agent context filling fast\n",
+								ssum.OverThresholdCount)
+						}
+					}
 					// Dupe-check pressure (TASK-268): how often agents pushed
 					// past a near-duplicate warning. High force ratio → raise
 					// the threshold; high cancel ratio → feature is working.

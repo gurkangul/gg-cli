@@ -96,6 +96,11 @@ type Entry struct {
 	// time of the event. Set by the parallel queue runner (TASK-276). Omitted
 	// on non-orchestration entries so the JSONL stays clean.
 	ActiveWorkers int `json:"active_workers,omitempty"`
+	// SessionID tags the entry with the current agent session identifier.
+	// Populated from CLAUDE_SESSION_ID (Claude Code harness) or GG_SESSION_ID
+	// (generic agent override), whichever is set first. Empty on human-CLI
+	// invocations. Enables session-level compact context aggregation (TASK-286).
+	SessionID string `json:"session_id,omitempty"`
 }
 
 func filePath(runtimeDir string) string {
@@ -275,9 +280,22 @@ func classify(fromFlag string) string {
 	return originHuman
 }
 
+// sessionID returns the current agent session identifier, checking
+// CLAUDE_SESSION_ID first (Claude Code harness), then GG_SESSION_ID
+// (generic override). Returns "" when neither is set (human CLI invocations).
+func sessionID() string {
+	if id := strings.TrimSpace(os.Getenv("CLAUDE_SESSION_ID")); id != "" {
+		return id
+	}
+	return strings.TrimSpace(os.Getenv("GG_SESSION_ID"))
+}
+
 func recordEntry(runtimeDir string, e Entry) {
 	if runtimeDir == "" || e.Verb == "" || IsDisabled() {
 		return
+	}
+	if e.SessionID == "" {
+		e.SessionID = sessionID()
 	}
 	data, err := json.Marshal(e)
 	if err != nil {
@@ -354,6 +372,7 @@ type WeeklySummary struct {
 	// BytesPerToken to decide whether recalibration is warranted.
 	CalibrationFactor int `json:"calibration_factor"`
 }
+
 
 // Summarize reads the telemetry file and aggregates the last 7 days of data.
 // Returns an empty summary (not an error) when the file doesn't exist.
