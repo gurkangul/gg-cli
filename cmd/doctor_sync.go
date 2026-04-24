@@ -137,6 +137,18 @@ func artifactContent(key string) (string, bool) {
 		return templates.PreTaskDoneDecideCaptureHook, true
 	case "hooks/pre-task-done.d/40-review-required.sh":
 		return templates.PreTaskDoneReviewRequiredHook, true
+	case "hooks/pre-task-done.d/30-file-size.sh":
+		return templates.FileSizeGateHook, true
+	case "hooks/pre-task-done.d/50-ac-attestation.sh":
+		return templates.PreTaskDoneACAttestationHook, true
+	case "hooks/pre-task-done.d/50-worker-liveness-check.sh":
+		return templates.WorkerLivenessCheckHook, true
+	case "hooks/pre-tool-use.d/50-master-guard.sh":
+		return templates.MasterGuardPreToolUseHook, true
+	case "hooks/task-done.d/45-queue-advance.sh":
+		return templates.QueueAdvanceHook, true
+	case "hooks/task-done.d/46-worker-heartbeat.sh":
+		return templates.WorkerHeartbeatHook, true
 	case "hooks/task-done.d/80-task-done-go.sh":
 		return templates.TaskDoneGoHook, true
 	case "templates/makefile-test-tiers.mk":
