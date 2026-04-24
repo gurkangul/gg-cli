@@ -220,13 +220,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 					// context per session + threshold warning when sessions
 					// are consuming >100 KB of compact output.
 					if ssum, sErr := telemetry.SummarizeSessions(rtDir, time.Now().UTC().AddDate(0, 0, -7)); sErr == nil && ssum.ActiveSessions > 0 {
-						fmt.Printf("  Sessions    %d active, avg %.1f compact calls/session, p50 %.1f KB p95 %.1f KB cumulative\n",
-							ssum.ActiveSessions, ssum.AvgCompactCallsPerSession,
-							ssum.P50CumulativeKB, ssum.P95CumulativeKB)
-						if ssum.OverThresholdCount > 0 {
-							fmt.Printf("  ⚠ Sessions  %d session(s) exceeded 100 KB compact output — agent context filling fast\n",
-								ssum.OverThresholdCount)
-						}
+						fmt.Print(renderSessionsBlock(ssum))
 					}
 					// Dupe-check pressure (TASK-268): how often agents pushed
 					// past a near-duplicate warning. High force ratio → raise
@@ -429,4 +423,18 @@ func fmtCount(n uint64, err error) string {
 		return "?"
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// renderSessionsBlock formats the Sessions summary line and, when
+// OverThresholdCount > 0, the ⚠ Sessions warning line. Callers must
+// only call this when ssum.ActiveSessions > 0.
+func renderSessionsBlock(ssum *telemetry.SessionSummary) string {
+	out := fmt.Sprintf("  Sessions    %d active, avg %.1f compact calls/session, p50 %.1f KB p95 %.1f KB cumulative\n",
+		ssum.ActiveSessions, ssum.AvgCompactCallsPerSession,
+		ssum.P50CumulativeKB, ssum.P95CumulativeKB)
+	if ssum.OverThresholdCount > 0 {
+		out += fmt.Sprintf("  ⚠ Sessions  %d session(s) exceeded 100 KB compact output — agent context filling fast\n",
+			ssum.OverThresholdCount)
+	}
+	return out
 }
