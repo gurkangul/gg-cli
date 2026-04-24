@@ -105,8 +105,8 @@ func BytesPerTokenFor(s string) int {
 }
 
 // CalibrateCorpus returns a CalibrateResult over a set of representative
-// strings. It computes the median bytes-per-token across all non-empty entries,
-// which is more robust to outliers than the mean.
+// strings. It computes the mean bytes-per-token across all non-empty entries
+// (total bytes / total tokens).
 func CalibrateCorpus(samples []string) CalibrateResult {
 	var totalBytes, totalTokens int
 	for _, s := range samples {
