@@ -102,10 +102,42 @@ for line in lines:
     if m:
         add(m.group(2).strip() or 'AC-' + m.group(1))
 
-# Pass 2: Gap lines — 'Gap A:', 'Gap B:', 'Gap 1:', '**Gap A**' etc.
-# Dedup by label: first occurrence of 'Gap A' wins; later narrative mentions are skipped.
-for line in lines:
-    m = re.match(r'^\s*(?:\*{1,2})?Gap\s+([A-Z0-9]+)(?:\*{1,2})?[:\s]+(.*)', line, re.IGNORECASE)
+# Pass 2: Gap lines — 'Gap A:', 'Gap B:', 'Gap 1:', '**Gap A**:' etc.
+# Only count Gap lines that are in a recognised AC section (ACCEPTANCE, ACS, GAPS,
+# FIX, REWORK) or that use the strict 'Gap N:' colon-terminated form as an isolated
+# definition (not narrative prose). Lines like 'TASK-292 Gap 2 GSD did X' that
+# start with identifiers before the word Gap are excluded by re.match anchoring.
+# Lines like 'Gap 2 some prose text' (no colon) in WHY/background sections are
+# excluded by the section-scoping + strict colon requirement below.
+AC_SECTION_RE = re.compile(
+    r'(?im)^(ACCEPTANCE(?:\s+(?:CRITERIA|TESTS?))?|ACS?|GAPS?|FIX(?:ES)?|REWORK)\s*$'
+)
+# Build set of line indices that fall inside a recognised AC section.
+ac_section_lines = set()
+for sec_m in AC_SECTION_RE.finditer(text):
+    start_line = text[:sec_m.start()].count('\n')
+    # Collect lines until next all-caps header or blank-line paragraph break.
+    in_section = False
+    for idx in range(start_line + 1, len(lines)):
+        s = lines[idx].strip()
+        if not s:
+            if in_section:
+                break
+            continue
+        # Stop if we hit another header-like line (all-caps word(s), optional colon).
+        if re.match(r'^[A-Z][A-Z0-9 _-]{2,}:?\s*$', s):
+            break
+        ac_section_lines.add(idx)
+        in_section = True
+
+for idx, line in enumerate(lines):
+    # Strict form: 'Gap N:' with a colon — accepted regardless of section.
+    strict_m = re.match(r'^\s*(?:\*{1,2})?Gap\s+([A-Z0-9]+)(?:\*{1,2})?:\s*(.*)', line, re.IGNORECASE)
+    # Loose form: 'Gap N text' without colon — only inside recognised AC sections.
+    loose_m = None if strict_m else re.match(
+        r'^\s*(?:\*{1,2})?Gap\s+([A-Z0-9]+)(?:\*{1,2})?\s+(.*)', line, re.IGNORECASE
+    )
+    m = strict_m or (loose_m if idx in ac_section_lines else None)
     if m:
         label = m.group(1).upper()
         if label in seen_gap_labels:
