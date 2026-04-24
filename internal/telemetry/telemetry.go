@@ -346,6 +346,13 @@ type WeeklySummary struct {
 	// compact token budget is spent on glyph decoration?"
 	GlyphByteOverhead  int `json:"glyph_byte_overhead"`
 	GlyphTokenOverhead int `json:"glyph_token_overhead"`
+	// CalibrationFactor is the bytes-per-token ratio measured from the canonical
+	// compact corpus (internal/telemetry/testdata/compact_corpus.golden) at
+	// summarize time. It is informational only — CompactTokensSaved continues to
+	// use the hardcoded BytesPerToken constant (currently 3) so the historical
+	// series stays comparable. Callers can compare CalibrationFactor against
+	// BytesPerToken to decide whether recalibration is warranted.
+	CalibrationFactor int `json:"calibration_factor"`
 }
 
 // Summarize reads the telemetry file and aggregates the last 7 days of data.
@@ -436,6 +443,7 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 	if saved := sum.CompactBytesDefault - sum.CompactBytesOut; saved > 0 {
 		sum.CompactTokensSaved = saved / BytesPerToken
 	}
+	sum.CalibrationFactor = CorpusCalibration.Rounded
 	// GlyphTokenOverhead: extra tokens spent on Unicode glyphs vs 1-byte ASCII.
 	// Uses the same BytesPerToken estimate. Even at zero calls this stays zero,
 	// so the gg status display can gate on CompactCalls > 0 before showing it.

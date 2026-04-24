@@ -1,9 +1,31 @@
 package telemetry
 
 import (
+	_ "embed"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
+
+//go:embed testdata/compact_corpus.golden
+var compactCorpusGolden string
+
+// CorpusCalibration is the CalibrateResult measured from the embedded
+// compact_corpus.golden at package init time. It is used by WeeklySummary
+// to populate CalibrationFactor without requiring filesystem access at runtime.
+var CorpusCalibration CalibrateResult
+
+func init() {
+	var lines []string
+	for _, line := range strings.Split(compactCorpusGolden, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		lines = append(lines, trimmed)
+	}
+	CorpusCalibration = CalibrateCorpus(lines)
+}
 
 // CountTokens returns an estimate of the number of tokens a string will use
 // when processed by a BPE-style tokeniser (e.g. cl100k_base used by GPT-4 and

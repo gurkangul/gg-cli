@@ -753,3 +753,35 @@ func TestRecordCompact_GlyphOverheadOmittedOnNonCompact(t *testing.T) {
 		t.Errorf("non-compact entry must not contain glyph_overhead_bytes: %s", data)
 	}
 }
+
+func TestSummarize_CalibrationFactor(t *testing.T) {
+	dir := t.TempDir()
+	Record(dir, "status", "")
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	// CalibrationFactor must equal CorpusCalibration.Rounded, which is > 0 as
+	// long as the compact corpus golden file is non-empty.
+	if sum.CalibrationFactor != CorpusCalibration.Rounded {
+		t.Errorf("CalibrationFactor = %d, want %d (CorpusCalibration.Rounded)",
+			sum.CalibrationFactor, CorpusCalibration.Rounded)
+	}
+	if sum.CalibrationFactor <= 0 {
+		t.Errorf("CalibrationFactor = %d, want > 0 (corpus must produce a non-zero ratio)",
+			sum.CalibrationFactor)
+	}
+	// CompactTokensSaved must still use BytesPerToken, not CalibrationFactor.
+	// Verify by recording a compact entry and checking the math.
+	dir2 := t.TempDir()
+	RecordCompact(dir2, "context", "", 100, 200, 0, "")
+	sum2, err := Summarize(dir2)
+	if err != nil {
+		t.Fatalf("Summarize dir2: %v", err)
+	}
+	if want := 100 / BytesPerToken; sum2.CompactTokensSaved != want {
+		t.Errorf("CompactTokensSaved = %d, want %d (100/BytesPerToken=%d, not CalibrationFactor=%d)",
+			sum2.CompactTokensSaved, want, BytesPerToken, sum2.CalibrationFactor)
+	}
+}
