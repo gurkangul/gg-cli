@@ -1,0 +1,11 @@
+impact: BUG-007 — 2 files 2 sym 1D 1T 1R
+
+→ internal/store/store.go
+→ cmd/context.go
+S FetchDecisions
+S SearchDecisions
+D  2026-04-10  use JWT for stateless auth →TASK-001
+T → TASK-042  implement JWT refresh endpoint (high)
+R  2026-04-09  session cookies with Redis store →TASK-010
+
+! symbol index stale

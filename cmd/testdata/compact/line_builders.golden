@@ -1,0 +1,14 @@
+D  2026-04-10  use JWT for stateless auth →TASK-001
+D  2026-04-08  rotate signing keys every 90 days
+R  2026-04-09  session cookies with Redis store →TASK-010
+T → TASK-042  implement JWT refresh endpoint (high)
+T ○ TASK-007  add JWT revocation cache (medium)
+T ✓ TASK-003  write auth integration test (low)
+B  BUG-007 [high/open]  token refresh race condition
+B  BUG-002 [low/fixed]  typo in error message
+N  2026-04-08  (TASK-042)  saw 15% refresh spike between 09:00-10:00 UTC
+N  2026-04-11  deploy on Tuesday
+? ? DISC-008  adopt FIDO2 alongside passwords? (3 turns)
+? ✓ DISC-003  API versioning strategy
+M  04-20 10:00  pm→developer  ship TASK-042 by Friday →TASK-042
+M  04-20 09:30  qa→developer  line1 line2 multiline folded
