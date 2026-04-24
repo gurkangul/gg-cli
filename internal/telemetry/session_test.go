@@ -82,9 +82,9 @@ func TestSummarizeSessions_TwoSessions_PercentilesDistinct(t *testing.T) {
 	if ss.ActiveSessions != 2 {
 		t.Errorf("ActiveSessions = %d, want 2", ss.ActiveSessions)
 	}
-	// sorted bytes: [200, 800]. p50idx(2)=(2-1)*50/100=0 → 200; p95idx(2)=(2-1)*95/100=0 → 200.
+	// sorted bytes: [200, 800]. nearest-rank: p50→ceil(1.0)-1=0→200; p95→ceil(1.9)-1=1→800.
 	wantP50 := float64(200) / 1024.0
-	wantP95 := float64(200) / 1024.0
+	wantP95 := float64(800) / 1024.0
 	if ss.P50CumulativeKB != wantP50 {
 		t.Errorf("P50CumulativeKB = %.4f, want %.4f", ss.P50CumulativeKB, wantP50)
 	}
@@ -212,8 +212,18 @@ func TestP50P95Idx_SingleElement(t *testing.T) {
 	}
 }
 
+func TestP50P95Idx_TwoElements(t *testing.T) {
+	// nearest-rank: p50 → ceil(0.50*2)-1 = ceil(1.0)-1 = 0; p95 → ceil(0.95*2)-1 = ceil(1.9)-1 = 1.
+	if p50idx(2) != 0 {
+		t.Errorf("p50idx(2) = %d, want 0", p50idx(2))
+	}
+	if p95idx(2) != 1 {
+		t.Errorf("p95idx(2) = %d, want 1", p95idx(2))
+	}
+}
+
 func TestP50P95Idx_TwentyElements(t *testing.T) {
-	// For n=20: p50idx = (20-1)*50/100 = 9, p95idx = (20-1)*95/100 = 18.
+	// nearest-rank: p50 → ceil(0.50*20)-1 = ceil(10)-1 = 9; p95 → ceil(0.95*20)-1 = ceil(19)-1 = 18.
 	if p50idx(20) != 9 {
 		t.Errorf("p50idx(20) = %d, want 9", p50idx(20))
 	}

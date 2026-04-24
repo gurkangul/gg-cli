@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -130,16 +131,22 @@ func sortInts(a []int) {
 	}
 }
 
-func p50idx(n int) int {
-	if n <= 1 {
+// nearestRankIdx returns the 0-based index for percentile p (0–100) over n
+// sorted samples using the nearest-rank method: idx = ceil(p/100 * n) - 1.
+// For n<=1 or p=0 the result is always 0.
+func nearestRankIdx(n, p int) int {
+	if n <= 0 {
 		return 0
 	}
-	return (n - 1) * 50 / 100
+	idx := int(math.Ceil(float64(p)/100.0*float64(n))) - 1
+	if idx < 0 {
+		return 0
+	}
+	if idx >= n {
+		return n - 1
+	}
+	return idx
 }
 
-func p95idx(n int) int {
-	if n <= 1 {
-		return 0
-	}
-	return (n - 1) * 95 / 100
-}
+func p50idx(n int) int { return nearestRankIdx(n, 50) }
+func p95idx(n int) int { return nearestRankIdx(n, 95) }
