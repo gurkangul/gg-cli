@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -44,16 +46,18 @@ func runTaskDecisions(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("list decisions for %s: %w", taskID, err)
 	}
 
-	return printJSON(decisions, func() {
+	renderDecisions := func(w io.Writer) {
 		if len(decisions) == 0 {
-			fmt.Printf("(no decisions linked to %s — record one with `gg record \"...\" --task %s`)\n", taskID, taskID)
+			fmt.Fprintf(w, "(no decisions linked to %s — record one with `gg record \"...\" --task %s`)\n", taskID, taskID)
 			return
 		}
 		for _, dec := range decisions {
-			fmt.Printf("D %s  %s\n", shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth))
+			fmt.Fprintf(w, "D %s  %s\n", shortDate(dec.CreatedAt), compactTrim(dec.Text, compactLineWidth))
 			if dec.Reason != "" {
-				fmt.Printf("    reason: %s\n", compactTrim(dec.Reason, compactLineWidth))
+				fmt.Fprintf(w, "    reason: %s\n", compactTrim(dec.Reason, compactLineWidth))
 			}
 		}
-	})
+	}
+	emitHydration(cmd, "decisions", renderDecisions)
+	return printJSON(decisions, func() { renderDecisions(os.Stdout) })
 }

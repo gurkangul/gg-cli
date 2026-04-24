@@ -101,27 +101,29 @@ func runBugGet(cmd *cobra.Command, args []string) error {
 		return notFound(err.Error())
 	}
 
-	return printJSON(b, func() {
-		fmt.Printf("%s %s [%s/%s] %s\n", bugStatusIcon(b.Status), b.ID, b.Severity, b.Status, b.Title)
+	renderBugGet := func(w io.Writer) {
+		fmt.Fprintf(w, "%s %s [%s/%s] %s\n", bugStatusIcon(b.Status), b.ID, b.Severity, b.Status, b.Title)
 		if b.Detail != "" {
-			fmt.Printf("  Detail: %s\n", b.Detail)
+			fmt.Fprintf(w, "  Detail: %s\n", b.Detail)
 		}
 		if len(b.Tags) > 0 {
-			fmt.Printf("  Tags: %s\n", strings.Join(b.Tags, ", "))
+			fmt.Fprintf(w, "  Tags: %s\n", strings.Join(b.Tags, ", "))
 		}
 		if b.TaskID != "" {
-			fmt.Printf("  Task: %s\n", b.TaskID)
+			fmt.Fprintf(w, "  Task: %s\n", b.TaskID)
 		}
 		if b.RootCause != "" {
-			fmt.Printf("  Root cause: %s\n", b.RootCause)
+			fmt.Fprintf(w, "  Root cause: %s\n", b.RootCause)
 		}
 		if b.FixSummary != "" {
-			fmt.Printf("  Fix: %s\n", b.FixSummary)
+			fmt.Fprintf(w, "  Fix: %s\n", b.FixSummary)
 		}
 		if b.ReproScript != "" {
-			fmt.Printf("  Repro: %s\n", b.ReproScript)
+			fmt.Fprintf(w, "  Repro: %s\n", b.ReproScript)
 		}
-		fmt.Printf("  Created: %s\n", shortDate(b.CreatedAt))
-		fmt.Printf("  Updated: %s\n", shortDate(b.UpdatedAt))
-	})
+		fmt.Fprintf(w, "  Created: %s\n", shortDate(b.CreatedAt))
+		fmt.Fprintf(w, "  Updated: %s\n", shortDate(b.UpdatedAt))
+	}
+	emitHydration(cmd, "bug", renderBugGet)
+	return printJSON(b, func() { renderBugGet(os.Stdout) })
 }
