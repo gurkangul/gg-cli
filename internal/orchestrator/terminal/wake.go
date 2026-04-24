@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -142,6 +143,26 @@ func WakeAndSend(ctx context.Context, term Terminal, id SurfaceID, text string) 
 		return err
 	}
 	return term.SendKey(ctx, id, "enter")
+}
+
+// WakeAndSendWithFlock is identical to WakeAndSend but additionally acquires
+// a cross-process advisory file lock on <spawnDir>/<surface>.lock before
+// entering the in-process per-surface mutex.  This prevents two separate shell
+// processes from interleaving their wake+text sequences on the same pane.
+//
+// When spawnDir is empty the flock step is skipped and WakeAndSend is called
+// directly (preserves backward compat for callers that don't have a spawn dir).
+func WakeAndSendWithFlock(ctx context.Context, term Terminal, id SurfaceID, text, spawnDir string) error {
+	if spawnDir == "" {
+		return WakeAndSend(ctx, term, id, text)
+	}
+	lockPath := surfaceLockPath(spawnDir, id)
+	_, release, err := acquireFlockCtx(ctx, lockPath)
+	if err != nil {
+		return fmt.Errorf("acquire surface flock: %w", err)
+	}
+	defer release()
+	return WakeAndSend(ctx, term, id, text)
 }
 
 // lastNonBlankLine returns the last line in s that is not all whitespace,

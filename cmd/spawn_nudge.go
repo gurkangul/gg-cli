@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/orchestrator/spawn"
 	"github.com/gurkangul/gg-cli/internal/orchestrator/terminal"
 )
 
@@ -49,8 +50,15 @@ func runSpawnNudge(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("terminal backend: %w", err)
 	}
 
+	// Resolve spawn dir for cross-process file flock.  On error we fall back
+	// to the in-process-only path so that nudge still works without a config.
+	var spawnDir string
+	if rt, rtErr := spawnRuntimeDir(); rtErr == nil {
+		spawnDir = spawn.Dir(rt)
+	}
+
 	id := terminal.SurfaceID(spawnNudgeSurface)
-	if err := terminal.WakeAndSend(cmd.Context(), term, id, text); err != nil {
+	if err := terminal.WakeAndSendWithFlock(cmd.Context(), term, id, text, spawnDir); err != nil {
 		return fmt.Errorf("nudge %s: %w", id, err)
 	}
 
