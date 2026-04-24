@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg-cli/internal/enforcement"
 )
 
 var taskReviewCmd = &cobra.Command{
@@ -39,6 +41,13 @@ func init() {
 }
 
 func runTaskReview(cmd *cobra.Command, args []string) error {
+	// Agent lifecycle gate: GSD / Sonnet agents are not permitted to self-approve via review.
+	if !enforcement.Enabled() {
+		emitGuardSkipEvent("agent-lifecycle-review", "")
+	} else if rej := checkAgentLifecycleGate("review"); rej != nil {
+		return rej
+	}
+
 	if taskReviewApprove == taskReviewReject {
 		return fmt.Errorf("exactly one of --approve or --reject is required")
 	}

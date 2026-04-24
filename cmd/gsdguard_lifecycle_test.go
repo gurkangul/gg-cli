@@ -113,3 +113,40 @@ func TestAgentLifecycleGate_GSDPrefix_CaseInsensitive(t *testing.T) {
 		t.Fatal("GSD (uppercase) must be blocked — matching is case-insensitive")
 	}
 }
+
+// review verb gate tests (TASK-288)
+
+func TestAgentLifecycleGate_Review_GSD_Blocked(t *testing.T) {
+	t.Setenv("GG_AGENT", "gsd")
+	t.Setenv("GG_ROLE", "")
+	rej := checkAgentLifecycleGate("review")
+	if rej == nil {
+		t.Fatal("expected gate to block GG_AGENT=gsd for 'review' verb")
+	}
+	if rej.Code != ExitVerifyFailed {
+		t.Errorf("expected ExitVerifyFailed(%d), got %d", ExitVerifyFailed, rej.Code)
+	}
+	if !strings.Contains(rej.Message, "review") {
+		t.Errorf("message should name the verb 'review', got %q", rej.Message)
+	}
+}
+
+func TestAgentLifecycleGate_Review_Sonnet_Blocked(t *testing.T) {
+	t.Setenv("GG_AGENT", "claude-sonnet-4-6")
+	t.Setenv("GG_ROLE", "")
+	rej := checkAgentLifecycleGate("review")
+	if rej == nil {
+		t.Fatal("expected gate to block claude-sonnet-4-6 for 'review' verb")
+	}
+	if rej.Code != ExitVerifyFailed {
+		t.Errorf("expected ExitVerifyFailed(%d), got %d", ExitVerifyFailed, rej.Code)
+	}
+}
+
+func TestAgentLifecycleGate_Review_OpusAllowed(t *testing.T) {
+	t.Setenv("GG_AGENT", "claude-code")
+	t.Setenv("GG_ROLE", "")
+	if rej := checkAgentLifecycleGate("review"); rej != nil {
+		t.Fatalf("claude-code must be allowed to call 'review', got refusal: %v", rej)
+	}
+}
