@@ -167,9 +167,12 @@ func TestNew_UnknownKind(t *testing.T) {
 	}
 }
 
-func TestNew_TmuxNotImplemented(t *testing.T) {
-	_, err := terminal.New("tmux")
-	if err == nil {
-		t.Fatal("expected error for tmux (not yet implemented)")
+func TestNew_TmuxKind(t *testing.T) {
+	term, err := terminal.New("tmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if term == nil {
+		t.Fatal("expected non-nil terminal for tmux")
 	}
 }

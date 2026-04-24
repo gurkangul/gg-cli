@@ -74,7 +74,7 @@ func New(kind string) (Terminal, error) {
 	case "fake":
 		return NewFake(), nil
 	case "tmux":
-		return nil, fmt.Errorf("tmux adapter not yet implemented (TASK-275); use GG_TERMINAL=cmux or GG_TERMINAL=fake")
+		return newTmux(), nil
 	default:
 		return nil, fmt.Errorf("unknown terminal: %q, supported: cmux, fake, tmux", kind)
 	}
