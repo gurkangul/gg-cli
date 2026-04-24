@@ -160,3 +160,20 @@ func TestCalibrateCorpus_CurrentConstantIsValid(t *testing.T) {
 			r.Rounded, BytesPerToken, diff)
 	}
 }
+
+// TestEmitCalibrationFactor tokenises the golden corpus, computes the
+// bytes-per-actual-tokens ratio, and emits the measured factor via t.Logf
+// so it is visible under `go test -v`. Run this test after updating
+// testdata/compact_corpus.golden to see whether BytesPerToken needs updating.
+func TestEmitCalibrationFactor(t *testing.T) {
+	samples := loadCorpusGolden(t)
+	if len(samples) == 0 {
+		t.Fatal("corpus golden file is empty")
+	}
+	r := CalibrateCorpus(samples)
+	t.Logf("corpus: %d lines, %d bytes, %d tokens",
+		len(samples), r.TotalBytes, r.TotalTokens)
+	t.Logf("measured ratio: %.3f bytes/token → rounded factor = %d", r.Ratio, r.Rounded)
+	t.Logf("current BytesPerToken constant = %d (diff from measured: %+d)",
+		BytesPerToken, BytesPerToken-r.Rounded)
+}
