@@ -188,6 +188,21 @@ func runStatus(cmd *cobra.Command, args []string) error {
 						fmt.Printf("Compact     %d calls, %s / ~%s tok saved (avg %.0f%% reduction)\n",
 							tsum.CompactCalls, humanFileSize(int64(saved)),
 							humanTokenCount(tsum.CompactTokensSaved), pctSaved)
+						if tsum.HydrationCalls > 0 {
+							netBytes := tsum.NetSavingsBytes
+							netTok := tsum.NetTokensSaved
+							netSign := ""
+							if netBytes < 0 {
+								netSign = "-"
+								netBytes = -netBytes
+								netTok = -netTok
+							}
+							fmt.Printf("  Hydration %d re-fetches, %s back; net %s%s / ~%s%s tok\n",
+								tsum.HydrationCalls,
+								humanFileSize(int64(tsum.HydrationBytesTotal)),
+								netSign, humanFileSize(int64(netBytes)),
+								netSign, humanTokenCount(netTok))
+						}
 					}
 					// Dupe-check pressure (TASK-268): how often agents pushed
 					// past a near-duplicate warning. High force ratio → raise

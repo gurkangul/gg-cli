@@ -227,6 +227,10 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 				},
 			)
 		} else {
+			emitHydration(cmd, "get", func(w io.Writer) {
+				renderTaskGetDefault(w, t)
+				_, _ = w.Write(ctxBlock.Bytes())
+			})
 			renderTaskGetDefault(os.Stdout, t)
 			_, _ = os.Stdout.Write(ctxBlock.Bytes())
 		}

@@ -53,6 +53,12 @@ type Entry struct {
 	// --with-context fields (omitted when flag is not used).
 	WithContext       bool `json:"with_context,omitempty"`
 	ContextBlockBytes int  `json:"context_block_bytes,omitempty"`
+	// Hydration re-fetch fields (TASK-279). Set by RecordHydration when a
+	// caller fetches the full record after the agent saw compact output.
+	// BytesHydrated is the full-render byte size of the fetched record.
+	// Omitted on non-hydration entries so the JSONL stays clean.
+	Hydration      bool `json:"hydration,omitempty"`
+	BytesHydrated  int  `json:"bytes_hydrated,omitempty"`
 	// Dupe-check fields (TASK-268). Set by RecordDupeCheck when `gg bug
 	// report` runs its advisory near-duplicate search. Omitted on all other
 	// entries so the JSONL stays clean.
@@ -170,6 +176,19 @@ func RecordWithContext(runtimeDir, verb, fromFlag string, contextBlockBytes int)
 	})
 }
 
+// RecordHydration appends a telemetry entry for a full-record re-fetch that
+// follows compact display. bytesHydrated is the full-render size of the fetched
+// record — this is charged against gross compact savings to compute net savings.
+func RecordHydration(runtimeDir, verb, fromFlag string, bytesHydrated int) {
+	recordEntry(runtimeDir, Entry{
+		Verb:          verb,
+		Origin:        classify(fromFlag),
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		Hydration:     true,
+		BytesHydrated: bytesHydrated,
+	})
+}
+
 func classify(fromFlag string) string {
 	switch {
 	case strings.TrimSpace(os.Getenv("GG_ROLE")) != "":
@@ -217,6 +236,15 @@ type WeeklySummary struct {
 	// WithContextCalls counts gg get --with-context invocations.
 	WithContextCalls      int `json:"with_context_calls"`
 	WithContextBytesTotal int `json:"with_context_bytes_total"`
+	// Hydration re-fetch aggregates (TASK-279). HydrationCalls counts full-record
+	// fetches that follow a compact display. HydrationBytesTotal is the sum of
+	// full-render sizes fetched back. NetSavingsBytes and NetTokensSaved subtract
+	// the re-fetched bytes from the gross compact savings — a negative net means
+	// compaction induced more fetching than it saved.
+	HydrationCalls      int `json:"hydration_calls"`
+	HydrationBytesTotal int `json:"hydration_bytes_total"`
+	NetSavingsBytes     int `json:"net_savings_bytes"`
+	NetTokensSaved      int `json:"net_tokens_saved"`
 	// Dupe-check aggregates (TASK-268). Helps answer: "how often do agents
 	// file anyway after seeing a dup warning?" High force/cancel ratios
 	// argue the threshold is off; zero MatchesHits with non-zero Calls
@@ -275,6 +303,10 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 			sum.CompactBytesOut += e.BytesOut
 			sum.CompactBytesDefault += e.BytesDefault
 		}
+		if e.Hydration {
+			sum.HydrationCalls++
+			sum.HydrationBytesTotal += e.BytesHydrated
+		}
 		if e.WithContext {
 			sum.WithContextCalls++
 			sum.WithContextBytesTotal += e.ContextBlockBytes
@@ -302,5 +334,9 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 		// the error stays well under the 10% noise floor of the metric.
 		sum.CompactTokensSaved = saved / 4
 	}
+	// Net savings = gross bytes saved by compact - bytes fetched back by hydration.
+	// Can be negative when compact induces more re-fetching than it saves.
+	sum.NetSavingsBytes = (sum.CompactBytesDefault - sum.CompactBytesOut) - sum.HydrationBytesTotal
+	sum.NetTokensSaved = sum.NetSavingsBytes / 4
 	return sum, nil
 }

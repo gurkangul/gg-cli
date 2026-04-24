@@ -267,6 +267,7 @@ func runContextForTask(cmd *cobra.Command, taskID string) error {
 			)
 			return
 		}
+		emitHydration(cmd, "context", func(w io.Writer) { renderForTask(w, tb, errs) })
 		renderForTask(cmd.OutOrStdout(), tb, errs)
 	})
 }

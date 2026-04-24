@@ -73,6 +73,28 @@ func printJSON(v any, fallback func()) error {
 	return nil
 }
 
+// emitHydration records a telemetry entry for a full-record fetch that follows
+// compact display. render is called to measure the byte size of the full output
+// that was (or will be) printed. verb should match the compact verb that
+// preceded this fetch (e.g. "task", "get").
+func emitHydration(cmd *cobra.Command, verb string, render func(io.Writer)) {
+	var buf bytes.Buffer
+	render(&buf)
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	runtimeDir, err := cfg.RuntimeDir()
+	if err != nil {
+		return
+	}
+	fromFlag := ""
+	if f := cmd.Flags().Lookup("from"); f != nil {
+		fromFlag = f.Value.String()
+	}
+	telemetry.RecordHydration(runtimeDir, verb, fromFlag, buf.Len())
+}
+
 // emitCompact renders both default and compact views to measure the byte
 // savings, prints the compact view, and records a telemetry entry with both
 // sizes so `gg status` can surface the dogfood savings metric.

@@ -360,6 +360,80 @@ func containsField(s, f string) bool {
 // TestPathResolver verifies that filePath appends telemetry.jsonl to the
 // provided runtimeDir — this is the contract callers rely on when they pass
 // config.RuntimeDir() instead of ggDir.
+// ── RecordHydration aggregation (TASK-279) ─────────────────────────────────
+
+func TestRecordHydration_NetSavingsPositive(t *testing.T) {
+	dir := t.TempDir()
+	// Compact saved 800 bytes gross; re-fetch pulled back 200 → net 600.
+	RecordCompact(dir, "context", "", 200, 1000, 1)
+	RecordHydration(dir, "get", "", 200)
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.HydrationCalls != 1 {
+		t.Errorf("HydrationCalls = %d, want 1", sum.HydrationCalls)
+	}
+	if sum.HydrationBytesTotal != 200 {
+		t.Errorf("HydrationBytesTotal = %d, want 200", sum.HydrationBytesTotal)
+	}
+	// gross saved = 800, hydration = 200 → net = 600
+	if sum.NetSavingsBytes != 600 {
+		t.Errorf("NetSavingsBytes = %d, want 600", sum.NetSavingsBytes)
+	}
+	if sum.NetTokensSaved != 150 {
+		t.Errorf("NetTokensSaved = %d, want 150 (600/4)", sum.NetTokensSaved)
+	}
+}
+
+func TestRecordHydration_NetSavingsNegative(t *testing.T) {
+	dir := t.TempDir()
+	// Compact saved only 100 bytes but re-fetch pulled back 300 → net −200.
+	RecordCompact(dir, "context", "", 900, 1000, 1)
+	RecordHydration(dir, "get", "", 300)
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.NetSavingsBytes != -200 {
+		t.Errorf("NetSavingsBytes = %d, want -200", sum.NetSavingsBytes)
+	}
+}
+
+func TestRecordHydration_OmittedOnNonHydrationEntries(t *testing.T) {
+	dir := t.TempDir()
+	Record(dir, "status", "")
+
+	data, err := os.ReadFile(filePath(dir))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	for _, field := range []string{`"hydration"`, `"bytes_hydrated"`} {
+		if containsField(string(data), field) {
+			t.Errorf("non-hydration entry leaked %q into JSON: %s", field, data)
+		}
+	}
+}
+
+func TestRecordHydration_NoCompact_NetZero(t *testing.T) {
+	dir := t.TempDir()
+	// Hydration with no compact calls — gross saved = 0, net = -hydrated.
+	RecordHydration(dir, "get", "", 500)
+
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.HydrationCalls != 1 {
+		t.Errorf("HydrationCalls = %d, want 1", sum.HydrationCalls)
+	}
+	if sum.NetSavingsBytes != -500 {
+		t.Errorf("NetSavingsBytes = %d, want -500 (no compact to offset)", sum.NetSavingsBytes)
+	}
+}
+
 func TestPathResolver_UsesRuntimeDir(t *testing.T) {
 	dir := t.TempDir()
 	got := filePath(dir)
