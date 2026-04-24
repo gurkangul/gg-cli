@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,17 +10,16 @@ import (
 
 	"github.com/gurkangul/gg-cli/internal/orchestrator/spawn"
 	"github.com/gurkangul/gg-cli/internal/orchestrator/terminal"
-	"github.com/gurkangul/gg-cli/internal/store"
 )
 
 // spawnQueueCmd is the parent for all queue sub-operations.
 var spawnQueueCmd = &cobra.Command{
 	Use:   "queue",
-	Short: "Manage the sequential task queue for multi-agent orchestration",
-	Long: `Control the sequential queue runner that drains pending tasks by spawning workers.
+	Short: "Manage the parallel task queue for multi-agent orchestration",
+	Long: `Control the parallel queue runner that drains pending tasks by spawning workers.
 
 Subcommands:
-  start   — begin a new queue run (drains pending tasks sequentially)
+  start   — begin a new queue run (drains pending tasks in parallel)
   pause   — suspend the running queue after the current worker finishes
   resume  — resume a paused queue from where it stopped
   status  — show queue state, current task, completed/skipped counts
@@ -34,17 +32,20 @@ Subcommands:
 
 var spawnQueueStartCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Begin a new sequential queue run",
-	Long: `Drain the pending task queue by spawning a worker pane for each task.
+	Short: "Begin a new parallel queue run",
+	Long: `Drain the pending task queue by spawning worker panes in parallel.
 
-Workers run sequentially (MaxConcurrent=1). For each pending task the runner:
+Up to GG_QUEUE_MAX workers run simultaneously (default: 3). For each
+pending task the runner:
   1. Verifies master liveness (heartbeat must be fresh)
-  2. Opens a worker pane via the terminal backend (GG_TERMINAL)
-  3. Sends the task ID to the worker for context loading
-  4. Waits for the worker pane to exit
-  5. Advances to the next pending task
+  2. Checks advisory file-lock collision (locks.json); blocks on conflict
+     unless --force is passed
+  3. Opens a worker pane via the terminal backend (GG_TERMINAL)
+  4. Sends the task ID to the worker for context loading
+  5. When the worker pane exits, advances to the next pending task
 
-Queue state is persisted at ~/.gg/projects/<id>/spawn/queue.json.`,
+Queue state is persisted at ~/.gg/projects/<id>/spawn/queue.json.
+Active workers cap: GG_QUEUE_MAX env var (integer, default 3).`,
 	RunE: runSpawnQueueStart,
 }
 
@@ -52,12 +53,14 @@ var (
 	spawnQueueAgent    string
 	spawnQueueMaxTasks int
 	spawnQueuePollSecs int
+	spawnQueueForce    bool
 )
 
 func init() {
 	spawnQueueStartCmd.Flags().StringVar(&spawnQueueAgent, "agent", "", "agent command for worker panes (default: $GG_SPAWN_AGENT or 'gsd')")
 	spawnQueueStartCmd.Flags().IntVar(&spawnQueueMaxTasks, "max-tasks", 0, "stop after processing this many tasks (0 = no limit)")
 	spawnQueueStartCmd.Flags().IntVar(&spawnQueuePollSecs, "poll", 30, "seconds between liveness checks while a worker is running")
+	spawnQueueStartCmd.Flags().BoolVar(&spawnQueueForce, "force", false, "override advisory file-lock collisions (logs override, continues spawn)")
 	spawnQueueCmd.AddCommand(spawnQueueStartCmd)
 }
 
@@ -72,10 +75,7 @@ func runSpawnQueueStart(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	masterAgent := os.Getenv("GG_AGENT")
-	if masterAgent == "" {
-		masterAgent = os.Getenv("GG_ROLE")
-	}
+	masterAgent := masterAgentTag()
 	if hbErr := spawn.WriteHeartbeat(rt, masterAgent); hbErr != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ heartbeat write failed: %v\n", hbErr)
 	}
@@ -99,6 +99,8 @@ func runSpawnQueueStart(cmd *cobra.Command, _ []string) error {
 	}
 	defer d.Close()
 
+	cap := maxConcurrent()
+	fmt.Printf("→ Queue started (agent: %s, max-concurrent: %d)\n", agentCmd, cap)
 	return drainQueue(cmd.Context(), cmd, rt, sess, term, d.store, masterAgent, agentCmd)
 }
 
@@ -134,10 +136,7 @@ func runSpawnQueueResume(cmd *cobra.Command, _ []string) error {
 	}
 	sess.Paused = false
 
-	masterAgent := os.Getenv("GG_AGENT")
-	if masterAgent == "" {
-		masterAgent = os.Getenv("GG_ROLE")
-	}
+	masterAgent := masterAgentTag()
 	if hbErr := spawn.WriteHeartbeat(rt, masterAgent); hbErr != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ heartbeat write: %v\n", hbErr)
 	}
@@ -188,7 +187,7 @@ func runSpawnQueuePause(_ *cobra.Command, _ []string) error {
 	if err := spawn.WriteQueue(rt, sess); err != nil {
 		return err
 	}
-	fmt.Println("⏸ Queue paused — current worker will finish, then runner stops.")
+	fmt.Println("⏸ Queue paused — active workers finish naturally, then runner stops.")
 	fmt.Println("  Resume with: gg spawn queue resume")
 	return nil
 }
@@ -289,7 +288,6 @@ func runSpawnQueueCheck(_ *cobra.Command, _ []string) error {
 
 	ok := true
 
-	// Check heartbeat.
 	alive, reason := spawn.IsMasterAlive(rt)
 	if alive {
 		fmt.Println("✓ Master heartbeat: fresh")
@@ -298,7 +296,6 @@ func runSpawnQueueCheck(_ *cobra.Command, _ []string) error {
 		ok = false
 	}
 
-	// Check queue.
 	sess, qErr := spawn.ReadQueue(rt)
 	if errors.Is(qErr, spawn.ErrNoQueue) {
 		fmt.Println("⚠ Queue: no active session")
@@ -310,11 +307,10 @@ func runSpawnQueueCheck(_ *cobra.Command, _ []string) error {
 		if sess.Paused {
 			pausedNote = " [PAUSED]"
 		}
-		fmt.Printf("✓ Queue: agent=%s completed=%d skipped=%d current=%q%s\n",
-			sess.Agent, len(sess.Completed), len(sess.Skipped), sess.CurrentTask, pausedNote)
+		fmt.Printf("✓ Queue: agent=%s completed=%d skipped=%d current=%q%s cap=%d\n",
+			sess.Agent, len(sess.Completed), len(sess.Skipped), sess.CurrentTask, pausedNote, maxConcurrent())
 	}
 
-	// Check panes.
 	panes, panesErr := spawn.ListPanes(rt)
 	if panesErr != nil {
 		fmt.Printf("✗ Panes read error: %v\n", panesErr)
@@ -363,7 +359,7 @@ func runSpawnQueueStatus(_ *cobra.Command, _ []string) error {
 		pausedNote = " [PAUSED]"
 	}
 	dur := time.Since(sess.StartedAt).Round(time.Second)
-	fmt.Printf("Queue%s — agent: %s  running: %s\n", pausedNote, sess.Agent, dur)
+	fmt.Printf("Queue%s — agent: %s  running: %s  cap: %d\n", pausedNote, sess.Agent, dur, maxConcurrent())
 	if sess.CurrentTask != "" {
 		fmt.Printf("  Current: %s\n", sess.CurrentTask)
 	}
@@ -372,242 +368,17 @@ func runSpawnQueueStatus(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-// ── drain (shared runner) ─────────────────────────────────────────────────────
+// ── shared helpers ────────────────────────────────────────────────────────────
 
-func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.QueueSession, term terminal.Terminal, st *store.Client, masterAgent, agentCmd string) error {
-	processed := 0
-
-	for {
-		if ctx.Err() != nil {
-			fmt.Println("\n⚠ Interrupted — queue paused. Use 'gg spawn queue resume' to continue.")
-			return nil
-		}
-
-		// Re-read queue state to catch pause/cancel from another process.
-		current, err := spawn.ReadQueue(rt)
-		if errors.Is(err, spawn.ErrNoQueue) {
-			fmt.Println("⚠ queue.json removed — queue cancelled.")
-			return nil
-		}
-		if err == nil && current.Paused {
-			fmt.Println("⏸ Queue paused by external signal.")
-			return nil
-		}
-
-		if spawnQueueMaxTasks > 0 && processed >= spawnQueueMaxTasks {
-			fmt.Printf("✓ Reached --max-tasks=%d limit. Queue paused.\n", spawnQueueMaxTasks)
-			return nil
-		}
-
-		if hbErr := spawn.WriteHeartbeat(rt, masterAgent); hbErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ heartbeat refresh failed: %v\n", hbErr)
-		}
-
-		task, err := nextReadyTask(ctx, st, sess)
-		if err != nil {
-			return fmt.Errorf("fetch next task: %w", err)
-		}
-		if task == nil {
-			fmt.Println("✓ Queue empty — all pending tasks processed.")
-			break
-		}
-
-		fmt.Printf("\n→ [%d] Spawning worker for %s: %s\n", processed+1, task.ID, task.Title)
-
-		sess.CurrentTask = task.ID
-		if wErr := spawn.WriteQueue(rt, sess); wErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ queue write: %v\n", wErr)
-		}
-
-		surfaceID, spawnErr := spawnWorkerForTask(ctx, term, rt, agentCmd, task.ID)
-		if spawnErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ spawn failed for %s: %v — skipping\n", task.ID, spawnErr)
-			sess.Skipped = appendUniqID(sess.Skipped, task.ID)
-			sess.CurrentTask = ""
-			_ = spawn.WriteQueue(rt, sess)
-			continue
-		}
-
-		pollSecs := spawnQueuePollSecs
-		if pollSecs == 0 {
-			pollSecs = 30
-		}
-		workerDone := waitForWorker(ctx, term, rt, surfaceID, masterAgent, pollSecs)
-
-		_ = spawn.RemovePane(rt, task.ID)
-
-		if workerDone == workerExitStalemaster {
-			fmt.Printf("✗ Master heartbeat stale during %s — queue paused. Resume with 'gg spawn queue resume'.\n", task.ID)
-			sess.CurrentTask = ""
-			_ = spawn.WriteQueue(rt, sess)
-			return nil
-		}
-
-		sess.Completed = appendUniqID(sess.Completed, task.ID)
-		sess.CurrentTask = ""
-		_ = spawn.WriteQueue(rt, sess)
-		processed++
+// masterAgentTag returns the GG_AGENT or GG_ROLE value for heartbeat labelling.
+func masterAgentTag() string {
+	if v := os.Getenv("GG_AGENT"); v != "" {
+		return v
 	}
-
-	sess.CurrentTask = ""
-	_ = spawn.WriteQueue(rt, sess)
-
-	fmt.Printf("\n✓ Queue run complete. Processed: %d  Skipped: %d\n",
-		len(sess.Completed), len(sess.Skipped))
-	return nil
-}
-
-// ── pane wait helpers ─────────────────────────────────────────────────────────
-
-// workerExitReason classifies how a worker pane exited.
-type workerExitReason int
-
-const (
-	workerExitOK          workerExitReason = iota
-	workerExitStalemaster                  // master heartbeat went stale
-	workerExitContextDone                  // ctx cancelled (Ctrl+C)
-)
-
-// waitForWorker polls until the worker pane closes or a stopping condition fires.
-func waitForWorker(ctx context.Context, term terminal.Terminal, rt string, surfaceID terminal.SurfaceID, masterAgent string, pollSecs int) workerExitReason {
-	ticker := time.NewTicker(time.Duration(pollSecs) * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return workerExitContextDone
-
-		case <-ticker.C:
-			if hbErr := spawn.WriteHeartbeat(rt, masterAgent); hbErr != nil {
-				fmt.Fprintf(os.Stderr, "⚠ heartbeat refresh: %v\n", hbErr)
-			}
-
-			if alive, reason := spawn.IsMasterAlive(rt); !alive {
-				fmt.Fprintf(os.Stderr, "✗ Master liveness check failed: %s\n", reason)
-				return workerExitStalemaster
-			}
-
-			if !isPaneAlive(ctx, term, surfaceID) {
-				return workerExitOK
-			}
-		}
+	if v := os.Getenv("GG_ROLE"); v != "" {
+		return v
 	}
-}
-
-// isPaneAlive probes whether the surface is still present.
-func isPaneAlive(ctx context.Context, term terminal.Terminal, id terminal.SurfaceID) bool {
-	if term.Capabilities().CanReadScreen {
-		_, err := term.ReadScreen(ctx, id)
-		return err == nil
-	}
-	err := term.Focus(ctx, id)
-	return err == nil
-}
-
-// nextReadyTask returns the next pending task that is not already in the
-// session's completed or skipped sets, and whose dependencies are all done.
-// Returns nil when no ready task exists.
-func nextReadyTask(ctx context.Context, st *store.Client, sess *spawn.QueueSession) (*store.Task, error) {
-	pending, err := st.ListTasks(ctx, "pending")
-	if err != nil {
-		return nil, err
-	}
-	done, err := st.ListTasks(ctx, "done")
-	if err != nil {
-		return nil, err
-	}
-	doneSet := make(map[string]bool, len(done))
-	for _, t := range done {
-		doneSet[t.ID] = true
-	}
-
-	skipSet := make(map[string]bool)
-	for _, id := range sess.Completed {
-		skipSet[id] = true
-	}
-	for _, id := range sess.Skipped {
-		skipSet[id] = true
-	}
-
-	for i := range pending {
-		t := &pending[i]
-		if skipSet[t.ID] {
-			continue
-		}
-		allDepsOK := true
-		for _, dep := range t.DependsOn {
-			if !doneSet[dep] {
-				allDepsOK = false
-				break
-			}
-		}
-		if allDepsOK {
-			return t, nil
-		}
-	}
-	return nil, nil
-}
-
-// spawnWorkerForTask opens a new pane for taskID and registers it in panes.json.
-func spawnWorkerForTask(ctx context.Context, term terminal.Terminal, rt, agentCmd, taskID string) (terminal.SurfaceID, error) {
-	env := buildWorkerEnv(taskID, nil)
-	surfaceID, err := term.NewSplit(ctx, terminal.SplitOpts{
-		Dir: terminal.SplitHorizontal,
-		Env: env,
-		Cmd: agentCmd,
-	})
-	if err != nil {
-		return "", err
-	}
-
-	startup := buildWorkerStartup(taskID)
-	if sErr := term.Send(ctx, surfaceID, startup); sErr != nil {
-		fmt.Fprintf(os.Stderr, "⚠ startup send to pane %s: %v\n", surfaceID, sErr)
-	}
-	if kErr := term.SendKey(ctx, surfaceID, "Enter"); kErr != nil {
-		fmt.Fprintf(os.Stderr, "⚠ Enter send to pane %s: %v\n", surfaceID, kErr)
-	}
-
-	_ = spawn.RegisterPane(rt, spawn.WorkerPane{
-		SurfaceID: string(surfaceID),
-		TaskID:    taskID,
-		Agent:     agentCmd,
-		SpawnedAt: time.Now().UTC(),
-	})
-
-	return surfaceID, nil
-}
-
-// loadOrCreateSession loads an existing session (--resume) or starts a new one.
-// Kept for backward compat with spawn_worker.go helper; new entrypoint is drainQueue.
-func loadOrCreateSession(rt, agentCmd string) (*spawn.QueueSession, error) {
-	sess, err := spawn.ReadQueue(rt)
-	if err != nil && !errors.Is(err, spawn.ErrNoQueue) {
-		return nil, fmt.Errorf("read queue: %w", err)
-	}
-	if sess != nil {
-		sess.Agent = agentCmd
-		return sess, nil
-	}
-	sess = &spawn.QueueSession{
-		Agent:     agentCmd,
-		StartedAt: time.Now().UTC(),
-	}
-	if err := spawn.WriteQueue(rt, sess); err != nil {
-		return nil, fmt.Errorf("init queue: %w", err)
-	}
-	return sess, nil
-}
-
-// appendUniqID appends id to slice only if not already present.
-func appendUniqID(slice []string, id string) []string {
-	for _, v := range slice {
-		if v == id {
-			return slice
-		}
-	}
-	return append(slice, id)
+	return "master"
 }
 
 func init() {

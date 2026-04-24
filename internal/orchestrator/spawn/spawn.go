@@ -27,6 +27,15 @@ const QueueFile = "queue.json"
 // PanesFile is the flat JSON array of active worker panes under the spawn dir.
 const PanesFile = "panes.json"
 
+// LocksFile is the name of the advisory file-lock file under the spawn dir.
+// Defined here (not in the locks package) so cmd/ can reference it without
+// importing the locks package solely for the constant.
+const LocksFile = "locks.json"
+
+// DefaultMaxConcurrent is the default maximum number of simultaneous worker
+// panes when GG_QUEUE_MAX is not set.
+const DefaultMaxConcurrent = 3
+
 // StaleDuration is how long without a heartbeat before the master is
 // considered dead. The master calls `gg spawn heartbeat` to reset this.
 const StaleDuration = 5 * time.Minute
@@ -59,6 +68,19 @@ type QueueSession struct {
 	Paused bool `json:"paused,omitempty"`
 }
 
+// WorkerState represents the current lifecycle state of a worker pane.
+type WorkerState string
+
+const (
+	// WorkerStateWorking means the worker is actively implementing its task.
+	WorkerStateWorking WorkerState = "working"
+	// WorkerStateIdle means the worker pane is open but no activity has been
+	// detected for more than 5 minutes.
+	WorkerStateIdle WorkerState = "idle"
+	// WorkerStateWaiting means the worker sent a 'need-input' signal to the master.
+	WorkerStateWaiting WorkerState = "waiting-on-master"
+)
+
 // WorkerPane records a live worker pane. Stored as elements of panes.json.
 type WorkerPane struct {
 	// SurfaceID is the opaque terminal pane handle.
@@ -69,6 +91,15 @@ type WorkerPane struct {
 	Agent string `json:"agent"`
 	// SpawnedAt is when the worker pane was created.
 	SpawnedAt time.Time `json:"spawned_at"`
+	// State is the current worker lifecycle state (working / idle / waiting-on-master).
+	// Omitted (empty) in legacy entries written before TASK-276.
+	State WorkerState `json:"state,omitempty"`
+	// LastHeartbeat is the last time the worker's pane was seen alive via polling.
+	// Zero value means no heartbeat has been recorded yet.
+	LastHeartbeat time.Time `json:"last_heartbeat,omitempty"`
+	// TouchedFiles is the set of file paths the worker has advisory-claimed
+	// via 'gg task claim-files'. Populated from locks.json at dashboard render time.
+	TouchedFiles []string `json:"touched_files,omitempty"`
 }
 
 // Dir returns the spawn directory for the given runtime dir.
@@ -229,6 +260,48 @@ func RemovePane(runtimeDir, taskID string) error {
 // ListPanes returns all registered worker panes from panes.json.
 func ListPanes(runtimeDir string) ([]WorkerPane, error) {
 	return readPanes(runtimeDir)
+}
+
+// UpdateWorkerState sets the State field on the pane with the given task ID.
+// No-op if the pane is not found.
+func UpdateWorkerState(runtimeDir, taskID string, state WorkerState) error {
+	panes, err := readPanes(runtimeDir)
+	if err != nil {
+		return err
+	}
+	changed := false
+	for i := range panes {
+		if panes[i].TaskID == taskID {
+			panes[i].State = state
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return writePanes(runtimeDir, panes)
+}
+
+// UpdateWorkerHeartbeat records the current time as LastHeartbeat for the pane
+// with the given task ID. No-op if the pane is not found.
+func UpdateWorkerHeartbeat(runtimeDir, taskID string) error {
+	panes, err := readPanes(runtimeDir)
+	if err != nil {
+		return err
+	}
+	changed := false
+	for i := range panes {
+		if panes[i].TaskID == taskID {
+			panes[i].LastHeartbeat = time.Now().UTC()
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return writePanes(runtimeDir, panes)
 }
 
 // ErrNoHeartbeat is returned when no heartbeat file exists.

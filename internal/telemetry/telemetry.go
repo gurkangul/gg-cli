@@ -82,6 +82,10 @@ type Entry struct {
 	// made. Verb identifies which command lacked a compact render path.
 	// Omitted on all other entries so the JSONL stays clean.
 	MissingHandler bool `json:"missing_handler,omitempty"`
+	// ActiveWorkers is the number of simultaneously active worker panes at the
+	// time of the event. Set by the parallel queue runner (TASK-276). Omitted
+	// on non-orchestration entries so the JSONL stays clean.
+	ActiveWorkers int `json:"active_workers,omitempty"`
 }
 
 func filePath(runtimeDir string) string {
@@ -235,6 +239,17 @@ func RecordHydration(runtimeDir, verb, fromFlag string, bytesHydrated int) {
 		Timestamp:     time.Now().UTC().Format(time.RFC3339),
 		Hydration:     true,
 		BytesHydrated: bytesHydrated,
+	})
+}
+
+// RecordActiveWorkers appends a telemetry entry capturing the current parallel
+// worker count. Called by the queue runner on each dispatch cycle (TASK-276).
+func RecordActiveWorkers(runtimeDir, fromFlag string, count int) {
+	recordEntry(runtimeDir, Entry{
+		Verb:          "queue-dispatch",
+		Origin:        classify(fromFlag),
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		ActiveWorkers: count,
 	})
 }
 
