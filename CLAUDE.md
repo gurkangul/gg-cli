@@ -82,6 +82,48 @@ the master owns review, architectural integrity, and spec compliance.
    the accept-with-gap decision publicly
 4. Systemic failure (comms broken, worker offline) → surface to user with a concrete recommendation
 
+### Communication channel (critical — routing works vs triggers)
+
+**`gg tell` is audit + async message storage; it does NOT trigger a worker agent to act.**
+The worker is a running REPL inside a cmux pane. It only reads input that is typed into its pane.
+Inbox polling from the worker's side is not guaranteed.
+
+**To actually make the worker do work, master MUST type into the worker's cmux pane:**
+
+```
+cmux send --surface <pane-id> "<prompt text>"
+cmux send-key --surface <pane-id> enter
+```
+
+Pattern per master action:
+- **Spawning initial work:** `gg spawn worker --task TASK-N` already does this (bootstraps agent +
+  sends task prompt). Nothing else required.
+- **Reject + rework:** always DUAL-write — (a) `gg task review TASK-N --reject` for the record,
+  (b) `cmux send --surface <pane> "<rework prompt>"` + `cmux send-key enter` to trigger the worker.
+  Skipping step (b) leaves the worker idle after rejection.
+- **Ambiguity answer:** same — `gg tell` for record, `cmux send` to trigger response.
+
+### Pane lifecycle = task lifecycle
+
+One worker pane per task. The pane lives exactly as long as the task is in progress:
+
+```
+open pane (gg spawn worker)
+    → worker implements + commits + signals
+    → master reviews (code-reviewer subagent)
+    → master rejects → cmux send rework prompt → worker iterates (SAME pane)
+    → master approves → gg task review/ready-for-live/done
+    → master closes pane (cmux close-surface --surface <id>)
+    → master clears panes.json entry
+    → master refreshes heartbeat (gg spawn heartbeat)
+    → master opens next pane for next task (gg spawn worker --task TASK-M)
+```
+
+**The master never accepts "done" until the reviewer subagent says APPROVE.** Rework continues in
+the same pane with direct `cmux send` prompts until quality is met. When master issues
+`gg task done`, the pane gets closed and a fresh one spawns for the next task. This is the
+unit-of-work invariant: pane ≡ task, closed pane ≡ approved task.
+
 The master's credibility comes from catching problems early, being honest about trade-offs, and never
 rubber-stamping. The worker's credibility comes from ACs met without silent narrowing.
 <!-- gg:master-role:end -->
