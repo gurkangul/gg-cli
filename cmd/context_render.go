@@ -108,6 +108,7 @@ func printContextBundle(cmd *cobra.Command, query string, bundle contextBundle, 
 			emitCompact(cmd, "context",
 				func(w io.Writer) { renderContextDefault(w, query, bundle, errs) },
 				func(w io.Writer) { renderContextBudget(w, query, bundle, errs, contextBudget) },
+				compactRendererV_context,
 			)
 			return
 		}
@@ -115,6 +116,7 @@ func printContextBundle(cmd *cobra.Command, query string, bundle contextBundle, 
 			emitCompact(cmd, "context",
 				func(w io.Writer) { renderContextDefault(w, query, bundle, errs) },
 				func(w io.Writer) { renderContextCompact(w, query, bundle, errs) },
+				compactRendererV_context,
 			)
 			return
 		}

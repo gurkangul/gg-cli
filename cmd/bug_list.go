@@ -65,6 +65,7 @@ func runBugList(cmd *cobra.Command, _ []string) error {
 			emitCompact(cmd, "list",
 				func(w io.Writer) { renderBugListDefault(w, bugs) },
 				func(w io.Writer) { writeCompactBugs(w, bugs) },
+				compactRendererV_bugList,
 			)
 			return
 		}

@@ -11,12 +11,32 @@ import (
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
-// compactRendererV stamps every emitCompact telemetry entry so aggregates
-// across format changes can be bucketed. Bump whenever the per-line compact
-// output changes meaningfully (drop/add a field, change separators, etc.) —
-// a constant-in-code invariant rather than a git-history diff, so
-// `gg status` can trust its "avg % reduction" metric.
-const compactRendererV = 2
+// Per-verb compact renderer versions — bump only the verb whose output changed.
+//
+// Keeping versions isolated means a format tweak to "search" doesn't pollute
+// the telemetry bucket for "inbox" or "context": each verb's version stamp
+// advances independently, so `gg status` aggregates stay comparable within a
+// verb across sessions without mixing pre- and post-change entries.
+//
+// Increment rules (same as before, now per-verb):
+//   - Drop or add a field in the one-line output → bump that verb's constant.
+//   - Change separators or ordering → bump.
+//   - Pure whitespace or punctuation changes → bump.
+//   - Internal refactor with identical output → no bump needed.
+//
+// All verbs start at 1 — this is v1 of per-verb tracking (the prior global
+// compactRendererV=2 was verb-agnostic and is superseded by this table).
+const (
+	compactRendererV_search      = 1
+	compactRendererV_context     = 1
+	compactRendererV_impact      = 1
+	compactRendererV_inbox       = 1
+	compactRendererV_taskList    = 1 // "list" verb (task list)
+	compactRendererV_taskGet     = 1 // "task" verb (task get)
+	compactRendererV_bugList     = 1 // "list" verb (bug list)
+	compactRendererV_decideGaps  = 1
+	compactRendererV_repeatWork  = 1
+)
 
 // isCompactActive returns true when the caller wants compact rendering.
 //

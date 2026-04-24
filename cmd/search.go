@@ -136,6 +136,7 @@ func printSearchResults(cmd *cobra.Command, decisions []store.Decision, rejectio
 			emitCompact(cmd, "search",
 				func(w io.Writer) { renderSearchDefault(w, decisions, rejections) },
 				func(w io.Writer) { renderSearchCompact(w, decisions, rejections) },
+				compactRendererV_search,
 			)
 			return
 		}

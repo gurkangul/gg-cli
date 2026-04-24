@@ -182,6 +182,7 @@ func runInbox(cmd *cobra.Command, args []string) error {
 				writeMessages(w, messages, inboxGroupBy, myRole)
 			},
 			func(w io.Writer) { writeInboxCompact(w, messages) },
+			compactRendererV_inbox,
 		)
 	} else {
 		printMessages(messages, inboxGroupBy)

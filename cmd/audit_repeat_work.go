@@ -173,6 +173,7 @@ func runAuditRepeatWork(cmd *cobra.Command, _ []string) error {
 			emitCompact(cmd, "repeat-work",
 				func(w io.Writer) { renderRepeatWorkDefault(w, report, rwCfg) },
 				func(w io.Writer) { renderRepeatWorkCompact(w, report) },
+				compactRendererV_repeatWork,
 			)
 			return
 		}

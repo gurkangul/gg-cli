@@ -120,10 +120,15 @@ func emitHydration(cmd *cobra.Command, verb string, render func(io.Writer)) {
 // savings, prints the compact view, and records a telemetry entry with both
 // sizes so `gg status` can surface the dogfood savings metric.
 //
+// rendererV is the caller's per-verb compact renderer version constant (e.g.
+// compactRendererV_search). Passing the verb-specific constant lets telemetry
+// bucket format changes per verb: bumping search's version doesn't pollute
+// inbox's historical aggregates and vice versa.
+//
 // Overhead: the default render runs into a buffer and is discarded — a few
 // hundred microseconds on realistic bundles. Only triggered when --compact
 // is active, so non-compact calls pay nothing.
-func emitCompact(cmd *cobra.Command, verb string, renderDefault, renderCompact func(io.Writer)) {
+func emitCompact(cmd *cobra.Command, verb string, renderDefault, renderCompact func(io.Writer), rendererV int) {
 	var baseline bytes.Buffer
 	renderDefault(&baseline)
 
@@ -143,5 +148,5 @@ func emitCompact(cmd *cobra.Command, verb string, renderDefault, renderCompact f
 	if f := cmd.Flags().Lookup("from"); f != nil {
 		fromFlag = f.Value.String()
 	}
-	telemetry.RecordCompact(runtimeDir, verb, fromFlag, out.Len(), baseline.Len(), compactRendererV)
+	telemetry.RecordCompact(runtimeDir, verb, fromFlag, out.Len(), baseline.Len(), rendererV)
 }

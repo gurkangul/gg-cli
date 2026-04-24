@@ -29,18 +29,53 @@ import (
 
 var updateGolden = flag.Bool("update", false, "regenerate compact golden files")
 
-// expectedRendererV pins the current compactRendererV. When the format
-// changes and compactRendererV is bumped, this assertion fails first —
-// the author must then run -update to regenerate golden files and update
-// this constant together, making the change intentional and auditable.
-const expectedRendererV = 2
+// expectedRendererVersions pins each verb's compact renderer version.
+//
+// When a verb's output format changes, bump ONLY that verb's constant in
+// compact.go AND update the corresponding value in this map — then run
+// -update to regenerate that verb's golden file. Keeping the map here means
+// the test fails loudly on any unintended version bump, and a reviewer can
+// see exactly which verbs changed and confirm their golden files were updated.
+var expectedRendererVersions = map[string]int{
+	"search":      compactRendererV_search,
+	"context":     compactRendererV_context,
+	"impact":      compactRendererV_impact,
+	"inbox":       compactRendererV_inbox,
+	"taskList":    compactRendererV_taskList,
+	"taskGet":     compactRendererV_taskGet,
+	"bugList":     compactRendererV_bugList,
+	"decideGaps":  compactRendererV_decideGaps,
+	"repeatWork":  compactRendererV_repeatWork,
+}
+
+// expectedRendererV_each holds the known-good version for each verb.
+// Update ONLY the verb you changed — leaving others untouched signals
+// that their golden files are still valid.
+var expectedRendererV_each = map[string]int{
+	"search":     1,
+	"context":    1,
+	"impact":     1,
+	"inbox":      1,
+	"taskList":   1,
+	"taskGet":    1,
+	"bugList":    1,
+	"decideGaps": 1,
+	"repeatWork": 1,
+}
 
 func TestCompactRendererV_Pinned(t *testing.T) {
-	if compactRendererV != expectedRendererV {
-		t.Fatalf("compactRendererV changed from %d to %d — "+
-			"run `go test ./cmd/ -run TestCompactGolden -update` to regenerate golden files, "+
-			"then update expectedRendererV in compact_golden_test.go to %d",
-			expectedRendererV, compactRendererV, compactRendererV)
+	for verb, got := range expectedRendererVersions {
+		want, ok := expectedRendererV_each[verb]
+		if !ok {
+			t.Errorf("verb %q has a version constant but no expected entry in expectedRendererV_each — add it", verb)
+			continue
+		}
+		if got != want {
+			t.Errorf("compactRendererV_%s changed from %d to %d — "+
+				"run `go test ./cmd/ -run TestCompactGolden -update` to regenerate golden files, "+
+				"then update expectedRendererV_each[%q] to %d",
+				verb, want, got, verb, got)
+		}
 	}
 }
 

@@ -105,6 +105,7 @@ func runImpactTask(cmd *cobra.Command, taskID string) error {
 			emitCompact(cmd, "impact",
 				func(w io.Writer) { renderTaskImpactDefault(w, result) },
 				func(w io.Writer) { renderTaskImpactCompact(w, result) },
+				compactRendererV_impact,
 			)
 			return
 		}

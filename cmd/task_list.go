@@ -153,6 +153,7 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 			emitCompact(cmd, "list",
 				func(w io.Writer) { renderTaskListDefault(w, tasks) },
 				func(w io.Writer) { renderTaskListCompact(w, tasks) },
+				compactRendererV_taskList,
 			)
 			return
 		}
@@ -225,6 +226,7 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 					renderTaskGetCompact(w, t)
 					_, _ = w.Write(ctxBlock.Bytes())
 				},
+				compactRendererV_taskGet,
 			)
 		} else {
 			emitHydration(cmd, "get", func(w io.Writer) {

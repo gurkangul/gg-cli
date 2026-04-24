@@ -185,6 +185,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 			emitCompact(cmd, "impact",
 				func(w io.Writer) { renderImpactDefault(w, result) },
 				func(w io.Writer) { renderImpactCompact(w, result) },
+				compactRendererV_impact,
 			)
 			return
 		}

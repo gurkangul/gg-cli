@@ -264,6 +264,7 @@ func runContextForTask(cmd *cobra.Command, taskID string) error {
 			emitCompact(cmd, "context",
 				func(w io.Writer) { renderForTask(w, tb, errs) },
 				func(w io.Writer) { renderForTaskCompact(w, tb, errs) },
+				compactRendererV_context,
 			)
 			return
 		}

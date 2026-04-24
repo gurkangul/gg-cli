@@ -159,6 +159,7 @@ func runAuditDecideGaps(cmd *cobra.Command, _ []string) error {
 		emitCompact(cmd, "decide-gaps",
 			func(out io.Writer) { renderDecideGapsDefault(out, flagged, auditDecideGapsSince) },
 			func(out io.Writer) { renderDecideGapsCompact(out, flagged) },
+			compactRendererV_decideGaps,
 		)
 		return nil
 	}

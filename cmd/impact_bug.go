@@ -96,6 +96,7 @@ func runImpactBug(cmd *cobra.Command, bugID string) error {
 			emitCompact(cmd, "impact",
 				func(w io.Writer) { renderBugImpactDefault(w, result) },
 				func(w io.Writer) { renderBugImpactCompact(w, result) },
+				compactRendererV_impact,
 			)
 			return
 		}
