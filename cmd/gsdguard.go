@@ -15,6 +15,51 @@ import (
 	"github.com/gurkangul/gg-cli/internal/projectstate"
 )
 
+// gsdAgentPrefixes lists the agent identifier prefixes that are prohibited
+// from owning task lifecycle transitions (done / ready-for-live). Matched
+// case-insensitively via strings.HasPrefix so "claude-sonnet-4-6" and future
+// variants are caught by the "claude-sonnet-" prefix.
+var gsdLifecycleBlockedAgents = []string{"gsd", "claude-sonnet-"}
+
+// isLifecycleBlockedAgent reports whether the given agent string matches any
+// blocked prefix. Matching is case-insensitive.
+func isLifecycleBlockedAgent(agent string) bool {
+	lower := strings.ToLower(strings.TrimSpace(agent))
+	for _, prefix := range gsdLifecycleBlockedAgents {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkAgentLifecycleGate enforces the Opus-owned lifecycle policy:
+// GSD agents (GG_AGENT=gsd) and Sonnet models (GG_AGENT=claude-sonnet-*)
+// must not call gg task done or gg task ready-for-live directly — only Opus
+// (claude-code / claude-opus-*) owns these transitions.
+//
+// The check reads GG_AGENT (primary) and GG_ROLE (fallback). Returns nil
+// when the agent is allowed, or an *ExitError with ExitVerifyFailed when
+// blocked. Returns nil without checking when enforcement.Enabled() is false
+// — callers must emit the bypass audit event themselves.
+func checkAgentLifecycleGate(verb string) *ExitError {
+	agent := os.Getenv("GG_AGENT")
+	if agent == "" {
+		agent = os.Getenv("GG_ROLE")
+	}
+	if agent == "" || !isLifecycleBlockedAgent(agent) {
+		return nil
+	}
+	return &ExitError{
+		Code: ExitVerifyFailed,
+		Message: fmt.Sprintf(
+			"lifecycle gate rejected '%s': GG_AGENT=%q is not permitted to own task lifecycle transitions.\n"+
+				"Only Opus (claude-code / claude-opus-*) may call 'gg task %s'.\n"+
+				"Set GG_ENFORCEMENT=off to bypass for this session (emergency use only).",
+			verb, agent, verb),
+	}
+}
+
 var gsdGuardCmd = &cobra.Command{
 	Use:    "gsd-guard",
 	Hidden: true, // internal — called only by the Claude Code PreToolUse hook

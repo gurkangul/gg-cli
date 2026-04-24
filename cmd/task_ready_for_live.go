@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/enforcement"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -91,6 +92,13 @@ func runTaskReadyForLive(cmd *cobra.Command, args []string) error {
 	plan, err := requireNonEmpty("verify plan", args[1])
 	if err != nil {
 		return err
+	}
+
+	// Agent lifecycle gate: GSD / Sonnet agents are not permitted to set ready-for-live.
+	if !enforcement.Enabled() {
+		emitGuardSkipEvent("agent-lifecycle-ready-for-live", "")
+	} else if rej := checkAgentLifecycleGate("ready-for-live"); rej != nil {
+		return rej
 	}
 
 	actor := strings.TrimSpace(taskReadyForLiveFrom)
