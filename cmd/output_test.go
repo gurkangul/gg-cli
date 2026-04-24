@@ -441,6 +441,21 @@ func TestCompactTrim(t *testing.T) {
 		{"anything", -1, ""},
 		{"anything", 1, "…"},
 		{"", 1, ""},
+		// TASK-id preservation: rescue IDs that would be cut.
+		// "fix auth logic see TASK-042..." n=20: runes[:19]="fix auth logic see ",
+		// TASK-042 starts at byte 19 which equals cutByteOffset → rescued.
+		// prefixLen = 20 - len(" …(TASK-042)") = 20 - 12 = 8 → "fix auth"
+		{"fix auth logic see TASK-042 for context", 20, "fix auth …(TASK-042)"},
+		{"long prose without any gg id here", 20, "long prose without…"},
+		// ID fits within the kept portion — no rescue needed.
+		{"TASK-042 short", 20, "TASK-042 short"},
+		// BUG and DISC IDs are also rescued.
+		// "something broke see BUG-007..." n=20: BUG-007 at byte 19 → rescued.
+		// prefixLen = 20 - 11 = 9 → "something"
+		{"something broke see BUG-007 for details", 20, "something …(BUG-007)"},
+		{"discuss DISC-003 here", 25, "discuss DISC-003 here"}, // fits entirely (21 rune < 25)
+		// n too small to fit overhead — prefix clamped to 1.
+		{"x y TASK-042", 5, "x …(TASK-042)"},
 	}
 	for _, tc := range cases {
 		got := compactTrim(tc.in, tc.n)

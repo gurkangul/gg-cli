@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,6 +14,10 @@ import (
 // compactLineWidth caps per-item text in compact output so a bundle of
 // long-titled items still fits in a standard terminal.
 const compactLineWidth = 80
+
+// ggIDPattern matches structured IDs (TASK-NNN, BUG-NNN, DISC-NNN) embedded
+// in prose. Used by compactTrim to avoid silently cutting a reference.
+var ggIDPattern = regexp.MustCompile(`\b(TASK|BUG|DISC)-\d+\b`)
 
 func compactTrim(s string, n int) string {
 	if n <= 1 {
@@ -25,7 +30,23 @@ func compactTrim(s string, n int) string {
 	if len(runes) <= n {
 		return s
 	}
-	return string(runes[:n-1]) + "…"
+	// String will be truncated. Scan the full string for GG IDs whose start
+	// index falls at or beyond runes[n-1] (the slot the ellipsis will occupy).
+	// IDs are ASCII, so byte positions from the regexp map directly to rune
+	// positions in the prefix — safe to compare directly.
+	cutByteOffset := len(string(runes[:n-1])) // byte position of the cut point
+	if locs := ggIDPattern.FindStringIndex(s); locs != nil && locs[0] >= cutByteOffset {
+		m := s[locs[0]:locs[1]]
+		// Fit as much prefix as possible, then append the rescued ID.
+		// Reserve space for " …(ID)": 3 + len(ID) runes.
+		overhead := []rune(" …(" + m + ")")
+		prefixLen := n - len(overhead)
+		if prefixLen < 1 {
+			prefixLen = 1
+		}
+		return string(runes[:prefixLen]) + string(overhead)
+	}
+	return strings.TrimRight(string(runes[:n-1]), " ") + "…"
 }
 
 func shortDate(ts string) string {
