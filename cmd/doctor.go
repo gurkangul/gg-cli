@@ -45,6 +45,8 @@ var (
 	doctorSyncBaseline         bool
 	doctorCaptureLintBaseline  bool
 	doctorCheckMasterRole      bool
+	doctorCheckBinary          bool
+	doctorFixBinary            bool
 )
 
 func init() {
@@ -90,6 +92,10 @@ func init() {
 		"run golangci-lint and write .gg/lint-baseline.json; the 60-lint-gate.sh pre-done hook uses this to block new warnings")
 	doctorCmd.Flags().BoolVar(&doctorCheckMasterRole, "check-master-role", false,
 		"compare the managed master-role block in CLAUDE.md against the current template (exit 1 on drift); combine with --fix to repair")
+	doctorCmd.Flags().BoolVar(&doctorCheckBinary, "check-binary", false,
+		"verify the installed gg binary is not older than the HEAD commit of the local gg-cli source")
+	doctorCmd.Flags().BoolVar(&doctorFixBinary, "fix-binary", false,
+		"with --check-binary: rebuild and reinstall gg via go install ./cmd/gg when the binary is stale")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -187,6 +193,9 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	if doctorCaptureLintBaseline {
 		return runDoctorCaptureLintBaseline()
 	}
+	if doctorCheckBinary {
+		return runDoctorCheckBinary(doctorFixBinary)
+	}
 
 	fmt.Println("GG Doctor")
 	fmt.Println(strings.Repeat("─", 50))
@@ -220,6 +229,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// 5. Outbox check — surface any pending index writes without repairing them.
 	fmt.Println("\nOutbox (index pipeline crash-safety):")
 	doctorCheckOutbox(report)
+
+	// 6. Binary freshness — advisory warn, never blocks default run.
+	fmt.Println("\nBinary:")
+	doctorCheckBinaryAdvisory(report)
 
 	// Artifact drift check (advisory — does not count as a problem).
 	driftCount := doctorCheckArtifactDrift()
