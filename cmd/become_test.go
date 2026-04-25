@@ -123,8 +123,27 @@ func TestBecome_NoArg(t *testing.T) {
 }
 
 // TestBecome_NoArg_WithDeveloperAgent verifies that when developer.agent is set
-// in config, `gg become` (no subcommand) prints the role hint before help.
+// in config, `gg become` (no subcommand) prints "Current developer: <agent> (transport: <transport>)".
 func TestBecome_NoArg_WithDeveloperAgent(t *testing.T) {
+	ggDir := setupGGDir(t)
+	cfgWithAgent := ggConfig + "developer:\n  agent: gsd-sonnet-4.6\n  transport: cmux\n"
+	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfgWithAgent), 0o644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+
+	stdout, stderr, err := execCmd(t, "become")
+	if err != nil {
+		t.Fatalf("gg become exited non-zero: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(combined, "Current developer: gsd-sonnet-4.6 (transport: cmux)") {
+		t.Errorf("expected 'Current developer: gsd-sonnet-4.6 (transport: cmux)' in output, got:\n%s", combined)
+	}
+}
+
+// TestBecome_NoArg_WithDeveloperAgent_NoTransport verifies that when developer.agent
+// is set but transport is absent, the fallback "unset" is printed.
+func TestBecome_NoArg_WithDeveloperAgent_NoTransport(t *testing.T) {
 	ggDir := setupGGDir(t)
 	cfgWithAgent := ggConfig + "developer:\n  agent: gsd-sonnet-4.6\n"
 	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfgWithAgent), 0o644); err != nil {
@@ -136,8 +155,8 @@ func TestBecome_NoArg_WithDeveloperAgent(t *testing.T) {
 		t.Fatalf("gg become exited non-zero: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
 	}
 	combined := stdout + stderr
-	if !strings.Contains(combined, "gsd-sonnet-4.6") {
-		t.Errorf("expected role hint 'gsd-sonnet-4.6' in output, got:\n%s", combined)
+	if !strings.Contains(combined, "Current developer: gsd-sonnet-4.6 (transport: unset)") {
+		t.Errorf("expected 'Current developer: gsd-sonnet-4.6 (transport: unset)' in output, got:\n%s", combined)
 	}
 }
 
