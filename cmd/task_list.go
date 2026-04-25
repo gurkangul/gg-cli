@@ -36,6 +36,7 @@ var (
 	taskListBlockers    bool
 	taskListCompact     bool
 	taskGetCompact      bool
+	taskGetShort        bool
 	taskGetWithCtx      bool
 )
 
@@ -46,6 +47,7 @@ func init() {
 	taskListCmd.Flags().BoolVar(&taskListBlockers, "blockers", false, "show tasks that are blocking other tasks (have --blocks targets)")
 	taskListCmd.Flags().BoolVar(&taskListCompact, "compact", false, "one line per task — drops author + block-reason detail to preserve agent context window")
 	taskGetCmd.Flags().BoolVar(&taskGetCompact, "compact", false, "one line summary — drops detail/tags/author to preserve agent context window")
+	taskGetCmd.Flags().BoolVar(&taskGetShort, "short", false, "one line summary (alias for --compact)")
 	taskGetCmd.Flags().BoolVar(&taskGetWithCtx, "with-context", false, "append === Related Context === block with top-3 semantically related items from the knowledge base")
 	taskCmd.AddCommand(taskListCmd)
 	taskCmd.AddCommand(taskGetCmd)
@@ -218,13 +220,18 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 
 		// task get always shows the full Detail block — it is a targeted lookup,
 		// not a list scan. Agent auto-compact (GG_AGENT/GG_ROLE env) must not
-		// suppress the spec that workers need. --compact is still respected when
-		// explicitly provided (BUG-027).
-		compactExplicit := cmd != nil && func() bool {
-			f := cmd.Flags().Lookup("compact")
-			return f != nil && f.Changed && f.Value.String() == "true"
-		}()
-		if compactExplicit {
+		// suppress the spec that workers need. --compact and --short are still
+		// respected when explicitly provided (BUG-027/TASK-341).
+		shortExplicit := taskGetShort || (cmd != nil && func() bool {
+			for _, name := range []string{"compact", "short"} {
+				f := cmd.Flags().Lookup(name)
+				if f != nil && f.Changed && f.Value.String() == "true" {
+					return true
+				}
+			}
+			return false
+		}())
+		if shortExplicit {
 			emitCompact(cmd, "task",
 				func(w io.Writer) {
 					renderTaskGetDefault(w, t)
@@ -302,6 +309,7 @@ func fetchRelatedContext(d *deps, t *store.Task) *relatedContext {
 
 func renderTaskGetDefault(w io.Writer, t *store.Task) {
 	fmt.Fprintf(w, "%s %s [%s] %s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title)
+	fmt.Fprintf(w, "  Status: %s\n", t.Status)
 	if t.Detail != "" {
 		fmt.Fprintf(w, "  Detail: %s\n", t.Detail)
 	}

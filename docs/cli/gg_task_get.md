@@ -11,6 +11,7 @@ gg task get TASK-ID [flags]
 ```
       --compact        one line summary — drops detail/tags/author to preserve agent context window
   -h, --help           help for get
+      --short          one line summary (alias for --compact)
       --with-context   append === Related Context === block with top-3 semantically related items from the knowledge base
 ```
 
