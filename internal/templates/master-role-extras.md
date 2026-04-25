@@ -71,46 +71,19 @@ the master owns review, architectural integrity, and spec compliance.
    the accept-with-gap decision publicly
 4. Systemic failure (comms broken, worker offline) → surface to user with a concrete recommendation
 
-### Communication channel (critical — routing works vs triggers)
+### Communication channel and pane lifecycle
+
+For pane spawn/nudge primitives see the Developer Routing block above.
 
 **`gg tell` is audit + async message storage; it does NOT trigger a worker agent to act.**
-The worker is a running REPL inside a cmux pane. It only reads input that is typed into its pane.
-Inbox polling from the worker's side is not guaranteed.
-
-**To actually make the worker do work, use `gg spawn nudge`:**
-
-```
-gg spawn nudge --surface <pane-id> "<prompt text>"
-```
-
-`gg spawn nudge` handles idle-wake (raises the pane if asleep) + cross-process lock, then types the
-prompt into the pane. Raw `cmux send --surface <id> "<text>" && cmux send-key enter` silently fails
-on idle REPLs — the pane appears to receive the text but the agent never acts (observed in TASK-292
-rework cycle). Always use `gg spawn nudge` for triggering worker action.
+Always use `gg spawn nudge` to trigger worker action — never raw `cmux send`.
 
 Pattern per master action:
-- **Spawning initial work:** `gg spawn worker --task TASK-N` already does this (bootstraps agent +
-  sends task prompt). Nothing else required.
-- **Reject + rework:** always DUAL-write — (a) `gg task review TASK-N --reject` for the record,
+- **Spawning initial work:** `gg spawn worker --task TASK-N` bootstraps the agent + sends the task
+  prompt automatically. Nothing else required.
+- **Reject + rework:** DUAL-write — (a) `gg task review TASK-N --reject` for the record,
   (b) `gg spawn nudge --surface <pane> "<rework prompt>"` to trigger the worker.
-  Skipping step (b) leaves the worker idle after rejection.
 - **Ambiguity answer:** same — `gg tell` for record, `gg spawn nudge` to trigger response.
-
-### Pane lifecycle = task lifecycle
-
-One worker pane per task. The pane lives exactly as long as the task is in progress:
-
-```
-open pane (gg spawn worker)
-    → worker implements + commits + signals
-    → master reviews (code-reviewer subagent)
-    → master rejects → gg spawn nudge rework prompt → worker iterates (SAME pane)
-    → master approves → gg task review/ready-for-live/done
-    → master closes pane (cmux close-surface --surface <id>)
-    → master clears panes.json entry
-    → master refreshes heartbeat (gg spawn heartbeat)
-    → master opens next pane for next task (gg spawn worker --task TASK-M)
-```
 
 **The master never accepts "done" until the reviewer subagent says APPROVE.** Rework continues in
 the same pane with `gg spawn nudge` prompts until quality is met. When master issues

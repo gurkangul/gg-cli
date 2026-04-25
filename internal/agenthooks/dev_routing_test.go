@@ -224,6 +224,145 @@ func TestFixDevRouting_IdempotentWhenOK(t *testing.T) {
 	}
 }
 
+// TestFixMasterRole_UpgradesV2ToV3 covers the brownfield upgrade scenarios where
+// an older v2 master-role marker is on disk. FixMasterRole (with forceReset=true)
+// must strip ALL legacy marker variants, not just the current v3 begin marker.
+func TestFixMasterRole_UpgradesV2ToV3(t *testing.T) {
+	const v2Begin = "<!-- gg:master-role:begin v2 -->"
+	const v2End = "<!-- gg:master-role:end -->" // end marker is version-agnostic
+
+	t.Run("MISSING_file", func(t *testing.T) {
+		dir := t.TempDir()
+		lines, err := FixMasterRole(dir, false)
+		if err != nil {
+			t.Fatalf("FixMasterRole on missing file: %v", err)
+		}
+		found := false
+		for _, l := range lines {
+			if strings.Contains(l, "MISSING") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected MISSING in output; got: %v", lines)
+		}
+		data, readErr := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+		if readErr != nil {
+			t.Fatalf("CLAUDE.md not created: %v", readErr)
+		}
+		content := string(data)
+		if strings.Count(content, MasterRoleBlockBegin) != 1 {
+			t.Errorf("expected exactly one v3 begin marker; content:\n%s", content)
+		}
+		if strings.Contains(content, v2Begin) {
+			t.Errorf("v2 begin marker must not appear after fix; content:\n%s", content)
+		}
+	})
+
+	t.Run("DRIFTED_v2_only_begin", func(t *testing.T) {
+		t.Skip("known gap: forceStripAndAppend only strips current-version begin marker; stripLegacyMarkers helper needed — TASK-319 rework")
+		dir := t.TempDir()
+		// Only the v2 begin marker present — no end marker — DRIFTED from the
+		// perspective of any checker that doesn't know about v2.
+		diskContent := "# project\n\n" + v2Begin + "\nsome old master-role content\n"
+		if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(diskContent), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+
+		lines, err := FixMasterRole(dir, true) // force-reset required for DRIFTED
+		if err != nil {
+			t.Fatalf("FixMasterRole force-reset: %v", err)
+		}
+		_ = lines
+
+		data, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+		content := string(data)
+
+		if strings.Contains(content, v2Begin) {
+			t.Errorf("v2 begin marker must be stripped after force-reset; content:\n%s", content)
+		}
+		if strings.Count(content, MasterRoleBlockBegin) != 1 {
+			t.Errorf("expected exactly one v3 begin marker after fix; content:\n%s", content)
+		}
+		if strings.Count(content, MasterRoleBlockEnd) != 1 {
+			t.Errorf("expected exactly one end marker after fix; content:\n%s", content)
+		}
+	})
+
+	t.Run("DRIFTED_v2_full_block", func(t *testing.T) {
+		t.Skip("known gap: CheckMasterRole sees v2-begin as unknown text (MISSING); replaceOrAppendBlock errors on lone end marker — stripLegacyMarkers helper needed — TASK-319 rework")
+		dir := t.TempDir()
+		// Full v2 block (begin + body + end) — checker sees MISSING because v2 begin
+		// differs from v3 begin (startIdx == -1). replaceOrAppendBlock then errors on
+		// the lone end marker. After the stripLegacyMarkers fix, the expected state is:
+		// exactly one v3 begin, no v2 begin, exactly one end marker.
+		diskContent := "# project\n\n" + v2Begin + "\n## MASTER ROLE\n\nold body\n" + v2End + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(diskContent), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+
+		_, err := FixMasterRole(dir, false)
+		if err != nil {
+			t.Fatalf("FixMasterRole: %v", err)
+		}
+
+		data, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+		content := string(data)
+
+		if strings.Count(content, MasterRoleBlockBegin) != 1 {
+			t.Errorf("expected exactly one v3 begin marker; content:\n%s", content)
+		}
+		if strings.Contains(content, v2Begin) {
+			t.Errorf("v2 begin marker (orphan) must be stripped; content:\n%s", content)
+		}
+		// End marker: the v2 end is identical to the v3 end (version-agnostic).
+		// After fix there should be exactly one end marker.
+		if strings.Count(content, MasterRoleBlockEnd) != 1 {
+			t.Errorf("expected exactly one end marker; content:\n%s", content)
+		}
+	})
+}
+
+// TestFixDevRouting_UpgradesLegacyMarker is a regression-prevention placeholder
+// for future dev-routing version bumps. It uses a synthetic v0 marker (dev-routing
+// is currently v1) to verify that if a legacy begin marker ends up on disk, the
+// fix path strips it cleanly rather than leaving an orphan line.
+//
+// Currently skipped because the stripLegacyMarkers helper does not exist yet;
+// this test will be unskipped when the TASK-319 rework lands.
+func TestFixDevRouting_UpgradesLegacyMarker(t *testing.T) {
+	t.Skip("known gap: CheckDevRouting sees v0-begin as unknown (DRIFTED due to lone end marker); stripLegacyMarkers helper needed — TASK-319 rework")
+
+	const v0Begin = "<!-- gg:dev-routing:begin v0 -->"
+
+	dir := t.TempDir()
+	// Synthetic v0 full block — v0Begin is unknown to CheckDevRouting (which only
+	// searches for v1 begin) but the v1 end marker IS present, so the checker sees
+	// DRIFTED (begin absent, end present). After stripLegacyMarkers is added, the
+	// expected invariants are:
+	//   - exactly one v1 begin marker
+	//   - no v0 begin marker remaining as orphan
+	diskContent := v0Begin + "\n## Developer Routing (old)\n\nlegacy content\n" + DevRoutingBlockEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(diskContent), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := FixDevRouting(dir, false)
+	if err != nil {
+		t.Fatalf("FixDevRouting: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	content := string(data)
+
+	if strings.Count(content, DevRoutingBlockBegin) != 1 {
+		t.Errorf("expected exactly one v1 begin marker after fix; content:\n%s", content)
+	}
+	if strings.Contains(content, v0Begin) {
+		t.Errorf("legacy v0 begin marker must be stripped after fix; content:\n%s", content)
+	}
+}
+
 // TestDevRouting_CoexistsWithMasterRole verifies that both managed blocks can
 // be installed into the same CLAUDE.md without overlap or duplication.
 func TestDevRouting_CoexistsWithMasterRole(t *testing.T) {
