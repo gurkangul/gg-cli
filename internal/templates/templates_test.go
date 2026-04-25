@@ -80,6 +80,19 @@ func TestTemplates_SubdirPlaceholder(t *testing.T) {
 	}
 }
 
+func TestPreTaskDoneGoHook_DiagnosesGoTestFailure(t *testing.T) {
+	required := []string{
+		"go test -json ./...",
+		"collecting JSON failure summary",
+		"[verify-json]",
+	}
+	for _, needle := range required {
+		if !strings.Contains(PreTaskDoneGoHook, needle) {
+			t.Errorf("PreTaskDoneGoHook missing %q; failed hook output may end with opaque bare FAIL", needle)
+		}
+	}
+}
+
 // TestHookEnvContract verifies that the canonical hook env-var reference
 // (docs/hook-env-vars.md) stays in sync with the shell scripts under
 // internal/templates/. It catches two classes of drift:
