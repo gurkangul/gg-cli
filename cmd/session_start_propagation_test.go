@@ -147,6 +147,64 @@ func TestSyncManagedBlocks_BMADDetected_InstallsBlock(t *testing.T) {
 	}
 }
 
+// TestSessionStart_BMADDir_InstallsBlockAndEmitsNotice verifies AC-6a via the
+// full runSessionStart path: when _bmad/ is present in the project root,
+// runSessionStart (not just emitResync) installs the gg-bmad block into
+// AGENTS.md and emits "BMAD detected" to stderr. This exercises the
+// br.ProjectRoot != "" guard inside runSessionStart.
+func TestSessionStart_BMADDir_InstallsBlockAndEmitsNotice(t *testing.T) {
+	setupGGDir(t) // sets up .gg/config.yaml, t.Chdir to project root, GG_AGENT=test
+	dir, _ := os.Getwd()
+
+	// Seed _bmad/ directory — canonical BMAD detection signal.
+	if err := os.MkdirAll(filepath.Join(dir, "_bmad"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Seed AGENTS.md without the bmad block.
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Agents\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Inject stderr capture so we can assert the "BMAD detected" notice without
+	// redirecting os.Stderr (which is not goroutine-safe).
+	var captured bytes.Buffer
+	origStderr := sessionStartStderr
+	sessionStartStderr = &captured
+	t.Cleanup(func() { sessionStartStderr = origStderr })
+
+	// Also suppress stdout during the test — runSessionStart writes the briefing
+	// and gg status to os.Stdout; we don't need to assert those here.
+	origStdout := os.Stdout
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err == nil {
+		os.Stdout = devNull
+		t.Cleanup(func() {
+			os.Stdout = origStdout
+			devNull.Close()
+		})
+	}
+
+	// Run the actual session-start command — errors from runStatus (Qdrant down)
+	// are non-fatal by design and expected in this unit-test environment.
+	sessionStartAgent = "test"
+	t.Cleanup(func() { sessionStartAgent = "" })
+	_ = runSessionStart(sessionStartCmd, nil)
+
+	// AC-6a: AGENTS.md must now contain the gg-bmad managed block.
+	raw, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read AGENTS.md after runSessionStart: %v", err)
+	}
+	if !strings.Contains(string(raw), "gg-bmad:start") {
+		t.Error("AGENTS.md missing gg-bmad block after runSessionStart with _bmad/ present (AC-6a)")
+	}
+
+	// AC-2 / AC-6a: stderr must carry the spec-exact "BMAD detected" notice.
+	if !strings.Contains(captured.String(), "BMAD detected") {
+		t.Errorf("runSessionStart stderr missing 'BMAD detected' notice (AC-2/AC-6a); got:\n%s", captured.String())
+	}
+}
+
 // TestSyncManagedBlocks_RepairsOnSessionStart verifies that session-start calls
 // SyncManagedBlocks and emits a resync banner on stderr when a stale managed
 // block is found. Tests the integration between runSessionStart and

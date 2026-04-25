@@ -20,6 +20,10 @@ import (
 var sessionStartAgent string
 var sessionStartBench bool
 
+// sessionStartStderr is the writer for session-start stderr output.
+// Tests override this to capture output without redirecting os.Stderr.
+var sessionStartStderr io.Writer = os.Stderr
+
 var sessionStartCmd = &cobra.Command{
 	Use:   "session-start",
 	Short: "Print session bootstrap briefing (called by agent SessionStart hooks)",
@@ -87,7 +91,7 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// and agent-specific blocks (codex/bmad/gsd) when their detection signal is
 	// present. Best-effort — failures are reported but never fatal.
 	if br.ProjectRoot != "" {
-		emitResync(br.ProjectRoot, sessionStartBench, os.Stderr)
+		emitResync(br.ProjectRoot, sessionStartBench, sessionStartStderr)
 	}
 
 	// Version-delta notice: compare last_seen_cli_version to current version.
