@@ -1,1 +1,7 @@
-{"count": 2, "labels": ["AC-1", "AC-2"]}
+{
+  "count": 2,
+  "entries": [
+    {"num": 1, "text_contains": "spawn worker updates queue-pool", "gap_label": ""},
+    {"num": 2, "text_contains": "regression test covers", "gap_label": ""}
+  ]
+}

@@ -1,1 +1,7 @@
-{"count": 2, "labels": ["AC-1", "AC-2"]}
+{
+  "count": 2,
+  "entries": [
+    {"num": 1, "text_contains": "parser distinguishes implementation steps", "gap_label": ""},
+    {"num": 2, "text_contains": "FIX and REWORK section bullets are not extracted", "gap_label": ""}
+  ]
+}

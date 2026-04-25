@@ -1,1 +1,8 @@
-{"count": 3, "labels": ["AC-1", "AC-2", "AC-3"]}
+{
+  "count": 3,
+  "entries": [
+    {"num": 1, "text_contains": "parser extracts AC anchors", "gap_label": ""},
+    {"num": 2, "text_contains": "non-ASCII characters in prose", "gap_label": ""},
+    {"num": 3, "text_contains": "test suite passes with -race", "gap_label": ""}
+  ]
+}

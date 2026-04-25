@@ -1,1 +1,6 @@
-{"count": 1, "labels": ["AC-1"]}
+{
+  "count": 1,
+  "entries": [
+    {"num": 1, "text_contains": "status bar shows correct project name", "gap_label": ""}
+  ]
+}

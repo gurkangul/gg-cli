@@ -2,12 +2,18 @@
 // .gg/hooks/pre-task-done.d/50-ac-attestation.sh.
 //
 // Each fixture pair in cmd/testdata/ac_parser/:
-//   <name>.txt          — Detail field text fed to the Python parser
-//   <name>.expected.json — expected {"count": N, "labels": ["AC-1", ...]}
+//
+//	<name>.txt           — Detail field text fed to the Python parser
+//	<name>.expected.json — expected {"count": N, "entries": [{"num": N, "text_contains": "...", "gap_label": "..."}, ...]}
 //
 // The test extracts the Python parser snippet from the hook script and runs it
 // via python3/python with the fixture content on stdin. This validates the
 // parser without invoking gg or git, giving a fast, isolated regression gate.
+//
+// Parser output format (tab-separated per line): num\tac_text\tgap_label
+// Each entry assertion checks: num matches, text_contains is a substring of
+// ac_text, and gap_label matches exactly. This catches both count drift and
+// content/label drift without being brittle to exact wording.
 package cmd
 
 import (
@@ -17,14 +23,29 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
 
+// acParserEntry is one row in the expected JSON entries list.
+type acParserEntry struct {
+	Num          int    `json:"num"`
+	TextContains string `json:"text_contains"`
+	GapLabel     string `json:"gap_label"`
+}
+
 // acParserExpected is the shape of each *.expected.json fixture file.
 type acParserExpected struct {
-	Count  int      `json:"count"`
-	Labels []string `json:"labels"`
+	Count   int             `json:"count"`
+	Entries []acParserEntry `json:"entries"`
+}
+
+// parserRow is one parsed output row from the Python parser.
+type parserRow struct {
+	num      int
+	acText   string
+	gapLabel string
 }
 
 // extractPythonParser pulls the Python AC-parser snippet out of the hook
@@ -67,8 +88,8 @@ func extractPythonParser(t *testing.T, hookPath string) string {
 }
 
 // runPythonParser runs the extracted Python snippet with detail as stdin and
-// returns the tab-separated output lines.
-func runPythonParser(t *testing.T, pyCode, detail string) []string {
+// returns the parsed rows. Each output line is tab-separated: num\ttext\tgap_label.
+func runPythonParser(t *testing.T, pyCode, detail string) []parserRow {
 	t.Helper()
 
 	py := "python3"
@@ -92,21 +113,31 @@ func runPythonParser(t *testing.T, pyCode, detail string) []string {
 	if raw == "" {
 		return nil
 	}
-	return strings.Split(raw, "\n")
-}
 
-// labelsFromOutput converts parser output lines (tab-separated num\ttext\tgap)
-// into sequential AC-N labels ("AC-1", "AC-2", …).
-func labelsFromOutput(lines []string) []string {
-	labels := make([]string, 0, len(lines))
-	for i, line := range lines {
+	var rows []parserRow
+	for _, line := range strings.Split(raw, "\n") {
 		if line == "" {
 			continue
 		}
-		_ = line // text and gap_label not needed for label derivation
-		labels = append(labels, "AC-"+string(rune('0'+i+1)))
+		parts := strings.SplitN(line, "\t", 3)
+		num := 0
+		if len(parts) >= 1 {
+			n, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+			if err == nil {
+				num = n
+			}
+		}
+		text := ""
+		if len(parts) >= 2 {
+			text = parts[1]
+		}
+		gap := ""
+		if len(parts) >= 3 {
+			gap = parts[2]
+		}
+		rows = append(rows, parserRow{num: num, acText: text, gapLabel: gap})
 	}
-	return labels
+	return rows
 }
 
 // TestACParserFixtures runs the Python AC parser against every fixture pair
@@ -179,30 +210,31 @@ func TestACParserFixtures(t *testing.T) {
 			}
 
 			// Run parser.
-			outLines := runPythonParser(t, pyCode, string(detailBytes))
-			gotCount := len(outLines)
-			gotLabels := labelsFromOutput(outLines)
-			if gotLabels == nil {
-				gotLabels = []string{}
-			}
+			rows := runPythonParser(t, pyCode, string(detailBytes))
 
 			// Assert count.
-			if gotCount != want.Count {
-				t.Errorf("count: got %d, want %d", gotCount, want.Count)
-				t.Logf("parser output:\n%s", strings.Join(outLines, "\n"))
+			if len(rows) != want.Count {
+				t.Errorf("count: got %d, want %d", len(rows), want.Count)
+				for i, r := range rows {
+					t.Logf("  row[%d]: num=%d text=%q gap=%q", i, r.num, r.acText, r.gapLabel)
+				}
 			}
 
-			// Assert labels.
-			if len(gotLabels) != len(want.Labels) {
-				t.Errorf("labels length: got %v, want %v", gotLabels, want.Labels)
-			} else {
-				for i, wl := range want.Labels {
-					if i >= len(gotLabels) {
-						break
-					}
-					if gotLabels[i] != wl {
-						t.Errorf("label[%d]: got %q, want %q", i, gotLabels[i], wl)
-					}
+			// Assert per-entry fields.
+			for i, we := range want.Entries {
+				if i >= len(rows) {
+					t.Errorf("entry[%d]: missing (parser produced only %d rows)", i, len(rows))
+					continue
+				}
+				got := rows[i]
+				if got.num != we.Num {
+					t.Errorf("entry[%d] num: got %d, want %d (text=%q)", i, got.num, we.Num, got.acText)
+				}
+				if we.TextContains != "" && !strings.Contains(got.acText, we.TextContains) {
+					t.Errorf("entry[%d] text: %q does not contain %q", i, got.acText, we.TextContains)
+				}
+				if got.gapLabel != we.GapLabel {
+					t.Errorf("entry[%d] gap_label: got %q, want %q", i, got.gapLabel, we.GapLabel)
 				}
 			}
 		})

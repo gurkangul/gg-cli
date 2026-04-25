@@ -1,1 +1,6 @@
-{"count": 1, "labels": ["AC-1"]}
+{
+  "count": 1,
+  "entries": [
+    {"num": 1, "text_contains": "inline prose AC references do not inflate", "gap_label": ""}
+  ]
+}

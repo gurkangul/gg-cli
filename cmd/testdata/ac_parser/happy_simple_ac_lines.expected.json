@@ -1,1 +1,8 @@
-{"count": 3, "labels": ["AC-1", "AC-2", "AC-3"]}
+{
+  "count": 3,
+  "entries": [
+    {"num": 1, "text_contains": "hook exits 7", "gap_label": ""},
+    {"num": 2, "text_contains": "GG_ALLOW_INCOMPLETE_AC", "gap_label": ""},
+    {"num": 3, "text_contains": "integration test", "gap_label": ""}
+  ]
+}

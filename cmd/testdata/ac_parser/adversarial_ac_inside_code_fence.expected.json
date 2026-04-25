@@ -1,1 +1,8 @@
-{"count": 3, "labels": ["AC-1", "AC-2", "AC-3"]}
+{
+  "count": 3,
+  "entries": [
+    {"num": 1, "text_contains": "inside a code fence", "gap_label": ""},
+    {"num": 2, "text_contains": "another fenced example", "gap_label": ""},
+    {"num": 3, "text_contains": "passing commit example", "gap_label": ""}
+  ]
+}

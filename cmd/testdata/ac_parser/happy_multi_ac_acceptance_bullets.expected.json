@@ -1,1 +1,9 @@
-{"count": 4, "labels": ["AC-1", "AC-2", "AC-3", "AC-4"]}
+{
+  "count": 4,
+  "entries": [
+    {"num": 1, "text_contains": "export produces valid JSONL", "gap_label": ""},
+    {"num": 2, "text_contains": "import round-trips", "gap_label": ""},
+    {"num": 3, "text_contains": "error on corrupt input", "gap_label": ""},
+    {"num": 4, "text_contains": "integration test covers export", "gap_label": ""}
+  ]
+}
