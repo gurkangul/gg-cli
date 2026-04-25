@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -237,6 +238,68 @@ func isSuperset(localBody, templateBody string) bool {
 	return true
 }
 
+// stripLegacyVersionMarkers removes all managed-block fragments whose begin
+// marker matches the pattern "<!-- gg:<kind>:begin vN -->" for any version N
+// that differs from canonicalBegin. This handles brownfield upgrades from
+// older gg versions: an existing v2 block is invisible to the v3 checker
+// (different begin string) but leaves an orphan end marker, causing
+// replaceOrAppendBlock to return a malformed-marker error.
+//
+// The function removes, in order:
+//  1. Full legacy blocks: <legacy-begin> ... <blockEnd> (including body).
+//  2. Orphan legacy begin markers (no matching end) that remain after step 1.
+//
+// canonicalBegin is the current-version begin marker (e.g.
+// "<!-- gg:master-role:begin v3 -->"). blockEnd is the version-agnostic end
+// marker (e.g. "<!-- gg:master-role:end -->"). The canonicalBegin is never
+// stripped — only older version markers are removed.
+func stripLegacyVersionMarkers(content, canonicalBegin, blockEnd string) string {
+	// Derive the block kind from the canonical begin marker so we can build a
+	// pattern that matches any version.  Example:
+	//   canonicalBegin = "<!-- gg:master-role:begin v3 -->"
+	//   → kind = "master-role"
+	//   → legacyBeginRe matches "<!-- gg:master-role:begin vN -->" for any N
+	kind := extractBlockKind(canonicalBegin)
+	if kind == "" {
+		return content
+	}
+
+	// Step 1: remove full legacy blocks (begin … end), excluding the canonical begin.
+	fullBlockRe := regexp.MustCompile(
+		`(?s)<!-- gg:` + regexp.QuoteMeta(kind) + `:begin v\d+ -->.*?` +
+			regexp.QuoteMeta(blockEnd) + `\n?`,
+	)
+	content = fullBlockRe.ReplaceAllStringFunc(content, func(match string) string {
+		// Keep the canonical begin's block untouched.
+		if strings.HasPrefix(match, canonicalBegin) {
+			return match
+		}
+		return ""
+	})
+
+	// Step 2: remove orphan legacy begin markers (any version except canonical).
+	orphanBeginRe := regexp.MustCompile(`<!-- gg:` + regexp.QuoteMeta(kind) + `:begin v\d+ -->\n?`)
+	content = orphanBeginRe.ReplaceAllStringFunc(content, func(match string) string {
+		if strings.HasPrefix(match, canonicalBegin) {
+			return match
+		}
+		return ""
+	})
+
+	return content
+}
+
+// extractBlockKind parses the block kind from a canonical begin marker of the
+// form "<!-- gg:<kind>:begin vN -->". Returns "" if the format is unrecognised.
+func extractBlockKind(canonicalBegin string) string {
+	re := regexp.MustCompile(`^<!-- gg:([^:]+):begin v\d+ -->$`)
+	m := re.FindStringSubmatch(strings.TrimSpace(canonicalBegin))
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
+}
+
 // forceStripAndAppend removes any fragment of begin/end markers from the file
 // and appends a clean managed block. Used by --force-reset when the file has
 // malformed (DRIFTED) markers that replaceOrAppendBlock cannot repair.
@@ -247,7 +310,10 @@ func forceStripAndAppend(path, begin, end, block string) error {
 	}
 	content := string(raw)
 
-	// Strip all occurrences of both marker strings so the file is clean.
+	// Strip all legacy version markers, then strip any remaining canonical
+	// begin/end marker fragments (forceStripAndAppend is called only when the
+	// file is DRIFTED — markers are guaranteed malformed, so full strip is safe).
+	content = stripLegacyVersionMarkers(content, begin, end)
 	content = strings.ReplaceAll(content, begin, "")
 	content = strings.ReplaceAll(content, end, "")
 

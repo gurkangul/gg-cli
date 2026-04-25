@@ -260,7 +260,6 @@ func TestFixMasterRole_UpgradesV2ToV3(t *testing.T) {
 	})
 
 	t.Run("DRIFTED_v2_only_begin", func(t *testing.T) {
-		t.Skip("known gap: forceStripAndAppend only strips current-version begin marker; stripLegacyMarkers helper needed — TASK-319 rework")
 		dir := t.TempDir()
 		// Only the v2 begin marker present — no end marker — DRIFTED from the
 		// perspective of any checker that doesn't know about v2.
@@ -290,7 +289,6 @@ func TestFixMasterRole_UpgradesV2ToV3(t *testing.T) {
 	})
 
 	t.Run("DRIFTED_v2_full_block", func(t *testing.T) {
-		t.Skip("known gap: CheckMasterRole sees v2-begin as unknown text (MISSING); replaceOrAppendBlock errors on lone end marker — stripLegacyMarkers helper needed — TASK-319 rework")
 		dir := t.TempDir()
 		// Full v2 block (begin + body + end) — checker sees MISSING because v2 begin
 		// differs from v3 begin (startIdx == -1). replaceOrAppendBlock then errors on
@@ -323,15 +321,11 @@ func TestFixMasterRole_UpgradesV2ToV3(t *testing.T) {
 	})
 }
 
-// TestFixDevRouting_UpgradesLegacyMarker is a regression-prevention placeholder
-// for future dev-routing version bumps. It uses a synthetic v0 marker (dev-routing
+// TestFixDevRouting_UpgradesLegacyMarker is a regression-prevention test for
+// future dev-routing version bumps. It uses a synthetic v0 marker (dev-routing
 // is currently v1) to verify that if a legacy begin marker ends up on disk, the
 // fix path strips it cleanly rather than leaving an orphan line.
-//
-// Currently skipped because the stripLegacyMarkers helper does not exist yet;
-// this test will be unskipped when the TASK-319 rework lands.
 func TestFixDevRouting_UpgradesLegacyMarker(t *testing.T) {
-	t.Skip("known gap: CheckDevRouting sees v0-begin as unknown (DRIFTED due to lone end marker); stripLegacyMarkers helper needed — TASK-319 rework")
 
 	const v0Begin = "<!-- gg:dev-routing:begin v0 -->"
 

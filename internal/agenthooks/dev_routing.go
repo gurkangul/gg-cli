@@ -84,7 +84,8 @@ func CheckDevRouting(projectRoot string) DevRoutingCheckResult {
 		return r
 	}
 
-	content := string(raw)
+	// Normalise away legacy version markers before analysis — see CheckMasterRole.
+	content := stripLegacyVersionMarkers(string(raw), DevRoutingBlockBegin, DevRoutingBlockEnd)
 	startIdx := strings.Index(content, DevRoutingBlockBegin)
 	endIdx := strings.Index(content, DevRoutingBlockEnd)
 
@@ -162,7 +163,8 @@ func writeDevRoutingBlock(path string, dryRun bool) (action Action, notes []stri
 		}
 		fileExisted = false
 	} else {
-		existing = string(raw)
+		// Strip any legacy version markers before calling replaceOrAppendBlock.
+		existing = stripLegacyVersionMarkers(string(raw), DevRoutingBlockBegin, DevRoutingBlockEnd)
 	}
 
 	block := DevRoutingBlock()

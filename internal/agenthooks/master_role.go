@@ -84,7 +84,11 @@ func CheckMasterRole(projectRoot string) MasterRoleCheckResult {
 		return r
 	}
 
-	content := string(raw)
+	// Normalise away legacy version markers so an older v2 block doesn't
+	// cause a spurious DRIFTED status (v2Begin unknown to v3 checker, but
+	// v2End == v3End → lone end marker → DRIFTED). After stripping, the
+	// state is correctly reported as MISSING and repaired by the Fix path.
+	content := stripLegacyVersionMarkers(string(raw), MasterRoleBlockBegin, MasterRoleBlockEnd)
 	startIdx := strings.Index(content, MasterRoleBlockBegin)
 	endIdx := strings.Index(content, MasterRoleBlockEnd)
 
@@ -162,7 +166,10 @@ func writeMasterRoleBlock(path string, dryRun bool) (action Action, notes []stri
 		}
 		fileExisted = false
 	} else {
-		existing = string(raw)
+		// Strip any legacy version markers before calling replaceOrAppendBlock.
+		// This handles brownfield upgrades where an older version's begin marker
+		// (e.g. v2) is present but the current checker only knows v3.
+		existing = stripLegacyVersionMarkers(string(raw), MasterRoleBlockBegin, MasterRoleBlockEnd)
 	}
 
 	block := MasterRoleBlock()
