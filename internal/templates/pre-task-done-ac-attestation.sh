@@ -199,19 +199,38 @@ AC_COUNT=$(printf '%s\n' "$ACS" | grep -c '.' || echo 0)
 echo "[ac-attestation] $GG_TASK_ID: found $AC_COUNT acceptance criterion/criteria"
 
 # ── 4. Get commit message, changed file paths, and diff content ──────────────
-COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null || true)
+# Find the task's actual commit — the most recent commit whose message mentions
+# GG_TASK_ID — rather than always inspecting HEAD. This prevents false failures
+# (or false passes) when follow-up cosmetic commits land on the branch after the
+# task commit, shifting HEAD away from the attributed work.
+# Search up to 50 commits; fall back to HEAD when none match (first commit, or
+# task ID not embedded in message — fail-open so infra gaps don't block work).
+TASK_SHA=""
+if [ -n "$GG_TASK_ID" ]; then
+  TASK_SHA=$(git log --pretty=format:"%H %s" -50 2>/dev/null \
+    | grep -iF "$GG_TASK_ID" \
+    | head -1 \
+    | cut -d' ' -f1 || true)
+fi
+if [ -z "$TASK_SHA" ]; then
+  echo "[ac-attestation] ⚠ $GG_TASK_ID: no commit found in last 50 — falling back to HEAD" >&2
+  TASK_SHA="HEAD"
+fi
+
+COMMIT_MSG=$(git log -1 --pretty=%B "$TASK_SHA" 2>/dev/null || true)
 if [ -z "$COMMIT_MSG" ]; then
   echo "[ac-attestation] ✓ $GG_TASK_ID: no commits — skipping"
   exit 0
 fi
 
+echo "[ac-attestation] $GG_TASK_ID: examining commit ${TASK_SHA} ($(git log -1 --pretty=%h "$TASK_SHA" 2>/dev/null || echo '?'))"
+
 # Changed file paths — used to detect test file names like ac1_test.go or TestAC1.
 # Works on the very first commit (no parent; --name-only with -1 handles root commits).
-COMMIT_FILES=$(git log -1 --name-only --pretty="" 2>/dev/null || true)
+COMMIT_FILES=$(git log -1 --name-only --pretty="" "$TASK_SHA" 2>/dev/null || true)
 
 # Unified diff content — used to detect added lines with test names and comments.
-# git log -1 -p is equivalent to git show HEAD but more portable for first commits.
-COMMIT_DIFF=$(git log -1 -p 2>/dev/null || true)
+COMMIT_DIFF=$(git log -1 -p "$TASK_SHA" 2>/dev/null || true)
 
 # ── 5. Check each AC against commit message and diff ──────────────────────────
 UNMATCHED=""
