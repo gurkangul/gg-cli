@@ -46,6 +46,7 @@ committed. Outbox pattern in
 **Look these up before suggesting changes:**
 - `README.md` — public-facing overview + install
 - `docs/architecture.md` — detailed package layout, isolation, crash safety
+- `docs/hook-env-vars.md` — every `GG_*` env var a hook can read or set; propagation rules; bypass patterns
 - `gg search "<topic>" --compact` — past decisions and rejections on the subject
 - `gg context "<topic>" --compact` — unified bundle (decisions + tasks + code impact)
 

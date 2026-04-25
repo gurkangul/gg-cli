@@ -46,3 +46,4 @@ That way a future reader can see whether the skip is still warranted.
 
 - `AGENTS.md` § PRE-DONE VERIFY GATE — describes the hooks that wrap test execution before `gg task done`.
 - `docs/verify-gate.md` — gate-by-gate reference.
+- `docs/hook-env-vars.md` — complete `GG_*` variable reference, including `GG_INSIDE_HOOK` propagation rules.

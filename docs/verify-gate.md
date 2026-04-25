@@ -152,9 +152,33 @@ considered but deferred for two reasons:
 The narrowing from "file path or function reference" to "added lines in the
 commit diff" is deliberately tighter — it avoids matching unchanged files from
 prior commits. This is a pragmatic trade-off, not an accidental omission.
-Follow-on work (TASK-312) may extend the parser to distinguish FIX-step
-bullets from ACCEPTANCE bullets; detection rule expansion can be revisited
-then.
+Follow-on work (TASK-312) extended the parser to exclude FIX/REWORK-step
+bullets from AC extraction.
+
+## AC parser fixture matrix
+
+The parser logic is regression-tested via a fixture matrix in
+`cmd/testdata/ac_parser/`. Each fixture pair is:
+
+- `<name>.txt` — a Detail field fed verbatim to the Python parser
+- `<name>.expected.json` — `{"count": N, "labels": ["AC-1", …]}`
+
+The test (`TestACParserFixtures` in `cmd/hook_ac_parser_fixtures_test.go`)
+extracts the Python block directly from the hook script, runs it against each
+fixture, and asserts the count and sequential labels match.
+
+Adding a fixture prevents a class of regression: silent parser tightening
+that changes what counts as an AC without a test failing. To add a new
+fixture, drop a `.txt` + `.expected.json` pair into the directory — no test
+code changes needed.
+
+Current fixture categories:
+
+| Prefix | What it covers |
+|--------|---------------|
+| `happy_` | Normal inputs: explicit `AC-N:` lines, ACCEPTANCE bullets, numbered items, code-block prose |
+| `edge_` | Boundary cases: empty AC list, single AC, inline prose references, ACs spread across paragraphs |
+| `adversarial_` | Parser traps: ACs inside code fences (still counted), FIX/REWORK bullets (excluded), narrative Gap prose (excluded), mixed languages |
 
 ## Troubleshooting
 
@@ -180,3 +204,8 @@ write a manual hook if your monorepo depends on symlinked subprojects.
 A nested gg project at `services/api/.gg/` is invisible to the outer
 walk by design (`.gg` is in the skip list), so each nested project has
 its own installer run.
+
+## Related
+
+- `docs/hook-env-vars.md` — complete reference for every `GG_*` variable
+  that hooks read or emit, including propagation rules and the TASK-308 lesson.
