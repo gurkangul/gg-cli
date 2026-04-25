@@ -15,6 +15,10 @@ import (
 
 var becomeForceReset bool
 
+// masterPrompt is the paste-ready prompt printed to stdout after `gg become master`
+// so the operator can immediately orient their AI session into the master role.
+const masterPrompt = "You are now the MASTER session for this project. Read CLAUDE.md (gg:master-role:begin v3) for your responsibilities. Your job: spawn workers via gg spawn worker, review their commits, never write production code (≤5 line cosmetic exception only). Heartbeat starting now."
+
 var becomeCmd = &cobra.Command{
 	Use:   "become",
 	Short: "Adopt a project role (e.g. become master)",
@@ -67,7 +71,9 @@ func runBecomeNoArg(cmd *cobra.Command, _ []string) error {
 	return cmd.Help()
 }
 
-func runBecomeMaster(_ *cobra.Command, _ []string) error {
+func runBecomeMaster(cmd *cobra.Command, _ []string) error {
+	out := cmd.OutOrStdout()
+
 	projectRoot, err := config.FindRoot()
 	if err != nil {
 		return err
@@ -76,7 +82,7 @@ func runBecomeMaster(_ *cobra.Command, _ []string) error {
 	// Step 1: install / update master-role block.
 	lines, fixErr := agenthooks.FixMasterRole(projectRoot, becomeForceReset)
 	for _, l := range lines {
-		fmt.Println(l)
+		fmt.Fprintln(out, l)
 	}
 	if fixErr != nil {
 		return fixErr
@@ -92,9 +98,9 @@ func runBecomeMaster(_ *cobra.Command, _ []string) error {
 	if r.Status != agenthooks.MasterRoleOK {
 		marker = "✗"
 	}
-	fmt.Printf("%s  Master-role block  %-8s  %s  (version %s)\n",
+	fmt.Fprintf(out, "%s  Master-role block  %-8s  %s  (version %s)\n",
 		marker, r.Status, shortPath, agenthooks.MasterRoleVersion()[:12])
-	fmt.Println(strings.Repeat("─", 50))
+	fmt.Fprintln(out, strings.Repeat("─", 50))
 
 	if r.Status != agenthooks.MasterRoleOK {
 		return fmt.Errorf("master-role block not OK after fix — run `gg doctor --check-master-role --fix` for details")
@@ -116,16 +122,23 @@ func runBecomeMaster(_ *cobra.Command, _ []string) error {
 	}
 
 	hb, _ := spawn.ReadHeartbeat(rt)
-	return printJSON(map[string]any{
-		"status":      "ok",
-		"block_state": r.Status.String(),
-		"agent":       agent,
-		"updated_at":  hb.UpdatedAt,
-	}, func() {
-		fmt.Printf("✓  Heartbeat recorded (agent: %s)\n", agent)
-		fmt.Println()
-		fmt.Println("Master role active. Next steps:")
-		fmt.Println("  gg spawn heartbeat        # refresh liveness every ~60 s")
-		fmt.Println("  gg spawn worker --task T  # open a worker pane")
-	})
+	if jsonOutput {
+		return writeJSON(map[string]any{
+			"status":        "ok",
+			"block_state":   r.Status.String(),
+			"agent":         agent,
+			"updated_at":    hb.UpdatedAt,
+			"master_prompt": masterPrompt,
+		})
+	}
+	fmt.Fprintf(out, "✓  Heartbeat recorded (agent: %s)\n", agent)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "── Paste this prompt into your master session ──────────────────")
+	fmt.Fprintln(out, masterPrompt)
+	fmt.Fprintln(out, "────────────────────────────────────────────────────────────────")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Master role active. Next steps:")
+	fmt.Fprintln(out, "  gg spawn heartbeat        # refresh liveness every ~60 s")
+	fmt.Fprintln(out, "  gg spawn worker --task T  # open a worker pane")
+	return nil
 }

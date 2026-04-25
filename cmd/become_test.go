@@ -157,6 +157,27 @@ func TestBecomeMaster_HelpMentionsOptIn(t *testing.T) {
 	}
 }
 
+// TestBecomeMaster_PrintsMasterPrompt verifies AC-2: running `gg become master`
+// prints the paste-ready master session prompt to stdout.
+func TestBecomeMaster_PrintsMasterPrompt(t *testing.T) {
+	setupGGDir(t)
+
+	stdout, stderr, err := execCmd(t, "become", "master")
+	if err != nil {
+		t.Fatalf("AC-2: become master failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(combined, "You are now the MASTER session") {
+		t.Errorf("AC-2: expected master prompt in output, got:\n%s", combined)
+	}
+	if !strings.Contains(combined, "gg:master-role:begin v3") {
+		t.Errorf("AC-2: expected marker reference in master prompt, got:\n%s", combined)
+	}
+	if !strings.Contains(combined, "Heartbeat starting now") {
+		t.Errorf("AC-2: expected 'Heartbeat starting now' in master prompt, got:\n%s", combined)
+	}
+}
+
 // TestBecome_NoArg_NoDeveloperAgent verifies that when developer.agent is absent
 // or "unconfigured", `gg become` prints the "no role declared" fallback message.
 func TestBecome_NoArg_NoDeveloperAgent(t *testing.T) {
