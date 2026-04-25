@@ -204,6 +204,34 @@ GG_ALLOW_INBOX_SKIP="continuing async sprint, messages already triaged" \
 
 ---
 
+## Pre-tool-use hook variables
+
+These are injected by the **Claude Code harness** (not by gg) before running
+scripts in `.gg/hooks/pre-tool-use.d/`. They are only available in that hook
+category, not in `pre-task-done.d/` or `task-done.d/`.
+
+| Variable | Value | Example |
+|---|---|---|
+| `GG_TOOL_NAME` | The tool being invoked by the agent | `Edit`, `Write`, `MultiEdit` |
+
+---
+
+## Spawn and queue advance variables
+
+These are optional path hints injected by the queue runner or spawn subsystem.
+When present they short-circuit a `gg spawn status` subprocess call inside the
+hook, making the hook cheaper at high invocation rate.
+
+| Variable | Value | Where set |
+|---|---|---|
+| `GG_SPAWN_DIR` | Absolute path to the spawn state directory (contains `queue.json`) | `gg spawn worker` session env |
+| `GG_SPAWN_ADVANCE_DIR` | Absolute path to the advance-sentinel directory polled by the queue runner | `gg spawn worker` session env |
+
+Both variables are optional. When absent, the scripts fall back to `gg spawn
+status --json` or `gg config get runtime_dir` discovery.
+
+---
+
 ## Notification and CI variables
 
 | Variable | Effect |
@@ -307,3 +335,6 @@ and merges it over `os.Environ()`. This is the correct pattern.
 | `GG_COMPACT` | session | compact renderer |
 | `GG_QUIET` | CI / session | banner printer |
 | `GG_SESSION_ID` | session | telemetry session grouping |
+| `GG_TOOL_NAME` | Claude Code harness | `50-master-guard.sh` |
+| `GG_SPAWN_DIR` | `gg spawn worker` session | `50-master-guard.sh` |
+| `GG_SPAWN_ADVANCE_DIR` | `gg spawn worker` session | `45-queue-advance.sh` |
