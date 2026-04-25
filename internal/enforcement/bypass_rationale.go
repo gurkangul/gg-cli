@@ -3,7 +3,18 @@ package enforcement
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
+)
+
+// validRecordIDRe matches valid gg record IDs:
+//   - UUID v4 (8-4-4-4-12 hex groups, case-insensitive)
+//   - Display IDs like DEC-001, DEC-42, etc. (case-insensitive)
+var validRecordIDRe = regexp.MustCompile(
+	`(?i)^` +
+		`([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}` + // UUID
+		`|DEC-[0-9]+)` + // display ID
+		`$`,
 )
 
 // BypassRationaleEnvVar is the env var that must be set to a non-empty value
@@ -50,6 +61,18 @@ type BypassRationaleResult struct {
 func CheckBypassRationale(taskID string) (BypassRationaleResult, error) {
 	raw := strings.TrimSpace(os.Getenv(BypassRationaleEnvVar))
 	recordID := strings.TrimSpace(os.Getenv(BypassRationaleRecordEnvVar))
+
+	// Validate record ID format when provided — reject garbage strings early
+	// so callers can't accidentally use a free-form rationale via the wrong var.
+	if recordID != "" && !validRecordIDRe.MatchString(recordID) {
+		return BypassRationaleResult{}, fmt.Errorf(
+			"invalid %s value %q: must be a UUID (8-4-4-4-12 hex) or display ID (DEC-NNN).\n"+
+				"Use %s for free-form rationale text instead:\n\n"+
+				"  %s=%q gg task done %s ...",
+			BypassRationaleRecordEnvVar, recordID,
+			BypassRationaleEnvVar,
+			BypassRationaleEnvVar, taskID+" : <why>", taskID)
+	}
 
 	if raw == "" && recordID == "" {
 		msg := fmt.Sprintf(
