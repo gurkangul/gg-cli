@@ -429,7 +429,7 @@ export GG_TELEMETRY=0   # also: false, no, off
 |---|---|---|
 | Phase 1 — Core CLI | ✅ Done | Record/search/task/bug/discuss/note/tell, Qdrant store, AGENTS.md protocol |
 | Phase 2 — Code Intel | ✅ Done | `gg index`, `gg impact`, `gg context`, SCIP parsers, Memgraph graph, outbox crash safety |
-| Phase 3 — Adoption polish | 🚧 In progress | README/docs quality, multi-tenancy, agent hook enforcement, `gg session-start` |
+| Phase 3 — Adoption polish | ✅ Done | README/docs quality, multi-tenancy, agent hook enforcement, `gg session-start`, April 2026 dogfood validation |
 
 See [docs/roadmap.md](docs/roadmap.md) for the detailed phase plan.
 

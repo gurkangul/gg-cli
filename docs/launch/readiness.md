@@ -1,8 +1,19 @@
 # Launch Readiness — v0.1.0
 
-**Progress: 8/14 (57%)**
+> Historical launch checklist. This file tracked the first alpha launch and is
+> no longer the canonical project-state source. Use `gg status`,
+> `docs/dogfood-report-2026-04.md`, and GitHub release metadata for current
+> state.
 
-Last updated: 2026-04-14
+**Historical progress: 8/14 (57%)**
+
+Last historical update: 2026-04-14
+
+Current note, 2026-04-25: the April dogfood run validated the core product and
+README Phase 3 now reflects that adoption polish is done. Several checklist
+items below were completed after this snapshot, including `CONTRIBUTING.md`,
+`SECURITY.md`, issue templates, and the release workflow. Remaining launch work
+should be tracked as gg tasks rather than by editing this historical counter.
 
 ---
 

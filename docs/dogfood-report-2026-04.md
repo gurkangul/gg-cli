@@ -42,8 +42,10 @@ above 80% throughout, validating the protocol enforcement approach.
 - Inbox obedience: all roles 85%+ OK
 
 ### End of period (2026-04-25)
-- gg-cli: 8,268 calls in last 7d, **82% agent-initiated** ← North Star met
-- Telemetry leader commands: `inbox` (1,250), `verify` (1,162), `track` (995)
+- gg-cli: 11,530 calls in last 7d, **87% agent-initiated** ← North Star met
+- Telemetry leader commands: `queue-dispatch` (2,301), `inbox` (1,508),
+  `verify` (1,313), `track` (1,145)
+- Dogfood health: velocity 161.5 tasks/week, rework 12%, gaps 5%
 
 ---
 
@@ -129,14 +131,17 @@ approach is validated.
 
 ---
 
-## Deferred decisions (post-dogfood)
+## Post-dogfood decisions
 
 - **Skill Auto-Creation** (Hermes-inspired) — explicitly deferred to post-dogfood.
   Re-evaluate when master/worker pattern stabilises.
-- **TASK-131 (--with-context Faz 2 decision)** — baseline snapshot taken 2026-04-24.
-  Decision to be made after comparing pre/post context hydration call rates.
-- **TASK-125 (README Phase 3 status)** — update `🚧 In progress` → `✅ Done` once
-  TASK-120 is closed.
+- **TASK-131 (`--with-context` Faz 2 decision)** — measured on 2026-04-25.
+  Adoption failed organically (1 use out of hundreds of `gg task get` calls);
+  the recorded decision is to treat this as a trigger/discoverability problem
+  and open the narrower session-start auto-context work when the stabilization
+  freeze allows it.
+- **TASK-125 (README Phase 3 status)** — README now marks Phase 3 as done
+  because dogfood validated the adoption/enforcement layer.
 
 ---
 
