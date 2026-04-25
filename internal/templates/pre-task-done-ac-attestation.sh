@@ -112,9 +112,10 @@ for line in lines:
 AC_SECTION_RE = re.compile(
     r'(?im)^(ACCEPTANCE(?:\s+(?:CRITERIA|TESTS?))?|ACS?|GAPS?)\s*$'
 )
-# FIX / REWORK sections contain implementation steps, not ACs.
+# FIX / REWORK / IMPLEMENTATION / NOTES sections contain implementation steps
+# or supporting context, not acceptance criteria.
 SKIP_SECTION_RE = re.compile(
-    r'(?im)^(FIX(?:ES)?|REWORK)\s*$'
+    r'(?im)^(FIX(?:ES)?|REWORK|IMPLEMENTATION(?:\s+(?:HINTS?|GUIDANCE))?|HINTS?|NOTES?|REFERENCES?|REFS?)\s*:?\s*$'
 )
 
 def _collect_section_lines(header_re):

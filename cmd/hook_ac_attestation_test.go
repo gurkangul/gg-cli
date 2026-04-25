@@ -335,6 +335,64 @@ AC-1: silent narrowing prevented by gate`
 	}
 }
 
+func TestACAttestation_ImplementationHintsBullets_NotCounted(t *testing.T) {
+	detail := `Acceptance Criteria:
+AC-1: default task get renders full Detail
+AC-2: --short renders one line
+AC-3: --json remains unchanged
+AC-4: docs include the flag
+AC-5: full race suite passes
+
+Implementation hints:
+- reuse the compact renderer
+- keep default output verbose
+- update generated CLI docs
+- avoid changing JSON shape`
+	j := taskJSONWith(detail)
+	commitMsg := `feat: implement task get short flag
+
+AC-1: default task get renders full Detail
+AC-2: --short renders one line
+AC-3: --json remains unchanged
+AC-4: docs include the flag
+AC-5: full race suite passes`
+
+	out, code := runACAttestationHook(t, j, commitMsg, nil)
+	if code != 0 {
+		t.Errorf("expected exit 0 (Implementation hints bullets ignored), got %d\noutput:\n%s", code, out)
+	}
+	if !strings.Contains(out, "found 5 acceptance criterion/criteria") {
+		t.Errorf("expected exactly 5 AC anchors, got:\n%s", out)
+	}
+	if strings.Contains(out, "AC-6") || strings.Contains(out, "reuse the compact renderer") {
+		t.Errorf("implementation hint bullets should not be reported as ACs, got:\n%s", out)
+	}
+}
+
+func TestACAttestation_FixReworkBullets_StillSkipped(t *testing.T) {
+	detail := `Acceptance Criteria:
+AC-1: user-visible behavior is fixed
+
+FIX:
+- edit parser regex
+- add regression tests
+
+REWORK:
+- rerun hook`
+	j := taskJSONWith(detail)
+	commitMsg := `fix: repair parser
+
+AC-1: user-visible behavior is fixed`
+
+	out, code := runACAttestationHook(t, j, commitMsg, nil)
+	if code != 0 {
+		t.Errorf("expected exit 0 (FIX/REWORK bullets skipped), got %d\noutput:\n%s", code, out)
+	}
+	if !strings.Contains(out, "found 1 acceptance criterion/criteria") {
+		t.Errorf("expected exactly 1 AC anchor, got:\n%s", out)
+	}
+}
+
 // TestACAttestation_NumberedItemsOutsideACSection: numbered items in WHAT
 // block (not under ACCEPTANCE) are also extracted.
 func TestACAttestation_NumberedItemsOutsideACSection(t *testing.T) {
@@ -785,5 +843,4 @@ AC-1: Gap A fixed via syscall.Flock`
 		t.Errorf("output should mention unmatched Gap B, got:\n%s", out)
 	}
 }
-
 
