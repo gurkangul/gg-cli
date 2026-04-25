@@ -411,6 +411,29 @@ func TestBUG027_TaskGetDefault_ShowsDetail(t *testing.T) {
 	}
 }
 
+// TestAC1_TaskGetDefault_Detail verifies AC-4: default format contains the Detail block.
+func TestAC1_TaskGetDefault_Detail(t *testing.T) {
+	tk := store.Task{
+		ID:       "TASK-338",
+		Title:    "Fix BUG-027: gg task get default-format must show Detail block",
+		Status:   "in_progress",
+		Priority: "medium",
+		Detail:   "AC-1: default shows header+Status+Detail\nAC-2: --short one line\nAC-3: --json unchanged",
+	}
+	var buf bytes.Buffer
+	renderTaskGetDefault(&buf, &tk)
+	out := buf.String()
+	if !strings.Contains(out, "AC-1") {
+		t.Errorf("default format: Detail block missing — got:\n%s", out)
+	}
+	if !strings.Contains(out, "TASK-338") {
+		t.Errorf("default format: header line missing — got:\n%s", out)
+	}
+	if !strings.Contains(out, "in_progress") {
+		t.Errorf("default format: Status line missing — got:\n%s", out)
+	}
+}
+
 func TestBUG027_TaskGetCompact_OneLiner(t *testing.T) {
 	tk := store.Task{
 		ID:       "TASK-042",
@@ -428,5 +451,76 @@ func TestBUG027_TaskGetCompact_OneLiner(t *testing.T) {
 	}
 	if strings.Contains(out, "AC-1") {
 		t.Errorf("renderTaskGetCompact: Detail leaked into compact output:\n%s", out)
+	}
+}
+
+// TestAC3_TaskGetJSON_Unchanged verifies that --json output is unaffected by the
+// BUG-027 fix and still contains the Detail field.
+func TestAC3_TaskGetJSON_Unchanged(t *testing.T) {
+	tk := store.Task{
+		ID:       "TASK-042",
+		Title:    "implement JWT refresh endpoint",
+		Status:   "pending",
+		Priority: "high",
+		Detail:   "AC-1: must return 401 on expired token\nAC-2: must issue new token within 200ms",
+	}
+
+	prev := jsonOutput
+	jsonOutput = true
+	t.Cleanup(func() { jsonOutput = prev })
+
+	var buf bytes.Buffer
+	origStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	_ = printJSON(&tk, func() {
+		renderTaskGetDefault(&buf, &tk)
+	})
+	w.Close()
+	os.Stdout = origStdout
+
+	var jsonBuf bytes.Buffer
+	_, _ = jsonBuf.ReadFrom(r)
+	out := jsonBuf.String()
+
+	if !strings.Contains(out, `"Detail"`) && !strings.Contains(out, `"detail"`) {
+		t.Errorf("--json output must contain Detail field, got:\n%s", out)
+	}
+	if !strings.Contains(out, "TASK-042") {
+		t.Errorf("--json output must contain task ID, got:\n%s", out)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("--json must not invoke the fallback renderer, but it did")
+	}
+}
+
+// TestAC2_TaskGetShort_Flag verifies the --short flag routes to the one-liner
+// renderer (renderTaskGetCompact) and does not expose the Detail block.
+func TestAC2_TaskGetShort_Flag(t *testing.T) {
+	tk := store.Task{
+		ID:       "TASK-042",
+		Title:    "implement JWT refresh endpoint",
+		Status:   "pending",
+		Priority: "high",
+		Detail:   "AC-1: must return 401 on expired token\nAC-2: must issue new token within 200ms",
+	}
+
+	// Save and restore global flag state so parallel tests are not affected.
+	prev := taskGetShort
+	taskGetShort = true
+	t.Cleanup(func() { taskGetShort = prev })
+
+	var buf bytes.Buffer
+	renderTaskGetCompact(&buf, &tk)
+	out := buf.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 1 {
+		t.Errorf("--short: expected 1 line, got %d:\n%s", len(lines), out)
+	}
+	if strings.Contains(out, "AC-1") {
+		t.Errorf("--short: Detail leaked into short output:\n%s", out)
+	}
+	if !strings.Contains(out, "TASK-042") {
+		t.Errorf("--short: task ID missing from output:\n%s", out)
 	}
 }
