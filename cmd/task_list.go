@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -34,6 +35,7 @@ var (
 	taskListReady       bool
 	taskListNeedsReview bool
 	taskListBlockers    bool
+	taskListPendingAck  bool
 	taskListCompact     bool
 	taskGetCompact      bool
 	taskGetShort        bool
@@ -45,6 +47,7 @@ func init() {
 	taskListCmd.Flags().BoolVar(&taskListReady, "ready", false, "show only pending tasks whose dependencies are all done")
 	taskListCmd.Flags().BoolVar(&taskListNeedsReview, "needs-review", false, "show done tasks awaiting review (review_status=none or pending)")
 	taskListCmd.Flags().BoolVar(&taskListBlockers, "blockers", false, "show tasks that are blocking other tasks (have --blocks targets)")
+	taskListCmd.Flags().BoolVar(&taskListPendingAck, "pending-ack", false, "show in-progress tasks whose worker ACK is waiting for ACK-OK or ACK-FIX")
 	taskListCmd.Flags().BoolVar(&taskListCompact, "compact", false, "one line per task — drops author + block-reason detail to preserve agent context window")
 	taskGetCmd.Flags().BoolVar(&taskGetCompact, "compact", false, "one line summary — drops detail/tags/author to preserve agent context window")
 	taskGetCmd.Flags().BoolVar(&taskGetShort, "short", false, "one line summary (alias for --compact)")
@@ -56,6 +59,9 @@ func init() {
 func runTaskList(cmd *cobra.Command, args []string) error {
 	if taskListStatus != "" && !validStatuses[taskListStatus] {
 		return fmt.Errorf("invalid status %q — use pending, in_progress, ready_for_live, done, or blocked", taskListStatus)
+	}
+	if taskListPendingAck && taskListStatus != "" && taskListStatus != "in_progress" {
+		return fmt.Errorf("--pending-ack can only be combined with --status in_progress")
 	}
 
 	d, err := loadDeps(false)
@@ -110,6 +116,9 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 	if taskListReady {
 		statusFilter = "pending"
 	}
+	if taskListPendingAck {
+		statusFilter = "in_progress"
+	}
 
 	tasks, err := d.store.ListTasks(ctx, statusFilter)
 	if err != nil {
@@ -140,6 +149,13 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 			}
 		}
 		tasks = ready
+	}
+	if taskListPendingAck {
+		msgs, msgErr := d.store.ListMessagesSince(ctx, time.Now().UTC().AddDate(0, 0, -30))
+		if msgErr != nil {
+			return fmt.Errorf("list messages for pending ack: %w", msgErr)
+		}
+		tasks = filterPendingAckTasks(tasks, msgs)
 	}
 
 	return printJSON(tasks, func() {
@@ -180,6 +196,39 @@ func renderTaskListCompact(w io.Writer, tasks []store.Task) {
 	for _, t := range tasks {
 		fmt.Fprintln(w, compactTaskLine(t))
 	}
+}
+
+func filterPendingAckTasks(tasks []store.Task, msgs []store.Message) []store.Task {
+	acked := map[string]bool{}
+	resolved := map[string]bool{}
+	for _, m := range msgs {
+		id := strings.ToUpper(strings.TrimSpace(m.TaskID))
+		content := strings.ToUpper(m.Content)
+		if id == "" {
+			for _, t := range tasks {
+				if strings.Contains(content, t.ID) {
+					id = t.ID
+					break
+				}
+			}
+		}
+		if id == "" {
+			continue
+		}
+		if strings.Contains(content, id+" ACK:") {
+			acked[id] = true
+		}
+		if strings.Contains(content, id+" ACK-OK") || strings.Contains(content, id+" ACK-FIX") {
+			resolved[id] = true
+		}
+	}
+	out := make([]store.Task, 0, len(tasks))
+	for _, t := range tasks {
+		if acked[t.ID] && !resolved[t.ID] {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func runTaskGet(cmd *cobra.Command, args []string) error {

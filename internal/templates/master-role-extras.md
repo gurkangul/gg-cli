@@ -66,6 +66,10 @@ the master owns review, architectural integrity, and spec compliance.
     where `bugStatus // reserved for future extension` quietly dropped the BUG-* half of
     AC-1). Defer is allowed only when explicitly approved via `gg record` with a tracked
     follow-up task linked.
+12. **ACK turnaround** — when a worker sends `TASK-NNN ACK: AC-1 = ...`, master replies
+    within 5 minutes with `ACK-OK` or `ACK-FIX <correction>`. If master misses the window,
+    the worker may proceed with their paraphrase, but the commit body must include
+    `ACK-IMPLICIT` and receives stricter review.
 
 ### Tools the master uses (not exhaustive)
 

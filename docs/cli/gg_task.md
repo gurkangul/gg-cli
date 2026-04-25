@@ -17,6 +17,7 @@ Manage tasks
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
+* [gg task ack](gg_task_ack.md)	 - Record a worker acceptance-criteria paraphrase before coding
 * [gg task block](gg_task_block.md)	 - Mark a task blocked — state what specific dependency is missing
 * [gg task cancel](gg_task_cancel.md)	 - Permanently remove an accidental or probe task
 * [gg task create](gg_task_create.md)	 - Create a task to track a discrete unit of work
@@ -28,4 +29,3 @@ Manage tasks
 * [gg task ready-for-live](gg_task_ready-for-live.md)	 - Mark a task as ready for live verification — transitions in_progress → ready_for_live
 * [gg task reindex](gg_task_reindex.md)	 - Replay Task nodes into Memgraph from the Qdrant task store
 * [gg task review](gg_task_review.md)	 - Set review status on a task (approve or reject)
-

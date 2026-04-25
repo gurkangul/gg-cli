@@ -147,14 +147,16 @@ func buildWorkerStartup(taskID string) string {
 // reads it as a user message, not as a shell command.
 func buildWorkerPrompt(taskID string) string {
 	return fmt.Sprintf(
-		"You are working on %s. Run 'gg task get %s' to load the full spec, then implement it and commit.\n\n"+
+		"You are working on %s. First run 'gg task get %s --json' to load the full spec. Before writing code, paraphrase every acceptance criterion in your own words and send the ACK:\n"+
+			"  gg task ack %s \"AC-1: <my paraphrase>; AC-2: <my paraphrase>; AC-N: <my paraphrase>\" --from developer\n"+
+			"Then wait for master to reply ACK-OK or ACK-FIX. If no reply arrives within 5 minutes, you may proceed, but your commit body must include ACK-IMPLICIT and expect higher review risk.\n\n"+
 			"Impact analysis — before editing any file: extract file paths the spec explicitly mentions; "+
 			"for each, run `gg impact --compact PATH` to see graph dependents (callers, exported symbols, historical bugs). "+
 			"Note any dependents whose tests must still pass after your change. "+
 			"Cite this in your commit body under an `Impact-Reviewed:` trailer line "+
 			"(e.g. `Impact-Reviewed: cmd/spawn_worker.go — 2 callers, tests green`).\n\n"+
 			"Signal completion via: gg tell claude-code \"%s commit <sha>, tests green\" --from developer",
-		taskID, taskID, taskID,
+		taskID, taskID, taskID, taskID,
 	)
 }
 

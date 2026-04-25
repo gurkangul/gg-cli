@@ -199,6 +199,21 @@ func TestSpawnWorker_PromptContainsImpactStep(t *testing.T) {
 	}
 }
 
+func TestSpawnWorker_PromptContainsAckProtocol(t *testing.T) {
+	prompt := buildWorkerPrompt("TASK-042")
+	for _, want := range []string{
+		"gg task get TASK-042 --json",
+		"gg task ack TASK-042",
+		"ACK-OK",
+		"ACK-FIX",
+		"ACK-IMPLICIT",
+	} {
+		if !spawnContains(prompt, want) {
+			t.Errorf("buildWorkerPrompt: missing %q\ngot: %s", want, prompt)
+		}
+	}
+}
+
 // spawnContains is a simple substring helper for spawn tests.
 func spawnContains(s, sub string) bool {
 	if len(sub) == 0 {
