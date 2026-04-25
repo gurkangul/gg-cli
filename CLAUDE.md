@@ -89,6 +89,17 @@ the master owns review, architectural integrity, and spec compliance.
 - Escalate quality decisions back to the user unless truly blocked (ambiguous spec, missing authorization)
 - Bypass the worker's own bypass audit path — all bypass moves are logged
 
+### Bypass discipline (master)
+
+Silent bypass is forbidden. When master must bypass `pre-task-done`, `pre-task-done-ready-for-live`,
+or `agent-lifecycle-done`, it MUST first write a `gg record` tagged `bypass-rationale,TASK-N`
+explaining the reason (e.g. "AC attestation N/A — analytical task with output as records, not code";
+"agent-lifecycle gate misfires against master role"; "Catch-22: workers cannot fix the bug that
+prevents worker bootstrap"). The forward-looking gate that mechanically enforces this is tracked
+under TASK-317 (master bypass enforcement). Until that gate ships, the discipline is
+honor-system + audit; the 2026-04-24 cluster (18 silent bypasses across TASK-281/282/283/284/288/289)
+is the cautionary example that motivated the rule (see `gg search bypass-audit-2026-04-24`).
+
 ### Escalation ladder
 
 1. Worker produces deviation → master sends corrective `gg tell` with specific fix pattern
