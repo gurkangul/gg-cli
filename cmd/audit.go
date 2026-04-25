@@ -71,7 +71,8 @@ func init() {
 
 	auditGapsCmd.Flags().StringVar(&auditGapsSince, "since", "7d", "look back window (e.g. 7d, 14d, 30d)")
 	auditGapsCmd.Flags().BoolVar(&auditGapsCompact, "compact", false, "one line per gap — no coverage details")
-	auditGapsCmd.Flags().BoolVar(&auditGapsIncludeAll, "include-all", false, "include auto-gen and test dirs (docs/cli, testdata, _bmad, seed)")
+	auditGapsCmd.Flags().BoolVar(&auditGapsIncludeAll, "include-all", false, "include generated, test fixture, and binary/coverage noise")
+	auditGapsCmd.Flags().BoolVar(&auditGapsIncludeAll, "include-noise", false, "alias for --include-all")
 
 	auditHealthCmd.Flags().IntVar(&auditHealthDays, "days", 7, "look-back window in days")
 

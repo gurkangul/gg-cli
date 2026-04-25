@@ -19,12 +19,21 @@ import (
 // by default because they contain auto-generated or test-only files that
 // cannot meaningfully be referenced in gg tasks/decisions.
 var gapsDefaultSkipPrefixes = []string{
-	"docs/cli/",    // auto-generated CLI reference docs
-	"testdata/",    // regression test fixtures
-	"_bmad",        // BMAD agent planning artifacts
-	"seed/",        // demo seed data
-	".gsd/",        // GSD planning workspace
-	".claude/",     // Claude config artifacts
+	"docs/cli/",          // auto-generated CLI reference docs
+	"cmd/testdata/",      // command golden fixtures
+	"testdata/",          // regression test fixtures
+	"dogfood-baselines/", // dogfood snapshots, not source edits
+	"_bmad",              // BMAD agent planning artifacts
+	"seed/",              // demo seed data
+	".gsd/",              // GSD planning workspace
+	".claude/",           // Claude config artifacts
+}
+
+var gapsDefaultSkipSuffixes = []string{
+	".golden",
+	".expected.json",
+	".test",
+	".out",
 }
 
 var auditGapsCmd = &cobra.Command{
@@ -129,22 +138,30 @@ func fileIsCovered(file string, corpus []string) bool {
 	return false
 }
 
-// filterGapsFiles removes files whose path starts with any of the given prefixes.
-func filterGapsFiles(files, skipPrefixes []string) []string {
+// filterGapsFiles removes generated, fixture, binary, and coverage artifacts
+// that make the audit noisy but do not represent missing project rationale.
+func filterGapsFiles(files, skipPrefixes, skipSuffixes []string) []string {
 	out := files[:0:len(files)]
 	for _, f := range files {
-		skip := false
-		for _, p := range skipPrefixes {
-			if strings.HasPrefix(f, p) {
-				skip = true
-				break
-			}
-		}
-		if !skip {
+		if !gapsFileIsNoise(f, skipPrefixes, skipSuffixes) {
 			out = append(out, f)
 		}
 	}
 	return out
+}
+
+func gapsFileIsNoise(file string, skipPrefixes, skipSuffixes []string) bool {
+	for _, p := range skipPrefixes {
+		if strings.HasPrefix(file, p) {
+			return true
+		}
+	}
+	for _, s := range skipSuffixes {
+		if strings.HasSuffix(file, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func runAuditGaps(cmd *cobra.Command, _ []string) error {
@@ -168,7 +185,7 @@ func runAuditGaps(cmd *cobra.Command, _ []string) error {
 	}
 
 	if !auditGapsIncludeAll {
-		files = filterGapsFiles(files, gapsDefaultSkipPrefixes)
+		files = filterGapsFiles(files, gapsDefaultSkipPrefixes, gapsDefaultSkipSuffixes)
 	}
 
 	d, err := loadDepsReadOnly(false)

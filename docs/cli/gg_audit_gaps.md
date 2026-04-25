@@ -18,10 +18,11 @@ gg audit gaps [flags]
 ### Options
 
 ```
-      --compact        one line per gap — no coverage details
-  -h, --help           help for gaps
-      --include-all    include auto-gen and test dirs (docs/cli, testdata, _bmad, seed)
-      --since string   look back window (e.g. 7d, 14d, 30d) (default "7d")
+      --compact         one line per gap — no coverage details
+  -h, --help            help for gaps
+      --include-all     include generated, test fixture, and binary/coverage noise
+      --include-noise   alias for --include-all
+      --since string    look back window (e.g. 7d, 14d, 30d) (default "7d")
 ```
 
 ### Options inherited from parent commands

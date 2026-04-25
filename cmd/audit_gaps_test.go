@@ -38,16 +38,22 @@ func TestParseSinceFlag(t *testing.T) {
 }
 
 func TestFilterGapsFiles(t *testing.T) {
-	prefixes := []string{"docs/cli/", "testdata/", "_bmad"}
+	prefixes := []string{"docs/cli/", "cmd/testdata/", "testdata/", "dogfood-baselines/", "_bmad"}
+	suffixes := []string{".golden", ".expected.json", ".test", ".out"}
 	files := []string{
 		"cmd/audit.go",
 		"docs/cli/gg.md",
+		"cmd/testdata/compact/search_compact.golden",
+		"cmd/testdata/ac_parser/happy_simple_ac_lines.expected.json",
 		"testdata/regression/bug-001.sh",
+		"dogfood-baselines/20260420-gg-cli.txt",
+		"telemetry.test",
+		"terminal_cov.out",
 		"internal/store/tasks.go",
 		"_bmad/artifacts.md",
 		"docs/architecture.md", // docs/ but not docs/cli/ — should pass through
 	}
-	got := filterGapsFiles(files, prefixes)
+	got := filterGapsFiles(files, prefixes, suffixes)
 	want := []string{"cmd/audit.go", "internal/store/tasks.go", "docs/architecture.md"}
 	if len(got) != len(want) {
 		t.Fatalf("filterGapsFiles: got %v, want %v", got, want)
