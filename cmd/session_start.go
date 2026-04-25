@@ -87,22 +87,7 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// and agent-specific blocks (codex/bmad/gsd) when their detection signal is
 	// present. Best-effort — failures are reported but never fatal.
 	if br.ProjectRoot != "" {
-		syncStart := time.Now()
-		sr := agenthooks.SyncManagedBlocks(br.ProjectRoot)
-		syncElapsed := time.Since(syncStart)
-		if sr.Repaired || len(sr.Errors) > 0 {
-			fmt.Fprintln(os.Stderr, "─── MANAGED BLOCK RESYNC ───")
-			for _, l := range sr.Lines {
-				fmt.Fprintln(os.Stderr, l)
-			}
-			for _, e := range sr.Errors {
-				fmt.Fprintf(os.Stderr, "  ✗ resync error: %v\n", e)
-			}
-			fmt.Fprintln(os.Stderr)
-		}
-		if sessionStartBench {
-			fmt.Fprintf(os.Stderr, "bench: managed-block resync %v\n", syncElapsed.Round(time.Millisecond))
-		}
+		emitResync(br.ProjectRoot, sessionStartBench, os.Stderr)
 	}
 
 	// Version-delta notice: compare last_seen_cli_version to current version.
@@ -124,6 +109,29 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(os.Stderr, "warning: gg status failed: %v\n", err)
 	}
 	return nil
+}
+
+// emitResync runs SyncManagedBlocks against projectRoot and writes any repair
+// notices or errors to w. When bench is true, appends a timing line. Extracted
+// so tests can inject an arbitrary root + writer without going through the full
+// cobra command stack.
+func emitResync(projectRoot string, bench bool, w io.Writer) {
+	syncStart := time.Now()
+	sr := agenthooks.SyncManagedBlocks(projectRoot)
+	syncElapsed := time.Since(syncStart)
+	if sr.Repaired || len(sr.Errors) > 0 {
+		fmt.Fprintln(w, "─── MANAGED BLOCK RESYNC ───")
+		for _, l := range sr.Lines {
+			fmt.Fprintln(w, l)
+		}
+		for _, e := range sr.Errors {
+			fmt.Fprintf(w, "  ✗ resync error: %v\n", e)
+		}
+		fmt.Fprintln(w)
+	}
+	if bench {
+		fmt.Fprintf(w, "bench: managed-block resync %v\n", syncElapsed.Round(time.Millisecond))
+	}
 }
 
 // emitVersionDelta surfaces a version upgrade notice when the CLI has been
