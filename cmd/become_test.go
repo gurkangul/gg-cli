@@ -121,3 +121,53 @@ func TestBecome_NoArg(t *testing.T) {
 		t.Errorf("AC-4: expected 'master' in help output, got:\n%s", combined)
 	}
 }
+
+// TestBecome_NoArg_WithDeveloperAgent verifies that when developer.agent is set
+// in config, `gg become` (no subcommand) prints the role hint before help.
+func TestBecome_NoArg_WithDeveloperAgent(t *testing.T) {
+	ggDir := setupGGDir(t)
+	cfgWithAgent := ggConfig + "developer:\n  agent: gsd-sonnet-4.6\n"
+	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfgWithAgent), 0o644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+
+	stdout, stderr, err := execCmd(t, "become")
+	if err != nil {
+		t.Fatalf("gg become exited non-zero: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(combined, "gsd-sonnet-4.6") {
+		t.Errorf("expected role hint 'gsd-sonnet-4.6' in output, got:\n%s", combined)
+	}
+}
+
+// TestBecomeMaster_HelpMentionsOptIn verifies AC-5(a): the Long description of
+// `gg become master` explicitly mentions that master discipline is opt-in.
+func TestBecomeMaster_HelpMentionsOptIn(t *testing.T) {
+	stdout, stderr, err := execCmd(t, "become", "master", "--help")
+	if err != nil {
+		t.Fatalf("AC-5: gg become master --help exited non-zero: %v", err)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(strings.ToLower(combined), "opt-in") {
+		t.Errorf("AC-5: expected 'opt-in' in help text, got:\n%s", combined)
+	}
+	if !strings.Contains(combined, "master discipline") {
+		t.Errorf("AC-5: expected 'master discipline' in help text, got:\n%s", combined)
+	}
+}
+
+// TestBecome_NoArg_NoDeveloperAgent verifies that when developer.agent is absent
+// or "unconfigured", `gg become` prints the "no role declared" fallback message.
+func TestBecome_NoArg_NoDeveloperAgent(t *testing.T) {
+	setupGGDir(t)
+
+	stdout, stderr, err := execCmd(t, "become")
+	if err != nil {
+		t.Fatalf("gg become exited non-zero: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(combined, "no role declared") {
+		t.Errorf("expected 'no role declared' in output, got:\n%s", combined)
+	}
+}

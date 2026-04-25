@@ -19,15 +19,15 @@ var becomeCmd = &cobra.Command{
 	Use:   "become",
 	Short: "Adopt a project role (e.g. become master)",
 	Long:  `Adopt a coordination role in the current project.`,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		return cmd.Help()
-	},
+	RunE:  runBecomeNoArg,
 }
 
 var becomeMasterCmd = &cobra.Command{
 	Use:   "master",
 	Short: "Install master-role-extras block and record liveness heartbeat",
-	Long: `Opt this session into the master role for the current project.
+	Long: `Opt-in: master discipline (review gate, worker lifecycle, bypass audit) applies only after this command runs.
+
+Opt this session into the master role for the current project.
 
 Two things happen:
 
@@ -52,6 +52,19 @@ func init() {
 	becomeMasterCmd.Flags().BoolVar(&becomeForceReset, "force-reset", false, "overwrite DRIFTED (malformed) master-role markers")
 	becomeCmd.AddCommand(becomeMasterCmd)
 	rootCmd.AddCommand(becomeCmd)
+}
+
+func runBecomeNoArg(cmd *cobra.Command, _ []string) error {
+	out := cmd.OutOrStdout()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(out, "no role declared (run gg become master to opt in)")
+	} else if cfg.Developer.Agent != "" && cfg.Developer.Agent != "unconfigured" {
+		fmt.Fprintf(out, "Current role hint: %s\n", cfg.Developer.Agent)
+	} else {
+		fmt.Fprintln(out, "no role declared (run gg become master to opt in)")
+	}
+	return cmd.Help()
 }
 
 func runBecomeMaster(_ *cobra.Command, _ []string) error {
