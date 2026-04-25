@@ -9,8 +9,11 @@ import (
 //go:embed agent-contract.md
 var AgentContract string
 
-//go:embed master-role.md
-var MasterRole string
+//go:embed dev-routing.md
+var DevRouting string
+
+//go:embed master-role-extras.md
+var MasterRoleExtras string
 
 //go:embed docker-compose.yaml
 var DockerCompose string

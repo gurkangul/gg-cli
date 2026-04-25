@@ -10,24 +10,24 @@ import (
 )
 
 const (
-	MasterRoleBlockBegin = "<!-- gg:master-role:begin v2 -->"
+	MasterRoleBlockBegin = "<!-- gg:master-role:begin v3 -->"
 	MasterRoleBlockEnd   = "<!-- gg:master-role:end -->"
 )
 
-// MasterRoleBody returns the raw master-role template body without markers.
-func MasterRoleBody() string { return templates.MasterRole }
+// MasterRoleBody returns the raw master-role-extras template body without markers.
+func MasterRoleBody() string { return templates.MasterRoleExtras }
 
 // MasterRoleBlock returns the full managed master-role block including begin/end
 // markers. The result is deterministic: byte-for-byte identical across calls.
 func MasterRoleBlock() string {
-	return MasterRoleBlockBegin + "\n" + templates.MasterRole + MasterRoleBlockEnd + "\n"
+	return MasterRoleBlockBegin + "\n" + templates.MasterRoleExtras + MasterRoleBlockEnd + "\n"
 }
 
-// MasterRoleVersion returns the hex-encoded SHA256 of the master-role body.
-// Changes to master-role.md yield a different version string — used by
+// MasterRoleVersion returns the hex-encoded SHA256 of the master-role-extras body.
+// Changes to master-role-extras.md yield a different version string — used by
 // gg doctor --check-master-role to surface drift.
 func MasterRoleVersion() string {
-	h := sha256.Sum256([]byte(templates.MasterRole))
+	h := sha256.Sum256([]byte(templates.MasterRoleExtras))
 	return fmt.Sprintf("%x", h)
 }
 
@@ -98,7 +98,7 @@ func CheckMasterRole(projectRoot string) MasterRoleCheckResult {
 		r.FoundVersion = fmt.Sprintf("%x", h)
 		if r.FoundVersion == want {
 			r.Status = MasterRoleOK
-		} else if isSuperset(body, templates.MasterRole) {
+		} else if isSuperset(body, templates.MasterRoleExtras) {
 			r.Status = MasterRoleEXTENDED
 		} else {
 			r.Status = MasterRoleSTALE

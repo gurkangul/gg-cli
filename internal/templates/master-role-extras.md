@@ -151,3 +151,29 @@ answer. The user's "devam" means "trust the recorded state, continue the loop."
 Session continuity works because the unit of truth is gg's append-only store, not in-memory context:
 decisions, task states, commits, heartbeat, pane registry, and CLAUDE.md policy all survive a session
 boundary. A new master can pick up where the previous one left off in under 30 seconds.
+
+### Bypass discipline (master)
+
+Silent bypass is **mechanically blocked** as of TASK-317. `GG_ENFORCEMENT=off` alone no longer
+bypasses gates — it also requires `GG_BYPASS_RATIONALE` to be set. The CLI rejects the bypass with
+`ExitVerifyFailed` when the env var is missing or references the wrong task.
+
+**Correct bypass pattern (ergonomic):**
+```
+GG_ENFORCEMENT=off \
+GG_BYPASS_RATIONALE="TASK-NNN: <why this bypass is necessary>" \
+gg task done TASK-NNN "summary"
+```
+
+**Integrity-grade bypass pattern (preferred — provides queryable FK into the brain):**
+```
+GG_ENFORCEMENT=off \
+GG_BYPASS_RATIONALE_RECORD=<record-uuid> \
+gg task done TASK-NNN "summary"
+```
+
+Either env var satisfies the gate. `GG_BYPASS_RATIONALE_RECORD` stores a real gg record UUID in
+`BypassEntry.RationaleRecordID`, making the bypass permanently searchable via `gg search`.
+When only `GG_BYPASS_RATIONALE` is set, the CLI **auto-promotes** the rationale text to a brain
+record post-hoc and links its UUID into the bypass entry (TASK-318). No bypass leaves the brain
+without a queryable artifact.

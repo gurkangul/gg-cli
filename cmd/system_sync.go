@@ -13,16 +13,17 @@ import (
 
 var systemSyncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Propagate latest gg artifacts (contract + master-role + hooks) to every registered project",
+	Short: "Propagate latest gg artifacts (contract + master-role + dev-routing + hooks) to every registered project",
 	Long: `Iterates ~/.gg/projects.json and runs doctor --fix in each project so
-contract and master-role updates baked into a new gg binary reach every
-host-local project without the user cd'ing to each repo.
+contract, master-role, and dev-routing updates baked into a new gg binary reach
+every host-local project without the user cd'ing to each repo.
 
 Stages per project:
   1. gg doctor --check-contract --fix      (contract block drift repair)
   2. gg doctor --check-master-role --fix   (master-role block drift repair)
-  3. gg doctor --install-agent-hooks       (idempotent agent-hook refresh)
-  4. gg doctor --install-task-hooks        (idempotent task-hook refresh)
+  3. gg doctor --check-dev-routing --fix   (dev-routing block drift repair)
+  4. gg doctor --install-agent-hooks       (idempotent agent-hook refresh)
+  5. gg doctor --install-task-hooks        (idempotent task-hook refresh)
 
 Projects whose root directory no longer exists are skipped with a
 warning — prune them with 'gg system register --prune' after verifying.`,
@@ -30,11 +31,13 @@ warning — prune them with 'gg system register --prune' after verifying.`,
 }
 
 var (
-	systemSyncDryRun              bool
-	systemSyncContractOnly        bool
-	systemSyncSkipMasterRole      bool
-	systemSyncContractForceReset  bool
+	systemSyncDryRun               bool
+	systemSyncContractOnly         bool
+	systemSyncSkipMasterRole       bool
+	systemSyncSkipDevRouting       bool
+	systemSyncContractForceReset   bool
 	systemSyncMasterRoleForceReset bool
+	systemSyncDevRoutingForceReset bool
 )
 
 func init() {
@@ -44,10 +47,14 @@ func init() {
 		"skip the agent-hook refresh stage (faster when only the contract changed)")
 	systemSyncCmd.Flags().BoolVar(&systemSyncSkipMasterRole, "skip-master-role", false,
 		"skip the master-role block sync stage")
+	systemSyncCmd.Flags().BoolVar(&systemSyncSkipDevRouting, "skip-dev-routing", false,
+		"skip the dev-routing block sync stage")
 	systemSyncCmd.Flags().BoolVar(&systemSyncContractForceReset, "contract-force-reset", false,
 		"pass --force-reset to gg doctor --check-contract --fix (overwrites manually-edited contract blocks)")
 	systemSyncCmd.Flags().BoolVar(&systemSyncMasterRoleForceReset, "master-role-force-reset", false,
 		"pass --force-reset to gg doctor --check-master-role --fix (overwrites manually-edited master-role blocks)")
+	systemSyncCmd.Flags().BoolVar(&systemSyncDevRoutingForceReset, "dev-routing-force-reset", false,
+		"pass --force-reset to gg doctor --check-dev-routing --fix (overwrites manually-edited dev-routing blocks)")
 	systemCmd.AddCommand(systemSyncCmd)
 }
 
@@ -94,6 +101,13 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 				}
 				fmt.Printf("  (dry-run) would run: %s\n", masterRoleCmd)
 			}
+			if !systemSyncSkipDevRouting {
+				devRoutingCmd := "gg doctor --check-dev-routing --fix"
+				if systemSyncDevRoutingForceReset {
+					devRoutingCmd += " --force-reset"
+				}
+				fmt.Printf("  (dry-run) would run: %s\n", devRoutingCmd)
+			}
 			if !systemSyncContractOnly {
 				fmt.Println("  (dry-run) would run: gg doctor --install-agent-hooks")
 				fmt.Println("  (dry-run) would run: gg doctor --install-task-hooks")
@@ -118,6 +132,17 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 			}
 			if runErr := runGGIn(self, p.Root, masterRoleArgs...); runErr != nil {
 				fmt.Printf("  ✗ master-role sync failed: %v\n", runErr)
+				failed++
+				continue
+			}
+		}
+		if !systemSyncSkipDevRouting {
+			devRoutingArgs := []string{"doctor", "--check-dev-routing", "--fix"}
+			if systemSyncDevRoutingForceReset {
+				devRoutingArgs = append(devRoutingArgs, "--force-reset")
+			}
+			if runErr := runGGIn(self, p.Root, devRoutingArgs...); runErr != nil {
+				fmt.Printf("  ✗ dev-routing sync failed: %v\n", runErr)
 				failed++
 				continue
 			}

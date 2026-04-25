@@ -99,6 +99,17 @@ func runSystemSyncCapture(t *testing.T) string {
 	return buf.String()
 }
 
+// resetSyncFlags resets all system-sync flag vars to their zero values.
+func resetSyncFlags() {
+	systemSyncDryRun = false
+	systemSyncContractForceReset = false
+	systemSyncMasterRoleForceReset = false
+	systemSyncDevRoutingForceReset = false
+	systemSyncContractOnly = false
+	systemSyncSkipMasterRole = false
+	systemSyncSkipDevRouting = false
+}
+
 // TestSystemSync_DryRun_DefaultNoForceReset verifies that without any
 // force-reset flags the dry-run output does NOT include --force-reset.
 func TestSystemSync_DryRun_DefaultNoForceReset(t *testing.T) {
@@ -106,17 +117,7 @@ func TestSystemSync_DryRun_DefaultNoForceReset(t *testing.T) {
 
 	// Set flag vars directly (reset in deferred cleanup).
 	systemSyncDryRun = true
-	systemSyncContractForceReset = false
-	systemSyncMasterRoleForceReset = false
-	systemSyncContractOnly = false
-	systemSyncSkipMasterRole = false
-	t.Cleanup(func() {
-		systemSyncDryRun = false
-		systemSyncContractForceReset = false
-		systemSyncMasterRoleForceReset = false
-		systemSyncContractOnly = false
-		systemSyncSkipMasterRole = false
-	})
+	t.Cleanup(resetSyncFlags)
 
 	out := runSystemSyncCapture(t)
 
@@ -129,6 +130,9 @@ func TestSystemSync_DryRun_DefaultNoForceReset(t *testing.T) {
 	if !strings.Contains(out, "--check-master-role") {
 		t.Errorf("expected --check-master-role in dry-run output, got:\n%s", out)
 	}
+	if !strings.Contains(out, "--check-dev-routing") {
+		t.Errorf("expected --check-dev-routing in dry-run output, got:\n%s", out)
+	}
 }
 
 // TestSystemSync_DryRun_ContractForceReset verifies --contract-force-reset
@@ -138,16 +142,7 @@ func TestSystemSync_DryRun_ContractForceReset(t *testing.T) {
 
 	systemSyncDryRun = true
 	systemSyncContractForceReset = true
-	systemSyncMasterRoleForceReset = false
-	systemSyncContractOnly = false
-	systemSyncSkipMasterRole = false
-	t.Cleanup(func() {
-		systemSyncDryRun = false
-		systemSyncContractForceReset = false
-		systemSyncMasterRoleForceReset = false
-		systemSyncContractOnly = false
-		systemSyncSkipMasterRole = false
-	})
+	t.Cleanup(resetSyncFlags)
 
 	out := runSystemSyncCapture(t)
 
@@ -158,6 +153,10 @@ func TestSystemSync_DryRun_ContractForceReset(t *testing.T) {
 	if strings.Contains(out, "--check-master-role --fix --force-reset") {
 		t.Errorf("master-role stage should not include --force-reset, got:\n%s", out)
 	}
+	// Dev-routing must NOT carry --force-reset.
+	if strings.Contains(out, "--check-dev-routing --fix --force-reset") {
+		t.Errorf("dev-routing stage should not include --force-reset, got:\n%s", out)
+	}
 }
 
 // TestSystemSync_DryRun_MasterRoleForceReset verifies --master-role-force-reset
@@ -166,17 +165,8 @@ func TestSystemSync_DryRun_MasterRoleForceReset(t *testing.T) {
 	systemSyncFixture(t)
 
 	systemSyncDryRun = true
-	systemSyncContractForceReset = false
 	systemSyncMasterRoleForceReset = true
-	systemSyncContractOnly = false
-	systemSyncSkipMasterRole = false
-	t.Cleanup(func() {
-		systemSyncDryRun = false
-		systemSyncContractForceReset = false
-		systemSyncMasterRoleForceReset = false
-		systemSyncContractOnly = false
-		systemSyncSkipMasterRole = false
-	})
+	t.Cleanup(resetSyncFlags)
 
 	out := runSystemSyncCapture(t)
 
@@ -186,6 +176,10 @@ func TestSystemSync_DryRun_MasterRoleForceReset(t *testing.T) {
 	// Contract must NOT carry --force-reset.
 	if strings.Contains(out, "--check-contract --fix --force-reset") {
 		t.Errorf("contract stage should not include --force-reset, got:\n%s", out)
+	}
+	// Dev-routing must NOT carry --force-reset.
+	if strings.Contains(out, "--check-dev-routing --fix --force-reset") {
+		t.Errorf("dev-routing stage should not include --force-reset, got:\n%s", out)
 	}
 }
 
@@ -197,15 +191,7 @@ func TestSystemSync_DryRun_BothForceReset(t *testing.T) {
 	systemSyncDryRun = true
 	systemSyncContractForceReset = true
 	systemSyncMasterRoleForceReset = true
-	systemSyncContractOnly = false
-	systemSyncSkipMasterRole = false
-	t.Cleanup(func() {
-		systemSyncDryRun = false
-		systemSyncContractForceReset = false
-		systemSyncMasterRoleForceReset = false
-		systemSyncContractOnly = false
-		systemSyncSkipMasterRole = false
-	})
+	t.Cleanup(resetSyncFlags)
 
 	out := runSystemSyncCapture(t)
 
@@ -217,6 +203,48 @@ func TestSystemSync_DryRun_BothForceReset(t *testing.T) {
 	}
 }
 
+// TestSystemSync_DryRun_DevRoutingForceReset verifies --dev-routing-force-reset
+// appends --force-reset to the dev-routing doctor invocation only.
+func TestSystemSync_DryRun_DevRoutingForceReset(t *testing.T) {
+	systemSyncFixture(t)
+
+	systemSyncDryRun = true
+	systemSyncDevRoutingForceReset = true
+	t.Cleanup(resetSyncFlags)
+
+	out := runSystemSyncCapture(t)
+
+	if !strings.Contains(out, "--check-dev-routing --fix --force-reset") {
+		t.Errorf("expected dev-routing stage to include --force-reset, got:\n%s", out)
+	}
+	// Contract and master-role must NOT carry --force-reset.
+	if strings.Contains(out, "--check-contract --fix --force-reset") {
+		t.Errorf("contract stage should not include --force-reset, got:\n%s", out)
+	}
+	if strings.Contains(out, "--check-master-role --fix --force-reset") {
+		t.Errorf("master-role stage should not include --force-reset, got:\n%s", out)
+	}
+}
+
+// TestSystemSync_DryRun_SkipDevRouting verifies --skip-dev-routing omits the
+// dev-routing stage from the dry-run output.
+func TestSystemSync_DryRun_SkipDevRouting(t *testing.T) {
+	systemSyncFixture(t)
+
+	systemSyncDryRun = true
+	systemSyncSkipDevRouting = true
+	t.Cleanup(resetSyncFlags)
+
+	out := runSystemSyncCapture(t)
+
+	if strings.Contains(out, "--check-dev-routing") {
+		t.Errorf("expected --check-dev-routing to be absent when skipped, got:\n%s", out)
+	}
+	if !strings.Contains(out, "--check-master-role") {
+		t.Errorf("expected --check-master-role to still appear, got:\n%s", out)
+	}
+}
+
 // TestSystemSync_DryRun_TwoProjects_BothGetForceReset is the integration
 // fixture simulating a v1→v2 upgrade across 2 projects.  Both projects must
 // show the force-reset propagation in their dry-run output.
@@ -224,17 +252,8 @@ func TestSystemSync_DryRun_TwoProjects_BothGetForceReset(t *testing.T) {
 	proj1Root, proj2Root := systemSyncFixture(t)
 
 	systemSyncDryRun = true
-	systemSyncContractForceReset = false
 	systemSyncMasterRoleForceReset = true
-	systemSyncContractOnly = false
-	systemSyncSkipMasterRole = false
-	t.Cleanup(func() {
-		systemSyncDryRun = false
-		systemSyncContractForceReset = false
-		systemSyncMasterRoleForceReset = false
-		systemSyncContractOnly = false
-		systemSyncSkipMasterRole = false
-	})
+	t.Cleanup(resetSyncFlags)
 
 	out := runSystemSyncCapture(t)
 

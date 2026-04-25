@@ -49,6 +49,46 @@ func runDoctorCheckMasterRole(fix, forceReset bool) error {
 	return nil
 }
 
+// runDoctorCheckDevRouting checks the managed dev-routing block in CLAUDE.md
+// and reports drift. With fix=true it repairs STALE and MISSING entries.
+// DRIFTED entries require forceReset=true to overwrite.
+func runDoctorCheckDevRouting(fix, forceReset bool) error {
+	projectRoot, err := config.FindRoot()
+	if err != nil {
+		return err
+	}
+
+	if fix {
+		lines, fixErr := agenthooks.FixDevRouting(projectRoot, forceReset)
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		if fixErr != nil {
+			return fixErr
+		}
+	}
+
+	r := agenthooks.CheckDevRouting(projectRoot)
+
+	fmt.Printf("Dev-routing check  (version %s)\n", agenthooks.DevRoutingVersion()[:12])
+	fmt.Println(strings.Repeat("─", 50))
+
+	marker := "✓"
+	if r.Status != agenthooks.DevRoutingOK {
+		marker = "✗"
+	}
+	shortPath := r.Path
+	if rel, relErr := filepath.Rel(projectRoot, r.Path); relErr == nil {
+		shortPath = rel
+	}
+	fmt.Printf("  %s  %-8s  %s\n", marker, r.Status, shortPath)
+
+	if r.Status != agenthooks.DevRoutingOK {
+		return fmt.Errorf("dev-routing drift detected — run `gg doctor --check-dev-routing --fix` to repair")
+	}
+	return nil
+}
+
 // runDoctorCheckContract checks the managed contract block in each agent's
 // entry-point file and reports drift. With fix=true it repairs STALE and MISSING
 // entries. DRIFTED entries require forceReset=true to overwrite.
