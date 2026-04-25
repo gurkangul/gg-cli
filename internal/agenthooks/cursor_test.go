@@ -58,6 +58,18 @@ func TestCursor_Install_IdempotentWhenContentMatches(t *testing.T) {
 	}
 }
 
+// TestCursor_RuleContent_ContainsAuthorityPreamble verifies AC-4: the Cursor
+// rule file declares gg-cli is canonical so Cursor agents defer to gg.
+func TestCursor_RuleContent_ContainsAuthorityPreamble(t *testing.T) {
+	content := cursorRuleContent()
+	if !strings.Contains(content, "AUTHORITY:") {
+		t.Error("cursorRuleContent missing AUTHORITY: preamble (AC-4)")
+	}
+	if !strings.Contains(content, "gg-cli is canonical") {
+		t.Error("cursorRuleContent AUTHORITY preamble must state 'gg-cli is canonical'")
+	}
+}
+
 func TestCursor_Install_UpdatesDriftedContent(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".cursor", "rules")

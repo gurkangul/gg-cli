@@ -79,6 +79,19 @@ func TestBMAD_Install_Idempotent(t *testing.T) {
 	}
 }
 
+// TestBMAD_ManagedBody_ContainsAuthorityPreamble verifies AC-3: the BMAD
+// managed block body declares the gg-cli authority order so that the
+// orchestrating agent sees gg wins over BMAD party rules.
+func TestBMAD_ManagedBody_ContainsAuthorityPreamble(t *testing.T) {
+	body := bmadManagedBody()
+	if !strings.Contains(body, "AUTHORITY:") {
+		t.Error("bmadManagedBody missing AUTHORITY: preamble (AC-3)")
+	}
+	if !strings.Contains(body, "gg-cli wins") {
+		t.Error("bmadManagedBody AUTHORITY preamble must state 'gg-cli wins'")
+	}
+}
+
 func TestBMAD_Install_DryRun(t *testing.T) {
 	root := t.TempDir()
 	agentsPath := filepath.Join(root, "AGENTS.md")

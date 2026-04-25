@@ -108,3 +108,15 @@ func TestGSD_Install_DryRun(t *testing.T) {
 		t.Error("dry-run should not have created KNOWLEDGE.md")
 	}
 }
+
+// TestGSD_BridgeBlock_ContainsAuthorityPreamble verifies AC-4: the GSD bridge
+// block declares gg-cli is canonical so GSD agents know gg wins on conflicts.
+func TestGSD_BridgeBlock_ContainsAuthorityPreamble(t *testing.T) {
+	body := gsdBridgeBlock()
+	if !strings.Contains(body, "AUTHORITY:") {
+		t.Error("gsdBridgeBlock missing AUTHORITY: preamble (AC-4)")
+	}
+	if !strings.Contains(body, "gg-cli is canonical") {
+		t.Error("gsdBridgeBlock AUTHORITY preamble must state 'gg-cli is canonical'")
+	}
+}

@@ -18,6 +18,7 @@ import (
 )
 
 var sessionStartAgent string
+var sessionStartBench bool
 
 var sessionStartCmd = &cobra.Command{
 	Use:   "session-start",
@@ -49,6 +50,8 @@ Examples:
 func init() {
 	sessionStartCmd.Flags().StringVar(&sessionStartAgent, "agent", "",
 		"agent name (claude-code, cursor, codex, ...) — overrides $GG_AGENT")
+	sessionStartCmd.Flags().BoolVar(&sessionStartBench, "bench", false,
+		"print timing for the managed-block resync step to stderr")
 	rootCmd.AddCommand(sessionStartCmd)
 	// Inject CHANGELOG.md content so the parser has it at runtime.
 	changelog.SetContent(gg.ChangelogRaw)
@@ -84,7 +87,10 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// and agent-specific blocks (codex/bmad/gsd) when their detection signal is
 	// present. Best-effort — failures are reported but never fatal.
 	if br.ProjectRoot != "" {
-		if sr := agenthooks.SyncManagedBlocks(br.ProjectRoot); sr.Repaired || len(sr.Errors) > 0 {
+		syncStart := time.Now()
+		sr := agenthooks.SyncManagedBlocks(br.ProjectRoot)
+		syncElapsed := time.Since(syncStart)
+		if sr.Repaired || len(sr.Errors) > 0 {
 			fmt.Fprintln(os.Stderr, "─── MANAGED BLOCK RESYNC ───")
 			for _, l := range sr.Lines {
 				fmt.Fprintln(os.Stderr, l)
@@ -93,6 +99,9 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 				fmt.Fprintf(os.Stderr, "  ✗ resync error: %v\n", e)
 			}
 			fmt.Fprintln(os.Stderr)
+		}
+		if sessionStartBench {
+			fmt.Fprintf(os.Stderr, "bench: managed-block resync %v\n", syncElapsed.Round(time.Millisecond))
 		}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gurkangul/gg-cli/internal/agenthooks"
 	"github.com/gurkangul/gg-cli/internal/changelog"
@@ -134,6 +135,31 @@ func TestSyncManagedBlocks_RepairsOnSessionStart(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected at least one ✓ repair line; got: %v", sr.Lines)
+	}
+}
+
+// TestSessionStart_BenchResync_Under200ms verifies AC-5+AC-6d: the managed-block
+// resync step (file-stat + write only, no docker/qdrant) completes in ≤200ms.
+// Runs 3 iterations and asserts each is under the budget.
+func TestSessionStart_BenchResync_Under200ms(t *testing.T) {
+	const budget = 200 * time.Millisecond
+	const iterations = 3
+
+	for i := 0; i < iterations; i++ {
+		dir := t.TempDir()
+		// Seed CLAUDE.md with a stale contract to trigger an actual write.
+		stale := agenthooks.ContractBlockBegin + "\n## OLD\n\nold\n" + agenthooks.ContractBlockEnd + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(stale), 0o644); err != nil {
+			t.Fatalf("seed CLAUDE.md: %v", err)
+		}
+
+		start := time.Now()
+		agenthooks.SyncManagedBlocks(dir)
+		elapsed := time.Since(start)
+
+		if elapsed > budget {
+			t.Errorf("iteration %d: SyncManagedBlocks took %v, want ≤%v (AC-5 budget)", i+1, elapsed, budget)
+		}
 	}
 }
 
