@@ -103,35 +103,47 @@ for line in lines:
         add(m.group(2).strip() or 'AC-' + m.group(1))
 
 # Pass 2: Gap lines — 'Gap A:', 'Gap B:', 'Gap 1:', '**Gap A**:' etc.
-# Only count Gap lines that are in a recognised AC section (ACCEPTANCE, ACS, GAPS,
-# FIX, REWORK) or that use the strict 'Gap N:' colon-terminated form as an isolated
-# definition (not narrative prose). Lines like 'TASK-292 Gap 2 GSD did X' that
-# start with identifiers before the word Gap are excluded by re.match anchoring.
-# Lines like 'Gap 2 some prose text' (no colon) in WHY/background sections are
-# excluded by the section-scoping + strict colon requirement below.
+# Only count Gap lines that are in a recognised AC section (ACCEPTANCE, ACS, GAPS)
+# or that use the strict 'Gap N:' colon-terminated form as an isolated definition.
+# FIX / REWORK sections are implementation steps, not acceptance criteria — Gap
+# items inside them are excluded even in strict colon form.
+# Lines like 'TASK-292 Gap 2 GSD did X' that start with identifiers before the
+# word Gap are excluded by re.match anchoring.
 AC_SECTION_RE = re.compile(
-    r'(?im)^(ACCEPTANCE(?:\s+(?:CRITERIA|TESTS?))?|ACS?|GAPS?|FIX(?:ES)?|REWORK)\s*$'
+    r'(?im)^(ACCEPTANCE(?:\s+(?:CRITERIA|TESTS?))?|ACS?|GAPS?)\s*$'
 )
-# Build set of line indices that fall inside a recognised AC section.
-ac_section_lines = set()
-for sec_m in AC_SECTION_RE.finditer(text):
-    start_line = text[:sec_m.start()].count('\n')
-    # Collect lines until next all-caps header or blank-line paragraph break.
-    in_section = False
-    for idx in range(start_line + 1, len(lines)):
-        s = lines[idx].strip()
-        if not s:
-            if in_section:
+# FIX / REWORK sections contain implementation steps, not ACs.
+SKIP_SECTION_RE = re.compile(
+    r'(?im)^(FIX(?:ES)?|REWORK)\s*$'
+)
+
+def _collect_section_lines(header_re):
+    lines_set = set()
+    for sec_m in header_re.finditer(text):
+        start_line = text[:sec_m.start()].count('\n')
+        in_section = False
+        for idx in range(start_line + 1, len(lines)):
+            s = lines[idx].strip()
+            if not s:
+                if in_section:
+                    break
+                continue
+            if re.match(r'^[A-Z][A-Z0-9 _-]{2,}:?\s*$', s):
                 break
-            continue
-        # Stop if we hit another header-like line (all-caps word(s), optional colon).
-        if re.match(r'^[A-Z][A-Z0-9 _-]{2,}:?\s*$', s):
-            break
-        ac_section_lines.add(idx)
-        in_section = True
+            lines_set.add(idx)
+            in_section = True
+    return lines_set
+
+# Build set of line indices that fall inside a recognised AC section.
+ac_section_lines = _collect_section_lines(AC_SECTION_RE)
+# Build set of line indices that fall inside FIX/REWORK (skip) sections.
+skip_section_lines = _collect_section_lines(SKIP_SECTION_RE)
 
 for idx, line in enumerate(lines):
-    # Strict form: 'Gap N:' with a colon — accepted regardless of section.
+    # Skip lines inside FIX/REWORK sections — those are implementation steps.
+    if idx in skip_section_lines:
+        continue
+    # Strict form: 'Gap N:' with a colon — accepted if NOT inside a skip section.
     strict_m = re.match(r'^\s*(?:\*{1,2})?Gap\s+([A-Z0-9]+)(?:\*{1,2})?:\s*(.*)', line, re.IGNORECASE)
     # Loose form: 'Gap N text' without colon — only inside recognised AC sections.
     loose_m = None if strict_m else re.match(
@@ -165,8 +177,11 @@ if acc_m:
             # Non-blank, non-bullet after bullets = new section
             break
 
-# Pass 5: all remaining '- ' bullets not already captured
-for line in lines:
+# Pass 5: all remaining '- ' bullets not already captured.
+# Skip bullets inside FIX/REWORK sections — those are implementation steps.
+for idx, line in enumerate(lines):
+    if idx in skip_section_lines:
+        continue
     s = line.strip()
     if s.startswith('- '):
         add(s[2:].strip())

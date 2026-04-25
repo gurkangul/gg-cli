@@ -291,10 +291,10 @@ referenced in the commit message.
 
 How it works — parser (5 ordered passes over the entire Detail text):
 1. Explicit `AC-N:` lines anywhere (e.g. `AC-1: something`)
-2. `Gap A / Gap B / Gap N` style lines — common in gap-tracking tasks
-3. `FIX N` lines — common in bug-fix tasks
-4. Numbered items at line start: `1.`, `1)`, `1:` (in any section)
-5. `- ` bullets under an `ACCEPTANCE` heading (fallback)
+2. `Gap A / Gap B / Gap N` style lines — in `ACCEPTANCE`, `ACS`, or `GAPS` sections, or using strict `Gap N:` colon form outside those sections (excludes `FIX`/`REWORK` sections)
+3. Numbered items at line start: `1.`, `1)`, `1:` (in any section)
+4. `- ` bullets under an `ACCEPTANCE` heading (fallback)
+5. All remaining `- ` bullets (excluding `FIX`/`REWORK` section bullets — those are implementation steps, not ACs)
 
 Anchors are deduplicated by text; the pass order is priority only. Each
 found anchor is assigned a display label (AC-1, AC-2, …) for the
