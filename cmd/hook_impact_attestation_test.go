@@ -201,6 +201,24 @@ func TestImpactAttestation_TrailerSatisfies(t *testing.T) {
 	}
 }
 
+func TestImpactAttestation_LowercaseImpactFileTrailerSatisfies(t *testing.T) {
+	files := []string{"a.go", "b.go", "c.go", "d.go", "e.go"}
+	commitMsg := "feat: change five files\n\nimpact a.go: 2 callers, tests green"
+	r := runImpactAttestationHook(t, files, commitMsg, nil, nil)
+	if r.ExitCode != 0 {
+		t.Errorf("expected exit 0 when impact <file>: trailer present, got %d\noutput:\n%s", r.ExitCode, r.Output)
+	}
+}
+
+func TestImpactAttestation_CompactImpactLineSatisfies(t *testing.T) {
+	files := []string{"a.go", "b.go", "c.go", "d.go", "e.go"}
+	commitMsg := "feat: change five files\n\nimpact: a.go — 2 deps 3 sym 1D 0T 0R 0B"
+	r := runImpactAttestationHook(t, files, commitMsg, nil, nil)
+	if r.ExitCode != 0 {
+		t.Errorf("expected exit 0 when gg impact --compact header is pasted, got %d\noutput:\n%s", r.ExitCode, r.Output)
+	}
+}
+
 // TestImpactAttestation_ModeOff: GG_IMPACT_ATTESTATION=off → hook exits 0
 // unconditionally regardless of file count.
 func TestImpactAttestation_ModeOff(t *testing.T) {

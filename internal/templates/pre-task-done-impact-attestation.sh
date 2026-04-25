@@ -59,15 +59,15 @@ FILESEOF
 
 echo "[impact-attestation] changed source files: $SOURCE_COUNT"
 
-# ── 3. Check for Impact-Reviewed: trailer in commit body ─────────────────────
+# ── 3. Check for impact attestation trailer in commit body ───────────────────
 HAS_TRAILER=0
-if printf '%s' "$COMMIT_MSG" | grep -qi "^Impact-Reviewed:"; then
+if printf '%s' "$COMMIT_MSG" | grep -Eqi "^(Impact-Reviewed:|impact[[:space:]]+[^:]+:|impact:[[:space:]]+)"; then
   HAS_TRAILER=1
 fi
 
 # Early pass: trailer present — soft log and exit 0 regardless of thresholds.
 if [ "$HAS_TRAILER" = "1" ]; then
-  echo "[impact-attestation] ✓ Impact-Reviewed: trailer found — gate satisfied"
+  echo "[impact-attestation] ✓ impact attestation trailer found — gate satisfied"
   exit 0
 fi
 
