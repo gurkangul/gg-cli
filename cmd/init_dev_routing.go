@@ -9,9 +9,10 @@ import (
 	"github.com/gurkangul/gg-cli/internal/agenthooks"
 )
 
-// printRolesSection writes the "Roles:" block to os.Stdout: dev-routing result
-// then the queue-hint line. Extracted from runInit so tests can capture the
-// output; removing the fmt.Println(initQueueLine) call here breaks those tests.
+// printRolesSection writes the "Roles:" block to os.Stdout.
+// Printing the queue-hint line here (rather than in runInit) keeps the roles
+// display self-contained: the block always shows dev-routing status and queue
+// hint together, regardless of where in the init flow it is called.
 func printRolesSection(projectRoot string) {
 	fmt.Println("Roles:")
 	devRoutingMsg, devRoutingErr := runInitDevRouting(projectRoot)

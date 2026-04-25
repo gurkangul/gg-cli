@@ -275,6 +275,20 @@ func renderNorthStarBlock(rtDir string) {
 	fmt.Println()
 }
 
+// renderSessionsBlock formats the Sessions summary line and, when
+// OverThresholdCount > 0, the ⚠ Sessions warning line. Callers must
+// only call this when ssum.ActiveSessions > 0.
+func renderSessionsBlock(ssum *telemetry.SessionSummary) string {
+	out := fmt.Sprintf("  Sessions    %d active, avg %.1f compact calls/session, p50 %.1f KB p95 %.1f KB cumulative\n",
+		ssum.ActiveSessions, ssum.AvgCompactCallsPerSession,
+		ssum.P50CumulativeKB, ssum.P95CumulativeKB)
+	if ssum.OverThresholdCount > 0 {
+		out += fmt.Sprintf("  ⚠ Sessions  %d session(s) exceeded 100 KB compact output — agent context filling fast\n",
+			ssum.OverThresholdCount)
+	}
+	return out
+}
+
 // renderTelemetryVerbBlock prints the TELEMETRY header and verb-count table.
 func renderTelemetryVerbBlock(rtDir string) {
 	tsum, err := telemetry.Summarize(rtDir)
