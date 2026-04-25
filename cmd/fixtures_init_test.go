@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,24 +82,37 @@ func TestInit_GitignoreIdempotent(t *testing.T) {
 }
 
 // TestInit_RolesOutputContainsQueueLine verifies AC-5a: the Roles section printed
-// by runInit includes a Queue hint line. Asserts on initQueueLine (the actual
-// string init.go writes to stdout) so renaming the source line breaks this test.
+// by printRolesSection includes the queue-hint line. stdout is captured via
+// os.Pipe so that removing the fmt.Println(initQueueLine) call in
+// printRolesSection breaks this test.
 func TestInit_RolesOutputContainsQueueLine(t *testing.T) {
 	ggDir := setupGGDir(t)
 	root := filepath.Dir(ggDir)
 
-	// Capture stdout from runInitDevRouting to confirm the dev-routing path works.
-	_, err := runInitDevRouting(root)
+	// Capture os.Stdout while printRolesSection runs.
+	r, w, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("runInitDevRouting: %v", err)
+		t.Fatalf("os.Pipe: %v", err)
 	}
+	old := os.Stdout
+	os.Stdout = w
 
-	// Assert on initQueueLine — the constant init.go actually prints.
-	// A tautological local copy would not catch regressions.
-	if !strings.Contains(initQueueLine, "Queue") {
-		t.Errorf("AC-5a: initQueueLine missing 'Queue' keyword: %q", initQueueLine)
+	printRolesSection(root)
+
+	os.Stdout = old
+	if err := w.Close(); err != nil {
+		t.Fatalf("close pipe writer: %v", err)
 	}
-	if !strings.Contains(initQueueLine, "gg spawn queue start") {
-		t.Errorf("AC-5a: initQueueLine missing 'gg spawn queue start' hint: %q", initQueueLine)
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+	out := buf.String()
+
+	// Assert that the actual printed output contains the queue-hint text.
+	// Deleting the fmt.Println(initQueueLine) call in printRolesSection must
+	// break this assertion.
+	if !strings.Contains(out, initQueueLine) {
+		t.Errorf("AC-5a: queue-hint line not found in stdout\nwant: %q\ngot:\n%s", initQueueLine, out)
 	}
 }

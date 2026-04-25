@@ -239,14 +239,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// Brownfield-safe: if CLAUDE.md already exists without the marker, we
 		// print a hint rather than silently appending to user-curated content.
 		fmt.Println()
-		fmt.Println("Roles:")
-		devRoutingMsg, devRoutingErr := runInitDevRouting(cwd)
-		if devRoutingErr != nil {
-			fmt.Fprintf(os.Stderr, "⚠ dev-routing: %v\n", devRoutingErr)
-		} else {
-			fmt.Printf("  %s\n", devRoutingMsg)
-		}
-		fmt.Println(initQueueLine)
+		printRolesSection(cwd)
 
 		// Install task-done gate scripts (.gg/hooks/pre-task-done.d/) so the
 		// pre-task-done hook fires on 'gg task done' from the very first session.

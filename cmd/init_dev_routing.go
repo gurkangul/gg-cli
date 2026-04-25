@@ -9,6 +9,20 @@ import (
 	"github.com/gurkangul/gg-cli/internal/agenthooks"
 )
 
+// printRolesSection writes the "Roles:" block to os.Stdout: dev-routing result
+// then the queue-hint line. Extracted from runInit so tests can capture the
+// output; removing the fmt.Println(initQueueLine) call here breaks those tests.
+func printRolesSection(projectRoot string) {
+	fmt.Println("Roles:")
+	devRoutingMsg, devRoutingErr := runInitDevRouting(projectRoot)
+	if devRoutingErr != nil {
+		fmt.Fprintf(os.Stderr, "⚠ dev-routing: %v\n", devRoutingErr)
+	} else {
+		fmt.Printf("  %s\n", devRoutingMsg)
+	}
+	fmt.Println(initQueueLine)
+}
+
 // runInitDevRouting installs the dev-routing managed block in CLAUDE.md with
 // brownfield safety: if CLAUDE.md already exists, is non-empty, and does not
 // contain the dev-routing marker, we print a warning and skip rather than
