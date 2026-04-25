@@ -368,19 +368,12 @@ func spawnWorkerForTask(ctx context.Context, term terminal.Terminal, rt, agentCm
 	surfaceID, err := term.NewSplit(ctx, terminal.SplitOpts{
 		Dir: terminal.SplitHorizontal,
 		Env: env,
-		Cmd: agentCmd,
 	})
 	if err != nil {
 		return "", err
 	}
 
-	startup := buildWorkerStartup(taskID)
-	if sErr := term.Send(ctx, surfaceID, startup); sErr != nil {
-		fmt.Fprintf(os.Stderr, "⚠ startup send to pane %s: %v\n", surfaceID, sErr)
-	}
-	if kErr := term.SendKey(ctx, surfaceID, "Enter"); kErr != nil {
-		fmt.Fprintf(os.Stderr, "⚠ Enter send to pane %s: %v\n", surfaceID, kErr)
-	}
+	bootstrapAgentInPane(ctx, term, surfaceID, agentCmd, taskID, os.Stderr)
 
 	_ = spawn.RegisterPane(rt, spawn.WorkerPane{
 		SurfaceID:     string(surfaceID),

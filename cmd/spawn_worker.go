@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -84,33 +86,7 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open worker pane: %w", err)
 	}
 
-	// Bootstrap sequence:
-	//   (1) Type the agent launcher (e.g. "gsd" or "claude") and press Enter.
-	//   (2) Wait for the agent REPL to become interactive (heuristic sleep).
-	//   (3) Type the task-orientation prompt and press Enter.
-	// Without this, the pane would stay as a raw shell and the worker would never
-	// pick up the task. Warnings on failure are best-effort — a human can always
-	// complete the handshake manually.
-	if sErr := term.Send(ctx, surfaceID, agentCmd); sErr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ could not launch agent in pane %s: %v\n", surfaceID, sErr)
-	}
-	if kErr := term.SendKey(ctx, surfaceID, "enter"); kErr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ could not send Enter after agent launch: %v\n", kErr)
-	}
-
-	if taskID != "" {
-		// Give the agent REPL a couple seconds to initialize before typing the prompt.
-		// TODO: replace with ReadScreen polling once the agents expose a stable ready marker.
-		time.Sleep(3 * time.Second)
-
-		prompt := buildWorkerPrompt(taskID)
-		if sErr := term.Send(ctx, surfaceID, prompt); sErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ could not send task prompt to pane %s: %v\n", surfaceID, sErr)
-		}
-		if kErr := term.SendKey(ctx, surfaceID, "enter"); kErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ could not send Enter after prompt: %v\n", kErr)
-		}
-	}
+	bootstrapAgentInPane(ctx, term, surfaceID, agentCmd, taskID, cmd.ErrOrStderr())
 
 	// Register the worker pane in panes.json.
 	rt, rtErr := spawnRuntimeDir()
@@ -171,4 +147,30 @@ func buildWorkerStartup(taskID string) string {
 // reads it as a user message, not as a shell command.
 func buildWorkerPrompt(taskID string) string {
 	return fmt.Sprintf("You are working on %s. Run 'gg task get %s' to load the full spec, then implement it and commit. Signal completion via: gg tell claude-code \"%s commit <sha>, tests green\" --from developer", taskID, taskID, taskID)
+}
+
+// bootstrapAgentInPane launches the agent REPL in surfaceID and orients it to taskID.
+// Sequence: send agentCmd + Enter, sleep 3s for REPL init, send orientation prompt + Enter.
+// When taskID is empty, only the agent is launched (no orientation step).
+// Send/SendKey failures are logged to errOut and skipped — a human can always finish manually.
+// Both the single-worker (cmd/spawn_worker.go) and queue-pool (cmd/spawn_queue_pool.go) paths
+// route through this helper so they cannot diverge again.
+func bootstrapAgentInPane(ctx context.Context, term terminal.Terminal, surfaceID terminal.SurfaceID, agentCmd, taskID string, errOut io.Writer) {
+	if sErr := term.Send(ctx, surfaceID, agentCmd); sErr != nil {
+		fmt.Fprintf(errOut, "⚠ could not launch agent in pane %s: %v\n", surfaceID, sErr)
+	}
+	if kErr := term.SendKey(ctx, surfaceID, "enter"); kErr != nil {
+		fmt.Fprintf(errOut, "⚠ could not send Enter after agent launch: %v\n", kErr)
+	}
+	if taskID == "" {
+		return
+	}
+	time.Sleep(3 * time.Second)
+	prompt := buildWorkerPrompt(taskID)
+	if sErr := term.Send(ctx, surfaceID, prompt); sErr != nil {
+		fmt.Fprintf(errOut, "⚠ could not send task prompt to pane %s: %v\n", surfaceID, sErr)
+	}
+	if kErr := term.SendKey(ctx, surfaceID, "enter"); kErr != nil {
+		fmt.Fprintf(errOut, "⚠ could not send Enter after prompt: %v\n", kErr)
+	}
 }
