@@ -64,6 +64,16 @@ the master owns review, architectural integrity, and spec compliance.
    review needed (deterministic check, saves subagent cost). The 50-ac-attestation.sh hook enforces
    this mechanically; the master must not bypass it.
 
+10. **Impact-attestation gate** — `60-impact-attestation.sh` runs as part of `gg task done` and
+    requires an `Impact-Reviewed:` trailer in the commit body when ≥3 source files change OR any
+    changed file has ≥5 graph dependents. Workers should run `gg impact --compact <file>` before
+    editing and cite it in their commit body:
+    ```
+    Impact-Reviewed: cmd/spawn_worker.go — 2 callers, tests green
+    Impact-Reviewed: internal/store/client.go — 0 callers
+    ```
+    Bypass (audited): `GG_BYPASS_RATIONALE="<reason>" gg task done TASK-NNN ...`
+
 8. **Binary freshness before live smoke** — before `gg task done` + live verification, run
    `gg doctor --check-binary`. If the binary is stale, run `go install ./cmd/gg` first. Never run
    `--help` or any live smoke test against a stale binary; stale binaries have silently masked regressions

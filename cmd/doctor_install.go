@@ -241,6 +241,17 @@ func runDoctorInstallTaskHooks() error {
 		installed += n
 	}
 
+	// 60-impact-attestation.sh: mandatory when >=3 source files changed or any
+	// file has >=5 graph dependents; advisory otherwise. Requires Impact-Reviewed:
+	// trailer in the commit body. Bypass: GG_BYPASS_RATIONALE=<reason>.
+	impactAttestationPath := filepath.Join(preDir, "60-impact-attestation.sh")
+	if n, err := installHookIfAbsent(impactAttestationPath, templates.PreTaskDoneImpactAttestationHook,
+		"impact attestation gate — requires Impact-Reviewed: commit trailer when >=3 source files or >=5 dependents (GG_IMPACT_ATTESTATION=on|warn|off)"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
 	// Makefile tier template: written to .gg/templates/ so humans can discover
 	// + opt-in via `include .gg/templates/makefile-test-tiers.mk`.
 	tmplDir := filepath.Join(ggDir, "templates")

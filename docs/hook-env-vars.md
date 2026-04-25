@@ -104,6 +104,27 @@ GG_FILE_SIZE_GATE=block GG_ALLOW_FILE_SIZE="TASK-042: generated file, exempt" \
 **Bypass (audited):** set `GG_ALLOW_LINT_REGRESSIONS="<reason>"`. Recorded
 via `gg record`.
 
+### `GG_IMPACT_ATTESTATION` — impact-analysis gate (`60-impact-attestation.sh`)
+
+Requires an `Impact-Reviewed:` trailer in the commit body when ≥3 source
+files change OR any changed file has ≥5 graph dependents. Below the
+thresholds it prints an advisory and exits 0.
+
+| Value | Effect |
+|---|---|
+| `on` *(default)* | Exits 7 when trailer is missing at mandatory threshold |
+| `warn` | Prints advisory; does not block |
+| `off` | Gate is skipped entirely |
+
+**Bypass (audited):** set `GG_BYPASS_RATIONALE="<reason>"`. Recorded via
+`gg record`. The bypass is the same env var used by the global gate runner.
+
+Sample commit trailer:
+```
+Impact-Reviewed: cmd/spawn_worker.go — 2 callers, tests green
+Impact-Reviewed: internal/store/client.go — 0 callers
+```
+
 ### `GG_ENFORCEMENT` — regression repro gate (`90-bug-repros.sh`) + global kill-switch
 
 `GG_ENFORCEMENT` is used in two overlapping ways:
@@ -319,6 +340,7 @@ and merges it over `os.Environ()`. This is the correct pattern.
 | `GG_ALLOW_FILE_SIZE` | caller / one-shot bypass | `30-file-size.sh` |
 | `GG_LINT_GATE` | caller / session | `60-lint-gate.sh` |
 | `GG_ALLOW_LINT_REGRESSIONS` | caller / one-shot bypass | `60-lint-gate.sh` |
+| `GG_IMPACT_ATTESTATION` | caller / session | `60-impact-attestation.sh` |
 | `GG_ENFORCEMENT` | caller / session | `90-bug-repros.sh`, CLI gate runner |
 | `GG_BUG_REPRO_BUDGET` | caller / session | `90-bug-repros.sh` |
 | `GG_NO_SMOKE` | caller / session | `05-smoke-e2e.sh` |

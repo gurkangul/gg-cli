@@ -146,7 +146,16 @@ func buildWorkerStartup(taskID string) string {
 // Unlike buildWorkerStartup, this is plain English orientation — the agent
 // reads it as a user message, not as a shell command.
 func buildWorkerPrompt(taskID string) string {
-	return fmt.Sprintf("You are working on %s. Run 'gg task get %s' to load the full spec, then implement it and commit. Signal completion via: gg tell claude-code \"%s commit <sha>, tests green\" --from developer", taskID, taskID, taskID)
+	return fmt.Sprintf(
+		"You are working on %s. Run 'gg task get %s' to load the full spec, then implement it and commit.\n\n"+
+			"Impact analysis — before editing any file: extract file paths the spec explicitly mentions; "+
+			"for each, run `gg impact --compact PATH` to see graph dependents (callers, exported symbols, historical bugs). "+
+			"Note any dependents whose tests must still pass after your change. "+
+			"Cite this in your commit body under an `Impact-Reviewed:` trailer line "+
+			"(e.g. `Impact-Reviewed: cmd/spawn_worker.go — 2 callers, tests green`).\n\n"+
+			"Signal completion via: gg tell claude-code \"%s commit <sha>, tests green\" --from developer",
+		taskID, taskID, taskID,
+	)
 }
 
 // bootstrapAgentInPane launches the agent REPL in surfaceID and orients it to taskID.

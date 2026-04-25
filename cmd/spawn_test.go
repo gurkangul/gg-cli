@@ -180,6 +180,25 @@ func TestBootstrapAgentInPane_NoTaskIDSkipsPrompt(t *testing.T) {
 	}
 }
 
+// TestSpawnWorker_PromptContainsImpactStep asserts that the generated worker
+// prompt includes "Impact analysis" and "gg impact" so workers always see the
+// impact-analysis primer before implementing.
+func TestSpawnWorker_PromptContainsImpactStep(t *testing.T) {
+	prompt := buildWorkerPrompt("TASK-042")
+	if !spawnContains(prompt, "Impact analysis") {
+		t.Errorf("buildWorkerPrompt: missing 'Impact analysis' step\ngot: %s", prompt)
+	}
+	if !spawnContains(prompt, "gg impact") {
+		t.Errorf("buildWorkerPrompt: missing 'gg impact' instruction\ngot: %s", prompt)
+	}
+	if !spawnContains(prompt, "Impact-Reviewed:") {
+		t.Errorf("buildWorkerPrompt: missing 'Impact-Reviewed:' trailer instruction\ngot: %s", prompt)
+	}
+	if !spawnContains(prompt, "TASK-042") {
+		t.Errorf("buildWorkerPrompt: missing task ID TASK-042\ngot: %s", prompt)
+	}
+}
+
 // spawnContains is a simple substring helper for spawn tests.
 func spawnContains(s, sub string) bool {
 	if len(sub) == 0 {
