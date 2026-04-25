@@ -15,7 +15,7 @@ if [ "$MODE" = "off" ]; then
   exit 0
 fi
 
-gg bug run-repros
+gg bug run-repros --budget "${GG_BUG_REPRO_BUDGET:-30}"
 STATUS=$?
 
 if [ "$STATUS" -ne 0 ]; then
