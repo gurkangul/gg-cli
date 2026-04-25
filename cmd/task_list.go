@@ -216,7 +216,15 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 			renderRelatedContext(&ctxBlock, relCtx)
 		}
 
-		if isCompactActive(cmd) {
+		// task get always shows the full Detail block — it is a targeted lookup,
+		// not a list scan. Agent auto-compact (GG_AGENT/GG_ROLE env) must not
+		// suppress the spec that workers need. --compact is still respected when
+		// explicitly provided (BUG-027).
+		compactExplicit := cmd != nil && func() bool {
+			f := cmd.Flags().Lookup("compact")
+			return f != nil && f.Changed && f.Value.String() == "true"
+		}()
+		if compactExplicit {
 			emitCompact(cmd, "task",
 				func(w io.Writer) {
 					renderTaskGetDefault(w, t)

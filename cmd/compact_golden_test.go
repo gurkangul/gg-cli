@@ -385,3 +385,48 @@ func TestCompactGolden_ForTaskCompact(t *testing.T) {
 	renderForTaskCompact(&buf, tb, nil)
 	checkOrUpdate(t, "for_task_compact", buf.String())
 }
+
+// ── BUG-027 regression: renderTaskGetDefault must always show Detail ──────────
+//
+// Agent auto-compact (GG_AGENT/GG_ROLE env) must not suppress the Detail block
+// in 'gg task get'. Workers need the spec; the one-liner hid it. (BUG-027)
+
+func TestBUG027_TaskGetDefault_ShowsDetail(t *testing.T) {
+	tk := store.Task{
+		ID:       "TASK-042",
+		Title:    "implement JWT refresh endpoint",
+		Status:   "pending",
+		Priority: "high",
+		Detail:   "AC-1: must return 401 on expired token\nAC-2: must issue new token within 200ms",
+		Tags:     []string{"auth"},
+	}
+	var buf bytes.Buffer
+	renderTaskGetDefault(&buf, &tk)
+	out := buf.String()
+	if !strings.Contains(out, "AC-1") {
+		t.Errorf("renderTaskGetDefault: Detail block missing — got:\n%s", out)
+	}
+	if !strings.Contains(out, "AC-2") {
+		t.Errorf("renderTaskGetDefault: Detail block truncated — got:\n%s", out)
+	}
+}
+
+func TestBUG027_TaskGetCompact_OneLiner(t *testing.T) {
+	tk := store.Task{
+		ID:       "TASK-042",
+		Title:    "implement JWT refresh endpoint",
+		Status:   "pending",
+		Priority: "high",
+		Detail:   "AC-1: must return 401 on expired token\nAC-2: must issue new token within 200ms",
+	}
+	var buf bytes.Buffer
+	renderTaskGetCompact(&buf, &tk)
+	out := buf.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 1 {
+		t.Errorf("renderTaskGetCompact: expected 1 line, got %d:\n%s", len(lines), out)
+	}
+	if strings.Contains(out, "AC-1") {
+		t.Errorf("renderTaskGetCompact: Detail leaked into compact output:\n%s", out)
+	}
+}
