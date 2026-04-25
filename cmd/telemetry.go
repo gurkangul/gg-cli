@@ -31,8 +31,20 @@ var telemetrySummaryCmd = &cobra.Command{
 	RunE:  runTelemetrySummary,
 }
 
+var telemetryCompactMissedCmd = &cobra.Command{
+	Use:   "compact-missed",
+	Short: "Show per-verb missed compact savings (last 7 days)",
+	Long: `For each verb that has at least one compact-mode call (i.e. the
+command has a working compact render path), report how many calls still ran
+default and the estimated bytes/tokens that would have been saved if those
+calls had used --compact. The estimate is per-verb and conservative: it uses
+each verb's own observed avg-bytes-saved-per-compact-call.`,
+	RunE: runTelemetryCompactMissed,
+}
+
 func init() {
 	telemetryCmd.AddCommand(telemetrySummaryCmd)
+	telemetryCmd.AddCommand(telemetryCompactMissedCmd)
 	rootCmd.AddCommand(telemetryCmd)
 }
 
@@ -185,4 +197,41 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("  warning: these verbs have compact active but no compact render path — add emitCompact\n")
 		}
 	})
+}
+
+func runTelemetryCompactMissed(cmd *cobra.Command, _ []string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	runtimeDir, err := cfg.RuntimeDir()
+	if err != nil {
+		return fmt.Errorf("runtime dir: %w", err)
+	}
+	sum, err := telemetry.Summarize(runtimeDir)
+	if err != nil {
+		return fmt.Errorf("summarize: %w", err)
+	}
+	if telemetry.IsDisabled() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: Telemetry is disabled — no data collected.")
+		return nil
+	}
+	rows := sum.MissedCompactByVerb(0)
+	if len(rows) == 0 {
+		fmt.Println("No missed compact-savings detected in the last 7 days.")
+		fmt.Println("(A verb appears here only after at least one --compact call has measured per-call savings for it.)")
+		return nil
+	}
+	fmt.Printf("Missed compact savings — last 7 days (%d verbs with measurable savings):\n", len(rows))
+	fmt.Printf("  %-16s %10s %10s %12s %12s\n", "verb", "missed", "total", "avg-saved", "est. missed")
+	for _, r := range rows {
+		estTok := r.EstimatedBytesMissed / telemetry.BytesPerToken
+		fmt.Printf("  %-16s %10d %10d %12s %s / ~%s tok\n",
+			r.Verb, r.MissedCalls, r.TotalCalls,
+			humanFileSize(int64(r.AvgBytesSavedPerCall)),
+			humanFileSize(int64(r.EstimatedBytesMissed)),
+			humanTokenCount(estTok))
+	}
+	fmt.Println("\nEstimates are conservative: they multiply missed-call counts by each verb's own observed avg-bytes-saved-per-compact-call.")
+	return nil
 }

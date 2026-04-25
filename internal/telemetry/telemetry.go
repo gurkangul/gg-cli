@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -371,6 +372,71 @@ type WeeklySummary struct {
 	// series stays comparable. Callers can compare CalibrationFactor against
 	// BytesPerToken to decide whether recalibration is warranted.
 	CalibrationFactor int `json:"calibration_factor"`
+	// Per-verb compact aggregates (TASK-337). Used to compute missed-savings
+	// breakdowns: a verb with high VerbCounts but low CompactByVerbCalls is a
+	// place where agents kept paying default-render cost when a compact path
+	// existed.
+	CompactByVerbCalls      map[string]int `json:"compact_by_verb_calls"`
+	CompactByVerbBytesSaved map[string]int `json:"compact_by_verb_bytes_saved"`
+}
+
+// MissedCompactRow is one row in the missed-savings breakdown — a verb that has
+// a compact render path (proven by ≥1 compact call) but where many invocations
+// still ran default. EstimatedBytesMissed is conservative: it multiplies missed
+// calls by the verb's own observed avg-bytes-saved-per-compact-call, so it never
+// extrapolates beyond what the verb itself has demonstrated.
+type MissedCompactRow struct {
+	Verb                 string `json:"verb"`
+	TotalCalls           int    `json:"total_calls"`
+	CompactCalls         int    `json:"compact_calls"`
+	MissedCalls          int    `json:"missed_calls"`
+	AvgBytesSavedPerCall int    `json:"avg_bytes_saved_per_call"`
+	EstimatedBytesMissed int    `json:"estimated_bytes_missed"`
+}
+
+// MissedCompactByVerb returns missed-savings rows sorted by EstimatedBytesMissed
+// descending. Only verbs with ≥1 compact call are included (otherwise we can't
+// estimate per-call savings without extrapolating across verbs). limit caps the
+// number of returned rows; a non-positive limit returns all rows. Returns an
+// empty slice when no verb has compact data — callers should treat this as
+// "nothing to show", not an error.
+func (s *WeeklySummary) MissedCompactByVerb(limit int) []MissedCompactRow {
+	if s == nil || len(s.CompactByVerbCalls) == 0 {
+		return nil
+	}
+	rows := make([]MissedCompactRow, 0, len(s.CompactByVerbCalls))
+	for verb, compactCalls := range s.CompactByVerbCalls {
+		if compactCalls <= 0 {
+			continue
+		}
+		total := s.VerbCounts[verb]
+		missed := total - compactCalls
+		if missed <= 0 {
+			continue
+		}
+		avg := s.CompactByVerbBytesSaved[verb] / compactCalls
+		if avg <= 0 {
+			continue
+		}
+		rows = append(rows, MissedCompactRow{
+			Verb:                 verb,
+			TotalCalls:           total,
+			CompactCalls:         compactCalls,
+			MissedCalls:          missed,
+			AvgBytesSavedPerCall: avg,
+			EstimatedBytesMissed: missed * avg,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].EstimatedBytesMissed != rows[j].EstimatedBytesMissed {
+			return rows[i].EstimatedBytesMissed > rows[j].EstimatedBytesMissed
+		}
+		return rows[i].Verb < rows[j].Verb
+	})
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
+	}
+	return rows
 }
 
 
@@ -391,6 +457,8 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 			VerbCounts:               map[string]int{},
 			HydrationVerbCounts:      map[string]int{},
 			MissingHandlerVerbCounts: map[string]int{},
+			CompactByVerbCalls:       map[string]int{},
+			CompactByVerbBytesSaved:  map[string]int{},
 		}, nil
 	}
 	if err != nil {
@@ -401,6 +469,8 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 		VerbCounts:               map[string]int{},
 		HydrationVerbCounts:      map[string]int{},
 		MissingHandlerVerbCounts: map[string]int{},
+		CompactByVerbCalls:       map[string]int{},
+		CompactByVerbBytesSaved:  map[string]int{},
 	}
 
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
@@ -428,6 +498,10 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 			sum.CompactBytesOut += e.BytesOut
 			sum.CompactBytesDefault += e.BytesDefault
 			sum.GlyphByteOverhead += e.GlyphOverheadBytes
+			sum.CompactByVerbCalls[e.Verb]++
+			if savedV := e.BytesDefault - e.BytesOut; savedV > 0 {
+				sum.CompactByVerbBytesSaved[e.Verb] += savedV
+			}
 		}
 		if e.Hydration {
 			sum.HydrationCalls++

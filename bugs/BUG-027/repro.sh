@@ -5,22 +5,30 @@
 #
 # Broken state: cmd/task_list.go runTaskGet calls isCompactActive(cmd) which
 #               returns true for agents → renderTaskGetCompact (one-liner).
-# Fixed state:  runTaskGet uses compactExplicit (only true when --compact
-#               flag explicitly Changed) → renderTaskGetDefault includes Detail.
+# Fixed state:  runTaskGet gates compact rendering on an explicit flag check
+#               (f.Changed for --compact/--short), not env-driven auto-compact.
 set -eu
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 target="$repo_root/cmd/task_list.go"
 
-if grep -q 'if isCompactActive(cmd) {' "$target" \
-  && ! grep -q 'compactExplicit' "$target"; then
+# Extract the runTaskGet function body (from `func runTaskGet` to the next
+# top-level `func ` declaration) so the semantic checks below only run against
+# the function the bug actually lives in.
+body=$(awk '
+  /^func runTaskGet\(/ { inFn=1 }
+  inFn { print }
+  inFn && /^}$/ { exit }
+' "$target")
+
+if printf '%s' "$body" | grep -q 'isCompactActive('; then
   echo "BUG-027 repro: runTaskGet still calls isCompactActive — agents auto-compact and lose Detail" >&2
   exit 1
 fi
 
-if ! grep -q 'compactExplicit' "$target"; then
-  echo "BUG-027 repro: runTaskGet missing compactExplicit guard — fix not applied" >&2
+if ! printf '%s' "$body" | grep -q 'f\.Changed'; then
+  echo "BUG-027 repro: runTaskGet missing explicit-flag guard (f.Changed) — fix not applied" >&2
   exit 1
 fi
 
-echo "BUG-027 repro: runTaskGet uses compactExplicit; agent default no longer auto-compacts"
+echo "BUG-027 repro: runTaskGet gates compact on explicit flag; agent default no longer auto-compacts"

@@ -263,6 +263,16 @@ func renderNorthStarBlock(rtDir string) {
 				humanTokenCount(tsum.GlyphTokenOverhead), telemetry.CorpusCalibration.Rounded,
 				glyphPerCall, glyphTokPerCall)
 		}
+		if missed := tsum.MissedCompactByVerb(3); len(missed) > 0 {
+			fmt.Println("  Missed    top compact-eligible verbs that ran default (est. savings):")
+			for _, r := range missed {
+				estTok := r.EstimatedBytesMissed / telemetry.BytesPerToken
+				fmt.Printf("    %-12s %d/%d default, ~%s / ~%s tok est. missed\n",
+					r.Verb, r.MissedCalls, r.TotalCalls,
+					humanFileSize(int64(r.EstimatedBytesMissed)), humanTokenCount(estTok))
+			}
+			fmt.Println("    (run 'gg telemetry compact-missed' for full breakdown)")
+		}
 	}
 	if ssum, sErr := telemetry.SummarizeSessions(rtDir, time.Now().UTC().AddDate(0, 0, -7)); sErr == nil && ssum.ActiveSessions > 0 {
 		fmt.Print(renderSessionsBlock(ssum))
