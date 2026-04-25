@@ -84,8 +84,11 @@ func CheckDevRouting(projectRoot string) DevRoutingCheckResult {
 		return r
 	}
 
-	// Normalise away legacy version markers before analysis — see CheckMasterRole.
-	content := stripLegacyVersionMarkers(string(raw), DevRoutingBlockBegin, DevRoutingBlockEnd)
+	content := string(raw)
+	if hasManagedBlockMarkerDrift(content, DevRoutingBlockBegin, DevRoutingBlockEnd) {
+		r.Status = DevRoutingDRIFTED
+		return r
+	}
 	startIdx := strings.Index(content, DevRoutingBlockBegin)
 	endIdx := strings.Index(content, DevRoutingBlockEnd)
 

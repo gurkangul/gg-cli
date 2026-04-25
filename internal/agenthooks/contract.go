@@ -82,6 +82,11 @@ func CheckContract(projectRoot string) []ContractCheckResult {
 		}
 
 		content := string(raw)
+		if hasManagedBlockMarkerDrift(content, ContractBlockBegin, ContractBlockEnd) {
+			r.Status = ContractDRIFTED
+			results = append(results, r)
+			continue
+		}
 		startIdx := strings.Index(content, ContractBlockBegin)
 		endIdx := strings.Index(content, ContractBlockEnd)
 
@@ -289,6 +294,52 @@ func stripLegacyVersionMarkers(content, canonicalBegin, blockEnd string) string 
 	return content
 }
 
+// hasManagedBlockMarkerDrift reports marker shapes that cannot be interpreted
+// safely as one current managed block. Legacy version markers are drift, not
+// missing content: silently appending a new block would leave conflicting agent
+// doctrine in brownfield files.
+func hasManagedBlockMarkerDrift(content, canonicalBegin, blockEnd string) bool {
+	kind := extractBlockKind(canonicalBegin)
+	if kind == "" {
+		return false
+	}
+
+	beginRe := regexp.MustCompile(`<!-- gg:` + regexp.QuoteMeta(kind) + `:begin v\d+ -->`)
+	begins := beginRe.FindAllStringIndex(content, -1)
+	ends := allStringIndexes(content, blockEnd)
+
+	if len(begins) == 0 && len(ends) == 0 {
+		return false
+	}
+	if len(begins) != 1 || len(ends) != 1 {
+		return true
+	}
+
+	beginText := content[begins[0][0]:begins[0][1]]
+	if beginText != canonicalBegin {
+		return true
+	}
+	return ends[0][0] < begins[0][1]
+}
+
+func allStringIndexes(content, needle string) [][2]int {
+	if needle == "" {
+		return nil
+	}
+	var indexes [][2]int
+	offset := 0
+	for {
+		i := strings.Index(content[offset:], needle)
+		if i < 0 {
+			return indexes
+		}
+		start := offset + i
+		end := start + len(needle)
+		indexes = append(indexes, [2]int{start, end})
+		offset = end
+	}
+}
+
 // extractBlockKind parses the block kind from a canonical begin marker of the
 // form "<!-- gg:<kind>:begin vN -->". Returns "" if the format is unrecognised.
 func extractBlockKind(canonicalBegin string) string {
@@ -310,12 +361,10 @@ func forceStripAndAppend(path, begin, end, block string) error {
 	}
 	content := string(raw)
 
-	// Strip all legacy version markers, then strip any remaining canonical
-	// begin/end marker fragments (forceStripAndAppend is called only when the
-	// file is DRIFTED — markers are guaranteed malformed, so full strip is safe).
-	content = stripLegacyVersionMarkers(content, begin, end)
-	content = strings.ReplaceAll(content, begin, "")
-	content = strings.ReplaceAll(content, end, "")
+	// DRIFTED means the family markers cannot be safely merged. Force reset is
+	// deliberately destructive for that family: remove every current or legacy
+	// fragment, then append one clean current block.
+	content = stripManagedBlockFragments(content, begin, end)
 
 	// Trim any resulting double-blank-lines at the end for tidiness.
 	content = strings.TrimRight(content, "\n")
@@ -327,6 +376,31 @@ func forceStripAndAppend(path, begin, end, block string) error {
 	content = content + sep + block
 
 	return writeFile(path, content)
+}
+
+func stripManagedBlockFragments(content, canonicalBegin, blockEnd string) string {
+	kind := extractBlockKind(canonicalBegin)
+	if kind == "" {
+		content = strings.ReplaceAll(content, canonicalBegin, "")
+		return strings.ReplaceAll(content, blockEnd, "")
+	}
+
+	beginRe := regexp.MustCompile(`<!-- gg:` + regexp.QuoteMeta(kind) + `:begin v\d+ -->`)
+	for {
+		loc := beginRe.FindStringIndex(content)
+		if loc == nil {
+			break
+		}
+		removeEnd := len(content)
+		if endRel := strings.Index(content[loc[1]:], blockEnd); endRel >= 0 {
+			removeEnd = loc[1] + endRel + len(blockEnd)
+			if removeEnd < len(content) && content[removeEnd] == '\n' {
+				removeEnd++
+			}
+		}
+		content = content[:loc[0]] + content[removeEnd:]
+	}
+	return strings.ReplaceAll(content, blockEnd, "")
 }
 
 // backupFile writes a copy of path into projectRoot/.gg/backups/ with a

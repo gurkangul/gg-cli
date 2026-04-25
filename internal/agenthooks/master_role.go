@@ -84,11 +84,11 @@ func CheckMasterRole(projectRoot string) MasterRoleCheckResult {
 		return r
 	}
 
-	// Normalise away legacy version markers so an older v2 block doesn't
-	// cause a spurious DRIFTED status (v2Begin unknown to v3 checker, but
-	// v2End == v3End → lone end marker → DRIFTED). After stripping, the
-	// state is correctly reported as MISSING and repaired by the Fix path.
-	content := stripLegacyVersionMarkers(string(raw), MasterRoleBlockBegin, MasterRoleBlockEnd)
+	content := string(raw)
+	if hasManagedBlockMarkerDrift(content, MasterRoleBlockBegin, MasterRoleBlockEnd) {
+		r.Status = MasterRoleDRIFTED
+		return r
+	}
 	startIdx := strings.Index(content, MasterRoleBlockBegin)
 	endIdx := strings.Index(content, MasterRoleBlockEnd)
 

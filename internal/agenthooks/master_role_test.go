@@ -104,6 +104,24 @@ func TestCheckMasterRole_Drifted(t *testing.T) {
 	}
 }
 
+func TestCheckMasterRole_DriftedLegacyCoexist(t *testing.T) {
+	dir := t.TempDir()
+	const v1Begin = "<!-- gg:master-role:begin v1 -->"
+	const v2Begin = "<!-- gg:master-role:begin v2 -->"
+	content := "# project\n\n" +
+		v1Begin + "\nold v1 body\n\n" +
+		v2Begin + "\nold v2 body\n" +
+		MasterRoleBlockEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write CLAUDE.md: %v", err)
+	}
+
+	r := CheckMasterRole(dir)
+	if r.Status != MasterRoleDRIFTED {
+		t.Errorf("legacy v1+v2 coexist must be DRIFTED, got %s", r.Status)
+	}
+}
+
 func TestFixMasterRole_RepairsMissing(t *testing.T) {
 	dir := t.TempDir()
 
@@ -204,6 +222,14 @@ func TestFixMasterRole_ForceResetOnDrifted(t *testing.T) {
 	r := CheckMasterRole(dir)
 	if r.Status != MasterRoleOK {
 		t.Errorf("after force-reset: status = %s, want OK", r.Status)
+	}
+
+	data, readErr := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if readErr != nil {
+		t.Fatalf("read fixed CLAUDE.md: %v", readErr)
+	}
+	if strings.Contains(string(data), "body without end") {
+		t.Errorf("force-reset must strip malformed body, got:\n%s", string(data))
 	}
 }
 

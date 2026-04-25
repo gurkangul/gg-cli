@@ -113,6 +113,31 @@ func TestCheckContract_Drifted(t *testing.T) {
 	}
 }
 
+func TestCheckContract_DriftedLegacyVersion(t *testing.T) {
+	dir := t.TempDir()
+	const v0Begin = "<!-- gg:contract:begin v0 -->"
+	legacy := "# project\n\n" + v0Begin + "\nold contract\n" + ContractBlockEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write CLAUDE.md: %v", err)
+	}
+
+	results := CheckContract(dir)
+
+	var found *ContractCheckResult
+	for i := range results {
+		if results[i].AgentName == "claude" {
+			found = &results[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("no result for claude")
+	}
+	if found.Status != ContractDRIFTED {
+		t.Errorf("legacy contract marker must be DRIFTED, got %s", found.Status)
+	}
+}
+
 func TestFixContract_RepairesMissing(t *testing.T) {
 	dir := t.TempDir()
 	// CLAUDE.md does not exist → MISSING.
@@ -216,6 +241,14 @@ func TestFixContract_ForceResetOnDrifted(t *testing.T) {
 		if r.AgentName == "claude" && r.Status != ContractOK {
 			t.Errorf("after force-reset: claude status = %s, want OK", r.Status)
 		}
+	}
+
+	data, readErr := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if readErr != nil {
+		t.Fatalf("read fixed CLAUDE.md: %v", readErr)
+	}
+	if contains(string(data), "body without end") {
+		t.Errorf("force-reset must strip malformed body, got:\n%s", string(data))
 	}
 }
 

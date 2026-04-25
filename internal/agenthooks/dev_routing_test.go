@@ -299,9 +299,25 @@ func TestFixMasterRole_UpgradesV2ToV3(t *testing.T) {
 			t.Fatalf("write: %v", err)
 		}
 
-		_, err := FixMasterRole(dir, false)
+		r := CheckMasterRole(dir)
+		if r.Status != MasterRoleDRIFTED {
+			t.Fatalf("legacy full block must be DRIFTED, got %s", r.Status)
+		}
+		lines, err := FixMasterRole(dir, false)
 		if err != nil {
-			t.Fatalf("FixMasterRole: %v", err)
+			t.Fatalf("FixMasterRole without force-reset: %v", err)
+		}
+		refused := false
+		for _, line := range lines {
+			if strings.Contains(line, "DRIFTED") && strings.Contains(line, "force-reset") {
+				refused = true
+			}
+		}
+		if !refused {
+			t.Fatalf("expected force-reset refusal for legacy block, got: %v", lines)
+		}
+		if _, err := FixMasterRole(dir, true); err != nil {
+			t.Fatalf("FixMasterRole force-reset: %v", err)
 		}
 
 		data, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
@@ -341,9 +357,25 @@ func TestFixDevRouting_UpgradesLegacyMarker(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	_, err := FixDevRouting(dir, false)
+	r := CheckDevRouting(dir)
+	if r.Status != DevRoutingDRIFTED {
+		t.Fatalf("legacy dev-routing block must be DRIFTED, got %s", r.Status)
+	}
+	lines, err := FixDevRouting(dir, false)
 	if err != nil {
-		t.Fatalf("FixDevRouting: %v", err)
+		t.Fatalf("FixDevRouting without force-reset: %v", err)
+	}
+	refused := false
+	for _, line := range lines {
+		if strings.Contains(line, "DRIFTED") && strings.Contains(line, "force-reset") {
+			refused = true
+		}
+	}
+	if !refused {
+		t.Fatalf("expected force-reset refusal for legacy dev-routing block, got: %v", lines)
+	}
+	if _, err := FixDevRouting(dir, true); err != nil {
+		t.Fatalf("FixDevRouting force-reset: %v", err)
 	}
 
 	data, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
