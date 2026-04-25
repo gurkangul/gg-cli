@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -52,6 +53,17 @@ func runTaskAck(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Reject ACK on terminal-state tasks — a done/ready_for_live/blocked task
+	// cannot begin implementation, so accepting an ACK would be misleading.
+	existing, err := d.store.GetTask(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+	switch existing.Status {
+	case "done", "ready_for_live", "blocked":
+		return fmt.Errorf("cannot ACK task %s: task is %s — ACK is only valid for pending or in_progress tasks", taskID, existing.Status)
+	}
+
 	text := formatTaskAckDecision(taskID, ackText)
 	vector, err := d.embedder.Generate(ctx, text)
 	if err != nil {
@@ -70,8 +82,12 @@ func runTaskAck(cmd *cobra.Command, args []string) error {
 	if err := d.store.AddDecision(ctx, dec, vector); err != nil {
 		return fmt.Errorf("store ack decision: %w", err)
 	}
-	if err := d.store.UpdateTaskStatus(ctx, taskID, "in_progress", "worker ACK recorded"); err != nil && !strings.Contains(err.Error(), "already in state") {
-		return fmt.Errorf("set task in_progress: %w", err)
+	// Transition to in_progress; ignore ErrAlreadyInState (task may already be
+	// in_progress from a previous ACK-FIX rework cycle).
+	if err := d.store.UpdateTaskStatus(ctx, taskID, "in_progress", "worker ACK recorded"); err != nil {
+		if !errors.Is(err, store.ErrAlreadyInState) {
+			return fmt.Errorf("set task in_progress: %w", err)
+		}
 	}
 	msg := store.Message{
 		FromRole: author,

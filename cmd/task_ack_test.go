@@ -21,12 +21,50 @@ func TestFilterPendingAckTasks(t *testing.T) {
 		{ID: "TASK-003", Status: "in_progress"},
 	}
 	msgs := []store.Message{
-		{TaskID: "TASK-001", Content: "TASK-001 ACK: AC-1 = parse"},
-		{TaskID: "TASK-002", Content: "TASK-002 ACK: AC-1 = parse"},
-		{TaskID: "TASK-002", Content: "TASK-002 ACK-OK"},
+		{TaskID: "TASK-001", Content: "TASK-001 ACK: AC-1 = parse", CreatedAt: "2026-01-01T00:01:00Z"},
+		{TaskID: "TASK-002", Content: "TASK-002 ACK: AC-1 = parse", CreatedAt: "2026-01-01T00:01:00Z"},
+		{TaskID: "TASK-002", Content: "TASK-002 ACK-OK", CreatedAt: "2026-01-01T00:02:00Z"},
 	}
 	got := filterPendingAckTasks(tasks, msgs)
 	if len(got) != 1 || got[0].ID != "TASK-001" {
 		t.Fatalf("filterPendingAckTasks() = %+v, want only TASK-001", got)
+	}
+}
+
+// TestFilterPendingAckTasks_ReAckAfterAckFix verifies that after master sends
+// ACK-FIX and the worker re-ACKs, the task re-appears as pending-ack.
+// The boolean-presence approach (B1) would permanently mark it resolved.
+func TestFilterPendingAckTasks_ReAckAfterAckFix(t *testing.T) {
+	tasks := []store.Task{
+		{ID: "TASK-001", Status: "in_progress"},
+	}
+	msgs := []store.Message{
+		// Round 1: worker ACKs, master sends ACK-FIX
+		{TaskID: "TASK-001", Content: "TASK-001 ACK: AC-1 = first attempt", CreatedAt: "2026-01-01T00:01:00Z"},
+		{TaskID: "TASK-001", Content: "TASK-001 ACK-FIX correct AC-1", CreatedAt: "2026-01-01T00:02:00Z"},
+		// Round 2: worker re-ACKs after fix — must surface again as pending-ack
+		{TaskID: "TASK-001", Content: "TASK-001 ACK: AC-1 = corrected paraphrase", CreatedAt: "2026-01-01T00:03:00Z"},
+	}
+	got := filterPendingAckTasks(tasks, msgs)
+	if len(got) != 1 || got[0].ID != "TASK-001" {
+		t.Fatalf("filterPendingAckTasks() after re-ACK = %+v, want TASK-001 to be pending-ack again", got)
+	}
+}
+
+// TestFilterPendingAckTasks_ResolvedAfterReAck verifies that once master sends
+// ACK-OK after a re-ACK, the task is no longer pending.
+func TestFilterPendingAckTasks_ResolvedAfterReAck(t *testing.T) {
+	tasks := []store.Task{
+		{ID: "TASK-001", Status: "in_progress"},
+	}
+	msgs := []store.Message{
+		{TaskID: "TASK-001", Content: "TASK-001 ACK: AC-1 = first attempt", CreatedAt: "2026-01-01T00:01:00Z"},
+		{TaskID: "TASK-001", Content: "TASK-001 ACK-FIX correct AC-1", CreatedAt: "2026-01-01T00:02:00Z"},
+		{TaskID: "TASK-001", Content: "TASK-001 ACK: AC-1 = corrected paraphrase", CreatedAt: "2026-01-01T00:03:00Z"},
+		{TaskID: "TASK-001", Content: "TASK-001 ACK-OK", CreatedAt: "2026-01-01T00:04:00Z"},
+	}
+	got := filterPendingAckTasks(tasks, msgs)
+	if len(got) != 0 {
+		t.Fatalf("filterPendingAckTasks() after final ACK-OK = %+v, want empty (resolved)", got)
 	}
 }

@@ -202,6 +202,7 @@ func TestSpawnWorker_PromptContainsImpactStep(t *testing.T) {
 func TestSpawnWorker_PromptContainsAckProtocol(t *testing.T) {
 	prompt := buildWorkerPrompt("TASK-042")
 	for _, want := range []string{
+		"export GG_ROLE=developer",
 		"gg task get TASK-042 --json",
 		"gg task ack TASK-042",
 		"ACK-OK",

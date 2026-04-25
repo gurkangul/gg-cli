@@ -199,8 +199,12 @@ func renderTaskListCompact(w io.Writer, tasks []store.Task) {
 }
 
 func filterPendingAckTasks(tasks []store.Task, msgs []store.Message) []store.Task {
-	acked := map[string]bool{}
-	resolved := map[string]bool{}
+	// Track the latest timestamp for ACK and resolution messages per task.
+	// A task is pending-ack when its last ACK timestamp is strictly later than
+	// its last resolution timestamp — this handles the re-ACK-after-ACK-FIX
+	// case correctly (boolean presence would permanently resolve the task).
+	lastAck := map[string]string{}      // task ID → latest ACK message CreatedAt
+	lastResolved := map[string]string{} // task ID → latest ACK-OK/ACK-FIX CreatedAt
 	for _, m := range msgs {
 		id := strings.ToUpper(strings.TrimSpace(m.TaskID))
 		content := strings.ToUpper(m.Content)
@@ -215,16 +219,25 @@ func filterPendingAckTasks(tasks []store.Task, msgs []store.Message) []store.Tas
 		if id == "" {
 			continue
 		}
+		ts := m.CreatedAt
 		if strings.Contains(content, id+" ACK:") {
-			acked[id] = true
+			if ts > lastAck[id] {
+				lastAck[id] = ts
+			}
 		}
 		if strings.Contains(content, id+" ACK-OK") || strings.Contains(content, id+" ACK-FIX") {
-			resolved[id] = true
+			if ts > lastResolved[id] {
+				lastResolved[id] = ts
+			}
 		}
 	}
 	out := make([]store.Task, 0, len(tasks))
 	for _, t := range tasks {
-		if acked[t.ID] && !resolved[t.ID] {
+		ackAt := lastAck[t.ID]
+		resolvedAt := lastResolved[t.ID]
+		// Pending-ack: worker sent an ACK and master has not replied yet, OR
+		// master replied ACK-FIX and worker has since re-ACKed (ackAt > resolvedAt).
+		if ackAt != "" && ackAt > resolvedAt {
 			out = append(out, t)
 		}
 	}
