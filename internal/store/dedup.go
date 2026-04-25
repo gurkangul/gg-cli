@@ -17,8 +17,9 @@ type DupCandidate struct {
 // FindNearDups searches the given kind's collection for vectors with cosine
 // similarity at or above threshold, returning at most limit candidates.
 // kind must be one of: tasks, decisions, rejections, notes, discussions, bugs.
-// Dedup is best-effort: if the collection is empty or the search fails, a nil
-// slice and nil error are returned so the caller can continue creation.
+// Dedup is best-effort at the command layer, not silent at the store layer.
+// A missing collection on first run is absent-empty. Other query failures are
+// returned so callers can warn, trace, or record telemetry before continuing.
 func (c *Client) FindNearDups(ctx context.Context, kind string, vector []float32, threshold float32, limit uint64) ([]DupCandidate, error) {
 	coll, idField, labelField, err := kindMeta(c, kind)
 	if err != nil {
@@ -33,8 +34,10 @@ func (c *Client) FindNearDups(ctx context.Context, kind string, vector []float32
 		ScoreThreshold: qdrant.PtrOf(threshold),
 	})
 	if err != nil {
-		// Collection may not exist on first run — treat as no duplicates.
-		return nil, nil //nolint:nilerr
+		if isCollectionNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query near-duplicates for %s: %w", kind, err)
 	}
 
 	cands := make([]DupCandidate, 0, len(results))
@@ -87,4 +90,3 @@ func kindMeta(c *Client, kind string) (coll, idField, labelField string, err err
 		return "", "", "", fmt.Errorf("unknown kind %q — use tasks, decisions, rejections, notes, discussions, or bugs", kind)
 	}
 }
-

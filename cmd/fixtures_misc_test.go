@@ -4,8 +4,10 @@ package cmd
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gurkangul/gg-cli/internal/config"
@@ -325,10 +327,40 @@ func TestPromptIfDuplicateThreshold_StoreError(t *testing.T) {
 	d := &deps{store: sc, qdrantDown: true}
 	ctx := context.Background()
 
-	res := promptIfDuplicateThreshold(ctx, d, "bugs", make([]float32, store.VectorSize), 0.85)
-	if res.Abort || res.SawDup {
-		t.Errorf("expected zero dupResult on store error, got %+v", res)
+	stderr := captureStderrForTest(t, func() {
+		res := promptIfDuplicateThreshold(ctx, d, "bugs", make([]float32, store.VectorSize), 0.85)
+		if res.Abort || res.SawDup {
+			t.Errorf("expected zero dupResult on store error, got %+v", res)
+		}
+	})
+	if !strings.Contains(stderr, "warning: dedup check failed") {
+		t.Fatalf("expected dedup warning on store error, got %q", stderr)
 	}
+}
+
+func captureStderrForTest(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("stderr pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = orig }()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stderr pipe: %v", err)
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stderr pipe: %v", err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("close stderr reader: %v", err)
+	}
+	return string(data)
 }
 
 // ── dedup.go: appendUniq ─────────────────────────────────────────────────────
