@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -14,8 +13,6 @@ import (
 	"github.com/gurkangul/gg-cli/internal/filesize"
 	"github.com/gurkangul/gg-cli/internal/outbox"
 	"github.com/gurkangul/gg-cli/internal/store"
-	"github.com/gurkangul/gg-cli/internal/telemetry"
-	"github.com/gurkangul/gg-cli/internal/trace"
 )
 
 var statusCmd = &cobra.Command{
@@ -175,63 +172,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		// can instantly gauge dogfood adoption without scrolling.
 		if cfg, cfgErr := config.Load(); cfgErr == nil {
 			if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
-				if tsum, tErr := telemetry.Summarize(rtDir); tErr == nil {
-					agentPct := pct(tsum.AgentCalls, tsum.Total)
-					if tsum.Total > 0 {
-						fmt.Printf("North Star  Last 7d: %d calls, %d%% agent-initiated\n", tsum.Total, agentPct)
-					} else {
-						fmt.Println("North Star  Last 7d: no calls recorded yet")
-					}
-					if tsum.CompactCalls > 0 && tsum.CompactBytesDefault > 0 {
-						saved := tsum.CompactBytesDefault - tsum.CompactBytesOut
-						pctSaved := float64(saved) / float64(tsum.CompactBytesDefault) * 100
-						fmt.Printf("Compact     %d calls, %s / ~%s tok (est. calibrated: %d bytes/tok) saved (avg %.0f%% reduction)\n",
-							tsum.CompactCalls, humanFileSize(int64(saved)),
-							humanTokenCount(tsum.CompactTokensSaved), telemetry.CorpusCalibration.Rounded, pctSaved)
-						if tsum.HydrationCalls > 0 {
-							netBytes := tsum.NetSavingsBytes
-							netTok := tsum.NetTokensSaved
-							netSign := ""
-							if netBytes < 0 {
-								netSign = "-"
-								netBytes = -netBytes
-								netTok = -netTok
-							}
-							refetchPct := float64(tsum.HydrationCalls) / float64(tsum.CompactCalls) * 100
-							refetchWarn := ""
-							if refetchPct > 50 {
-								refetchWarn = " ⚠ drop-list muhtemelen agresif"
-							}
-							fmt.Printf("  Hydration %d re-fetches (%.0f%%), %s back; net %s%s / ~%s%s tok (est. calibrated: %d bytes/tok)%s\n",
-								tsum.HydrationCalls, refetchPct,
-								humanFileSize(int64(tsum.HydrationBytesTotal)),
-								netSign, humanFileSize(int64(netBytes)),
-								netSign, humanTokenCount(netTok), telemetry.CorpusCalibration.Rounded, refetchWarn)
-						}
-						if tsum.GlyphByteOverhead > 0 {
-							glyphPerCall := tsum.GlyphByteOverhead / tsum.CompactCalls
-							glyphTokPerCall := float64(glyphPerCall) / float64(telemetry.BytesPerToken)
-							fmt.Printf("  Glyphs    ~%s tok (est. calibrated: %d bytes/tok) overhead vs ASCII (%d B/call, %.1f tok/call)\n",
-								humanTokenCount(tsum.GlyphTokenOverhead), telemetry.CorpusCalibration.Rounded,
-								glyphPerCall, glyphTokPerCall)
-						}
-					}
-					// Session compact pressure (TASK-286): p50/p95 cumulative
-					// context per session + threshold warning when sessions
-					// are consuming >100 KB of compact output.
-					if ssum, sErr := telemetry.SummarizeSessions(rtDir, time.Now().UTC().AddDate(0, 0, -7)); sErr == nil && ssum.ActiveSessions > 0 {
-						fmt.Print(renderSessionsBlock(ssum))
-					}
-					// Dupe-check pressure (TASK-268): how often agents pushed
-					// past a near-duplicate warning. High force ratio → raise
-					// the threshold; high cancel ratio → feature is working.
-					if tsum.DupeCheckMatchesHits > 0 {
-						fmt.Printf("Dupe-check  %d fires, cancel=%d force=%d auto-force=%d\n",
-							tsum.DupeCheckMatchesHits,
-							tsum.DupeChoiceCancel, tsum.DupeChoiceForce, tsum.DupeChoiceAutoForce)
-					}
-					fmt.Println()
-				}
+				renderNorthStarBlock(rtDir)
 			}
 		}
 
@@ -333,65 +274,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 
 		// Bug reopen stats — best-effort weekly summary for the reopen-rate metric.
-		if bugTotal, bugByDir, bugErr := d.store.BugReopenStats(ctx); bugErr == nil && bugTotal > 0 {
-			fmt.Printf("\nBUGS REOPENED (last 7d): %d\n", bugTotal)
-			type kv struct {
-				dir   string
-				count int
-			}
-			var dirs []kv
-			for dir, c := range bugByDir {
-				dirs = append(dirs, kv{dir, c})
-			}
-			sort.Slice(dirs, func(i, j int) bool {
-				if dirs[i].count != dirs[j].count {
-					return dirs[i].count > dirs[j].count
-				}
-				return dirs[i].dir < dirs[j].dir
-			})
-			for _, kv := range dirs {
-				fmt.Printf("  %-20s %d\n", kv.dir, kv.count)
-			}
+		if bugTotal, bugByDir, bugErr := d.store.BugReopenStats(ctx); bugErr == nil {
+			renderBugReopenBlock(bugTotal, bugByDir)
 		}
 
-		// Trace percentiles — shown only when trace data exists (GG_TRACE=1 must
-		// have been set during prior runs). Best-effort; missing files are silent.
+		// Trace percentiles and telemetry verb breakdown.
 		if ggDir, dirErr := config.GGDir(); dirErr == nil {
-			if pcts, pErr := trace.ReadPercentiles(ggDir, 100); pErr == nil && pcts.N > 0 {
-				fmt.Printf("\nOP LATENCY (last %d spans — p50 %s  p95 %s  p99 %s)\n",
-					pcts.N,
-					trace.FmtMs(pcts.P50),
-					trace.FmtMs(pcts.P95),
-					trace.FmtMs(pcts.P99),
-				)
-			}
+			renderTracePercentilesBlock(ggDir)
 		}
-
-		// Telemetry — best-effort weekly summary.
 		if cfg2, cfgErr2 := config.Load(); cfgErr2 == nil {
 			if rtDir2, rtErr2 := cfg2.RuntimeDir(); rtErr2 == nil {
-				if tsum, tErr := telemetry.Summarize(rtDir2); tErr == nil && tsum.Total > 0 {
-					fmt.Printf("\nTELEMETRY (last 7 days — %d calls, %d%% agent-initiated):\n",
-						tsum.Total, pct(tsum.AgentCalls, tsum.Total))
-					// Print verb breakdown sorted by count desc.
-					type kv struct {
-						verb  string
-						count int
-					}
-					var verbs []kv
-					for v, c := range tsum.VerbCounts {
-						verbs = append(verbs, kv{v, c})
-					}
-					sort.Slice(verbs, func(i, j int) bool {
-						if verbs[i].count != verbs[j].count {
-							return verbs[i].count > verbs[j].count
-						}
-						return verbs[i].verb < verbs[j].verb
-					})
-					for _, v := range verbs {
-						fmt.Printf("  %-16s %d\n", v.verb, v.count)
-					}
-				}
+				renderTelemetryVerbBlock(rtDir2)
 			}
 		}
 

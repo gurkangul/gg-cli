@@ -244,6 +244,45 @@ func TestBecomeMaster_QueueHintWithYesFlag(t *testing.T) {
 	}
 }
 
+// TestBecomeMaster_InteractiveYTriggersQueueStart verifies AC-2 (TASK-326):
+// when the user answers "y" to the queue-start prompt, becomeMasterQueueStartFn
+// is called. Uses injected promptFn + isInteractiveFn to simulate a TTY "y"
+// without a real terminal, and a mock queueStartFn to assert the call without
+// spawning panes.
+func TestBecomeMaster_InteractiveYTriggersQueueStart(t *testing.T) {
+	setupGGDir(t)
+
+	called := false
+	origPrompt := becomeMasterPromptFn
+	origQueueStart := becomeMasterQueueStartFn
+	origInteractive := becomeMasterIsInteractiveFn
+	t.Cleanup(func() {
+		becomeMasterPromptFn = origPrompt
+		becomeMasterQueueStartFn = origQueueStart
+		becomeMasterIsInteractiveFn = origInteractive
+	})
+
+	becomeMasterIsInteractiveFn = func() bool { return true }
+	becomeMasterPromptFn = func() string { return "y" }
+	becomeMasterQueueStartFn = func() error {
+		called = true
+		return nil
+	}
+
+	stdout, stderr, cmdErr := execCmd(t, "become", "master")
+	if cmdErr != nil {
+		t.Fatalf("AC-2: become master failed: %v\nstdout: %s\nstderr: %s", cmdErr, stdout, stderr)
+	}
+
+	if !called {
+		t.Error("AC-2: becomeMasterQueueStartFn was not called when user answered 'y'")
+	}
+	combined := stdout + stderr
+	if !strings.Contains(combined, "Queue session started") {
+		t.Errorf("AC-2: expected 'Queue session started' confirmation in output; got:\n%s", combined)
+	}
+}
+
 // TestBecomeMaster_DoctrineContainsQueueParagraph verifies AC-5d: the installed
 // master-role-extras block contains the queue doctrine paragraph.
 func TestBecomeMaster_DoctrineContainsQueueParagraph(t *testing.T) {

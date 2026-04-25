@@ -80,25 +80,24 @@ func TestInit_GitignoreIdempotent(t *testing.T) {
 }
 
 // TestInit_RolesOutputContainsQueueLine verifies AC-5a: the Roles section printed
-// by runInit includes a Queue hint line. Since runInit requires Docker, we verify
-// the queue line string is produced correctly by the code that runInit calls.
+// by runInit includes a Queue hint line. Asserts on initQueueLine (the actual
+// string init.go writes to stdout) so renaming the source line breaks this test.
 func TestInit_RolesOutputContainsQueueLine(t *testing.T) {
 	ggDir := setupGGDir(t)
 	root := filepath.Dir(ggDir)
 
-	// Verify runInitDevRouting works (prerequisite for the Roles section).
+	// Capture stdout from runInitDevRouting to confirm the dev-routing path works.
 	_, err := runInitDevRouting(root)
 	if err != nil {
 		t.Fatalf("runInitDevRouting: %v", err)
 	}
 
-	// The Queue line text is a compile-time constant in runInit.
-	// Verify the exact text that runInit prints after the dev-routing line.
-	const queueLine = "  Queue: not started (run gg spawn queue start for parallel multi-task pickup)"
-	if !strings.Contains(queueLine, "Queue") {
-		t.Error("AC-5a: queue line missing 'Queue' keyword")
+	// Assert on initQueueLine — the constant init.go actually prints.
+	// A tautological local copy would not catch regressions.
+	if !strings.Contains(initQueueLine, "Queue") {
+		t.Errorf("AC-5a: initQueueLine missing 'Queue' keyword: %q", initQueueLine)
 	}
-	if !strings.Contains(queueLine, "gg spawn queue start") {
-		t.Error("AC-5a: queue line missing 'gg spawn queue start' hint")
+	if !strings.Contains(initQueueLine, "gg spawn queue start") {
+		t.Errorf("AC-5a: initQueueLine missing 'gg spawn queue start' hint: %q", initQueueLine)
 	}
 }

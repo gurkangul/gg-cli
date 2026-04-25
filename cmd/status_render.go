@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
+	"github.com/gurkangul/gg-cli/internal/telemetry"
+	"github.com/gurkangul/gg-cli/internal/trace"
 )
 
 var statusRenderCmd = &cobra.Command{
@@ -212,4 +215,124 @@ func renderStatusMD(projectID string, tasks []store.Task, decisions []store.Deci
 	}
 
 	return b.String()
+}
+
+// renderNorthStarBlock prints the North Star metric, compact stats, session
+// pressure, and dupe-check counters for the given runtime directory.
+func renderNorthStarBlock(rtDir string) {
+	tsum, err := telemetry.Summarize(rtDir)
+	if err != nil {
+		return
+	}
+	agentPct := pct(tsum.AgentCalls, tsum.Total)
+	if tsum.Total > 0 {
+		fmt.Printf("North Star  Last 7d: %d calls, %d%% agent-initiated\n", tsum.Total, agentPct)
+	} else {
+		fmt.Println("North Star  Last 7d: no calls recorded yet")
+	}
+	if tsum.CompactCalls > 0 && tsum.CompactBytesDefault > 0 {
+		saved := tsum.CompactBytesDefault - tsum.CompactBytesOut
+		pctSaved := float64(saved) / float64(tsum.CompactBytesDefault) * 100
+		fmt.Printf("Compact     %d calls, %s / ~%s tok (est. calibrated: %d bytes/tok) saved (avg %.0f%% reduction)\n",
+			tsum.CompactCalls, humanFileSize(int64(saved)),
+			humanTokenCount(tsum.CompactTokensSaved), telemetry.CorpusCalibration.Rounded, pctSaved)
+		if tsum.HydrationCalls > 0 {
+			netBytes := tsum.NetSavingsBytes
+			netTok := tsum.NetTokensSaved
+			netSign := ""
+			if netBytes < 0 {
+				netSign = "-"
+				netBytes = -netBytes
+				netTok = -netTok
+			}
+			refetchPct := float64(tsum.HydrationCalls) / float64(tsum.CompactCalls) * 100
+			refetchWarn := ""
+			if refetchPct > 50 {
+				refetchWarn = " ⚠ drop-list muhtemelen agresif"
+			}
+			fmt.Printf("  Hydration %d re-fetches (%.0f%%), %s back; net %s%s / ~%s%s tok (est. calibrated: %d bytes/tok)%s\n",
+				tsum.HydrationCalls, refetchPct,
+				humanFileSize(int64(tsum.HydrationBytesTotal)),
+				netSign, humanFileSize(int64(netBytes)),
+				netSign, humanTokenCount(netTok), telemetry.CorpusCalibration.Rounded, refetchWarn)
+		}
+		if tsum.GlyphByteOverhead > 0 {
+			glyphPerCall := tsum.GlyphByteOverhead / tsum.CompactCalls
+			glyphTokPerCall := float64(glyphPerCall) / float64(telemetry.BytesPerToken)
+			fmt.Printf("  Glyphs    ~%s tok (est. calibrated: %d bytes/tok) overhead vs ASCII (%d B/call, %.1f tok/call)\n",
+				humanTokenCount(tsum.GlyphTokenOverhead), telemetry.CorpusCalibration.Rounded,
+				glyphPerCall, glyphTokPerCall)
+		}
+	}
+	if ssum, sErr := telemetry.SummarizeSessions(rtDir, time.Now().UTC().AddDate(0, 0, -7)); sErr == nil && ssum.ActiveSessions > 0 {
+		fmt.Print(renderSessionsBlock(ssum))
+	}
+	if tsum.DupeCheckMatchesHits > 0 {
+		fmt.Printf("Dupe-check  %d fires, cancel=%d force=%d auto-force=%d\n",
+			tsum.DupeCheckMatchesHits,
+			tsum.DupeChoiceCancel, tsum.DupeChoiceForce, tsum.DupeChoiceAutoForce)
+	}
+	fmt.Println()
+}
+
+// renderTelemetryVerbBlock prints the TELEMETRY header and verb-count table.
+func renderTelemetryVerbBlock(rtDir string) {
+	tsum, err := telemetry.Summarize(rtDir)
+	if err != nil || tsum.Total == 0 {
+		return
+	}
+	fmt.Printf("\nTELEMETRY (last 7 days — %d calls, %d%% agent-initiated):\n",
+		tsum.Total, pct(tsum.AgentCalls, tsum.Total))
+	type kv struct {
+		verb  string
+		count int
+	}
+	var verbs []kv
+	for v, c := range tsum.VerbCounts {
+		verbs = append(verbs, kv{v, c})
+	}
+	sort.Slice(verbs, func(i, j int) bool {
+		if verbs[i].count != verbs[j].count {
+			return verbs[i].count > verbs[j].count
+		}
+		return verbs[i].verb < verbs[j].verb
+	})
+	for _, v := range verbs {
+		fmt.Printf("  %-16s %d\n", v.verb, v.count)
+	}
+}
+
+// renderBugReopenBlock prints the BUGS REOPENED section for the given counts.
+func renderBugReopenBlock(bugTotal int, bugByDir map[string]int) {
+	if bugTotal == 0 {
+		return
+	}
+	fmt.Printf("\nBUGS REOPENED (last 7d): %d\n", bugTotal)
+	type kv struct {
+		dir   string
+		count int
+	}
+	var dirs []kv
+	for dir, c := range bugByDir {
+		dirs = append(dirs, kv{dir, c})
+	}
+	sort.Slice(dirs, func(i, j int) bool {
+		if dirs[i].count != dirs[j].count {
+			return dirs[i].count > dirs[j].count
+		}
+		return dirs[i].dir < dirs[j].dir
+	})
+	for _, kv := range dirs {
+		fmt.Printf("  %-20s %d\n", kv.dir, kv.count)
+	}
+}
+
+// renderTracePercentilesBlock prints OP LATENCY when trace data exists.
+func renderTracePercentilesBlock(ggDir string) {
+	pcts, err := trace.ReadPercentiles(ggDir, 100)
+	if err != nil || pcts.N == 0 {
+		return
+	}
+	fmt.Printf("\nOP LATENCY (last %d spans — p50 %s  p95 %s  p99 %s)\n",
+		pcts.N, trace.FmtMs(pcts.P50), trace.FmtMs(pcts.P95), trace.FmtMs(pcts.P99))
 }

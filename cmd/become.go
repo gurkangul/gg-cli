@@ -18,6 +18,28 @@ import (
 var becomeForceReset bool
 var becomeMasterYes bool
 
+// becomeMasterPromptFn reads a single line from the user for the queue
+// auto-start prompt. Override in tests to inject a canned answer.
+var becomeMasterPromptFn = func() string {
+	line, readErr := newStdinReader().ReadString('\n')
+	if readErr == nil || errors.Is(readErr, io.EOF) {
+		return strings.ToLower(strings.TrimSpace(line))
+	}
+	return ""
+}
+
+// becomeMasterQueueStartFn invokes the queue start command.
+// Override in tests to assert it was called without actually spawning panes.
+var becomeMasterQueueStartFn = func() error {
+	return spawnQueueStartCmd.RunE(spawnQueueStartCmd, nil)
+}
+
+// becomeMasterIsInteractiveFn reports whether the current stdin is interactive.
+// Override in tests to simulate a TTY without needing a real character device.
+var becomeMasterIsInteractiveFn = func() bool {
+	return isTerminal(os.Stdin)
+}
+
 // masterPrompt is the paste-ready prompt printed to stdout after `gg become master`
 // so the operator can immediately orient their AI session into the master role.
 const masterPrompt = "You are now the MASTER session for this project. Read CLAUDE.md (gg:master-role:begin v3) for your responsibilities. Your job: spawn workers via gg spawn worker, review their commits, never write production code (≤5 line cosmetic exception only). Heartbeat starting now."
@@ -142,21 +164,18 @@ func runBecomeMaster(cmd *cobra.Command, _ []string) error {
 
 	// AC-3: prompt to auto-start queue session for parallel multi-task pickup.
 	// Non-interactive (--yes or non-TTY) skips the prompt and prints the manual command.
-	if !becomeMasterYes && isTerminal(os.Stdin) {
+	if !becomeMasterYes && becomeMasterIsInteractiveFn() {
 		fmt.Fprint(out, "Auto-start queue session for parallel multi-task pickup? [y/N]: ")
-		line, readErr := newStdinReader().ReadString('\n')
-		if readErr == nil || errors.Is(readErr, io.EOF) {
-			answer := strings.ToLower(strings.TrimSpace(line))
-			if answer == "y" || answer == "yes" {
-				fmt.Fprintln(out, "→ Starting queue session...")
-				if qErr := spawnQueueStartCmd.RunE(spawnQueueStartCmd, nil); qErr != nil {
-					fmt.Fprintf(out, "  ⚠ queue start failed: %v\n  Run manually: gg spawn queue start\n", qErr)
-				} else {
-					fmt.Fprintln(out, "  ✓ Queue session started.")
-				}
+		answer := becomeMasterPromptFn()
+		if answer == "y" || answer == "yes" {
+			fmt.Fprintln(out, "→ Starting queue session...")
+			if qErr := becomeMasterQueueStartFn(); qErr != nil {
+				fmt.Fprintf(out, "  ⚠ queue start failed: %v\n  Run manually: gg spawn queue start\n", qErr)
 			} else {
-				fmt.Fprintln(out, "  Skipped — single-pane mode. Run `gg spawn queue start` when ready.")
+				fmt.Fprintln(out, "  ✓ Queue session started.")
 			}
+		} else {
+			fmt.Fprintln(out, "  Skipped — single-pane mode. Run `gg spawn queue start` when ready.")
 		}
 	} else {
 		fmt.Fprintln(out, "Queue: not started (single-pane mode). Run `gg spawn queue start` for parallel multi-task pickup.")

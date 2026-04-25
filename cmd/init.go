@@ -17,6 +17,11 @@ import (
 
 // ggGitignoreContent is the canonical .gg/.gitignore written by 'gg init'.
 // Runtime state is excluded; brain/ is intentionally tracked (portable snapshot).
+// initQueueLine is the queue-hint line printed by runInit after the dev-routing
+// block. Exported as a package-level const so tests can assert against the real
+// string rather than a locally-defined copy (which would be tautological).
+const initQueueLine = "  Queue: not started (run gg spawn queue start for parallel multi-task pickup)"
+
 const ggGitignoreContent = "# gg-cli runtime state — not committed\n" +
 	"cache/\n" +
 	"runtime/\n" +
@@ -241,7 +246,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("  %s\n", devRoutingMsg)
 		}
-		fmt.Println("  Queue: not started (run gg spawn queue start for parallel multi-task pickup)")
+		fmt.Println(initQueueLine)
 
 		// Install task-done gate scripts (.gg/hooks/pre-task-done.d/) so the
 		// pre-task-done hook fires on 'gg task done' from the very first session.
