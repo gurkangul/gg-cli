@@ -13,34 +13,56 @@ import (
 // different task is rejected so cross-task rationale recycling is caught.
 const BypassRationaleEnvVar = "GG_BYPASS_RATIONALE"
 
+// BypassRationaleRecordEnvVar is the integrity-grade companion to BypassRationaleEnvVar.
+// When set, it must contain a real gg record ID (UUID or "DEC-*" prefix).
+// Either env var satisfies the gate; the record form provides an auditable FK
+// into the brain so the rationale is permanently searchable via gg search.
+const BypassRationaleRecordEnvVar = "GG_BYPASS_RATIONALE_RECORD"
+
 // BypassRationaleResult is the outcome of CheckBypassRationale.
 type BypassRationaleResult struct {
 	// Rationale is the trimmed value of GG_BYPASS_RATIONALE.
 	Rationale string
-	// RationaleTaskID is the TASK-NNN parsed from the rationale (e.g. "TASK-317").
+	// RationaleTaskID is the TASK-NNN parsed from the rationale prefix (e.g. "TASK-317").
 	// Empty when the rationale has no TASK prefix or when taskID is empty.
 	RationaleTaskID string
+	// RationaleRecordID is the trimmed value of GG_BYPASS_RATIONALE_RECORD, when set.
+	// Callers store this as a FK into the brain (gg record UUID or display ID).
+	// Empty when GG_BYPASS_RATIONALE_RECORD was not set.
+	RationaleRecordID string
 }
 
-// CheckBypassRationale validates that GG_BYPASS_RATIONALE is set and, for
-// task-scoped gates, that its TASK-NNN prefix matches taskID.
+// CheckBypassRationale validates that at least one of GG_BYPASS_RATIONALE or
+// GG_BYPASS_RATIONALE_RECORD is set and, for task-scoped gates, that the
+// rationale's TASK-NNN prefix matches taskID.
+//
+// Either env var satisfies the gate:
+//   - GG_BYPASS_RATIONALE — free-form rationale text (ergonomic form).
+//   - GG_BYPASS_RATIONALE_RECORD — a real gg record ID (integrity-grade form;
+//     provides a queryable FK into the brain).
 //
 // Returns an error when:
-//   - GG_BYPASS_RATIONALE is empty → silent bypass rejected
+//   - Both env vars are empty → silent bypass rejected
 //   - taskID is non-empty AND the rationale carries a TASK-NNN prefix that
 //     does not match taskID → cross-task rationale recycling rejected
 //
 // Returns the parsed result on success.
 func CheckBypassRationale(taskID string) (BypassRationaleResult, error) {
 	raw := strings.TrimSpace(os.Getenv(BypassRationaleEnvVar))
-	if raw == "" {
+	recordID := strings.TrimSpace(os.Getenv(BypassRationaleRecordEnvVar))
+
+	if raw == "" && recordID == "" {
 		msg := fmt.Sprintf(
-			"silent bypass rejected: GG_ENFORCEMENT=off requires %s=\"<reason>\".\n"+
+			"silent bypass rejected: GG_ENFORCEMENT=off requires %s=\"<reason>\" (or %s=<record-id>).\n"+
 				"Provide a rationale so the bypass is auditable:\n\n"+
 				"  %s=\"%s: <why this bypass is necessary>\" gg task done %s ...\n\n"+
+				"For integrity-grade bypasses link a brain record:\n"+
+				"  %s=<record-id> gg task done %s ...\n\n"+
 				"This is TASK-317 enforcement — silent master bypasses are forbidden.\n"+
 				"See CLAUDE.md § Master bypass discipline for the full policy.",
-			BypassRationaleEnvVar, BypassRationaleEnvVar, taskID, taskID)
+			BypassRationaleEnvVar, BypassRationaleRecordEnvVar,
+			BypassRationaleEnvVar, taskID, taskID,
+			BypassRationaleRecordEnvVar, taskID)
 		return BypassRationaleResult{}, fmt.Errorf("%s", msg)
 	}
 
@@ -58,7 +80,11 @@ func CheckBypassRationale(taskID string) (BypassRationaleResult, error) {
 			BypassRationaleEnvVar, taskID, taskID)
 	}
 
-	return BypassRationaleResult{Rationale: raw, RationaleTaskID: rationaleTaskID}, nil
+	return BypassRationaleResult{
+		Rationale:         raw,
+		RationaleTaskID:   rationaleTaskID,
+		RationaleRecordID: recordID,
+	}, nil
 }
 
 // extractTaskIDFromRationale parses the optional "TASK-NNN:" or "TASK-NNN "

@@ -52,6 +52,11 @@ type BypassEntry struct {
 	// RationaleTaskID is the TASK-NNN parsed from the rationale prefix, if any.
 	// Populated when the rationale starts with "TASK-NNN:" or "TASK-NNN ".
 	RationaleTaskID string `json:"rationale_task_id,omitempty"`
+	// RationaleRecordID is the gg record UUID or display ID that was linked via
+	// GG_BYPASS_RATIONALE_RECORD (TASK-318). Provides a queryable FK into the
+	// brain so the bypass rationale is permanently retrievable via gg search.
+	// Empty for entries recorded before TASK-318 or when only GG_BYPASS_RATIONALE was set.
+	RationaleRecordID string `json:"rationale_record_id,omitempty"`
 }
 
 // Read loads the State from <runtimeDir>/state.json.
@@ -100,8 +105,10 @@ func Write(runtimeDir string, s State) error {
 // user's command on write failure.
 //
 // rationale and rationaleTaskID come from GG_BYPASS_RATIONALE (TASK-317).
-// Pass empty strings for legacy callers that predate the rationale requirement.
-func AppendBypass(runtimeDir, gate, taskID, actor, rationale, rationaleTaskID string) error {
+// rationaleRecordID comes from GG_BYPASS_RATIONALE_RECORD (TASK-318) —
+// the gg record UUID that provides an auditable FK into the brain.
+// Pass empty strings for legacy callers or when the field is not applicable.
+func AppendBypass(runtimeDir, gate, taskID, actor, rationale, rationaleTaskID, rationaleRecordID string) error {
 	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
 		return fmt.Errorf("mkdir %s: %w", runtimeDir, err)
 	}
@@ -112,12 +119,13 @@ func AppendBypass(runtimeDir, gate, taskID, actor, rationale, rationaleTaskID st
 		s = State{}
 	}
 	s.BypassLog = append(s.BypassLog, BypassEntry{
-		TS:              time.Now().UTC().Format(time.RFC3339),
-		Gate:            gate,
-		TaskID:          taskID,
-		Actor:           actor,
-		Rationale:       rationale,
-		RationaleTaskID: rationaleTaskID,
+		TS:                time.Now().UTC().Format(time.RFC3339),
+		Gate:              gate,
+		TaskID:            taskID,
+		Actor:             actor,
+		Rationale:         rationale,
+		RationaleTaskID:   rationaleTaskID,
+		RationaleRecordID: rationaleRecordID,
 	})
 	return Write(runtimeDir, s)
 }

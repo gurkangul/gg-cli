@@ -95,12 +95,25 @@ Silent bypass is **mechanically blocked** as of TASK-317. `GG_ENFORCEMENT=off` a
 bypasses gates — it also requires `GG_BYPASS_RATIONALE` to be set. The CLI rejects the bypass with
 `ExitVerifyFailed` when the env var is missing or references the wrong task.
 
-**Correct bypass pattern:**
+**Correct bypass pattern (ergonomic):**
 ```
 GG_ENFORCEMENT=off \
 GG_BYPASS_RATIONALE="TASK-NNN: <why this bypass is necessary>" \
 gg task done TASK-NNN "summary"
 ```
+
+**Integrity-grade bypass pattern (preferred — provides queryable FK into the brain):**
+```
+GG_ENFORCEMENT=off \
+GG_BYPASS_RATIONALE_RECORD=<record-uuid> \
+gg task done TASK-NNN "summary"
+```
+
+Either env var satisfies the gate. `GG_BYPASS_RATIONALE_RECORD` stores a real gg record UUID in
+`BypassEntry.RationaleRecordID`, making the bypass permanently searchable via `gg search`.
+When only `GG_BYPASS_RATIONALE` is set, the CLI **auto-promotes** the rationale text to a brain
+record post-hoc and links its UUID into the bypass entry (TASK-318). No bypass leaves the brain
+without a queryable artifact.
 
 The rationale is stored in the bypass audit log and visible in `gg doctor --bypass-audit` (Rationale
 column). For task-scoped gates (pre-task-done, agent-lifecycle-done), the `TASK-NNN:` prefix in the

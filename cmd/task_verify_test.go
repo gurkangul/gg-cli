@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/projectstate"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -182,6 +183,58 @@ func TestTaskDone_PreHook_SkippedWhenEnforcementDisabled(t *testing.T) {
 	if ee.Code != ExitStoreDown {
 		t.Errorf("expected ExitStoreDown(%d) with enforcement off, got %d", ExitStoreDown, ee.Code)
 	}
+}
+
+// (g) AC-3 (TASK-318): when GG_BYPASS_RATIONALE is set and enforcement is off,
+// the CLI MUST persist a BypassEntry to state.json with Rationale populated.
+// This is the cmd-layer e2e test that was missing before TASK-318 — it exercises
+// the full path from execCmd → emitGuardSkipEvent → AppendBypass → state.json.
+func TestTaskDone_PreHook_PersistsRationaleToStateJSON(t *testing.T) {
+	const rationale = "TASK-318: rationale persistence e2e test"
+	t.Setenv("GG_ENFORCEMENT", "off")
+	t.Setenv("GG_BYPASS_RATIONALE", rationale)
+	setupGGDir(t)
+
+	// We don't install a pre-hook: enforcement is off so the hook dir is irrelevant.
+	// The command reaches ExitStoreDown (Qdrant dead) — that's expected.
+	_, _, err := execCmd(t, "task", "done", "TASK-318", "persistence test")
+	ee, ok := err.(*ExitError)
+	if !ok {
+		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	}
+	// Must NOT fail with ExitVerifyFailed — that would mean the gate fired wrongly.
+	if ee.Code == ExitVerifyFailed {
+		t.Fatalf("gate fired while enforcement disabled: got ExitVerifyFailed; message: %s", ee.Message)
+	}
+
+	// Read state.json and assert BypassEntry.Rationale is persisted.
+	rtDir := testRuntimeDir(t)
+	s, readErr := projectstate.Read(rtDir)
+	if readErr != nil {
+		t.Fatalf("state.json read failed: %v", readErr)
+	}
+
+	// emitGuardSkipEvent is called twice for task done (agent-lifecycle-done +
+	// pre-task-done), so we expect at least one BypassEntry with our rationale.
+	var found *projectstate.BypassEntry
+	for i := range s.BypassLog {
+		if s.BypassLog[i].Rationale == rationale {
+			found = &s.BypassLog[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("no BypassEntry with Rationale=%q in state.json; log has %d entries: %+v",
+			rationale, len(s.BypassLog), s.BypassLog)
+	}
+	// RationaleTaskID must be parsed from the TASK-318 prefix.
+	if found.RationaleTaskID != "TASK-318" {
+		t.Errorf("RationaleTaskID: got %q, want TASK-318", found.RationaleTaskID)
+	}
+	// RationaleRecordID: tryAutoWriteBypassRecord is best-effort; with Qdrant
+	// down it returns "" — acceptable. What matters is the field is present in
+	// the struct (not an error), so the JSON round-trip works.
+	_ = found.RationaleRecordID // no assertion: store unavailable in unit tests
 }
 
 func TestTruncateHookOutput(t *testing.T) {
