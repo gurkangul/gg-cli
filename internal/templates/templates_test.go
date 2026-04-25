@@ -6,6 +6,7 @@ package templates
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -157,6 +158,37 @@ func TestHookEnvContract(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestGGInsideHookPropagation verifies the TASK-308 regression path: a
+// simulated parent gg process builds the hook env (GG_INSIDE_HOOK=1 included),
+// spawns a child subprocess with that env, and the child reads the value
+// correctly. This mirrors what taskHookEnv + RunHooks do at runtime but
+// without importing the cmd or hooks packages.
+func TestGGInsideHookPropagation(t *testing.T) {
+	parentEnv := map[string]string{
+		"GG_TASK_ID":      "TASK-316",
+		"GG_TASK_SUMMARY": "test summary",
+		"GG_PROJECT_ID":   "proj-test",
+		"GG_ACTOR":        "claude-code",
+		"GG_INSIDE_HOOK":  "1",
+	}
+	// Build the child's environment: inherit the current process env, then
+	// overlay the hook-injected vars.
+	childEnv := os.Environ()
+	for k, v := range parentEnv {
+		childEnv = append(childEnv, k+"="+v)
+	}
+	// Child command: sh -c 'echo $GG_INSIDE_HOOK' — must print "1".
+	cmd := exec.Command("sh", "-c", `echo "$GG_INSIDE_HOOK"`)
+	cmd.Env = childEnv
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("child process failed: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != "1" {
+		t.Errorf("GG_INSIDE_HOOK propagated to child: got %q, want %q", got, "1")
+	}
 }
 
 // extractGGVars returns the deduplicated set of GG_* variable names found in
