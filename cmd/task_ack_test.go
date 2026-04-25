@@ -1,10 +1,30 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gurkangul/gg-cli/internal/store"
 )
+
+// TestValidateTaskAckAllowed verifies that terminal-state tasks are rejected
+// before any store write occurs — the guard must fire before AddDecision.
+func TestValidateTaskAckAllowed(t *testing.T) {
+	for _, status := range []string{"done", "ready_for_live", "blocked"} {
+		err := validateTaskAckAllowed("TASK-001", status)
+		if err == nil {
+			t.Fatalf("validateTaskAckAllowed(%q) = nil, want error", status)
+		}
+		if !strings.Contains(err.Error(), "cannot ACK") {
+			t.Fatalf("validateTaskAckAllowed(%q) error = %q, want 'cannot ACK'", status, err)
+		}
+	}
+	for _, status := range []string{"pending", "in_progress"} {
+		if err := validateTaskAckAllowed("TASK-001", status); err != nil {
+			t.Fatalf("validateTaskAckAllowed(%q) = %v, want nil", status, err)
+		}
+	}
+}
 
 func TestFormatTaskAckDecision(t *testing.T) {
 	got := formatTaskAckDecision("TASK-042", " AC-1: parse; AC-2: test ")

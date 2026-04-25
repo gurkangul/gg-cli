@@ -59,9 +59,8 @@ func runTaskAck(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("get task: %w", err)
 	}
-	switch existing.Status {
-	case "done", "ready_for_live", "blocked":
-		return fmt.Errorf("cannot ACK task %s: task is %s — ACK is only valid for pending or in_progress tasks", taskID, existing.Status)
+	if err := validateTaskAckAllowed(taskID, existing.Status); err != nil {
+		return err
 	}
 
 	text := formatTaskAckDecision(taskID, ackText)
@@ -79,6 +78,10 @@ func runTaskAck(cmd *cobra.Command, args []string) error {
 		TaskID: taskID,
 		Author: author,
 	}
+	// 3-write sequence: decision → status → message. Writes are NOT atomic.
+	// Partial failure semantics: if status or message write fails, the decision
+	// is already persisted; a retry will attempt all three again. AddDecision is
+	// idempotent on the same UUID, so the decision write is safe to repeat.
 	if err := d.store.AddDecision(ctx, dec, vector); err != nil {
 		return fmt.Errorf("store ack decision: %w", err)
 	}
@@ -104,6 +107,16 @@ func runTaskAck(cmd *cobra.Command, args []string) error {
 		fmt.Printf("✓ %s ACK recorded and sent to claude-code\n", taskID)
 		fmt.Println("  Wait for ACK-OK or ACK-FIX before coding; after 5 minutes, proceed only with ACK-IMPLICIT in the commit body.")
 	})
+}
+
+// validateTaskAckAllowed returns an error when status is a terminal state that
+// must not accept an ACK — prevents misleading decisions from being persisted.
+func validateTaskAckAllowed(taskID, status string) error {
+	switch status {
+	case "done", "ready_for_live", "blocked":
+		return fmt.Errorf("cannot ACK task %s: task is %s — ACK is only valid for pending or in_progress tasks", taskID, status)
+	}
+	return nil
 }
 
 func formatTaskAckDecision(taskID, ackText string) string {

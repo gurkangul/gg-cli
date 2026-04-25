@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -198,6 +199,13 @@ func renderTaskListCompact(w io.Writer, tasks []store.Task) {
 	}
 }
 
+// reAck and reResolved anchor on word-boundary TASK-NNN to prevent false
+// matches on e.g. "TASK-1234" matching "TASK-12".
+var (
+	reAck      = regexp.MustCompile(`\bTASK-\d+\b ACK:`)
+	reResolved = regexp.MustCompile(`\bTASK-\d+\b ACK(?:-OK|-FIX)`)
+)
+
 func filterPendingAckTasks(tasks []store.Task, msgs []store.Message) []store.Task {
 	// Track the latest timestamp for ACK and resolution messages per task.
 	// A task is pending-ack when its last ACK timestamp is strictly later than
@@ -220,12 +228,12 @@ func filterPendingAckTasks(tasks []store.Task, msgs []store.Message) []store.Tas
 			continue
 		}
 		ts := m.CreatedAt
-		if strings.Contains(content, id+" ACK:") {
+		if reAck.MatchString(content) && strings.Contains(content, id) {
 			if ts > lastAck[id] {
 				lastAck[id] = ts
 			}
 		}
-		if strings.Contains(content, id+" ACK-OK") || strings.Contains(content, id+" ACK-FIX") {
+		if reResolved.MatchString(content) && strings.Contains(content, id) {
 			if ts > lastResolved[id] {
 				lastResolved[id] = ts
 			}
