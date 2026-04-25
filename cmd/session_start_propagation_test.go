@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/gurkangul/gg-cli/internal/agenthooks"
 	"github.com/gurkangul/gg-cli/internal/changelog"
 	"github.com/gurkangul/gg-cli/internal/projectstate"
 )
@@ -96,5 +99,62 @@ func TestSessionStart_FirstSession_NoDelta(t *testing.T) {
 	}
 	if after.LastSeenCLIVersion != "v0.3.0" {
 		t.Fatalf("LSCV must be stamped on first session: got %q", after.LastSeenCLIVersion)
+	}
+}
+
+// TestSyncManagedBlocks_RepairsOnSessionStart verifies that session-start calls
+// SyncManagedBlocks and emits a resync banner on stderr when a stale managed
+// block is found. Tests the integration between runSessionStart and
+// agenthooks.SyncManagedBlocks (TASK-324).
+func TestSyncManagedBlocks_RepairsOnSessionStart(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a stale contract block into CLAUDE.md to trigger a repair.
+	staleBlock := agenthooks.ContractBlockBegin + "\n## OLD CONTRACT\n\noutdated\n" + agenthooks.ContractBlockEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(staleBlock), 0o644); err != nil {
+		t.Fatalf("write CLAUDE.md: %v", err)
+	}
+
+	sr := agenthooks.SyncManagedBlocks(dir)
+
+	if !sr.Repaired {
+		t.Error("SyncManagedBlocks should report Repaired=true for stale contract")
+	}
+	if len(sr.Lines) == 0 {
+		t.Error("SyncManagedBlocks should produce at least one repair line")
+	}
+
+	// Verify at least one line looks like a repair entry (starts with ✓).
+	found := false
+	for _, l := range sr.Lines {
+		if strings.Contains(l, "✓") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected at least one ✓ repair line; got: %v", sr.Lines)
+	}
+}
+
+// TestSyncManagedBlocks_SilentWhenAllCurrent verifies that SyncManagedBlocks
+// produces no output and Repaired=false when all blocks are already current,
+// so session-start emits no banner noise on clean projects.
+func TestSyncManagedBlocks_SilentWhenAllCurrent(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write current contract + master-role + dev-routing blocks.
+	content := agenthooks.ContractBlock() + agenthooks.MasterRoleBlock() + agenthooks.DevRoutingBlock()
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write CLAUDE.md: %v", err)
+	}
+
+	sr := agenthooks.SyncManagedBlocks(dir)
+
+	if sr.Repaired {
+		t.Errorf("expected no repair when blocks are current; lines: %v", sr.Lines)
+	}
+	if len(sr.Errors) > 0 {
+		t.Errorf("unexpected errors on clean project: %v", sr.Errors)
 	}
 }

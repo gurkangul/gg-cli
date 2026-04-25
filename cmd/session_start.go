@@ -80,10 +80,19 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Contract drift warning: best-effort, never fatal.
+	// Auto-resync managed blocks: repairs contract, master-role, dev-routing,
+	// and agent-specific blocks (codex/bmad/gsd) when their detection signal is
+	// present. Best-effort — failures are reported but never fatal.
 	if br.ProjectRoot != "" {
-		if agenthooks.HasDrift(br.ProjectRoot) {
-			fmt.Fprintln(os.Stderr, "⚠ Contract drift detected: run `gg doctor --check-contract --fix` to repair")
+		if sr := agenthooks.SyncManagedBlocks(br.ProjectRoot); sr.Repaired || len(sr.Errors) > 0 {
+			fmt.Fprintln(os.Stderr, "─── MANAGED BLOCK RESYNC ───")
+			for _, l := range sr.Lines {
+				fmt.Fprintln(os.Stderr, l)
+			}
+			for _, e := range sr.Errors {
+				fmt.Fprintf(os.Stderr, "  ✗ resync error: %v\n", e)
+			}
+			fmt.Fprintln(os.Stderr)
 		}
 	}
 
