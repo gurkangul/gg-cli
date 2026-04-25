@@ -52,3 +52,14 @@ memgraph:
 #
 # tracker:
 #   canonical: gg
+
+# developer: names the default developer agent and how gg routes implementation
+# work (dev-routing block, gg spawn worker). Written by 'gg init' based on
+# detected tooling; override post-init with 'gg config set developer.agent <id>'.
+# Allowlist for agent: gsd-sonnet-4.6, claude-sonnet-4.5, claude-opus-4.7, unconfigured
+# Allowlist for transport: cmux, side-session-prompt
+#
+# developer:
+#   agent: gsd-sonnet-4.6
+#   transport: cmux
+#   spawn_command: ""   # leave empty for default per-agent launch command

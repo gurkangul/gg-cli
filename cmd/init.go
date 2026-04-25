@@ -52,6 +52,7 @@ var (
 	initSkipEnforcement bool
 	initWithIndex       bool
 	initNoIndex         bool
+	initYes             bool
 )
 
 func init() {
@@ -62,6 +63,8 @@ func init() {
 		"also run `gg index` after setup (non-interactive yes)")
 	initCmd.Flags().BoolVar(&initNoIndex, "no-index", false,
 		"skip the post-setup index prompt (non-interactive no)")
+	initCmd.Flags().BoolVar(&initYes, "yes", false,
+		"non-interactive: skip prompts, default unconfigured for developer.agent")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -145,6 +148,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	projectID, err := ensureProjectConfig(ggDir)
 	if err != nil {
 		return err
+	}
+
+	// Write developer config block based on detected tooling.
+	// Only runs when the config was freshly created (not a re-init of an
+	// existing project that may already have a developer block set by the user).
+	if err := ensureDeveloperConfig(cmd, ggDir); err != nil {
+		fmt.Printf("⚠ developer config: %v\n", err)
 	}
 
 	// Create per-project runtime directory (~/.gg/projects/<projectID>/) so

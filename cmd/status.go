@@ -235,6 +235,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		// Roles — show developer agent config so operators can see the
+		// routing setup at a glance without opening .gg/config.yaml.
+		if cfg, cfgErr := config.Load(); cfgErr == nil {
+			fmt.Print(renderRolesBlock(&cfg.Developer))
+		}
+
 		fmt.Println("TASKS:")
 		fmt.Printf("  ○ Pending: %s  → In Progress: %s  ⚠ Blocked: %s  ✓ Done: %s\n",
 			fmtCount(counts["pending"].n, counts["pending"].err),
@@ -423,6 +429,21 @@ func fmtCount(n uint64, err error) string {
 		return "?"
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// renderRolesBlock formats the Roles section for gg status, showing the
+// developer agent and transport.
+func renderRolesBlock(dev *config.DeveloperConfig) string {
+	if dev == nil {
+		return ""
+	}
+	developerLine := dev.Agent
+	if developerLine == "" {
+		developerLine = "⚠ unconfigured"
+	} else if dev.Transport != "" {
+		developerLine = dev.Agent + " (" + dev.Transport + ")"
+	}
+	return fmt.Sprintf("Roles\n  Developer  %s\n\n", developerLine)
 }
 
 // renderSessionsBlock formats the Sessions summary line and, when

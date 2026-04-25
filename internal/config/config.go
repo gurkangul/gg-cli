@@ -179,6 +179,28 @@ type TrackerConfig struct {
 	Canonical string `yaml:"canonical"`
 }
 
+// DeveloperConfig names the default developer agent and how to reach it.
+// Written by 'gg init' based on detected tooling and overridable via
+// 'gg config set developer.agent <id>'.
+type DeveloperConfig struct {
+	// Agent identifies the developer agent. Allowlist: gsd-sonnet-4.6,
+	// claude-sonnet-4.5, claude-opus-4.7, unconfigured.
+	Agent string `yaml:"agent,omitempty"`
+	// Transport names the IPC mechanism. Allowlist: cmux, side-session-prompt.
+	Transport string `yaml:"transport,omitempty"`
+	// SpawnCommand overrides the default agent launch command.
+	// Leave empty to use the agent-specific default.
+	SpawnCommand string `yaml:"spawn_command,omitempty"`
+}
+
+// ValidDeveloperAgents lists the accepted values for DeveloperConfig.Agent.
+var ValidDeveloperAgents = []string{
+	"gsd-sonnet-4.6",
+	"claude-sonnet-4.5",
+	"claude-opus-4.7",
+	"unconfigured",
+}
+
 // TelemetryConfig controls local-only usage telemetry.
 type TelemetryConfig struct {
 	// Enabled is a tri-state: nil (absent in YAML) → default ON, *true →
@@ -203,6 +225,7 @@ type Config struct {
 	Telemetry TelemetryConfig `yaml:"telemetry"`
 	Doctor    DoctorConfig    `yaml:"doctor"`
 	Tracker   TrackerConfig   `yaml:"tracker"`
+	Developer DeveloperConfig `yaml:"developer,omitempty"`
 	Bugs      BugsConfig      `yaml:"bugs"`
 	Tasks     TasksConfig     `yaml:"tasks"`
 	Audit     AuditConfig     `yaml:"audit"`
@@ -363,6 +386,23 @@ func applyMemgraphEnvOverrides(m *MemgraphConfig) {
 	if v := os.Getenv("MEMGRAPH_URI"); v != "" {
 		m.URI = v
 	}
+}
+
+// Save writes the config back to .gg/config.yaml in the current project.
+func (c *Config) Save() error {
+	ggDir, err := GGDir()
+	if err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	path := filepath.Join(ggDir, ConfigFile)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
 }
 
 // Validate ensures required fields are present and URLs/ports are well-formed.
