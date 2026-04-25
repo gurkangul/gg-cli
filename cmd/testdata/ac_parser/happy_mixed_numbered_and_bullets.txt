@@ -1,0 +1,9 @@
+Implement the compact renderer.
+
+WHAT
+1. compact flag reduces output to one line per item
+2. hydration re-fetches full body on demand
+3. glyph overhead stays under 2 tok/call budget
+
+ACCEPTANCE
+- go test ./... -count=1 -race green

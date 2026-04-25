@@ -1,0 +1,7 @@
+Build the export subsystem.
+
+ACCEPTANCE
+- export produces valid JSONL output
+- import round-trips without data loss
+- error on corrupt input is surfaced with context
+- integration test covers export + import cycle

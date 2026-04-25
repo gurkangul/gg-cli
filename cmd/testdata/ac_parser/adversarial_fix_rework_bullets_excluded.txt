@@ -1,0 +1,14 @@
+Scope gap extraction correctly.
+
+ACCEPTANCE
+- parser distinguishes implementation steps from acceptance criteria
+- FIX and REWORK section bullets are not extracted as ACs
+
+FIX
+- step 1: rewrite scoping logic with section-index scan
+- step 2: add SKIP_SECTION_RE for FIX/REWORK headings
+- step 3: update Pass 5 to skip skip_section_lines
+
+REWORK
+- step 1: re-run full test suite
+- step 2: update AGENTS.md parser description

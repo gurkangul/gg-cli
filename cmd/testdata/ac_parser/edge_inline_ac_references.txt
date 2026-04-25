@@ -1,0 +1,6 @@
+This task extends the work started in TASK-300 (see AC-1 of that task for context).
+The prior approach described in AC-2 of TASK-307 was rejected.
+We reference AC-3 from the architecture doc as a constraint.
+
+ACCEPTANCE
+- inline prose AC references do not inflate the extracted anchor count

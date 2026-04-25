@@ -1,0 +1,7 @@
+Bu task gg-cli'nin çoklu dil desteğini test eder.
+
+AC-1: parser extracts AC anchors regardless of surrounding prose language
+AC-2: non-ASCII characters in prose do not corrupt anchor extraction
+
+ACCEPTANCE CRITERIA
+- test suite passes with -race flag

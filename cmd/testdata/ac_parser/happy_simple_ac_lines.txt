@@ -1,0 +1,5 @@
+Implement the attestation gate.
+
+AC-1: hook exits 7 when commit omits AC reference
+AC-2: bypass via GG_ALLOW_INCOMPLETE_AC is audited via gg record
+AC-3: integration test covers both block and pass cases

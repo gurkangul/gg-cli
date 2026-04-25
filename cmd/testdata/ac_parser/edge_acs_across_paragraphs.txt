@@ -1,0 +1,10 @@
+Implement the three-phase rollout.
+
+Phase 1 scope:
+AC-1: feature flag gate blocks execution when flag is off
+
+Phase 2 scope:
+AC-2: gradual ramp increments 10% per hour with auto-rollback on error
+
+Phase 3 scope:
+AC-3: full rollout removes flag and cleans up dead code paths

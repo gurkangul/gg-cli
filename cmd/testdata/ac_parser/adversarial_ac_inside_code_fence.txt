@@ -1,0 +1,11 @@
+Document the commit format with examples.
+
+ACCEPTANCE
+- passing commit example renders correctly in docs
+
+The following is a documentation example only — not real ACs:
+
+```
+AC-1: this is inside a code fence and is illustrative
+AC-2: another fenced example line
+```

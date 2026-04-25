@@ -1,0 +1,12 @@
+Add bypass support with audit trail.
+
+AC-1: bypass env var exits 0 and does not block task close
+AC-2: bypass emits gg record with tags bypass,ac-attestation,<task-id>
+
+Example usage:
+
+```
+GG_ALLOW_INCOMPLETE_AC="master approved" gg task done TASK-042 "summary"
+```
+
+AC-3: documented in AGENTS.md with passing and failing examples

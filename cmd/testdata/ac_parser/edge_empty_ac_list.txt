@@ -1,0 +1,2 @@
+This task has no acceptance criteria defined.
+It is a pure documentation update with no enumerable criteria.

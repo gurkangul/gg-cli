@@ -1,0 +1,3 @@
+Minor polish task.
+
+AC-1: status bar shows correct project name after init
