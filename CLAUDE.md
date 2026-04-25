@@ -84,6 +84,16 @@ the master owns review, architectural integrity, and spec compliance.
     ```
     Bypass (audited): `GG_BYPASS_RATIONALE="<reason>" gg task done TASK-NNN ...`
 
+11. **No silent defer** — workers may NOT ship code with `_ = unusedVar // reserved for future
+    extension`, `// TODO: handle X later`, or any narrative deferral that drops a spec
+    requirement without master approval. If an AC requires structural change the worker
+    judged out of scope, they MUST stop and `gg tell claude-code` with a concrete pivot
+    proposal BEFORE committing. Master rejects commits containing inline-comment defers
+    of spec requirements as silent narrowing (this rule was added after TASK-336 iter-1
+    where `bugStatus // reserved for future extension` quietly dropped the BUG-* half of
+    AC-1). Defer is allowed only when explicitly approved via `gg record` with a tracked
+    follow-up task linked.
+
 ### Tools the master uses (not exhaustive)
 
 - `gg inbox`, `gg tell`, `gg task get/review/done/ready-for-live`, `gg record` — coordination primitives
