@@ -34,7 +34,8 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test ./... -race -count=1
+        # Canonical test command (see docs/testing.md). CI never uses -short.
+        run: go test ./... -race -count=1 -timeout=120s
 
       - name: Coverage thresholds
         run: |

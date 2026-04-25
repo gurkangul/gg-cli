@@ -234,6 +234,10 @@ state to the store. If any script exits non-zero the command aborts with exit
 code `7` (`ExitVerifyFailed`) and the task stays in its current state — agents
 should treat this as "fix the failure and retry", not as a normal error.
 
+The canonical test command — used by CI and the verify gate — is
+`go test ./... -count=1 -race -timeout=120s`. CI never uses `-short`. See
+`docs/testing.md` for the full rationale.
+
 - Pre-hooks are **always strict**. A gate that passes on failure is not a gate.
   The `hooks.strict` config in `.gg/config.yaml` only governs the post-done
   `task-done.d` hooks (quality telemetry, advisory by default).
