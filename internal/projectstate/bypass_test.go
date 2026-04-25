@@ -7,7 +7,7 @@ import (
 
 func TestAppendBypass_RoundTripsEntry(t *testing.T) {
 	dir := t.TempDir()
-	if err := AppendBypass(dir, "pre-task-done", "TASK-500", "claude-code"); err != nil {
+	if err := AppendBypass(dir, "pre-task-done", "TASK-500", "claude-code", "TASK-500: emergency ship", "TASK-500"); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	s, err := Read(dir)
@@ -24,6 +24,12 @@ func TestAppendBypass_RoundTripsEntry(t *testing.T) {
 	if e.TS == "" {
 		t.Fatal("TS must be set by AppendBypass")
 	}
+	if e.Rationale != "TASK-500: emergency ship" {
+		t.Fatalf("Rationale not stored: %q", e.Rationale)
+	}
+	if e.RationaleTaskID != "TASK-500" {
+		t.Fatalf("RationaleTaskID not stored: %q", e.RationaleTaskID)
+	}
 }
 
 func TestAppendBypass_PreservesLastSeenCLIVersion(t *testing.T) {
@@ -34,7 +40,7 @@ func TestAppendBypass_PreservesLastSeenCLIVersion(t *testing.T) {
 	if err := Write(dir, State{LastSeenCLIVersion: "v0.2.3"}); err != nil {
 		t.Fatalf("write initial: %v", err)
 	}
-	if err := AppendBypass(dir, "gsd-guard", "", ""); err != nil {
+	if err := AppendBypass(dir, "gsd-guard", "", "", "", ""); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	s, err := Read(dir)

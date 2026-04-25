@@ -55,8 +55,8 @@ func runDoctorBypassAudit(since string) error {
 	}
 	fmt.Println()
 
-	fmt.Printf("%-20s  %-32s  %-18s  %s\n", "TS", "GATE", "TASK", "ACTOR")
-	fmt.Println(strings.Repeat("─", 90))
+	fmt.Printf("%-20s  %-32s  %-18s  %-16s  %s\n", "TS", "GATE", "TASK", "ACTOR", "RATIONALE")
+	fmt.Println(strings.Repeat("─", 110))
 	for _, e := range entries {
 		task := e.TaskID
 		if task == "" {
@@ -66,9 +66,15 @@ func runDoctorBypassAudit(since string) error {
 		if actor == "" {
 			actor = "—"
 		}
-		fmt.Printf("%-20s  %-32s  %-18s  %s\n", shortDate(e.TS), e.Gate, task, actor)
+		rationale := e.Rationale
+		if rationale == "" {
+			rationale = "—"
+		} else if len(rationale) > 40 {
+			rationale = rationale[:37] + "…"
+		}
+		fmt.Printf("%-20s  %-32s  %-18s  %-16s  %s\n", shortDate(e.TS), e.Gate, task, actor, rationale)
 	}
-	fmt.Println(strings.Repeat("─", 90))
+	fmt.Println(strings.Repeat("─", 110))
 	fmt.Printf("Total: %d bypass event(s).\n", len(entries))
 	return nil
 }

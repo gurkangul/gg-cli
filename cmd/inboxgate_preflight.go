@@ -66,6 +66,6 @@ func logInboxBypass(gate, reason, actor string) {
 	if err != nil {
 		return
 	}
-	_ = projectstate.AppendBypass(runtimeDir, "inbox-obey:"+gate, "", actor)
+	_ = projectstate.AppendBypass(runtimeDir, "inbox-obey:"+gate, "", actor, "", "")
 	fmt.Fprintf(os.Stderr, "⚠ inbox gate bypassed (GG_ALLOW_INBOX_SKIP=%s)\n", reason)
 }

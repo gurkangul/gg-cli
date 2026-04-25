@@ -94,14 +94,18 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	// Opt-out: skipped when GG_ENFORCEMENT=off. Set it to opt out for a session.
 	// Agent lifecycle gate: GSD / Sonnet agents are not permitted to close tasks.
 	if !enforcement.Enabled() {
-		emitGuardSkipEvent("agent-lifecycle-done", taskID)
+		if rej := emitGuardSkipEvent("agent-lifecycle-done", taskID); rej != nil {
+			return rej
+		}
 	} else if rej := checkAgentLifecycleGate("done"); rej != nil {
 		return rej
 	}
 
 	if !enforcement.Enabled() {
 		// Emit an audit line so telemetry can count how often the gate was bypassed.
-		emitGuardSkipEvent("pre-task-done", taskID)
+		if rej := emitGuardSkipEvent("pre-task-done", taskID); rej != nil {
+			return rej
+		}
 	} else if rej := runGateHooks(cmd, hookCfg, "pre-task-done", taskID, summary); rej != nil {
 		emitGateFailedEvent(cmd.ErrOrStderr(), rej)
 		notifyGateFailure(cmd, rej) // best-effort: no-op if store unreachable or opted out
@@ -126,7 +130,9 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	// GG_ENFORCEMENT=off escape hatch applies for emergencies.
 	if _, cfg, cfgErr := hookCfg.load(cmd.ErrOrStderr()); cfgErr == nil && cfg != nil && cfg.Tasks.RequireReadyForLive {
 		if !enforcement.Enabled() {
-			emitGuardSkipEvent("pre-task-done-ready-for-live", taskID)
+			if rej := emitGuardSkipEvent("pre-task-done-ready-for-live", taskID); rej != nil {
+				return rej
+			}
 		} else {
 			t, getErr := d.store.GetTask(ctx, taskID)
 			if getErr != nil {

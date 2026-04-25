@@ -91,14 +91,28 @@ the master owns review, architectural integrity, and spec compliance.
 
 ### Bypass discipline (master)
 
-Silent bypass is forbidden. When master must bypass `pre-task-done`, `pre-task-done-ready-for-live`,
-or `agent-lifecycle-done`, it MUST first write a `gg record` tagged `bypass-rationale,TASK-N`
-explaining the reason (e.g. "AC attestation N/A — analytical task with output as records, not code";
-"agent-lifecycle gate misfires against master role"; "Catch-22: workers cannot fix the bug that
-prevents worker bootstrap"). The forward-looking gate that mechanically enforces this is tracked
-under TASK-317 (master bypass enforcement). Until that gate ships, the discipline is
-honor-system + audit; the 2026-04-24 cluster (18 silent bypasses across TASK-281/282/283/284/288/289)
-is the cautionary example that motivated the rule (see `gg search bypass-audit-2026-04-24`).
+Silent bypass is **mechanically blocked** as of TASK-317. `GG_ENFORCEMENT=off` alone no longer
+bypasses gates — it also requires `GG_BYPASS_RATIONALE` to be set. The CLI rejects the bypass with
+`ExitVerifyFailed` when the env var is missing or references the wrong task.
+
+**Correct bypass pattern:**
+```
+GG_ENFORCEMENT=off \
+GG_BYPASS_RATIONALE="TASK-NNN: <why this bypass is necessary>" \
+gg task done TASK-NNN "summary"
+```
+
+The rationale is stored in the bypass audit log and visible in `gg doctor --bypass-audit` (Rationale
+column). For task-scoped gates (pre-task-done, agent-lifecycle-done), the `TASK-NNN:` prefix in the
+rationale is validated to match the task being closed — cross-task rationale recycling is rejected.
+
+Common valid rationale examples:
+- `"TASK-NNN: AC attestation N/A — analytical task with output as gg records, not code"`
+- `"TASK-NNN: agent-lifecycle gate misfires against master role (non-GSD agent)"`
+- `"TASK-NNN: Catch-22 — workers cannot fix the bootstrap bug that blocks the gate"`
+
+The 2026-04-24 cluster (18 silent bypasses across TASK-281/282/283/284/288/289) is the cautionary
+example that motivated this rule (see `gg search bypass-audit-2026-04-24`).
 
 ### Escalation ladder
 

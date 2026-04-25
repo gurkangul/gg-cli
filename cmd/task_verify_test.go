@@ -161,12 +161,14 @@ func TestTaskDone_PreHookFails_NoAutoNotifyStillRejects(t *testing.T) {
 	}
 }
 
-// (f) Opt-out: when GG_ENFORCEMENT=off, a failing pre-task-done hook MUST NOT
-// block — the gate is a no-op so only the store path is exercised. Terminal
-// error is ExitStoreDown (Qdrant unreachable), never ExitVerifyFailed.
-// Disable with GG_ENFORCEMENT=off (or 0/false/no).
+// (f) Opt-out: when GG_ENFORCEMENT=off AND GG_BYPASS_RATIONALE is set, a
+// failing pre-task-done hook MUST NOT block — the gate is a no-op so only
+// the store path is exercised. Terminal error is ExitStoreDown (Qdrant
+// unreachable), never ExitVerifyFailed.
+// Disable with GG_ENFORCEMENT=off (or 0/false/no) + GG_BYPASS_RATIONALE.
 func TestTaskDone_PreHook_SkippedWhenEnforcementDisabled(t *testing.T) {
 	t.Setenv("GG_ENFORCEMENT", "off")
+	t.Setenv("GG_BYPASS_RATIONALE", "TASK-001: emergency hotfix — rationale required by TASK-317")
 	ggDir := setupGGDir(t)
 	writePreTaskDoneHook(t, ggDir, "01-fail.sh", "exit 1")
 	_, _, err := execCmd(t, "task", "done", "TASK-001", "gate disabled — should fall through")

@@ -46,6 +46,12 @@ type BypassEntry struct {
 	// Actor is the role/agent that triggered the bypass (GG_ROLE or GG_AGENT).
 	// Empty when neither env var is set.
 	Actor string `json:"actor,omitempty"`
+	// Rationale is the value of GG_BYPASS_RATIONALE at bypass time (TASK-317).
+	// Empty for legacy entries recorded before TASK-317 was enforced.
+	Rationale string `json:"rationale,omitempty"`
+	// RationaleTaskID is the TASK-NNN parsed from the rationale prefix, if any.
+	// Populated when the rationale starts with "TASK-NNN:" or "TASK-NNN ".
+	RationaleTaskID string `json:"rationale_task_id,omitempty"`
 }
 
 // Read loads the State from <runtimeDir>/state.json.
@@ -92,7 +98,10 @@ func Write(runtimeDir string, s State) error {
 // concurrent writer clobbering our update surfaces as the returned error.
 // Callers (gate paths) should treat this as advisory and never abort the
 // user's command on write failure.
-func AppendBypass(runtimeDir, gate, taskID, actor string) error {
+//
+// rationale and rationaleTaskID come from GG_BYPASS_RATIONALE (TASK-317).
+// Pass empty strings for legacy callers that predate the rationale requirement.
+func AppendBypass(runtimeDir, gate, taskID, actor, rationale, rationaleTaskID string) error {
 	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
 		return fmt.Errorf("mkdir %s: %w", runtimeDir, err)
 	}
@@ -103,10 +112,12 @@ func AppendBypass(runtimeDir, gate, taskID, actor string) error {
 		s = State{}
 	}
 	s.BypassLog = append(s.BypassLog, BypassEntry{
-		TS:     time.Now().UTC().Format(time.RFC3339),
-		Gate:   gate,
-		TaskID: taskID,
-		Actor:  actor,
+		TS:              time.Now().UTC().Format(time.RFC3339),
+		Gate:            gate,
+		TaskID:          taskID,
+		Actor:           actor,
+		Rationale:       rationale,
+		RationaleTaskID: rationaleTaskID,
 	})
 	return Write(runtimeDir, s)
 }

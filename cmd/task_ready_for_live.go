@@ -96,7 +96,9 @@ func runTaskReadyForLive(cmd *cobra.Command, args []string) error {
 
 	// Agent lifecycle gate: GSD / Sonnet agents are not permitted to set ready-for-live.
 	if !enforcement.Enabled() {
-		emitGuardSkipEvent("agent-lifecycle-ready-for-live", "")
+		if rej := emitGuardSkipEvent("agent-lifecycle-ready-for-live", ""); rej != nil {
+			return rej
+		}
 	} else if rej := checkAgentLifecycleGate("ready-for-live"); rej != nil {
 		return rej
 	}
