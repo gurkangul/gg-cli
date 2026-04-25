@@ -114,8 +114,9 @@ func TestStatus_SessionsWarning_MultipleOverThreshold(t *testing.T) {
 
 // ── AC-5b: renderRolesBlock shows queue state ─────────────────────────────────
 
-// TestRolesBlock_QueueNotStarted verifies that renderRolesBlock shows the
-// "not started" queue hint when no queue.json exists (AC-5b).
+// TestRolesBlock_QueueNotStarted verifies that renderRolesBlock shows the full
+// "not started — single-pane mode (run gg spawn queue start...)" hint when no
+// queue.json exists (AC-5b). Also verifies Developer line includes transport.
 func TestRolesBlock_QueueNotStarted(t *testing.T) {
 	rtDir := t.TempDir()
 	dev := &config.DeveloperConfig{Agent: "gsd", Transport: "cmux"}
@@ -126,16 +127,24 @@ func TestRolesBlock_QueueNotStarted(t *testing.T) {
 	if !strings.Contains(out, "not started") {
 		t.Errorf("AC-5b: expected 'not started' when no queue.json; got:\n%s", out)
 	}
+	// Full hint text must be present so operators know how to enable parallel pickup.
+	if !strings.Contains(out, "gg spawn queue start") {
+		t.Errorf("AC-5b: expected 'gg spawn queue start' hint in not-started output; got:\n%s", out)
+	}
+	// Developer line must show transport in parentheses.
+	if !strings.Contains(out, "gsd (cmux)") {
+		t.Errorf("AC-5b: expected 'gsd (cmux)' developer line with transport; got:\n%s", out)
+	}
 }
 
 // TestRolesBlock_QueueRunning verifies that renderRolesBlock shows "running"
-// when a queue session exists and is not paused (AC-5b).
+// with completed and skipped counts when a queue session is active (AC-5b).
 func TestRolesBlock_QueueRunning(t *testing.T) {
 	rtDir := t.TempDir()
 	sess := &spawn.QueueSession{
 		Agent:     "gsd",
 		Completed: []string{"TASK-001", "TASK-002"},
-		Skipped:   []string{},
+		Skipped:   []string{"TASK-003"},
 	}
 	if err := spawn.WriteQueue(rtDir, sess); err != nil {
 		t.Fatalf("WriteQueue: %v", err)
@@ -148,15 +157,19 @@ func TestRolesBlock_QueueRunning(t *testing.T) {
 	if !strings.Contains(out, "completed: 2") {
 		t.Errorf("AC-5b: expected 'completed: 2' in queue line; got:\n%s", out)
 	}
+	if !strings.Contains(out, "skipped: 1") {
+		t.Errorf("AC-5b: expected 'skipped: 1' in queue line; got:\n%s", out)
+	}
 }
 
 // TestRolesBlock_QueuePaused verifies that renderRolesBlock shows "paused"
-// when a queue session is paused (AC-5b).
+// with completed and skipped counts when a queue session is paused (AC-5b).
 func TestRolesBlock_QueuePaused(t *testing.T) {
 	rtDir := t.TempDir()
 	sess := &spawn.QueueSession{
 		Agent:     "gsd",
 		Completed: []string{"TASK-001"},
+		Skipped:   []string{"TASK-002", "TASK-003"},
 		Paused:    true,
 	}
 	if err := spawn.WriteQueue(rtDir, sess); err != nil {
@@ -167,14 +180,71 @@ func TestRolesBlock_QueuePaused(t *testing.T) {
 	if !strings.Contains(out, "paused") {
 		t.Errorf("AC-5b: expected 'paused' when queue paused; got:\n%s", out)
 	}
+	if !strings.Contains(out, "completed: 1") {
+		t.Errorf("AC-5b: expected 'completed: 1' in paused queue line; got:\n%s", out)
+	}
+	if !strings.Contains(out, "skipped: 2") {
+		t.Errorf("AC-5b: expected 'skipped: 2' in paused queue line; got:\n%s", out)
+	}
 }
 
 // TestRolesBlock_EmptyRtDir verifies that renderRolesBlock degrades gracefully
-// when rtDir is empty (no runtime dir available).
+// when rtDir is empty (no runtime dir available), and still shows the Queue line
+// with "not started" but without the spawn hint (no runtime = no dir to show).
 func TestRolesBlock_EmptyRtDir(t *testing.T) {
 	dev := &config.DeveloperConfig{Agent: "gsd"}
 	out := renderRolesBlock(dev, "")
 	if !strings.Contains(out, "Queue") {
 		t.Errorf("AC-5b: expected Queue line even with empty rtDir; got:\n%s", out)
+	}
+	if !strings.Contains(out, "not started") {
+		t.Errorf("AC-5b: expected 'not started' when rtDir empty; got:\n%s", out)
+	}
+}
+
+// TestRolesBlock_UnconfiguredDeveloper verifies that renderRolesBlock shows
+// the "⚠ unconfigured" placeholder when no developer agent is set.
+func TestRolesBlock_UnconfiguredDeveloper(t *testing.T) {
+	rtDir := t.TempDir()
+	dev := &config.DeveloperConfig{}
+	out := renderRolesBlock(dev, rtDir)
+	if !strings.Contains(out, "unconfigured") {
+		t.Errorf("AC-5b: expected 'unconfigured' when developer agent is empty; got:\n%s", out)
+	}
+}
+
+// TestRolesBlock_NilDeveloper verifies that renderRolesBlock returns empty
+// string when dev is nil (defensive nil check).
+func TestRolesBlock_NilDeveloper(t *testing.T) {
+	out := renderRolesBlock(nil, t.TempDir())
+	if out != "" {
+		t.Errorf("expected empty string for nil developer config; got:\n%s", out)
+	}
+}
+
+// TestQueueStatusLine_NotStartedWithHint verifies queueStatusLine returns the
+// full spawn hint when rtDir has no queue.json.
+func TestQueueStatusLine_NotStartedWithHint(t *testing.T) {
+	line := queueStatusLine(t.TempDir())
+	if !strings.Contains(line, "not started") {
+		t.Errorf("expected 'not started' in line; got: %s", line)
+	}
+	if !strings.Contains(line, "single-pane mode") {
+		t.Errorf("expected 'single-pane mode' in line; got: %s", line)
+	}
+	if !strings.Contains(line, "gg spawn queue start") {
+		t.Errorf("expected 'gg spawn queue start' hint in line; got: %s", line)
+	}
+}
+
+// TestQueueStatusLine_EmptyRtDir verifies queueStatusLine returns the short
+// "not started — single-pane mode" form (no hint) when rtDir is empty.
+func TestQueueStatusLine_EmptyRtDir(t *testing.T) {
+	line := queueStatusLine("")
+	if !strings.Contains(line, "not started") {
+		t.Errorf("expected 'not started' when rtDir empty; got: %s", line)
+	}
+	if strings.Contains(line, "gg spawn queue start") {
+		t.Errorf("expected NO spawn hint when rtDir empty; got: %s", line)
 	}
 }
