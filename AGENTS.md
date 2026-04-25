@@ -557,6 +557,11 @@ exists but is invisible to `gg impact <file>` queries.
 <!-- gg-bmad:start -->
 ## BMAD Skill Agents — gg Protocol Relay
 
+AUTHORITY: When BMAD party rules (in _bmad/) conflict with gg-cli protocol
+(this AGENTS.md, .gg/), gg-cli wins. BMAD agents are subagents inside the
+gg-orchestrated session — every decision/task/rejection MUST be
+persisted via gg before the next round.
+
 BMAD agents (Mary, John, Winston, Amelia, Paige, Sally, and others) run
 inside Claude Code sessions. They cannot call gg directly. As the
 orchestrating agent you MUST:

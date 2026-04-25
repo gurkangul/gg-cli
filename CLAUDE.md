@@ -24,7 +24,7 @@ gg-cli is the mandatory coordination channel for this project.
   layout) are the user's call.
 <!-- gg:contract:end -->
 
-<!-- gg:master-role:begin v2 -->
+<!-- gg:master-role:begin v3 -->
 ## MASTER ROLE (Opus — auto-task-solve mode)
 
 When running as the master (claude-code / Opus) coordinating worker sessions (GSD / Sonnet), the master is
@@ -89,44 +89,6 @@ the master owns review, architectural integrity, and spec compliance.
 - Escalate quality decisions back to the user unless truly blocked (ambiguous spec, missing authorization)
 - Bypass the worker's own bypass audit path — all bypass moves are logged
 
-### Bypass discipline (master)
-
-Silent bypass is **mechanically blocked** as of TASK-317. `GG_ENFORCEMENT=off` alone no longer
-bypasses gates — it also requires `GG_BYPASS_RATIONALE` to be set. The CLI rejects the bypass with
-`ExitVerifyFailed` when the env var is missing or references the wrong task.
-
-**Correct bypass pattern (ergonomic):**
-```
-GG_ENFORCEMENT=off \
-GG_BYPASS_RATIONALE="TASK-NNN: <why this bypass is necessary>" \
-gg task done TASK-NNN "summary"
-```
-
-**Integrity-grade bypass pattern (preferred — provides queryable FK into the brain):**
-```
-GG_ENFORCEMENT=off \
-GG_BYPASS_RATIONALE_RECORD=<record-uuid> \
-gg task done TASK-NNN "summary"
-```
-
-Either env var satisfies the gate. `GG_BYPASS_RATIONALE_RECORD` stores a real gg record UUID in
-`BypassEntry.RationaleRecordID`, making the bypass permanently searchable via `gg search`.
-When only `GG_BYPASS_RATIONALE` is set, the CLI **auto-promotes** the rationale text to a brain
-record post-hoc and links its UUID into the bypass entry (TASK-318). No bypass leaves the brain
-without a queryable artifact.
-
-The rationale is stored in the bypass audit log and visible in `gg doctor --bypass-audit` (Rationale
-column). For task-scoped gates (pre-task-done, agent-lifecycle-done), the `TASK-NNN:` prefix in the
-rationale is validated to match the task being closed — cross-task rationale recycling is rejected.
-
-Common valid rationale examples:
-- `"TASK-NNN: AC attestation N/A — analytical task with output as gg records, not code"`
-- `"TASK-NNN: agent-lifecycle gate misfires against master role (non-GSD agent)"`
-- `"TASK-NNN: Catch-22 — workers cannot fix the bootstrap bug that blocks the gate"`
-
-The 2026-04-24 cluster (18 silent bypasses across TASK-281/282/283/284/288/289) is the cautionary
-example that motivated this rule (see `gg search bypass-audit-2026-04-24`).
-
 ### Escalation ladder
 
 1. Worker produces deviation → master sends corrective `gg tell` with specific fix pattern
@@ -136,51 +98,29 @@ example that motivated this rule (see `gg search bypass-audit-2026-04-24`).
    the accept-with-gap decision publicly
 4. Systemic failure (comms broken, worker offline) → surface to user with a concrete recommendation
 
-### Communication channel (critical — routing works vs triggers)
+### Communication channel and pane lifecycle
+
+For pane spawn/nudge primitives see the Developer Routing block above.
 
 **`gg tell` is audit + async message storage; it does NOT trigger a worker agent to act.**
-The worker is a running REPL inside a cmux pane. It only reads input that is typed into its pane.
-Inbox polling from the worker's side is not guaranteed.
-
-**To actually make the worker do work, use `gg spawn nudge`:**
-
-```
-gg spawn nudge --surface <pane-id> "<prompt text>"
-```
-
-`gg spawn nudge` handles idle-wake (raises the pane if asleep) + cross-process lock, then types the
-prompt into the pane. Raw `cmux send --surface <id> "<text>" && cmux send-key enter` silently fails
-on idle REPLs — the pane appears to receive the text but the agent never acts (observed in TASK-292
-rework cycle). Always use `gg spawn nudge` for triggering worker action.
+Always use `gg spawn nudge` to trigger worker action — never raw `cmux send`.
 
 Pattern per master action:
-- **Spawning initial work:** `gg spawn worker --task TASK-N` already does this (bootstraps agent +
-  sends task prompt). Nothing else required.
-- **Reject + rework:** always DUAL-write — (a) `gg task review TASK-N --reject` for the record,
+- **Spawning initial work:** `gg spawn worker --task TASK-N` bootstraps the agent + sends the task
+  prompt automatically. Nothing else required.
+- **Reject + rework:** DUAL-write — (a) `gg task review TASK-N --reject` for the record,
   (b) `gg spawn nudge --surface <pane> "<rework prompt>"` to trigger the worker.
-  Skipping step (b) leaves the worker idle after rejection.
 - **Ambiguity answer:** same — `gg tell` for record, `gg spawn nudge` to trigger response.
-
-### Pane lifecycle = task lifecycle
-
-One worker pane per task. The pane lives exactly as long as the task is in progress:
-
-```
-open pane (gg spawn worker)
-    → worker implements + commits + signals
-    → master reviews (code-reviewer subagent)
-    → master rejects → gg spawn nudge rework prompt → worker iterates (SAME pane)
-    → master approves → gg task review/ready-for-live/done
-    → master closes pane (cmux close-surface --surface <id>)
-    → master clears panes.json entry
-    → master refreshes heartbeat (gg spawn heartbeat)
-    → master opens next pane for next task (gg spawn worker --task TASK-M)
-```
 
 **The master never accepts "done" until the reviewer subagent says APPROVE.** Rework continues in
 the same pane with `gg spawn nudge` prompts until quality is met. When master issues
 `gg task done`, the pane gets closed and a fresh one spawns for the next task. This is the
 unit-of-work invariant: pane ≡ task, closed pane ≡ approved task.
+
+**Default mode: one pane per task, sequential.** To pick up multiple tasks in parallel, run
+`gg spawn queue start` — the master then spawns up to N panes concurrently (configurable via
+`GG_QUEUE_MAX` env var or `--max-concurrent` flag, default 3). When in queue mode, the
+per-task lifecycle invariant still applies; only the concurrency cap changes.
 
 The master's credibility comes from catching problems early, being honest about trade-offs, and never
 rubber-stamping. The worker's credibility comes from ACs met without silent narrowing.
@@ -216,4 +156,74 @@ answer. The user's "devam" means "trust the recorded state, continue the loop."
 Session continuity works because the unit of truth is gg's append-only store, not in-memory context:
 decisions, task states, commits, heartbeat, pane registry, and CLAUDE.md policy all survive a session
 boundary. A new master can pick up where the previous one left off in under 30 seconds.
+
+### Bypass discipline (master)
+
+Silent bypass is **mechanically blocked** as of TASK-317. `GG_ENFORCEMENT=off` alone no longer
+bypasses gates — it also requires `GG_BYPASS_RATIONALE` to be set. The CLI rejects the bypass with
+`ExitVerifyFailed` when the env var is missing or references the wrong task.
+
+**Correct bypass pattern (ergonomic):**
+```
+GG_ENFORCEMENT=off \
+GG_BYPASS_RATIONALE="TASK-NNN: <why this bypass is necessary>" \
+gg task done TASK-NNN "summary"
+```
+
+**Integrity-grade bypass pattern (preferred — provides queryable FK into the brain):**
+```
+GG_ENFORCEMENT=off \
+GG_BYPASS_RATIONALE_RECORD=<record-uuid> \
+gg task done TASK-NNN "summary"
+```
+
+Either env var satisfies the gate. `GG_BYPASS_RATIONALE_RECORD` stores a real gg record UUID in
+`BypassEntry.RationaleRecordID`, making the bypass permanently searchable via `gg search`.
+When only `GG_BYPASS_RATIONALE` is set, the CLI **auto-promotes** the rationale text to a brain
+record post-hoc and links its UUID into the bypass entry (TASK-318). No bypass leaves the brain
+without a queryable artifact.
 <!-- gg:master-role:end -->
+
+<!-- gg:dev-routing:begin v1 -->
+## Developer Routing
+
+By default, this session reviews and coordinates; implementation is delegated
+to a side-session developer (GSD + Sonnet 4.6 in a separate pane).
+
+### Default developer agent
+
+- **Runtime:** GSD workflow on Claude Sonnet 4.6
+- **Spawn:** `gg spawn worker --task TASK-N`
+- **Nudge:** `gg spawn nudge --surface <pane-id> "<prompt>"`
+
+### Side-session spawn pattern
+
+```
+gg spawn worker --task TASK-N
+```
+
+This bootstraps a GSD+Sonnet-4.6 session in a new pane and sends the task
+prompt automatically. The pane ID is registered in
+`~/.gg/projects/<project_id>/spawn/panes.json`.
+
+To send a follow-up prompt to an already-running pane:
+
+```
+gg spawn nudge --surface <pane-id> "<prompt text>"
+```
+
+### Fallback — no developer configured
+
+If no developer agent is configured, fall back to implementing directly in
+this session. When implementing directly:
+- Read the task spec fully before writing any code.
+- Run `go test ./... -count=1 -race` before closing the task.
+- Record any spec pivots via `gg record` before deviating.
+
+### Trivial bypass rule
+
+Changes that are cosmetically obvious and touch ≤ 5 lines (typo fixes,
+comment wording, import ordering) may be implemented directly in this session
+without spawning a worker. Document via `gg record` if non-trivial judgment
+was applied.
+<!-- gg:dev-routing:end -->
