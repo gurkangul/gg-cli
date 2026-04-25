@@ -108,3 +108,16 @@ func TestBecomeMaster_NoGGDir(t *testing.T) {
 		t.Fatal("expected error when .gg/ is absent, got nil")
 	}
 }
+
+// TestBecome_NoArg verifies that `gg become` with no subcommand exits 0 and
+// prints usage help (AC-4).
+func TestBecome_NoArg(t *testing.T) {
+	stdout, stderr, err := execCmd(t, "become")
+	if err != nil {
+		t.Fatalf("AC-4: gg become (no arg) exited non-zero: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(combined, "master") {
+		t.Errorf("AC-4: expected 'master' in help output, got:\n%s", combined)
+	}
+}

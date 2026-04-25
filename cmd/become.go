@@ -19,6 +19,9 @@ var becomeCmd = &cobra.Command{
 	Use:   "become",
 	Short: "Adopt a project role (e.g. become master)",
 	Long:  `Adopt a coordination role in the current project.`,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
+	},
 }
 
 var becomeMasterCmd = &cobra.Command{
