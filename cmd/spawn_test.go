@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"testing"
+
+	"github.com/gurkangul/gg-cli/internal/orchestrator/terminal"
 )
 
 // TestSpawnAgentDefault verifies fallback behaviour for the agent default.
@@ -122,6 +126,57 @@ func TestAppendUniqID_Empty(t *testing.T) {
 	s = appendUniqID(s, "TASK-001")
 	if len(s) != 1 || s[0] != "TASK-001" {
 		t.Errorf("expected [TASK-001], got %v", s)
+	}
+}
+
+// TestBootstrapAgentInPane_LaunchesAgentBeforePrompt is the regression guard
+// for BUG-022 (queue-pool path silently dropped the agent launch and only sent
+// a shell startup, leaving the pane as an idle bash). Both spawn paths now
+// route through bootstrapAgentInPane(); this test asserts the Send order so a
+// future refactor cannot reintroduce the divergence.
+func TestBootstrapAgentInPane_LaunchesAgentBeforePrompt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("3s sleep between agent launch and prompt makes this slow")
+	}
+	fake := terminal.NewFake()
+	id, err := fake.NewSplit(context.Background(), terminal.SplitOpts{})
+	if err != nil {
+		t.Fatalf("NewSplit: %v", err)
+	}
+	var buf bytes.Buffer
+	bootstrapAgentInPane(context.Background(), fake, id, "gsd", "TASK-042", &buf)
+
+	// Expect: NewSplit, Send(gsd), SendKey(enter), Send(prompt), SendKey(enter)
+	if got := len(fake.Calls); got != 5 {
+		t.Fatalf("Calls = %d, want 5: %+v", got, fake.Calls)
+	}
+	if c := fake.Calls[1]; c.Method != "Send" || c.Arg != "gsd" {
+		t.Errorf("call[1] = %+v, want Send gsd", c)
+	}
+	if c := fake.Calls[2]; c.Method != "SendKey" || c.Arg != "enter" {
+		t.Errorf("call[2] = %+v, want SendKey enter", c)
+	}
+	if c := fake.Calls[3]; c.Method != "Send" || !spawnContains(c.Arg, "TASK-042") {
+		t.Errorf("call[3] = %+v, want Send <prompt with TASK-042>", c)
+	}
+	if c := fake.Calls[4]; c.Method != "SendKey" || c.Arg != "enter" {
+		t.Errorf("call[4] = %+v, want SendKey enter", c)
+	}
+}
+
+// TestBootstrapAgentInPane_NoTaskIDSkipsPrompt verifies that an empty taskID
+// only launches the agent — no orientation prompt is sent.
+func TestBootstrapAgentInPane_NoTaskIDSkipsPrompt(t *testing.T) {
+	fake := terminal.NewFake()
+	id, err := fake.NewSplit(context.Background(), terminal.SplitOpts{})
+	if err != nil {
+		t.Fatalf("NewSplit: %v", err)
+	}
+	var buf bytes.Buffer
+	bootstrapAgentInPane(context.Background(), fake, id, "gsd", "", &buf)
+
+	if got := len(fake.Calls); got != 3 {
+		t.Fatalf("Calls = %d, want 3 (NewSplit, Send gsd, SendKey enter): %+v", got, fake.Calls)
 	}
 }
 
