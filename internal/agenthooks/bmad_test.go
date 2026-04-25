@@ -81,14 +81,24 @@ func TestBMAD_Install_Idempotent(t *testing.T) {
 
 // TestBMAD_ManagedBody_ContainsAuthorityPreamble verifies AC-3: the BMAD
 // managed block body declares the gg-cli authority order so that the
-// orchestrating agent sees gg wins over BMAD party rules.
+// orchestrating agent sees gg wins over BMAD party rules. Must include the
+// full spec-required clauses: AUTHORITY opener, gg-cli wins, subagents role,
+// and persisted via gg requirement.
 func TestBMAD_ManagedBody_ContainsAuthorityPreamble(t *testing.T) {
 	body := bmadManagedBody()
-	if !strings.Contains(body, "AUTHORITY:") {
-		t.Error("bmadManagedBody missing AUTHORITY: preamble (AC-3)")
+	checks := []struct {
+		substr string
+		label  string
+	}{
+		{"AUTHORITY:", "AUTHORITY: preamble opener"},
+		{"gg-cli wins", "gg-cli wins clause"},
+		{"subagents", "subagents role clause"},
+		{"persisted via gg", "persisted via gg requirement"},
 	}
-	if !strings.Contains(body, "gg-cli wins") {
-		t.Error("bmadManagedBody AUTHORITY preamble must state 'gg-cli wins'")
+	for _, c := range checks {
+		if !strings.Contains(body, c.substr) {
+			t.Errorf("bmadManagedBody missing %s (AC-3): want substring %q", c.label, c.substr)
+		}
 	}
 }
 

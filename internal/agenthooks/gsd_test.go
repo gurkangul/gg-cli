@@ -111,12 +111,21 @@ func TestGSD_Install_DryRun(t *testing.T) {
 
 // TestGSD_BridgeBlock_ContainsAuthorityPreamble verifies AC-4: the GSD bridge
 // block declares gg-cli is canonical so GSD agents know gg wins on conflicts.
+// Checks all spec-required clauses: AUTHORITY opener, canonical claim, and
+// the "gg mandatory contract" statement.
 func TestGSD_BridgeBlock_ContainsAuthorityPreamble(t *testing.T) {
 	body := gsdBridgeBlock()
-	if !strings.Contains(body, "AUTHORITY:") {
-		t.Error("gsdBridgeBlock missing AUTHORITY: preamble (AC-4)")
+	checks := []struct {
+		substr string
+		label  string
+	}{
+		{"AUTHORITY:", "AUTHORITY: preamble opener"},
+		{"gg-cli is canonical", "gg-cli is canonical clause"},
+		{"gg mandatory contract", "gg mandatory contract clause"},
 	}
-	if !strings.Contains(body, "gg-cli is canonical") {
-		t.Error("gsdBridgeBlock AUTHORITY preamble must state 'gg-cli is canonical'")
+	for _, c := range checks {
+		if !strings.Contains(body, c.substr) {
+			t.Errorf("gsdBridgeBlock missing %s (AC-4): want substring %q", c.label, c.substr)
+		}
 	}
 }

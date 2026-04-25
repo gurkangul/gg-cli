@@ -44,11 +44,17 @@ func SyncManagedBlocks(projectRoot string) SyncResult {
 		switch r.Action {
 		case ActionCreated, ActionUpdated:
 			sr.Repaired = true
-			label := r.DisplayName
-			if label == "" {
-				label = r.AgentName
+			// AC-2: emit agent-specific notice for BMAD so the session-start
+			// banner says "BMAD detected" rather than a generic synced line.
+			if r.AgentName == "bmad" {
+				sr.Lines = append(sr.Lines, "gg-cli: BMAD detected — refreshed gg-bmad relay block in AGENTS.md")
+			} else {
+				label := r.DisplayName
+				if label == "" {
+					label = r.AgentName
+				}
+				sr.Lines = append(sr.Lines, "  ✓ synced  "+label+" — "+string(r.Action))
 			}
-			sr.Lines = append(sr.Lines, "  ✓ synced  "+label+" — "+string(r.Action))
 		case ActionFailed:
 			if r.Err != nil {
 				sr.Errors = append(sr.Errors, r.Err)

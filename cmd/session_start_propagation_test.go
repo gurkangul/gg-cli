@@ -103,6 +103,58 @@ func TestSessionStart_FirstSession_NoDelta(t *testing.T) {
 	}
 }
 
+// TestSyncManagedBlocks_BMADDetected_InstallsBlock verifies AC-6a: when a
+// _bmad/ directory is present in the project root and AGENTS.md exists,
+// SyncManagedBlocks installs the gg-bmad block into AGENTS.md and emits
+// the AC-2 "BMAD detected" notice in sr.Lines. Also verifies AC-6b: a
+// second call is idempotent (no notice on repeat).
+func TestSyncManagedBlocks_BMADDetected_InstallsBlock(t *testing.T) {
+	dir := t.TempDir()
+
+	// Seed _bmad/ directory — the canonical BMAD detection signal.
+	if err := os.MkdirAll(filepath.Join(dir, "_bmad"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Seed AGENTS.md without the bmad block — so the installer has work to do.
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Agents\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sr := agenthooks.SyncManagedBlocks(dir)
+
+	// AC-6a: AGENTS.md must contain the gg-bmad managed block.
+	raw, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(raw), "gg-bmad:start") {
+		t.Error("AGENTS.md missing gg-bmad block after SyncManagedBlocks (AC-6a)")
+	}
+
+	// AC-2 / AC-6a: sr.Lines must contain the "BMAD detected" notice.
+	bmadNotice := false
+	for _, l := range sr.Lines {
+		if strings.Contains(l, "BMAD detected") {
+			bmadNotice = true
+			break
+		}
+	}
+	if !bmadNotice {
+		t.Errorf("SyncManagedBlocks lines missing 'BMAD detected' notice (AC-2/AC-6a); got: %v", sr.Lines)
+	}
+
+	// AC-6b: second call must be idempotent — no notice, Repaired=false.
+	sr2 := agenthooks.SyncManagedBlocks(dir)
+	for _, l := range sr2.Lines {
+		if strings.Contains(l, "BMAD detected") {
+			t.Errorf("SyncManagedBlocks emitted BMAD detected on idempotent second call (AC-6b); lines: %v", sr2.Lines)
+		}
+	}
+	if sr2.Repaired {
+		t.Errorf("SyncManagedBlocks Repaired=true on idempotent second call (AC-6b)")
+	}
+}
+
 // TestSyncManagedBlocks_RepairsOnSessionStart verifies that session-start calls
 // SyncManagedBlocks and emits a resync banner on stderr when a stale managed
 // block is found. Tests the integration between runSessionStart and
