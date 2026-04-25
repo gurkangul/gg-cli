@@ -12,6 +12,7 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/enforcement"
 	"github.com/gurkangul/gg-cli/internal/filesize"
+	"github.com/gurkangul/gg-cli/internal/orchestrator/spawn"
 	"github.com/gurkangul/gg-cli/internal/outbox"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/telemetry"
@@ -235,10 +236,14 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Roles — show developer agent config so operators can see the
-		// routing setup at a glance without opening .gg/config.yaml.
+		// Roles — show developer agent config and queue state so operators
+		// can see the routing setup at a glance without opening .gg/config.yaml.
 		if cfg, cfgErr := config.Load(); cfgErr == nil {
-			fmt.Print(renderRolesBlock(&cfg.Developer))
+			var rtDir string
+			if rt, rtErr := cfg.RuntimeDir(); rtErr == nil {
+				rtDir = rt
+			}
+			fmt.Print(renderRolesBlock(&cfg.Developer, rtDir))
 		}
 
 		fmt.Println("TASKS:")
@@ -432,8 +437,9 @@ func fmtCount(n uint64, err error) string {
 }
 
 // renderRolesBlock formats the Roles section for gg status, showing the
-// developer agent and transport.
-func renderRolesBlock(dev *config.DeveloperConfig) string {
+// developer agent, transport, and queue state. rtDir may be empty (queue line
+// defaults to "not started" when the runtime dir is unavailable).
+func renderRolesBlock(dev *config.DeveloperConfig, rtDir string) string {
 	if dev == nil {
 		return ""
 	}
@@ -443,7 +449,25 @@ func renderRolesBlock(dev *config.DeveloperConfig) string {
 	} else if dev.Transport != "" {
 		developerLine = dev.Agent + " (" + dev.Transport + ")"
 	}
-	return fmt.Sprintf("Roles\n  Developer  %s\n\n", developerLine)
+	queueLine := queueStatusLine(rtDir)
+	return fmt.Sprintf("Roles\n  Developer  %s\n  Queue      %s\n\n", developerLine, queueLine)
+}
+
+// queueStatusLine returns a one-line summary of the current queue state.
+// rtDir may be empty; in that case "not started" is returned.
+func queueStatusLine(rtDir string) string {
+	if rtDir == "" {
+		return "not started — single-pane mode"
+	}
+	sess, err := spawn.ReadQueue(rtDir)
+	if err != nil {
+		// ErrNoQueue or any read error → not started.
+		return "not started — single-pane mode (run gg spawn queue start for parallel pickup)"
+	}
+	if sess.Paused {
+		return fmt.Sprintf("paused (completed: %d, skipped: %d)", len(sess.Completed), len(sess.Skipped))
+	}
+	return fmt.Sprintf("running (completed: %d, skipped: %d)", len(sess.Completed), len(sess.Skipped))
 }
 
 // renderSessionsBlock formats the Sessions summary line and, when

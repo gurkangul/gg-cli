@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/orchestrator/spawn"
 	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
 
@@ -107,5 +109,72 @@ func TestStatus_SessionsWarning_MultipleOverThreshold(t *testing.T) {
 	out := renderSessionsBlock(ssum)
 	if !strings.Contains(out, "3 session(s) exceeded 100 KB") {
 		t.Errorf("expected '3 session(s)' in warning; got:\n%s", out)
+	}
+}
+
+// ── AC-5b: renderRolesBlock shows queue state ─────────────────────────────────
+
+// TestRolesBlock_QueueNotStarted verifies that renderRolesBlock shows the
+// "not started" queue hint when no queue.json exists (AC-5b).
+func TestRolesBlock_QueueNotStarted(t *testing.T) {
+	rtDir := t.TempDir()
+	dev := &config.DeveloperConfig{Agent: "gsd", Transport: "cmux"}
+	out := renderRolesBlock(dev, rtDir)
+	if !strings.Contains(out, "Queue") {
+		t.Errorf("AC-5b: expected 'Queue' line in Roles block; got:\n%s", out)
+	}
+	if !strings.Contains(out, "not started") {
+		t.Errorf("AC-5b: expected 'not started' when no queue.json; got:\n%s", out)
+	}
+}
+
+// TestRolesBlock_QueueRunning verifies that renderRolesBlock shows "running"
+// when a queue session exists and is not paused (AC-5b).
+func TestRolesBlock_QueueRunning(t *testing.T) {
+	rtDir := t.TempDir()
+	sess := &spawn.QueueSession{
+		Agent:     "gsd",
+		Completed: []string{"TASK-001", "TASK-002"},
+		Skipped:   []string{},
+	}
+	if err := spawn.WriteQueue(rtDir, sess); err != nil {
+		t.Fatalf("WriteQueue: %v", err)
+	}
+	dev := &config.DeveloperConfig{Agent: "gsd"}
+	out := renderRolesBlock(dev, rtDir)
+	if !strings.Contains(out, "running") {
+		t.Errorf("AC-5b: expected 'running' when queue session active; got:\n%s", out)
+	}
+	if !strings.Contains(out, "completed: 2") {
+		t.Errorf("AC-5b: expected 'completed: 2' in queue line; got:\n%s", out)
+	}
+}
+
+// TestRolesBlock_QueuePaused verifies that renderRolesBlock shows "paused"
+// when a queue session is paused (AC-5b).
+func TestRolesBlock_QueuePaused(t *testing.T) {
+	rtDir := t.TempDir()
+	sess := &spawn.QueueSession{
+		Agent:     "gsd",
+		Completed: []string{"TASK-001"},
+		Paused:    true,
+	}
+	if err := spawn.WriteQueue(rtDir, sess); err != nil {
+		t.Fatalf("WriteQueue: %v", err)
+	}
+	dev := &config.DeveloperConfig{Agent: "gsd"}
+	out := renderRolesBlock(dev, rtDir)
+	if !strings.Contains(out, "paused") {
+		t.Errorf("AC-5b: expected 'paused' when queue paused; got:\n%s", out)
+	}
+}
+
+// TestRolesBlock_EmptyRtDir verifies that renderRolesBlock degrades gracefully
+// when rtDir is empty (no runtime dir available).
+func TestRolesBlock_EmptyRtDir(t *testing.T) {
+	dev := &config.DeveloperConfig{Agent: "gsd"}
+	out := renderRolesBlock(dev, "")
+	if !strings.Contains(out, "Queue") {
+		t.Errorf("AC-5b: expected Queue line even with empty rtDir; got:\n%s", out)
 	}
 }

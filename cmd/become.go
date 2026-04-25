@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 )
 
 var becomeForceReset bool
+var becomeMasterYes bool
 
 // masterPrompt is the paste-ready prompt printed to stdout after `gg become master`
 // so the operator can immediately orient their AI session into the master role.
@@ -54,6 +57,7 @@ After running, open the first worker with:
 
 func init() {
 	becomeMasterCmd.Flags().BoolVar(&becomeForceReset, "force-reset", false, "overwrite DRIFTED (malformed) master-role markers")
+	becomeMasterCmd.Flags().BoolVar(&becomeMasterYes, "yes", false, "non-interactive: skip prompts, accept defaults")
 	becomeCmd.AddCommand(becomeMasterCmd)
 	rootCmd.AddCommand(becomeCmd)
 }
@@ -134,6 +138,30 @@ func runBecomeMaster(cmd *cobra.Command, _ []string) error {
 		})
 	}
 	fmt.Fprintf(out, "✓  Heartbeat recorded (agent: %s)\n", agent)
+	fmt.Fprintln(out)
+
+	// AC-3: prompt to auto-start queue session for parallel multi-task pickup.
+	// Non-interactive (--yes or non-TTY) skips the prompt and prints the manual command.
+	if !becomeMasterYes && isTerminal(os.Stdin) {
+		fmt.Fprint(out, "Auto-start queue session for parallel multi-task pickup? [y/N]: ")
+		line, readErr := newStdinReader().ReadString('\n')
+		if readErr == nil || errors.Is(readErr, io.EOF) {
+			answer := strings.ToLower(strings.TrimSpace(line))
+			if answer == "y" || answer == "yes" {
+				fmt.Fprintln(out, "→ Starting queue session...")
+				if qErr := spawnQueueStartCmd.RunE(spawnQueueStartCmd, nil); qErr != nil {
+					fmt.Fprintf(out, "  ⚠ queue start failed: %v\n  Run manually: gg spawn queue start\n", qErr)
+				} else {
+					fmt.Fprintln(out, "  ✓ Queue session started.")
+				}
+			} else {
+				fmt.Fprintln(out, "  Skipped — single-pane mode. Run `gg spawn queue start` when ready.")
+			}
+		}
+	} else {
+		fmt.Fprintln(out, "Queue: not started (single-pane mode). Run `gg spawn queue start` for parallel multi-task pickup.")
+	}
+
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "── Paste this prompt into your master session ──────────────────")
 	fmt.Fprintln(out, masterPrompt)

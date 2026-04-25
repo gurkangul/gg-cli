@@ -155,7 +155,7 @@ func TestConfigSet_DeveloperAgent_RoundTrip(t *testing.T) {
 // TestStatus_DeveloperLine_Configured verifies renderRolesBlock with an agent+transport.
 func TestStatus_DeveloperLine_Configured(t *testing.T) {
 	dev := &config.DeveloperConfig{Agent: "gsd-sonnet-4.6", Transport: "cmux"}
-	out := renderRolesBlock(dev)
+	out := renderRolesBlock(dev, "")
 	if !strings.Contains(out, "Developer") {
 		t.Errorf("expected 'Developer' in Roles block; got:\n%s", out)
 	}
@@ -171,7 +171,7 @@ func TestStatus_DeveloperLine_Configured(t *testing.T) {
 // transport renders without parentheses.
 func TestStatus_DeveloperLine_AgentOnlyNoTransport(t *testing.T) {
 	dev := &config.DeveloperConfig{Agent: "claude-sonnet-4.5"}
-	out := renderRolesBlock(dev)
+	out := renderRolesBlock(dev, "")
 	if !strings.Contains(out, "claude-sonnet-4.5") {
 		t.Errorf("expected agent name; got:\n%s", out)
 	}
@@ -183,7 +183,7 @@ func TestStatus_DeveloperLine_AgentOnlyNoTransport(t *testing.T) {
 // TestStatus_DeveloperLine_Unconfigured verifies the warning when agent is empty.
 func TestStatus_DeveloperLine_Unconfigured(t *testing.T) {
 	dev := &config.DeveloperConfig{}
-	out := renderRolesBlock(dev)
+	out := renderRolesBlock(dev, "")
 	if !strings.Contains(out, "unconfigured") {
 		t.Errorf("expected 'unconfigured' warning; got:\n%s", out)
 	}
@@ -192,7 +192,7 @@ func TestStatus_DeveloperLine_Unconfigured(t *testing.T) {
 // TestStatus_DeveloperLine_UnconfiguredValue verifies explicit "unconfigured" value.
 func TestStatus_DeveloperLine_UnconfiguredValue(t *testing.T) {
 	dev := &config.DeveloperConfig{Agent: "unconfigured"}
-	out := renderRolesBlock(dev)
+	out := renderRolesBlock(dev, "")
 	if !strings.Contains(out, "unconfigured") {
 		t.Errorf("expected 'unconfigured' in output; got:\n%s", out)
 	}

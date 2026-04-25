@@ -211,3 +211,60 @@ func TestBecome_NoArg_NoDeveloperAgent(t *testing.T) {
 		t.Errorf("expected 'no role declared' in output, got:\n%s", combined)
 	}
 }
+
+// TestBecomeMaster_QueuePromptSkippedNonInteractive verifies AC-5c: when stdin is
+// not a TTY (as in tests), the queue prompt is skipped and the manual command is
+// printed instead.
+func TestBecomeMaster_QueuePromptSkippedNonInteractive(t *testing.T) {
+	setupGGDir(t)
+
+	stdout, stderr, err := execCmd(t, "become", "master")
+	if err != nil {
+		t.Fatalf("AC-5c: become master failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	combined := stdout + stderr
+	// Non-interactive path must print the manual command hint, not a [y/N] prompt.
+	if !strings.Contains(combined, "gg spawn queue start") {
+		t.Errorf("AC-5c: expected 'gg spawn queue start' hint in non-interactive output; got:\n%s", combined)
+	}
+}
+
+// TestBecomeMaster_QueueHintWithYesFlag verifies that --yes also skips the
+// interactive prompt and prints the manual command hint (AC-5c).
+func TestBecomeMaster_QueueHintWithYesFlag(t *testing.T) {
+	setupGGDir(t)
+
+	stdout, stderr, err := execCmd(t, "become", "master", "--yes")
+	if err != nil {
+		t.Fatalf("AC-5c: become master --yes failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(combined, "gg spawn queue start") {
+		t.Errorf("AC-5c: expected 'gg spawn queue start' in --yes output; got:\n%s", combined)
+	}
+}
+
+// TestBecomeMaster_DoctrineContainsQueueParagraph verifies AC-5d: the installed
+// master-role-extras block contains the queue doctrine paragraph.
+func TestBecomeMaster_DoctrineContainsQueueParagraph(t *testing.T) {
+	setupGGDir(t)
+
+	_, _, err := execCmd(t, "become", "master")
+	if err != nil {
+		t.Fatalf("AC-5d: become master failed: %v", err)
+	}
+
+	cwd, _ := os.Getwd()
+	data, readErr := os.ReadFile(filepath.Join(cwd, "CLAUDE.md"))
+	if readErr != nil {
+		t.Fatalf("AC-5d: read CLAUDE.md: %v", readErr)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "gg spawn queue start") {
+		t.Errorf("AC-5d: expected 'gg spawn queue start' in master-role block; got content length %d", len(content))
+	}
+	if !strings.Contains(content, "sequential") || !strings.Contains(content, "parallel") {
+		t.Errorf("AC-5d: expected queue lifecycle paragraph with 'sequential' and 'parallel'; content length %d", len(content))
+	}
+}

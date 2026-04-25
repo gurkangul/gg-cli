@@ -90,6 +90,11 @@ the same pane with `gg spawn nudge` prompts until quality is met. When master is
 `gg task done`, the pane gets closed and a fresh one spawns for the next task. This is the
 unit-of-work invariant: pane ≡ task, closed pane ≡ approved task.
 
+**Default mode: one pane per task, sequential.** To pick up multiple tasks in parallel, run
+`gg spawn queue start` — the master then spawns up to N panes concurrently (configurable via
+`GG_QUEUE_MAX` env var or `--max-concurrent` flag, default 3). When in queue mode, the
+per-task lifecycle invariant still applies; only the concurrency cap changes.
+
 The master's credibility comes from catching problems early, being honest about trade-offs, and never
 rubber-stamping. The worker's credibility comes from ACs met without silent narrowing.
 

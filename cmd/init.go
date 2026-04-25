@@ -241,6 +241,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("  %s\n", devRoutingMsg)
 		}
+		fmt.Println("  Queue: not started (run gg spawn queue start for parallel multi-task pickup)")
 
 		// Install task-done gate scripts (.gg/hooks/pre-task-done.d/) so the
 		// pre-task-done hook fires on 'gg task done' from the very first session.
