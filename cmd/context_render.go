@@ -89,6 +89,8 @@ func discStatusMark(status string) string {
 // adds "cached_at" and "stale_seconds" to the JSON output so agents know the
 // data may be stale.
 func printContextBundle(cmd *cobra.Command, query string, bundle contextBundle, errs []string, cachedAt time.Time) error {
+	conflicts := detectConflicts(bundle)
+
 	jsonPayload := map[string]any{
 		"query":       query,
 		"decisions":   bundle.decisions,
@@ -96,6 +98,7 @@ func printContextBundle(cmd *cobra.Command, query string, bundle contextBundle, 
 		"tasks":       bundle.tasks,
 		"discussions": bundle.discussions,
 		"notes":       bundle.notes,
+		"conflicts":   conflicts,
 		"warnings":    errs,
 	}
 	if !cachedAt.IsZero() {
@@ -106,7 +109,7 @@ func printContextBundle(cmd *cobra.Command, query string, bundle contextBundle, 
 	return printJSON(jsonPayload, func() {
 		if contextBudget > 0 {
 			emitCompact(cmd, "context",
-				func(w io.Writer) { renderContextDefault(w, query, bundle, errs) },
+				func(w io.Writer) { renderContextDefault(w, query, bundle, errs, conflicts) },
 				func(w io.Writer) { renderContextBudget(w, query, bundle, errs, contextBudget) },
 				compactRendererV_context,
 			)
@@ -114,19 +117,27 @@ func printContextBundle(cmd *cobra.Command, query string, bundle contextBundle, 
 		}
 		if isCompactActive(cmd) {
 			emitCompact(cmd, "context",
-				func(w io.Writer) { renderContextDefault(w, query, bundle, errs) },
-				func(w io.Writer) { renderContextCompact(w, query, bundle, errs) },
+				func(w io.Writer) { renderContextDefault(w, query, bundle, errs, conflicts) },
+				func(w io.Writer) { renderContextCompact(w, query, bundle, errs, conflicts) },
 				compactRendererV_context,
 			)
 			return
 		}
-		renderContextDefault(os.Stdout, query, bundle, errs)
+		renderContextDefault(os.Stdout, query, bundle, errs, conflicts)
 	})
 }
 
-func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs []string) {
+func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs []string, conflicts []contextConflict) {
 	fmt.Fprintf(w, "CONTEXT BUNDLE: %q\n", query)
 	fmt.Fprintln(w, strings.Repeat("─", 60))
+
+	if len(conflicts) > 0 {
+		fmt.Fprintln(w, "\nCONFLICTS:")
+		for _, c := range conflicts {
+			fmt.Fprintf(w, "  ⚡ [%s] %s references resolved (%q) but live status is %s — live status is authoritative\n",
+				c.ID, c.SourceType, c.ClosureToken, c.LiveStatus)
+		}
+	}
 
 	if len(bundle.decisions) > 0 {
 		fmt.Fprintln(w, "\nDECISIONS:")
@@ -218,11 +229,23 @@ func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs 
 // renderContextCompact drops Reason/Detail/Tags/transcript bodies so an
 // agent can scan a bundle and decide what to fetch in full. Typical 60-85%
 // size reduction vs default rendering.
-func renderContextCompact(w io.Writer, query string, bundle contextBundle, errs []string) {
-	fmt.Fprintf(w, "context: %q — %dD %dR %dT %d? %dN\n\n",
+func renderContextCompact(w io.Writer, query string, bundle contextBundle, errs []string, conflicts []contextConflict) {
+	conflictSuffix := ""
+	if len(conflicts) > 0 {
+		conflictSuffix = fmt.Sprintf(" ⚡%dX", len(conflicts))
+	}
+	fmt.Fprintf(w, "context: %q — %dD %dR %dT %d? %dN%s\n\n",
 		query,
 		len(bundle.decisions), len(bundle.rejections),
-		len(bundle.tasks), len(bundle.discussions), len(bundle.notes))
+		len(bundle.tasks), len(bundle.discussions), len(bundle.notes),
+		conflictSuffix)
+
+	for _, c := range conflicts {
+		fmt.Fprintf(w, "⚡ CONFLICT [%s] %s says resolved (%q) — live: %s\n", c.ID, c.SourceType, c.ClosureToken, c.LiveStatus)
+	}
+	if len(conflicts) > 0 {
+		fmt.Fprintln(w)
+	}
 
 	writeCompactDecisions(w, bundle.decisions)
 	writeCompactRejections(w, bundle.rejections)

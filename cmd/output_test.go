@@ -495,7 +495,7 @@ func TestRenderContextCompact_Structure(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	renderContextCompact(&buf, "auth", bundle, nil)
+	renderContextCompact(&buf, "auth", bundle, nil, nil)
 	out := buf.String()
 
 	// Header with counts.
@@ -532,7 +532,7 @@ func TestRenderContextCompact_Structure(t *testing.T) {
 
 func TestRenderContextCompact_Empty(t *testing.T) {
 	var buf strings.Builder
-	renderContextCompact(&buf, "nothing", contextBundle{}, nil)
+	renderContextCompact(&buf, "nothing", contextBundle{}, nil, nil)
 	out := buf.String()
 	if !strings.Contains(out, `context: "nothing" — 0D 0R 0T 0? 0N`) {
 		t.Errorf("empty bundle should still emit header, got:\n%s", out)
@@ -541,7 +541,7 @@ func TestRenderContextCompact_Empty(t *testing.T) {
 
 func TestRenderContextCompact_Errors(t *testing.T) {
 	var buf strings.Builder
-	renderContextCompact(&buf, "q", contextBundle{}, []string{"qdrant down", "embedder slow"})
+	renderContextCompact(&buf, "q", contextBundle{}, []string{"qdrant down", "embedder slow"}, nil)
 	out := buf.String()
 	if !strings.Contains(out, "! qdrant down; embedder slow") {
 		t.Errorf("errors should be rendered on a trailing ! line, got:\n%s", out)
@@ -625,8 +625,8 @@ func TestCompactSizeReduction_ContextBundle(t *testing.T) {
 	var defaultBuf, compactBuf strings.Builder
 	// Default path writes via the closure in printContextBundle; we extract the
 	// same stdout-writing logic by invoking the fallback manually.
-	renderContextDefault(&defaultBuf, "auth", bundle, nil)
-	renderContextCompact(&compactBuf, "auth", bundle, nil)
+	renderContextDefault(&defaultBuf, "auth", bundle, nil, nil)
+	renderContextCompact(&compactBuf, "auth", bundle, nil, nil)
 
 	def := defaultBuf.Len()
 	cmp := compactBuf.Len()

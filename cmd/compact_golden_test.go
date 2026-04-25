@@ -253,7 +253,7 @@ func TestCompactGolden_ContextCompact(t *testing.T) {
 		notes:       goldenNotes,
 	}
 	var buf bytes.Buffer
-	renderContextCompact(&buf, "auth", bundle, []string{"embedder timeout"})
+	renderContextCompact(&buf, "auth", bundle, []string{"embedder timeout"}, nil)
 	checkOrUpdate(t, "context_compact", buf.String())
 }
 
