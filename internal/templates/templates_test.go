@@ -183,3 +183,21 @@ func extractGGVars(src string) map[string]bool {
 	}
 	return out
 }
+
+// TestMasterRoleExtras_HasItem11 — the "no silent defer" rule (item 11) must
+// be present in the master-role-extras template so it survives session-start
+// regeneration of the gg:master-role managed block in CLAUDE.md. Added after
+// TASK-336 iter-1 silently dropped the BUG-* half of AC-1 via a "reserved
+// for future extension" comment (TASK-340).
+func TestMasterRoleExtras_HasItem11(t *testing.T) {
+	required := []string{
+		"11. **No silent defer**",
+		"reserved for future",
+		"gg tell claude-code",
+	}
+	for _, want := range required {
+		if !strings.Contains(MasterRoleExtras, want) {
+			t.Errorf("MasterRoleExtras missing %q — item 11 (no silent defer) must survive template regen; CLAUDE.md edit alone is not durable", want)
+		}
+	}
+}
