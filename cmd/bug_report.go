@@ -168,6 +168,9 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		if errors.As(reportErr, &oq) {
 			queueBrainOutbox(oq, config.GGDirOrEmpty())
 			fmt.Fprintln(cmd.ErrOrStderr(), "⚠ queued for vector index (Qdrant unreachable; will replay on recovery)")
+			if isSandboxPermissionError(oq.Cause) {
+				fmt.Fprintln(cmd.ErrOrStderr(), "⚠ sandbox EPERM detected — outbox entry queued, but the agent should rerun outside sandbox to avoid drift")
+			}
 		} else {
 			return fmt.Errorf("report bug: %w", reportErr)
 		}

@@ -52,6 +52,7 @@ var (
 	doctorCheckSecrets          bool
 	doctorCheckSecretsStaged    bool
 	doctorCheckSecretsHistory   bool
+	doctorDiagnoseSandbox       bool
 )
 
 func init() {
@@ -111,6 +112,8 @@ func init() {
 		"with --check-secrets: run staged/working-tree scan only (gitleaks detect --no-git)")
 	doctorCmd.Flags().BoolVar(&doctorCheckSecretsHistory, "history", false,
 		"with --check-secrets: run full git history scan only (gitleaks detect)")
+	doctorCmd.Flags().BoolVar(&doctorDiagnoseSandbox, "diagnose-sandbox", false,
+		"probe localhost TCP to detect sandbox restrictions; reports 'TCP localhost permitted' or 'TCP localhost BLOCKED'")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -219,6 +222,9 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	}
 	if doctorCheckSecrets {
 		return runDoctorCheckSecrets(doctorCheckSecretsStaged, doctorCheckSecretsHistory)
+	}
+	if doctorDiagnoseSandbox {
+		return runDoctorDiagnoseSandbox(cmd)
 	}
 
 	fmt.Println("GG Doctor")

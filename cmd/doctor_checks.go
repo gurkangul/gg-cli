@@ -58,6 +58,12 @@ func doctorCheckQdrant(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 	defer cancel()
 
 	if err := c.HealthCheck(ctx); err != nil {
+		if hint := sandboxPermissionHint(err); hint != "" {
+			fmt.Fprintf(os.Stderr, "  ✗ qdrant unreachable at %s:%d — operation not permitted (sandbox?)\n", cfg.Qdrant.Host, cfg.Qdrant.Port)
+			fmt.Fprintf(os.Stderr, "    %s\n", hint)
+			report.problems++
+			return
+		}
 		report.fail("qdrant", fmt.Sprintf("unreachable at %s:%d — %v", cfg.Qdrant.Host, cfg.Qdrant.Port, err))
 		return
 	}
@@ -94,6 +100,12 @@ func doctorCheckMemgraph(cmd *cobra.Command, cfg *config.Config, report *doctorR
 	defer cancel()
 
 	if err := gc.HealthCheck(ctx); err != nil {
+		if hint := sandboxPermissionHint(err); hint != "" {
+			fmt.Fprintf(os.Stderr, "  ✗ memgraph unreachable at %s — operation not permitted (sandbox?)\n", cfg.Memgraph.URI)
+			fmt.Fprintf(os.Stderr, "    %s\n", hint)
+			report.problems++
+			return
+		}
 		report.fail("memgraph", fmt.Sprintf("unreachable at %s — %v", cfg.Memgraph.URI, err))
 		return
 	}
@@ -114,6 +126,12 @@ func doctorCheckOllama(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 	defer curlCancel()
 	c := exec.CommandContext(curlCtx, "curl", "-sf", "--max-time", "3", ollamaURL)
 	if err := c.Run(); err != nil {
+		if hint := sandboxPermissionHint(err); hint != "" {
+			fmt.Fprintf(os.Stderr, "  ✗ ollama unreachable at %s — operation not permitted (sandbox?)\n", cfg.Embedding.Host)
+			fmt.Fprintf(os.Stderr, "    %s\n", hint)
+			report.problems++
+			return
+		}
 		report.fail("ollama", fmt.Sprintf("unreachable at %s", cfg.Embedding.Host))
 		return
 	}
