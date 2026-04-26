@@ -13,6 +13,12 @@ import (
 // whether any TCP socket to localhost is permitted, not whether Qdrant is up.
 const sandboxProbeTarget = "localhost:6334"
 
+// sandboxDialer is the TCP dial function used by runDoctorDiagnoseSandbox.
+// Replaced in tests to inject EPERM or connection-refused without real sockets.
+var sandboxDialer = func(network, addr string, timeout time.Duration) (net.Conn, error) {
+	return net.DialTimeout(network, addr, timeout)
+}
+
 // runDoctorDiagnoseSandbox probes a known localhost TCP target and reports
 // whether the sandbox permits outbound TCP to localhost.
 func runDoctorDiagnoseSandbox(cmd *cobra.Command) error {
@@ -20,7 +26,7 @@ func runDoctorDiagnoseSandbox(cmd *cobra.Command) error {
 	fmt.Println("─────────────────────────────────────────────────")
 	fmt.Printf("  Probing TCP %s ...\n", sandboxProbeTarget)
 
-	conn, err := net.DialTimeout("tcp", sandboxProbeTarget, 3*time.Second)
+	conn, err := sandboxDialer("tcp", sandboxProbeTarget, 3*time.Second)
 	if err != nil {
 		if isSandboxPermissionError(err) {
 			fmt.Fprintf(cmd.OutOrStdout(), "  sandbox: TCP localhost BLOCKED — escalate permissions\n")

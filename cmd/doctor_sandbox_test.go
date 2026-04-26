@@ -2,29 +2,72 @@ package cmd
 
 import (
 	"bytes"
+	"context"
+	"io"
+	"os"
 	"strings"
 	"syscall"
 	"testing"
 
+	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
+// fakeQdrantChecker is an injectable fake that returns a canned error from HealthCheck.
+type fakeQdrantChecker struct{ err error }
+
+func (f *fakeQdrantChecker) HealthCheck(_ context.Context) error { return f.err }
+func (f *fakeQdrantChecker) CollectionStatus(_ context.Context) ([]string, []string, error) {
+	return nil, nil, nil
+}
+func (f *fakeQdrantChecker) Close() error { return nil }
+
 func TestDoctorCheckQdrant_PrintsSandboxHint(t *testing.T) {
-	// Build a doctorReport and invoke the EPERM detection path directly
-	// by verifying sandboxPermissionHint returns a hint for EPERM.
-	// Full integration with a real dialer is tested via the helper test above.
-	hint := sandboxPermissionHint(syscall.EPERM)
-	if hint == "" {
-		t.Fatal("expected sandbox hint for syscall.EPERM, got empty")
+	// Inject a fake client that returns EPERM on HealthCheck.
+	orig := doctorQdrantNewClient
+	defer func() { doctorQdrantNewClient = orig }()
+	doctorQdrantNewClient = func(_ *config.Config, _ string) (qdrantHealthChecker, error) {
+		return &fakeQdrantChecker{err: syscall.EPERM}, nil
 	}
-	if !strings.Contains(hint, "sandbox") {
-		t.Errorf("hint should mention 'sandbox': %q", hint)
+
+	// Capture stderr.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origStderr := os.Stderr
+	os.Stderr = w
+
+	report := &doctorReport{}
+	cfg := &config.Config{}
+	cfg.Qdrant.Host = "localhost"
+	cfg.Qdrant.Port = 6334
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	doctorCheckQdrant(cmd, cfg, report)
+
+	w.Close()
+	os.Stderr = origStderr
+	var buf bytes.Buffer
+	io.Copy(&buf, r) //nolint:errcheck
+
+	if report.problems != 1 {
+		t.Fatalf("expected 1 problem, got %d", report.problems)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "operation not permitted (sandbox?)") {
+		t.Errorf("expected sandbox banner in stderr, got: %q", output)
+	}
+	if !strings.Contains(output, "sandbox") {
+		t.Errorf("expected hint line mentioning sandbox, got: %q", output)
 	}
 }
 
 func TestRecordOffline_EpermVariantPrintsSandboxNote(t *testing.T) {
-	// Build an OutboxQueued with an EPERM Cause and verify that
-	// isSandboxPermissionError correctly identifies it.
+	// OutboxQueued with EPERM Cause must be detected.
 	oq := &store.OutboxQueued{
 		Kind:  store.OutboxKindDecision,
 		UUID:  "test-uuid",
@@ -34,25 +77,23 @@ func TestRecordOffline_EpermVariantPrintsSandboxNote(t *testing.T) {
 		t.Error("expected isSandboxPermissionError to return true for EPERM Cause")
 	}
 
-	// Also test with a wrapped EPERM.
-	wrappedErr := &store.OutboxQueued{
+	// EACCES must also be detected.
+	oq2 := &store.OutboxQueued{
 		Kind:  store.OutboxKindTask,
 		UUID:  "test-uuid-2",
 		Cause: syscall.EACCES,
 	}
-	if !isSandboxPermissionError(wrappedErr.Cause) {
+	if !isSandboxPermissionError(oq2.Cause) {
 		t.Error("expected isSandboxPermissionError to return true for EACCES Cause")
 	}
 
-	// Non-EPERM cause should not trigger.
-	var buf bytes.Buffer
-	_ = buf // suppress unused warning
-	nonEpermOQ := &store.OutboxQueued{
+	// Connection refused must not trigger the sandbox hint.
+	oq3 := &store.OutboxQueued{
 		Kind:  store.OutboxKindDecision,
 		UUID:  "test-uuid-3",
 		Cause: &connectionRefusedError{},
 	}
-	if isSandboxPermissionError(nonEpermOQ.Cause) {
+	if isSandboxPermissionError(oq3.Cause) {
 		t.Error("expected isSandboxPermissionError to return false for connection refused")
 	}
 }

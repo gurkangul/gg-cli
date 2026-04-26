@@ -44,10 +44,24 @@ func doctorCheckConfig(report *doctorReport) *config.Config {
 	return cfg
 }
 
+// qdrantHealthChecker is a narrow interface for health-checking Qdrant.
+// Production code uses *store.Client; tests inject a fake.
+type qdrantHealthChecker interface {
+	HealthCheck(ctx context.Context) error
+	CollectionStatus(ctx context.Context) (present, missing []string, err error)
+	Close() error
+}
+
+// doctorQdrantNewClient builds the real Qdrant client. Replaced in tests
+// to inject a fake health checker without a real socket.
+var doctorQdrantNewClient = func(cfg *config.Config, ggDir string) (qdrantHealthChecker, error) {
+	return store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+}
+
 // doctorCheckQdrant checks Qdrant connectivity and collection presence.
 func doctorCheckQdrant(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
 	ggDir, _ := config.GGDir()
-	c, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	c, err := doctorQdrantNewClient(cfg, ggDir)
 	if err != nil {
 		report.fail("qdrant", fmt.Sprintf("client init: %v", err))
 		return
