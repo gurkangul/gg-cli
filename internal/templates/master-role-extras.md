@@ -138,11 +138,24 @@ exact sequence:
 7. cat ~/.gg/projects/<project-id>/spawn/panes.json  # pane → task mapping
 ```
 
+Before resuming worker supervision, start a foreground-visible liveness loop from the master session:
+
+```
+GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 &
+```
+
+Keep the job running until the session ends. At the end of each master turn, confirm it is still alive
+with `jobs` or `gg spawn status`, and include the current pane summary in the transcript when workers
+are active. If `gg spawn heartbeat` reports `missing > 0`, inspect `gg spawn status`, remove stale pane
+registry entries or spawn a replacement worker as appropriate, then notify agents through gg. If it
+reports idle workers that still own active tasks, resume the same pane with `gg spawn nudge --surface
+<pane> "<specific next instruction>"`; do not assume `gg tell` alone wakes the worker.
+
 Then decide:
 - **If `ready_for_live` tasks with pending review:** that's the next action — review the commit, close
   the lifecycle, close the pane via `cmux close-surface --surface <id>`, clear panes.json entry.
-- **If an active worker pane is listed:** resume monitoring that pane at 90–180s cadence (per the v2
-  cmux-trigger + pane-lifecycle clauses above).
+- **If an active worker pane is listed:** supervise it through the heartbeat watch loop above, using
+  `gg spawn nudge` for any rework, clarification, or restart prompt that must reach the live pane.
 - **If queue is empty but pending tasks exist:** pick the next code-implementation task (skip dogfood /
   measurement tasks) and `gg spawn worker --task TASK-N` — one pane per task, lifecycle tied to pane
   lifecycle.
