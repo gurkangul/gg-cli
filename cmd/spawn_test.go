@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/gurkangul/gg-cli/internal/orchestrator/terminal"
@@ -212,6 +213,13 @@ func TestSpawnWorker_PromptContainsAckProtocol(t *testing.T) {
 		if !spawnContains(prompt, want) {
 			t.Errorf("buildWorkerPrompt: missing %q\ngot: %s", want, prompt)
 		}
+	}
+}
+
+func TestSpawnWorker_PromptIsSingleLineForGSD(t *testing.T) {
+	prompt := buildWorkerPrompt("TASK-042")
+	if strings.ContainsAny(prompt, "\r\n") {
+		t.Fatalf("buildWorkerPrompt must be single-line for GSD/cmux input; got %q", prompt)
 	}
 }
 

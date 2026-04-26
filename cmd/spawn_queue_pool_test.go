@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -85,9 +87,9 @@ func TestSkippedTransientNotPermanent(t *testing.T) {
 func TestPoolParallelConcurrency(t *testing.T) {
 	// Use a fake terminal that counts concurrent in-flight workers.
 	var (
-		mu          sync.Mutex
-		maxSeen     int
-		inFlight    int
+		mu       sync.Mutex
+		maxSeen  int
+		inFlight int
 	)
 
 	cap := 2
@@ -160,7 +162,7 @@ func TestWaitForWorkerContextCancel(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		reason = waitForWorker(ctx, term, rt, surf, "test-master", 1)
+		reason = waitForWorker(ctx, term, rt, "TASK-001", surf, "test-master", 1)
 	}()
 
 	// Cancel the context; worker should exit quickly.
@@ -179,6 +181,73 @@ func TestWaitForWorkerContextCancel(t *testing.T) {
 
 	if reason != workerExitContextDone {
 		t.Errorf("reason = %v, want workerExitContextDone", reason)
+	}
+}
+
+// TestWaitForWorkerAdvanceSentinelClosesPane verifies the task-done hook's
+// advance sentinel is consumed as the worker completion signal.
+func TestWaitForWorkerAdvanceSentinelClosesPane(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	rt := t.TempDir()
+	term := terminal.NewFake()
+	surf, _ := term.NewSplit(ctx, terminal.SplitOpts{Dir: terminal.SplitHorizontal})
+
+	done := make(chan workerExitReason, 1)
+	go func() {
+		done <- waitForWorker(ctx, term, rt, "TASK-042", surf, "test-master", 1)
+	}()
+
+	sentinel := workerAdvanceSentinelPath(rt, "TASK-042")
+	if err := os.MkdirAll(filepath.Dir(sentinel), 0o700); err != nil {
+		t.Fatalf("mkdir sentinel dir: %v", err)
+	}
+	if err := os.WriteFile(sentinel, []byte("done\n"), 0o600); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	select {
+	case reason := <-done:
+		if reason != workerExitOK {
+			t.Fatalf("reason = %v, want workerExitOK", reason)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("waitForWorker did not return after advance sentinel")
+	}
+
+	if term.IsAlive(surf) {
+		t.Fatal("worker pane should be closed after advance sentinel")
+	}
+	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+		t.Fatalf("sentinel should be consumed, stat err=%v", err)
+	}
+}
+
+// TestSpawnWorkerForTaskClearsStaleAdvanceSentinel verifies an old completion
+// marker cannot immediately close a newly spawned pane for the same task.
+func TestSpawnWorkerForTaskClearsStaleAdvanceSentinel(t *testing.T) {
+	ctx := context.Background()
+	rt := t.TempDir()
+	term := terminal.NewFake()
+
+	sentinel := workerAdvanceSentinelPath(rt, "TASK-042")
+	if err := os.MkdirAll(filepath.Dir(sentinel), 0o700); err != nil {
+		t.Fatalf("mkdir sentinel dir: %v", err)
+	}
+	if err := os.WriteFile(sentinel, []byte("old done\n"), 0o600); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	surf, err := spawnWorkerForTask(ctx, term, rt, "gsd", "TASK-042")
+	if err != nil {
+		t.Fatalf("spawnWorkerForTask: %v", err)
+	}
+	if !term.IsAlive(surf) {
+		t.Fatal("new worker pane should remain alive")
+	}
+	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+		t.Fatalf("stale sentinel should be removed before spawn, stat err=%v", err)
 	}
 }
 
@@ -202,4 +271,3 @@ func TestBuildSkipSet(t *testing.T) {
 		t.Error("TASK-099 should not be in skip set")
 	}
 }
-

@@ -144,19 +144,21 @@ func buildWorkerStartup(taskID string) string {
 
 // buildWorkerPrompt returns the chat prompt to send to a running agent REPL.
 // Unlike buildWorkerStartup, this is plain English orientation — the agent
-// reads it as a user message, not as a shell command.
+// reads it as a user message, not as a shell command. Keep it single-line:
+// terminal backends deliver literal newlines as Enter keypresses, and GSD
+// treats those as separate user prompts.
 func buildWorkerPrompt(taskID string) string {
 	return fmt.Sprintf(
-		"You are working on %s. Before anything else, export your identity so gg commands are attributed correctly:\n"+
-			"  export GG_ROLE=developer\n\n"+
-			"Then run 'gg task get %s --json' to load the full spec. Before writing code, paraphrase every acceptance criterion in your own words and send the ACK:\n"+
-			"  gg task ack %s \"AC-1: <my paraphrase>; AC-2: <my paraphrase>; AC-N: <my paraphrase>\"\n"+
-			"Then wait for master to reply ACK-OK or ACK-FIX. If no reply arrives within 5 minutes, you may proceed, but your commit body must include ACK-IMPLICIT and expect higher review risk.\n\n"+
+		"You are working on %s. Before anything else, export your identity so gg commands are attributed correctly: "+
+			"export GG_ROLE=developer. "+
+			"Then run 'gg task get %s --json' to load the full spec. Before writing code, paraphrase every acceptance criterion in your own words and send the ACK: "+
+			"gg task ack %s \"AC-1: <my paraphrase>; AC-2: <my paraphrase>; AC-N: <my paraphrase>\". "+
+			"Then wait for master to reply ACK-OK or ACK-FIX. If no reply arrives within 5 minutes, you may proceed, but your commit body must include ACK-IMPLICIT and expect higher review risk. "+
 			"Impact analysis — before editing any file: extract file paths the spec explicitly mentions; "+
 			"for each, run `gg impact --compact PATH` to see graph dependents (callers, exported symbols, historical bugs). "+
 			"Note any dependents whose tests must still pass after your change. "+
 			"Cite this in your commit body under an `Impact-Reviewed:` trailer line "+
-			"(e.g. `Impact-Reviewed: cmd/spawn_worker.go — 2 callers, tests green`).\n\n"+
+			"(e.g. `Impact-Reviewed: cmd/spawn_worker.go — 2 callers, tests green`). "+
 			"Signal completion via: gg tell claude-code \"%s commit <sha>, tests green\"",
 		taskID, taskID, taskID, taskID,
 	)

@@ -228,3 +228,105 @@ func TestDir(t *testing.T) {
 		t.Errorf("Dir = %q, want /tmp/runtime/spawn", got)
 	}
 }
+
+// TestAdvanceSentinel_RoundTrip verifies write → read → consume lifecycle.
+func TestAdvanceSentinel_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write sentinel.
+	if err := spawn.WriteAdvanceSentinel(dir, "TASK-042", "surface-1", "abc123"); err != nil {
+		t.Fatalf("WriteAdvanceSentinel: %v", err)
+	}
+
+	// Read without consuming.
+	s, err := spawn.ReadAdvanceSentinel(dir, "TASK-042")
+	if err != nil {
+		t.Fatalf("ReadAdvanceSentinel: %v", err)
+	}
+	if s.TaskID != "TASK-042" {
+		t.Errorf("TaskID = %q, want TASK-042", s.TaskID)
+	}
+	if s.CommitSHA != "abc123" {
+		t.Errorf("CommitSHA = %q, want abc123", s.CommitSHA)
+	}
+	if s.SurfaceID != "surface-1" {
+		t.Errorf("SurfaceID = %q, want surface-1", s.SurfaceID)
+	}
+	if s.WrittenAt.IsZero() {
+		t.Error("WrittenAt should be set")
+	}
+
+	// Consume — should return the sentinel and remove the .done file.
+	consumed, err := spawn.ConsumeAdvanceSentinel(dir, "TASK-042")
+	if err != nil {
+		t.Fatalf("ConsumeAdvanceSentinel: %v", err)
+	}
+	if consumed == nil {
+		t.Fatal("expected sentinel, got nil")
+	}
+	if consumed.CommitSHA != "abc123" {
+		t.Errorf("consumed.CommitSHA = %q, want abc123", consumed.CommitSHA)
+	}
+
+	// Second consume should return nil (sentinel is gone / consumed).
+	again, err := spawn.ConsumeAdvanceSentinel(dir, "TASK-042")
+	if err != nil {
+		t.Fatalf("second ConsumeAdvanceSentinel: %v", err)
+	}
+	if again != nil {
+		t.Errorf("expected nil on second consume, got %+v", again)
+	}
+}
+
+// TestAdvanceSentinel_Idempotent verifies write is safe to call twice (amend).
+func TestAdvanceSentinel_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := spawn.WriteAdvanceSentinel(dir, "TASK-001", "surf-1", "sha-v1"); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if err := spawn.WriteAdvanceSentinel(dir, "TASK-001", "surf-1", "sha-v2"); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+
+	s, err := spawn.ReadAdvanceSentinel(dir, "TASK-001")
+	if err != nil {
+		t.Fatalf("ReadAdvanceSentinel: %v", err)
+	}
+	if s.CommitSHA != "sha-v2" {
+		t.Errorf("expected sha-v2 after idempotent write, got %q", s.CommitSHA)
+	}
+}
+
+// TestAdvanceSentinel_NoFile verifies ErrNoSentinel when absent.
+func TestAdvanceSentinel_NoFile(t *testing.T) {
+	dir := t.TempDir()
+	_, err := spawn.ReadAdvanceSentinel(dir, "TASK-999")
+	if !errors.Is(err, spawn.ErrNoSentinel) {
+		t.Errorf("got %v, want ErrNoSentinel", err)
+	}
+}
+
+// TestConsumeAdvanceSentinel_NilWhenAbsent verifies consume returns nil, nil when no sentinel.
+func TestConsumeAdvanceSentinel_NilWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	s, err := spawn.ConsumeAdvanceSentinel(dir, "TASK-404")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s != nil {
+		t.Errorf("expected nil sentinel when absent, got %+v", s)
+	}
+}
+
+// TestLockFilePath verifies the lock file path helper.
+func TestLockFilePath(t *testing.T) {
+	got := spawn.LockFilePath("/tmp/rt", "TASK-042")
+	want := "/tmp/rt/spawn/TASK-042.lock"
+	if got != want {
+		t.Errorf("LockFilePath = %q, want %q", got, want)
+	}
+	if spawn.LockFilePath("/tmp/rt", "") != "" {
+		t.Error("empty taskID should return empty string")
+	}
+}

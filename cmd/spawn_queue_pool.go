@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -223,7 +224,7 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 
 		wg.Add(1)
 		go func(tid string, sid terminal.SurfaceID) {
-			reason := waitForWorker(ctx, term, rt, sid, masterAgent, pollSecs)
+			reason := waitForWorker(ctx, term, rt, tid, sid, masterAgent, pollSecs)
 			results <- workerResult{taskID: tid, surfaceID: sid, reason: reason}
 		}(task.ID, surfaceID)
 	}
@@ -290,12 +291,20 @@ func buildSkipSet(sess *spawn.QueueSession, active map[string]bool) map[string]b
 	return s
 }
 
-// waitForWorker polls until the worker pane closes or a stopping condition fires.
-func waitForWorker(ctx context.Context, term terminal.Terminal, rt string, surfaceID terminal.SurfaceID, masterAgent string, pollSecs int) workerExitReason {
+// waitForWorker polls until the worker completes, its pane closes, or a
+// stopping condition fires.
+func waitForWorker(ctx context.Context, term terminal.Terminal, rt, taskID string, surfaceID terminal.SurfaceID, masterAgent string, pollSecs int) workerExitReason {
 	ticker := time.NewTicker(time.Duration(pollSecs) * time.Second)
 	defer ticker.Stop()
 
 	for {
+		if taskDoneByAdvanceSentinel(rt, taskID) {
+			if err := term.Close(ctx, surfaceID); err != nil {
+				fmt.Fprintf(os.Stderr, "⚠ close worker pane %s for %s: %v\n", surfaceID, taskID, err)
+			}
+			return workerExitOK
+		}
+
 		select {
 		case <-ctx.Done():
 			return workerExitContextDone
@@ -315,6 +324,33 @@ func waitForWorker(ctx context.Context, term terminal.Terminal, rt string, surfa
 			}
 		}
 	}
+}
+
+func workerAdvanceSentinelPath(rt, taskID string) string {
+	return filepath.Join(spawn.Dir(rt), "advance", taskID+".done")
+}
+
+func clearWorkerAdvanceSentinel(rt, taskID string) {
+	if taskID == "" {
+		return
+	}
+	if err := os.Remove(workerAdvanceSentinelPath(rt, taskID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(os.Stderr, "⚠ clear stale advance sentinel for %s: %v\n", taskID, err)
+	}
+}
+
+func taskDoneByAdvanceSentinel(rt, taskID string) bool {
+	if taskID == "" {
+		return false
+	}
+	path := workerAdvanceSentinelPath(rt, taskID)
+	if err := os.Remove(path); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintf(os.Stderr, "⚠ consume advance sentinel for %s: %v\n", taskID, err)
+		}
+		return false
+	}
+	return true
 }
 
 // isPaneAlive probes whether the surface is still present.
@@ -364,6 +400,8 @@ func nextReadyTask(ctx context.Context, st *store.Client, skipSet map[string]boo
 
 // spawnWorkerForTask opens a new pane for taskID and registers it in panes.json.
 func spawnWorkerForTask(ctx context.Context, term terminal.Terminal, rt, agentCmd, taskID string) (terminal.SurfaceID, error) {
+	clearWorkerAdvanceSentinel(rt, taskID)
+
 	env := buildWorkerEnv(taskID, nil)
 	surfaceID, err := term.NewSplit(ctx, terminal.SplitOpts{
 		Dir: terminal.SplitHorizontal,

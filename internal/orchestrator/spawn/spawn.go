@@ -32,6 +32,16 @@ const PanesFile = "panes.json"
 // importing the locks package solely for the constant.
 const LocksFile = "locks.json"
 
+// AdvanceDir is the subdirectory under the spawn dir that holds advance sentinels.
+const AdvanceDir = "advance"
+
+// AdvanceSuffix is the file extension for a pending advance sentinel.
+const AdvanceSuffix = ".done"
+
+// AdvanceConsumedSuffix is the extension used after the sentinel is processed.
+// The rename is atomic on POSIX and prevents double-fire across heartbeat ticks.
+const AdvanceConsumedSuffix = ".consumed"
+
 // DefaultMaxConcurrent is the default maximum number of simultaneous worker
 // panes when GG_QUEUE_MAX is not set.
 const DefaultMaxConcurrent = 3
@@ -82,6 +92,10 @@ const (
 	WorkerStateIdle WorkerState = "idle"
 	// WorkerStateWaiting means the worker sent a 'need-input' signal to the master.
 	WorkerStateWaiting WorkerState = "waiting-on-master"
+	// WorkerStateReady means the worker committed and wrote an advance sentinel —
+	// the task is ready for master review. Set by the heartbeat watch loop on
+	// sentinel consume. The pane is still alive; master must close it explicitly.
+	WorkerStateReady WorkerState = "ready"
 )
 
 // WorkerPane records a live worker pane. Stored as elements of panes.json.
@@ -108,6 +122,16 @@ type WorkerPane struct {
 // Dir returns the spawn directory for the given runtime dir.
 func Dir(runtimeDir string) string {
 	return filepath.Join(runtimeDir, "spawn")
+}
+
+// LockFilePath returns the advisory lock file path for a task's pane, used by
+// pruneStalePane to remove it alongside the panes.json entry. Returns empty
+// string when taskID is empty.
+func LockFilePath(runtimeDir, taskID string) string {
+	if taskID == "" {
+		return ""
+	}
+	return filepath.Join(Dir(runtimeDir), taskID+".lock")
 }
 
 // ensureDir creates the spawn directory if absent.
@@ -307,11 +331,86 @@ func UpdateWorkerHeartbeat(runtimeDir, taskID string) error {
 	return writePanes(runtimeDir, panes)
 }
 
+// AdvanceSentinel is written by the worker after a commit to signal master that
+// the task is ready for review. The heartbeat watch loop consumes it (rename to
+// .consumed) and transitions the pane to WorkerStateReady.
+type AdvanceSentinel struct {
+	TaskID    string    `json:"task_id"`
+	SurfaceID string    `json:"surface_id,omitempty"`
+	CommitSHA string    `json:"commit_sha,omitempty"`
+	WrittenAt time.Time `json:"written_at"`
+}
+
+// advanceDir returns the advance/ subdirectory path.
+func advanceDir(runtimeDir string) string {
+	return filepath.Join(Dir(runtimeDir), AdvanceDir)
+}
+
+// advanceSentinelPath returns the path for a task's pending sentinel.
+func advanceSentinelPath(runtimeDir, taskID string) string {
+	return filepath.Join(advanceDir(runtimeDir), taskID+AdvanceSuffix)
+}
+
+// WriteAdvanceSentinel writes (or overwrites) the advance sentinel for taskID.
+// Idempotent: rewrites if already present (commit SHA may change on amend).
+func WriteAdvanceSentinel(runtimeDir, taskID, surfaceID, commitSHA string) error {
+	dir := advanceDir(runtimeDir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create advance dir: %w", err)
+	}
+	s := AdvanceSentinel{
+		TaskID:    taskID,
+		SurfaceID: surfaceID,
+		CommitSHA: commitSHA,
+		WrittenAt: time.Now().UTC(),
+	}
+	return writeJSON(advanceSentinelPath(runtimeDir, taskID), s)
+}
+
+// ConsumeAdvanceSentinel atomically consumes the advance sentinel for taskID by
+// renaming it to .consumed. Returns (sentinel, nil) on success, (nil, nil) when
+// no sentinel exists, (nil, err) on read/rename failure.
+func ConsumeAdvanceSentinel(runtimeDir, taskID string) (*AdvanceSentinel, error) {
+	src := advanceSentinelPath(runtimeDir, taskID)
+	dst := filepath.Join(advanceDir(runtimeDir), taskID+AdvanceConsumedSuffix)
+
+	// Atomic rename — prevents double-fire across concurrent heartbeat ticks.
+	if err := os.Rename(src, dst); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("consume advance sentinel for %s: %w", taskID, err)
+	}
+
+	var s AdvanceSentinel
+	if err := readJSON(dst, &s); err != nil {
+		return nil, fmt.Errorf("read consumed sentinel for %s: %w", taskID, err)
+	}
+	return &s, nil
+}
+
+// ReadAdvanceSentinel reads the sentinel without consuming it (for testing /
+// status display). Returns ErrNoSentinel when not present.
+func ReadAdvanceSentinel(runtimeDir, taskID string) (*AdvanceSentinel, error) {
+	path := advanceSentinelPath(runtimeDir, taskID)
+	var s AdvanceSentinel
+	if err := readJSON(path, &s); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrNoSentinel
+		}
+		return nil, err
+	}
+	return &s, nil
+}
+
 // ErrNoHeartbeat is returned when no heartbeat file exists.
 var ErrNoHeartbeat = errors.New("no heartbeat file")
 
 // ErrNoQueue is returned when no queue.json exists.
 var ErrNoQueue = errors.New("no queue session")
+
+// ErrNoSentinel is returned when no advance sentinel exists for the given task.
+var ErrNoSentinel = errors.New("no advance sentinel")
 
 func writeJSON(path string, v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
