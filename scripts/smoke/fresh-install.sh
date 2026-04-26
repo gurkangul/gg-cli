@@ -149,8 +149,10 @@ fi
 echo ""
 echo "=== AC-3: gg doctor ==="
 cd "${SCRATCH_DIR}"
-DOCTOR_OUT="$(gg doctor 2>&1)" || true
+set +e
+DOCTOR_OUT="$(gg doctor 2>&1)"
 DOCTOR_EXIT=$?
+set -e
 echo "${DOCTOR_OUT}"
 if [ ${DOCTOR_EXIT} -eq 0 ]; then
     _pass "AC-3: gg doctor exited 0"
@@ -166,8 +168,10 @@ echo "=== AC-4: Happy-path commands ==="
 cd "${SCRATCH_DIR}"
 
 # gg record
+set +e
 RECORD_OUT="$(gg record "smoke test decision" --reason "verifying fresh install" --tags "smoke,test" 2>&1)"
 RECORD_EXIT=$?
+set -e
 echo "record exit=${RECORD_EXIT}: ${RECORD_OUT}"
 if [ ${RECORD_EXIT} -eq 0 ]; then
     _pass "AC-4a: gg record exited 0"
@@ -176,8 +180,10 @@ else
 fi
 
 # gg task create
+set +e
 TASK_OUT="$(gg task create "smoke task" --requester user --priority low --detail "fresh install smoke test task" 2>&1)"
 TASK_EXIT=$?
+set -e
 echo "task create exit=${TASK_EXIT}: ${TASK_OUT}"
 if [ ${TASK_EXIT} -eq 0 ]; then
     _pass "AC-4b: gg task create exited 0"
@@ -186,8 +192,10 @@ else
 fi
 
 # gg search --compact (must surface the just-recorded decision)
+set +e
 SEARCH_OUT="$(gg search --compact "smoke test decision" 2>&1)"
 SEARCH_EXIT=$?
+set -e
 echo "search exit=${SEARCH_EXIT}: ${SEARCH_OUT}"
 if [ ${SEARCH_EXIT} -eq 0 ]; then
     _pass "AC-4c: gg search --compact exited 0"
@@ -201,8 +209,10 @@ else
 fi
 
 # gg status
+set +e
 STATUS_OUT="$(gg status 2>&1)"
 STATUS_EXIT=$?
+set -e
 echo "status exit=${STATUS_EXIT}: ${STATUS_OUT}"
 if [ ${STATUS_EXIT} -eq 0 ]; then
     _pass "AC-4d: gg status exited 0"
