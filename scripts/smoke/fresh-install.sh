@@ -105,7 +105,12 @@ GG_DIR="${SCRATCH_DIR}/.gg"
 mkdir -p "${GG_DIR}"
 
 PROJECT_ID="smoke-$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || date +%s)"
-GATEWAY="${HOST_GATEWAY:-host.docker.internal}"
+# Inside the container, host.docker.internal is the alias added via --add-host
+# (HOST_GATEWAY is the *source* — host-gateway on macOS, bridge IP on Linux).
+GATEWAY="host.docker.internal"
+
+# gg refuses to record without an agent identity — set one for the smoke.
+export GG_AGENT="smoke-test"
 
 cat > "${GG_DIR}/config.yaml" <<YAML
 project_id: ${PROJECT_ID}
