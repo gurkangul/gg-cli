@@ -53,25 +53,30 @@ Each tick the loop:
 #### 3. Pane keepalive
 
 To prevent cmux idle-timeout from culling panes that are awaiting master
-review, the heartbeat watch loop sends a noop key to each registered pane
-every keepalive interval (default 240s):
+review, the heartbeat watch loop sends `# gg-keepalive` (a bash comment,
+silently eaten by the worker shell) to each registered pane every keepalive
+interval (default 240s, minimum 60s floor):
 
 ```
---keepalive <seconds>       # flag on gg spawn heartbeat
-GG_PANE_KEEPALIVE_SEC=200  # env override
+--keepalive <seconds>       # flag on gg spawn heartbeat (min 60s)
+GG_PANE_KEEPALIVE_SEC=200  # env override (clamped to floor if below 60)
 ```
 
-This resets cmux's idle timer without any visible side effect in the worker
-shell beyond a blank line.
+This resets cmux's idle timer without printing stray characters in the worker shell.
 
 #### 4. Stale-pane auto-prune
 
-When a pane probe fails (`Surface is not a terminal` or Focus error), the
-watch loop automatically:
+When a pane probe **definitively** fails, the watch loop automatically:
 1. Removes the entry from panes.json
 2. Removes the pane's lock file
 3. Logs: `⚠ pruned stale pane <id> for TASK-NNN — was this an unsupervised
    death? consider increasing keepalive`
+
+"Definitive failure" means `cmux identify --surface <id> --no-caller` returns
+the exact string `Surface is not a terminal` within a 5-second deadline.
+Timeouts and all other errors are treated as transient — the pane is kept and
+the probe retried next tick. This conservative policy ensures a slow cmux
+response never causes an accidental prune.
 
 The master can then re-spawn the worker explicitly with
 `gg spawn worker --task TASK-NNN`. The manual python-edit-panes.json pattern

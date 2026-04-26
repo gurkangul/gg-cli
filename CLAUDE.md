@@ -162,12 +162,14 @@ commit_sha, written_at}`. Idempotent — safe on amend. The sentinel is consumed
 
 **AC — Master sentinel consumer (master heartbeat watch):**
 The `--watch` loop polls the advance/ directory each tick. On sentinel detection it:
+- Renames the sentinel to `.consumed` atomically (before processing — prevents double-fire on retry)
 - Prints `⚡ worker ready: TASK-NNN at <sha> on <surface>` to stderr
 - Sets the pane's state to `ready` in panes.json
 - Does NOT auto-close the pane or call `gg task done` — master must review first
 
 **AC — Pane keepalive (master heartbeat watch):**
-The `--watch` loop sends a noop key to every registered pane every keepalive interval (default 240s,
+The `--watch` loop sends `# gg-keepalive` (a bash comment, silently eaten by the shell) to every
+registered pane every keepalive interval (default 240s, minimum 60s floor,
 configurable via `--keepalive N` or `GG_PANE_KEEPALIVE_SEC`). This resets cmux idle timer so panes
 awaiting master review are not culled:
 ```
@@ -175,8 +177,10 @@ GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 --keepalive 200 &
 ```
 
 **AC — Stale-pane auto-prune (master heartbeat watch):**
-When a pane probe fails (`Surface is not a terminal` or Focus error), the watch loop automatically
-removes the entry from panes.json and its lock file, logging:
+When a pane probe definitively fails, the watch loop automatically removes the entry from panes.json
+and its lock file. "Definitively" means `cmux identify --surface <id> --no-caller` returns the exact
+string `Surface is not a terminal` within a 5s deadline. Timeouts and other errors are treated as
+transient and do NOT trigger a prune. On prune, logs:
 `⚠ pruned stale pane <id> for TASK-NNN — was this an unsupervised death? consider increasing keepalive`
 The manual python-edit-panes.json pattern is no longer needed.
 
@@ -305,8 +309,9 @@ Start the keepalive + sentinel watch from the master session before spawning wor
 GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 --keepalive 200 &
 ```
 
-This sends a noop key to each worker pane every 200s (below cmux's 5-min idle cutoff),
-polls advance sentinels each tick, and auto-prunes stale pane entries.
+This sends `# gg-keepalive` (bash comment, silently discarded) to each worker pane every 200s
+(below cmux's 5-min idle cutoff, above the 60s flood floor), polls advance sentinels each tick,
+and auto-prunes stale pane entries only on definitive `Surface is not a terminal` probe result.
 
 ### Fallback — no developer configured
 
