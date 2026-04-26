@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gurkangul/gg-cli/internal/brain"
 	"github.com/qdrant/go-client/qdrant"
 )
 
@@ -20,6 +21,8 @@ type Rejection struct {
 	CreatedAt string
 }
 
+// AddRejection writes the rejection to .gg/brain/rejections.jsonl first
+// (AC-1: durable, offline-safe), then attempts a Qdrant upsert (AC-2).
 func (c *Client) AddRejection(ctx context.Context, r Rejection, vector []float32) error {
 	if r.ID == "" {
 		r.ID = uuid.New().String()
@@ -28,31 +31,41 @@ func (c *Client) AddRejection(ctx context.Context, r Rejection, vector []float32
 		r.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
-	payload, err := qdrant.TryValueMap(map[string]any{
+	rawPayload := map[string]any{
 		"approach":   r.Approach,
 		"reason":     r.Reason,
 		"tags":       toAnySlice(r.Tags),
 		"task_id":    r.TaskID,
 		"author":     r.Author,
 		"created_at": r.CreatedAt,
-	})
+	}
+
+	// AC-1: JSONL write first.
+	if err := brain.Append(c.dataDir, "rejections", r.ID, r.Author, rawPayload); err != nil {
+		return fmt.Errorf("brain jsonl write: %w", err)
+	}
+
+	// AC-2: Qdrant secondary best-effort.
+	qdrantPayload, err := qdrant.TryValueMap(rawPayload)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
 	}
-
 	wait := true
-	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	uErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: c.collRejections(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
 				Id:      qdrant.NewID(r.ID),
 				Vectors: qdrant.NewVectors(vector...),
-				Payload: payload,
+				Payload: qdrantPayload,
 			},
 		},
 	})
-	return err
+	if uErr != nil {
+		return &OutboxQueued{Kind: OutboxKindRejection, UUID: r.ID, Cause: uErr}
+	}
+	return nil
 }
 
 func (c *Client) SearchRejections(ctx context.Context, vector []float32, limit uint64) ([]Rejection, error) {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gurkangul/gg-cli/internal/brain"
 	"github.com/qdrant/go-client/qdrant"
 )
 
@@ -76,7 +77,7 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 	b.CreatedAt = now
 	b.UpdatedAt = now
 
-	payload, err := qdrant.TryValueMap(map[string]any{
+	rawPayload := map[string]any{
 		"bug_id":           b.ID,
 		"title":            b.Title,
 		"detail":           b.Detail,
@@ -94,25 +95,33 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 		"by":               b.By,
 		"created_at":       b.CreatedAt,
 		"updated_at":       b.UpdatedAt,
-	})
+	}
+
+	// AC-1: JSONL write first.
+	brainUUID := pointUUIDForBugID(b.ID)
+	if err := brain.Append(c.dataDir, "bugs", brainUUID, b.By, rawPayload); err != nil {
+		return "", fmt.Errorf("brain jsonl write: %w", err)
+	}
+
+	// AC-2: Qdrant secondary best-effort.
+	qdrantPayload, err := qdrant.TryValueMap(rawPayload)
 	if err != nil {
 		return "", fmt.Errorf("build payload: %w", err)
 	}
-
 	wait := true
-	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	uErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: c.collBugs(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
-				Id:      qdrant.NewID(pointUUIDForBugID(b.ID)),
+				Id:      qdrant.NewID(brainUUID),
 				Vectors: qdrant.NewVectors(vector...),
-				Payload: payload,
+				Payload: qdrantPayload,
 			},
 		},
 	})
-	if err != nil {
-		return "", err
+	if uErr != nil {
+		return b.ID, &OutboxQueued{Kind: OutboxKindBug, UUID: brainUUID, Cause: uErr}
 	}
 	return b.ID, nil
 }

@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -17,18 +18,23 @@ func tempReproFile(t *testing.T) string {
 	return name
 }
 
+// TestBugReport_StoreDown verifies offline-resilience (BUG-030 / TASK-352):
+// 'gg bug report' must succeed (exit 0) when Qdrant is down, writing to JSONL.
 func TestBugReport_StoreDown(t *testing.T) {
-	setupGGDir(t)
+	ggDir := setupGGDir(t)
 	_, _, err := execCmd(t, "bug", "report", "nil pointer in search")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
+	// AC-2: caller gets exit 0.
+	if err != nil {
+		t.Fatalf("expected exit 0 on offline bug report, got: %v", err)
 	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	// AC-1: JSONL must be written.
+	jsonlPath := filepath.Join(ggDir, "brain", "bugs.jsonl")
+	data, readErr := os.ReadFile(jsonlPath)
+	if readErr != nil {
+		t.Fatalf("brain/bugs.jsonl not written: %v", readErr)
 	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if len(data) == 0 {
+		t.Error("brain/bugs.jsonl is empty")
 	}
 }
 

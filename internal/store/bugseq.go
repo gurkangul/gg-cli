@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/gurkangul/gg-cli/internal/brain"
 )
 
 const bugSeqFile = ".bug-seq"
@@ -45,12 +47,18 @@ func (c *Client) allocBugID(ctx context.Context) (string, error) {
 		n = parsed
 	}
 
+	// Bootstrap: seq file empty. Try Qdrant; if unavailable, fall back to JSONL.
 	if n == 0 {
 		existingMax, err := c.maxBugIDNumber(ctx)
 		if err != nil {
-			return "", fmt.Errorf("bootstrap bug seq from qdrant: %w", err)
+			jsonlMax, jsonlErr := maxBugIDFromBrainJSONL(c.dataDir)
+			if jsonlErr != nil {
+				return "", fmt.Errorf("bootstrap bug seq (qdrant down, jsonl fallback failed): %w", jsonlErr)
+			}
+			n = jsonlMax
+		} else {
+			n = existingMax
 		}
-		n = existingMax
 	}
 
 	n++
@@ -69,4 +77,24 @@ func (c *Client) allocBugID(ctx context.Context) (string, error) {
 	}
 
 	return fmt.Sprintf("BUG-%03d", n), nil
+}
+
+
+// maxBugIDFromBrainJSONL scans .gg/brain/bugs.jsonl for the highest numeric
+// suffix. Used as a Qdrant-free bootstrap for allocBugID.
+// Returns 0 when the file is absent or empty.
+func maxBugIDFromBrainJSONL(ggDir string) (int, error) {
+	entries, err := brain.ReadAll(ggDir, "bugs")
+	if err != nil {
+		return 0, err
+	}
+	maxNum := 0
+	for _, e := range entries {
+		if id, ok := e.Payload["bug_id"].(string); ok {
+			if n, parseErr := ParseBugID(id); parseErr == nil && n > maxNum {
+				maxNum = n
+			}
+		}
+	}
+	return maxNum, nil
 }

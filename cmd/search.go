@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/brain"
 	"github.com/gurkangul/gg-cli/internal/cache"
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
@@ -60,7 +61,8 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status")
 	}
 	if d.qdrantDown {
-		return serveSearchFromCache(cmd, query)
+		// AC-4: fall back to JSONL scan first, then LKG cache.
+		return serveSearchFromJSONL(cmd, query)
 	}
 
 	ctx, cancel := withTimeout(cmd.Context())
@@ -89,6 +91,87 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	return printSearchResults(cmd, decisions, rejections, "", time.Time{})
+}
+
+// serveSearchFromJSONL performs a text-scan of .gg/brain/decisions.jsonl and
+// .gg/brain/rejections.jsonl as a lightweight offline fallback when Qdrant is
+// unreachable.  It falls through to the LKG cache when the JSONL files are
+// absent (i.e., the brain has not been written yet in JSONL format).
+func serveSearchFromJSONL(cmd *cobra.Command, query string) error {
+	const banner = "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)"
+
+	ggDir := config.GGDirOrEmpty()
+	if ggDir == "" {
+		return serveSearchFromCache(cmd, query)
+	}
+
+	decEntries, decErr := brain.SearchByText(ggDir, "decisions", query)
+	rejEntries, rejErr := brain.SearchByText(ggDir, "rejections", query)
+
+	// Both absent → fall through to LKG cache (pre-JSONL brain).
+	if decErr != nil && rejErr != nil {
+		return serveSearchFromCache(cmd, query)
+	}
+
+	var decisions []store.Decision
+	for _, e := range decEntries {
+		d := store.Decision{
+			ID:     e.UUID,
+			Author: e.Author,
+		}
+		if v, ok := e.Payload["text"].(string); ok {
+			d.Text = v
+		}
+		if v, ok := e.Payload["reason"].(string); ok {
+			d.Reason = v
+		}
+		if v, ok := e.Payload["status"].(string); ok {
+			d.Status = v
+		}
+		if v, ok := e.Payload["task_id"].(string); ok {
+			d.TaskID = v
+		}
+		if v, ok := e.Payload["created_at"].(string); ok {
+			d.CreatedAt = v
+		}
+		if tags, ok := e.Payload["tags"].([]any); ok {
+			for _, t := range tags {
+				if s, ok := t.(string); ok {
+					d.Tags = append(d.Tags, s)
+				}
+			}
+		}
+		decisions = append(decisions, d)
+	}
+	var rejections []store.Rejection
+	for _, e := range rejEntries {
+		r := store.Rejection{
+			ID:     e.UUID,
+			Author: e.Author,
+		}
+		if v, ok := e.Payload["approach"].(string); ok {
+			r.Approach = v
+		}
+		if v, ok := e.Payload["reason"].(string); ok {
+			r.Reason = v
+		}
+		if v, ok := e.Payload["task_id"].(string); ok {
+			r.TaskID = v
+		}
+		if v, ok := e.Payload["created_at"].(string); ok {
+			r.CreatedAt = v
+		}
+		if tags, ok := e.Payload["tags"].([]any); ok {
+			for _, t := range tags {
+				if s, ok := t.(string); ok {
+					r.Tags = append(r.Tags, s)
+				}
+			}
+		}
+		rejections = append(rejections, r)
+	}
+
+	return printSearchResults(cmd, decisions, rejections, banner, time.Time{})
 }
 
 // serveSearchFromCache looks up the last-known-good cache entry for query

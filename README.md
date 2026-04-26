@@ -429,8 +429,11 @@ Decisions, tasks, and rejections need fuzzy semantic search (`gg search "auth"` 
 **`gg record` with `--stance` flag instead of separate `decide`/`reject` verbs.**
 Early design had six command verbs. Five (record, note, task, bug, discuss) covers the full lifecycle with less surface area. `gg decide` and `gg reject` remain as aliases for agent compatibility, but `record --stance=accept|reject` is canonical. See the 6→5 verb taxonomy decision.
 
+**JSONL-primary brain writes with Qdrant as derived index.**
+`gg record`, `gg task create`, and `gg bug report` write to `.gg/brain/<kind>.jsonl` first, then attempt a Qdrant upsert.  When Qdrant is unreachable the write still succeeds (exit 0) and an outbox entry is queued for later replay.  `gg doctor --reconcile` drains the outbox when Qdrant recovers.  `gg search` falls back to a local JSONL text scan when Qdrant is unavailable, printing an offline banner.  See [docs/offline-resilience.md](docs/offline-resilience.md) for the full design.
+
 **Outbox pattern for dual-store consistency.**
-When `gg index` writes to both Qdrant and Memgraph, a crash between the two writes leaves the stores out of sync. gg writes a `.gg/outbox/<id>.json` entry before the Memgraph write and deletes it on success. `gg doctor --reconcile` surfaces any dangling entries. No saga framework, no distributed transaction — just a file and a reconciler.
+When `gg index` writes to both Qdrant and Memgraph, a crash between the two writes leaves the stores out of sync. gg writes a `.gg/outbox/<id>.json` entry before the Memgraph write and deletes it on success. `gg doctor --reconcile` surfaces any dangling entries and replays pending brain writes to Qdrant. No saga framework, no distributed transaction — just a file and a reconciler.
 
 **`project_id` as the isolation primitive.**
 Rejected: Memgraph 3.x multi-database feature (not broadly available, adds infra coupling). Chosen: every Qdrant point and every Memgraph node carries a `project_id` UUID injected at the `runQuery` level in `internal/graph/queries.go`. A new project gets a new UUID from `gg init`; shared infra at `~/.gg/` serves all projects without data leakage.

@@ -299,6 +299,13 @@ func GGDir() (string, error) {
 	return filepath.Join(root, DirName), nil
 }
 
+// GGDirOrEmpty returns the project-local .gg directory path, or "" on error.
+// Used by best-effort code paths that must not fail when the .gg dir is absent.
+func GGDirOrEmpty() string {
+	dir, _ := GGDir()
+	return dir
+}
+
 // SharedDir returns the absolute path to ~/.gg/ — the shared infrastructure
 // directory holding docker-compose.yaml and service volumes.
 func SharedDir() (string, error) {

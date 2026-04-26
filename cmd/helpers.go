@@ -94,6 +94,18 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 	return d, nil
 }
 
+// loadDepsOfflineSafe is like loadDepsReadOnly but intended for brain-write
+// commands (record, task create, bug report) that implement JSONL-first writes.
+// When Qdrant is down, d.qdrantDown=true is set and the caller writes to JSONL,
+// queues an outbox entry, and returns exit 0 with a stderr note.
+//
+// Embedding is always required for write commands (the caller must generate a
+// vector for the Qdrant upsert attempt, even if Qdrant is down, because the
+// outbox replay needs it stored).  Pass needEmbedding=true.
+func loadDepsOfflineSafe(needEmbedding bool) (d *deps, err error) {
+	return loadDepsReadOnly(needEmbedding)
+}
+
 // loadDepsReadOnly is like loadDeps but tolerates Qdrant being unreachable.
 // It sets d.qdrantDown=true instead of returning an error when the health
 // check fails. Callers must print a degraded-mode banner and return empty

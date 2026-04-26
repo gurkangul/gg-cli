@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gurkangul/gg-cli/internal/brain"
 )
 
 const taskSeqFile = ".task-seq"
@@ -51,16 +53,20 @@ func (c *Client) allocTaskID(ctx context.Context) (string, error) {
 		n = parsed
 	}
 
-	// Bootstrap: seq file is empty or zero. Pick up from max existing task
-	// in Qdrant so we don't reuse IDs after a seq-file wipe. Any error here
-	// must fail the allocation — proceeding with n=0 would silently overwrite
-	// existing tasks via the deterministic point UUID.
+	// Bootstrap: seq file is empty or zero. Try Qdrant first; if unavailable,
+	// fall back to scanning .gg/brain/tasks.jsonl so offline task creation works.
 	if n == 0 {
 		existingMax, err := c.maxTaskIDNumber(ctx)
 		if err != nil {
-			return "", fmt.Errorf("bootstrap task seq from qdrant: %w", err)
+			// Qdrant down — fall back to JSONL scan to avoid reusing IDs.
+			jsonlMax, jsonlErr := maxTaskIDFromBrainJSONL(c.dataDir)
+			if jsonlErr != nil {
+				return "", fmt.Errorf("bootstrap task seq (qdrant down, jsonl fallback failed): %w", jsonlErr)
+			}
+			n = jsonlMax
+		} else {
+			n = existingMax
 		}
-		n = existingMax
 	}
 
 	n++
@@ -106,4 +112,23 @@ func lockFileCtx(ctx context.Context, f *os.File) error {
 			}
 		}
 	}
+}
+
+// maxTaskIDFromBrainJSONL scans .gg/brain/tasks.jsonl for the highest numeric
+// suffix in a task_id field.  Used as a Qdrant-free bootstrap for allocTaskID.
+// Returns 0 when the file is absent or empty (safe: next allocation is TASK-001).
+func maxTaskIDFromBrainJSONL(ggDir string) (int, error) {
+	entries, err := brain.ReadAll(ggDir, "tasks")
+	if err != nil {
+		return 0, err
+	}
+	maxNum := 0
+	for _, e := range entries {
+		if id, ok := e.Payload["task_id"].(string); ok {
+			if n, parseErr := ParseTaskID(id); parseErr == nil && n > maxNum {
+				maxNum = n
+			}
+		}
+	}
+	return maxNum, nil
 }

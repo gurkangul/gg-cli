@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gurkangul/gg-cli/internal/brain"
 	"github.com/qdrant/go-client/qdrant"
 )
 
@@ -106,6 +107,8 @@ func (c *Client) maxTaskIDNumber(ctx context.Context) (int, error) {
 	return maxNum, nil
 }
 
+// CreateTask writes the task to .gg/brain/tasks.jsonl first (AC-1: durable,
+// offline-safe), then attempts a Qdrant upsert (AC-2).
 func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (string, error) {
 	id, err := c.allocTaskID(ctx)
 	if err != nil {
@@ -119,7 +122,7 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 		t.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
-	payload, err := qdrant.TryValueMap(map[string]any{
+	rawPayload := map[string]any{
 		"task_id":      t.ID,
 		"title":        t.Title,
 		"detail":       t.Detail,
@@ -134,27 +137,36 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 		"author":       t.Author,
 		"requester":    t.Requester,
 		"created_at":   t.CreatedAt,
-	})
+	}
+
+	// AC-1: JSONL write first — survives Qdrant downtime.
+	// Use deterministic point UUID as the brain uuid so outbox replay finds the right point.
+	brainUUID := pointUUIDForTaskID(t.ID)
+	if err := brain.Append(c.dataDir, "tasks", brainUUID, t.Author, rawPayload); err != nil {
+		return "", fmt.Errorf("brain jsonl write: %w", err)
+	}
+
+	// AC-2: Qdrant upsert is secondary best-effort.
+	qdrantPayload, err := qdrant.TryValueMap(rawPayload)
 	if err != nil {
 		return "", fmt.Errorf("build payload: %w", err)
 	}
-
 	wait := true
 	// Deterministic point UUID — concurrent create with same task_id collapses
 	// to one row instead of creating duplicates.
-	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	uErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: c.collTasks(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
-				Id:      qdrant.NewID(pointUUIDForTaskID(t.ID)),
+				Id:      qdrant.NewID(brainUUID),
 				Vectors: qdrant.NewVectors(vector...),
-				Payload: payload,
+				Payload: qdrantPayload,
 			},
 		},
 	})
-	if err != nil {
-		return "", err
+	if uErr != nil {
+		return t.ID, &OutboxQueued{Kind: OutboxKindTask, UUID: brainUUID, Cause: uErr}
 	}
 	return t.ID, nil
 }

@@ -2,6 +2,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -40,18 +42,23 @@ func TestReject_StoreDown(t *testing.T) {
 	}
 }
 
+// TestRecord_StoreDown verifies the offline-resilience contract (BUG-030 / TASK-352):
+// 'gg record' must succeed (exit 0) when Qdrant is down, writing to JSONL instead.
 func TestRecord_StoreDown(t *testing.T) {
-	setupGGDir(t)
-	_, _, err := execCmd(t, "record", "use JWT for auth")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
+	ggDir := setupGGDir(t)
+	_, _, err := execCmd(t, "record", "use JWT for auth", "--reason", "stateless")
+	// AC-2: caller gets exit 0; JSONL is the durable write.
+	if err != nil {
+		t.Fatalf("expected exit 0 on offline record, got: %v", err)
 	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	// AC-1: JSONL must be written.
+	jsonlPath := filepath.Join(ggDir, "brain", "decisions.jsonl")
+	data, readErr := os.ReadFile(jsonlPath)
+	if readErr != nil {
+		t.Fatalf("brain/decisions.jsonl not written: %v", readErr)
 	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if len(data) == 0 {
+		t.Error("brain/decisions.jsonl is empty")
 	}
 }
 

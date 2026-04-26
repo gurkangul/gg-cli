@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -78,7 +79,8 @@ func runRecord(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	d, err := loadDeps(true)
+	// AC-2: Use offline-safe loader — write commands now tolerate Qdrant down.
+	d, err := loadDepsOfflineSafe(true)
 	if err != nil {
 		return err
 	}
@@ -87,26 +89,33 @@ func runRecord(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
+	// AC-4: InboxGatePreflight already fails-open when Qdrant is unreachable.
 	if err := runInboxGatePreflight(ctx, d.store, "record"); err != nil {
 		return err
 	}
 
-	embedText := text
-	if reason != "" {
-		embedText = text + " " + reason
-	}
-	vector, err := d.embedder.Generate(ctx, embedText)
-	if err != nil {
-		return fmt.Errorf("generate embedding: %w", err)
-	}
+	var vector []float32
+	if !d.qdrantDown {
+		embedText := text
+		if reason != "" {
+			embedText = text + " " + reason
+		}
+		vector, err = d.embedder.Generate(ctx, embedText)
+		if err != nil {
+			return fmt.Errorf("generate embedding: %w", err)
+		}
 
-	dupKind := "decisions"
-	if stance == "reject" {
-		dupKind = "rejections"
-	}
-	if promptIfDuplicate(ctx, d, dupKind, vector) {
-		fmt.Println("Aborted — nothing recorded.")
-		return nil
+		dupKind := "decisions"
+		if stance == "reject" {
+			dupKind = "rejections"
+		}
+		// AC-4: skip promptIfDuplicate when Qdrant is down.
+		if promptIfDuplicate(ctx, d, dupKind, vector) {
+			fmt.Println("Aborted — nothing recorded.")
+			return nil
+		}
+	} else {
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)")
 	}
 
 	if stance == "reject" {
@@ -117,8 +126,14 @@ func runRecord(cmd *cobra.Command, args []string) error {
 			TaskID:   taskRef,
 			Author:   resolveAuthor(cmd),
 		}
-		if err := d.store.AddRejection(ctx, r, vector); err != nil {
-			return fmt.Errorf("store rejection: %w", err)
+		if addErr := d.store.AddRejection(ctx, r, vector); addErr != nil {
+			var oq *store.OutboxQueued
+			if errors.As(addErr, &oq) {
+				queueBrainOutbox(oq, config.GGDirOrEmpty())
+				fmt.Fprintln(cmd.ErrOrStderr(), "⚠ queued for vector index (Qdrant unreachable; will replay on recovery)")
+			} else {
+				return fmt.Errorf("store rejection: %w", addErr)
+			}
 		}
 		return printJSON(r, func() {
 			fmt.Printf("✗ Rejection recorded: %s\n", text)
@@ -149,8 +164,14 @@ func runRecord(cmd *cobra.Command, args []string) error {
 		TaskID:               taskRef,
 		Author:               resolveAuthor(cmd),
 	}
-	if err := d.store.AddDecision(ctx, dec, vector); err != nil {
-		return fmt.Errorf("store decision: %w", err)
+	if addErr := d.store.AddDecision(ctx, dec, vector); addErr != nil {
+		var oq *store.OutboxQueued
+		if errors.As(addErr, &oq) {
+			queueBrainOutbox(oq, config.GGDirOrEmpty())
+			fmt.Fprintln(cmd.ErrOrStderr(), "⚠ queued for vector index (Qdrant unreachable; will replay on recovery)")
+		} else {
+			return fmt.Errorf("store decision: %w", addErr)
+		}
 	}
 
 	// Always upsert the Decision node to Memgraph so `gg impact` and graph

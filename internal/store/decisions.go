@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gurkangul/gg-cli/internal/brain"
 	"github.com/qdrant/go-client/qdrant"
 )
 
@@ -22,6 +23,9 @@ type Decision struct {
 	CreatedAt            string
 }
 
+// AddDecision writes the decision to .gg/brain/decisions.jsonl first (durable,
+// offline-safe), then attempts a Qdrant upsert.  Returns an OutboxQueued error
+// when Qdrant is unreachable so callers can surface the queued-for-replay note.
 func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) error {
 	if d.ID == "" {
 		d.ID = uuid.New().String()
@@ -29,12 +33,11 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 	if d.CreatedAt == "" {
 		d.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-
 	if d.Status == "" {
 		d.Status = "active"
 	}
 
-	payload, err := qdrant.TryValueMap(map[string]any{
+	rawPayload := map[string]any{
 		"text":                  d.Text,
 		"reason":                d.Reason,
 		"status":                d.Status,
@@ -43,24 +46,34 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 		"task_id":               d.TaskID,
 		"author":                d.Author,
 		"created_at":            d.CreatedAt,
-	})
+	}
+
+	// AC-1: JSONL write is the primary source of truth.
+	if err := brain.Append(c.dataDir, "decisions", d.ID, d.Author, rawPayload); err != nil {
+		return fmt.Errorf("brain jsonl write: %w", err)
+	}
+
+	// AC-2: Qdrant upsert is secondary best-effort.
+	qdrantPayload, err := qdrant.TryValueMap(rawPayload)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
 	}
-
 	wait := true
-	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	uErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: c.collDecisions(),
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{
 			{
 				Id:      qdrant.NewID(d.ID),
 				Vectors: qdrant.NewVectors(vector...),
-				Payload: payload,
+				Payload: qdrantPayload,
 			},
 		},
 	})
-	return err
+	if uErr != nil {
+		return &OutboxQueued{Kind: OutboxKindDecision, UUID: d.ID, Cause: uErr}
+	}
+	return nil
 }
 
 func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit uint64) ([]Decision, error) {

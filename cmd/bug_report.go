@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -80,7 +81,8 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	d, err := loadDeps(true)
+	// AC-2: Use offline-safe loader so bug report survives Qdrant downtime.
+	d, err := loadDepsOfflineSafe(true)
 	if err != nil {
 		return err
 	}
@@ -89,59 +91,61 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
+	// AC-4: InboxGatePreflight fails-open when Qdrant is unreachable.
 	if err := runInboxGatePreflight(ctx, d.store, "bug-report"); err != nil {
 		return err
 	}
 
-	embedText := title
-	if bugDetail != "" {
-		embedText = title + " " + bugDetail
-	}
-	vector, err := d.embedder.Generate(ctx, embedText)
-	if err != nil {
-		return fmt.Errorf("generate embedding: %w", err)
-	}
-
+	var vector []float32
 	tags := parseTags(bugTags)
-	fromFlag := ""
-	if f := cmd.Flags().Lookup("from"); f != nil {
-		fromFlag = f.Value.String()
-	}
-	if !bugForce {
-		threshold := float32(dupThreshold)
-		if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Bugs.DupeThreshold > 0 {
-			threshold = float32(cfg.Bugs.DupeThreshold)
+	if !d.qdrantDown {
+		embedText := title
+		if bugDetail != "" {
+			embedText = title + " " + bugDetail
 		}
-		res := promptIfDuplicateThreshold(ctx, d, "bugs", vector, threshold)
+		vector, err = d.embedder.Generate(ctx, embedText)
+		if err != nil {
+			return fmt.Errorf("generate embedding: %w", err)
+		}
 
-		// Telemetry — always record the dupe-check attempt (TASK-268) so
-		// `gg audit` can later measure force-vs-cancel ratio. Skip silently
-		// when config is unreachable, same as the compact path.
-		if res.UserChoice != "" {
-			if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil {
-				if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
-					telemetry.RecordDupeCheck(rtDir, "bug-report", fromFlag,
-						res.MatchesCount, res.TopScore, res.UserChoice)
+		fromFlag := ""
+		if f := cmd.Flags().Lookup("from"); f != nil {
+			fromFlag = f.Value.String()
+		}
+		if !bugForce {
+			threshold := float32(dupThreshold)
+			if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Bugs.DupeThreshold > 0 {
+				threshold = float32(cfg.Bugs.DupeThreshold)
+			}
+			res := promptIfDuplicateThreshold(ctx, d, "bugs", vector, threshold)
+
+			if res.UserChoice != "" {
+				if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil {
+					if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
+						telemetry.RecordDupeCheck(rtDir, "bug-report", fromFlag,
+							res.MatchesCount, res.TopScore, res.UserChoice)
+					}
 				}
 			}
-		}
 
-		if res.Abort {
-			if res.ReuseAsBugID != "" {
-				// Reuse-as-note flow: add a note linked to the existing bug.
-				if err := addDupeNote(ctx, d, res.ReuseAsBugID, title, vector); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: add note failed: %v\n", err)
+			if res.Abort {
+				if res.ReuseAsBugID != "" {
+					if err := addDupeNote(ctx, d, res.ReuseAsBugID, title, vector); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: add note failed: %v\n", err)
+					} else {
+						fmt.Printf("Note added to %s — no duplicate bug created.\n", res.ReuseAsBugID)
+					}
 				} else {
-					fmt.Printf("Note added to %s — no duplicate bug created.\n", res.ReuseAsBugID)
+					fmt.Println("Aborted — no bug reported.")
 				}
-			} else {
-				fmt.Println("Aborted — no bug reported.")
+				return nil
 			}
-			return nil
+			if res.SawDup {
+				tags = appendUniq(tags, "dupe-acknowledged")
+			}
 		}
-		if res.SawDup {
-			tags = appendUniq(tags, "dupe-acknowledged")
-		}
+	} else {
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)")
 	}
 
 	affectedFiles := normalizeBugFiles(parseTags(bugFiles))
@@ -158,9 +162,15 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		By:              resolveAuthor(cmd),
 	}
 
-	id, err := d.store.ReportBug(ctx, b, vector)
-	if err != nil {
-		return fmt.Errorf("report bug: %w", err)
+	id, reportErr := d.store.ReportBug(ctx, b, vector)
+	if reportErr != nil {
+		var oq *store.OutboxQueued
+		if errors.As(reportErr, &oq) {
+			queueBrainOutbox(oq, config.GGDirOrEmpty())
+			fmt.Fprintln(cmd.ErrOrStderr(), "⚠ queued for vector index (Qdrant unreachable; will replay on recovery)")
+		} else {
+			return fmt.Errorf("report bug: %w", reportErr)
+		}
 	}
 
 	// Write Bug node + AFFECTS edges to Memgraph when configured. Always

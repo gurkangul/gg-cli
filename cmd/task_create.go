@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -98,7 +99,8 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	d, err := loadDeps(true)
+	// AC-2: Use offline-safe loader so task creation survives Qdrant downtime.
+	d, err := loadDepsOfflineSafe(true)
 	if err != nil {
 		return err
 	}
@@ -107,22 +109,28 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
+	// AC-4: InboxGatePreflight fails-open when Qdrant is unreachable.
 	if err := runInboxGatePreflight(ctx, d.store, "task-create"); err != nil {
 		return err
 	}
 
-	embedText := title
-	if taskDetail != "" {
-		embedText = title + " " + taskDetail
-	}
-	vector, err := d.embedder.Generate(ctx, embedText)
-	if err != nil {
-		return fmt.Errorf("generate embedding: %w", err)
-	}
-
-	if promptIfDuplicate(ctx, d, "tasks", vector) {
-		fmt.Println("Aborted — no task created.")
-		return nil
+	var vector []float32
+	if !d.qdrantDown {
+		embedText := title
+		if taskDetail != "" {
+			embedText = title + " " + taskDetail
+		}
+		vector, err = d.embedder.Generate(ctx, embedText)
+		if err != nil {
+			return fmt.Errorf("generate embedding: %w", err)
+		}
+		// AC-4: skip dedup prompt when Qdrant is down.
+		if promptIfDuplicate(ctx, d, "tasks", vector) {
+			fmt.Println("Aborted — no task created.")
+			return nil
+		}
+	} else {
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)")
 	}
 
 	t := store.Task{
@@ -137,9 +145,15 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		Requester: taskRequester,
 	}
 
-	id, err := d.store.CreateTask(ctx, t, vector)
-	if err != nil {
-		return fmt.Errorf("create task: %w", err)
+	id, createErr := d.store.CreateTask(ctx, t, vector)
+	if createErr != nil {
+		var oq *store.OutboxQueued
+		if errors.As(createErr, &oq) {
+			queueBrainOutbox(oq, config.GGDirOrEmpty())
+			fmt.Fprintln(cmd.ErrOrStderr(), "⚠ queued for vector index (Qdrant unreachable; will replay on recovery)")
+		} else {
+			return fmt.Errorf("create task: %w", createErr)
+		}
 	}
 
 	upsertTaskGraphNode(cmd, ctx, id, title)
