@@ -33,6 +33,7 @@ gg session-start [flags]
 
 ```
       --agent string   agent name (claude-code, cursor, codex, ...) — overrides $GG_AGENT
+      --bench          print timing for the managed-block resync step to stderr
   -h, --help           help for session-start
 ```
 

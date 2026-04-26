@@ -9,7 +9,7 @@ Record an architectural decision, rejected approach, or design choice.
 WHEN TO USE: you've concluded something — chosen a library, rejected an approach,
 established a constraint. Anything that would appear in an ADR belongs here.
 
-WHEN NOT TO USE: for in-progress deliberation use 'gg message send'; for task
+WHEN NOT TO USE: for in-progress deliberation use 'gg tell <to> <msg> --from <role>'; for task
 tracking use 'gg task create'; for progress notes use 'gg task done'.
 
 Examples:

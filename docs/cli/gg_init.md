@@ -9,8 +9,11 @@ gg init [flags]
 ### Options
 
 ```
-  -h, --help               help for init
-      --skip-enforcement   skip installing agent hooks and task-done gate scripts
+  -h, --help                  help for init
+      --no-index              skip the post-setup index prompt (non-interactive no)
+      --skip-enforcement      skip installing agent hooks and task-done gate scripts
+      --with-index gg index   also run gg index after setup (non-interactive yes)
+      --yes                   non-interactive: skip prompts, default unconfigured for developer.agent
 ```
 
 ### Options inherited from parent commands

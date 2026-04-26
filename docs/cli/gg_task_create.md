@@ -10,7 +10,7 @@ WHEN TO USE: you have a concrete action item — something that can be done, ver
 and marked done. Use --priority to signal urgency and --depends-on to declare ordering.
 
 WHEN NOT TO USE: for open-ended exploration use 'gg record'; for async questions to
-another agent use 'gg message send'.
+another agent use 'gg tell <to> <msg> --from <role>'.
 
 See also: gg task list (view tasks), gg task done (close a task), gg task deps (check blockers)
 

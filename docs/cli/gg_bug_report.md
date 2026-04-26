@@ -11,6 +11,7 @@ gg bug report "title" [flags]
 ```
       --detail string     detailed description
       --files string      comma-separated source file paths this bug affects
+      --force             skip duplicate-detection prompt and file anyway
       --from string       author/role recording this (defaults to $GG_ROLE)
   -h, --help              help for report
       --severity string   severity: critical, high, medium, low (default "medium")
