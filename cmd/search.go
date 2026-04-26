@@ -93,10 +93,10 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	return printSearchResults(cmd, decisions, rejections, "", time.Time{})
 }
 
-// serveSearchFromJSONL performs a text-scan of .gg/brain/decisions.jsonl and
-// .gg/brain/rejections.jsonl as a lightweight offline fallback when Qdrant is
-// unreachable.  It falls through to the LKG cache when the JSONL files are
-// absent (i.e., the brain has not been written yet in JSONL format).
+// serveSearchFromJSONL performs a text-scan of the brain JSONL files as a
+// lightweight offline fallback when Qdrant is unreachable. Scans decisions,
+// rejections, tasks, and bugs. Falls through to the LKG cache when no JSONL
+// files are found (pre-JSONL brain).
 func serveSearchFromJSONL(cmd *cobra.Command, query string) error {
 	const banner = "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)"
 
@@ -107,9 +107,11 @@ func serveSearchFromJSONL(cmd *cobra.Command, query string) error {
 
 	decEntries, decErr := brain.SearchByText(ggDir, "decisions", query)
 	rejEntries, rejErr := brain.SearchByText(ggDir, "rejections", query)
+	taskEntries, taskErr := brain.SearchByText(ggDir, "tasks", query)
+	bugEntries, bugErr := brain.SearchByText(ggDir, "bugs", query)
 
-	// Both absent → fall through to LKG cache (pre-JSONL brain).
-	if decErr != nil && rejErr != nil {
+	// All absent → fall through to LKG cache (pre-JSONL brain).
+	if decErr != nil && rejErr != nil && taskErr != nil && bugErr != nil {
 		return serveSearchFromCache(cmd, query)
 	}
 
@@ -169,6 +171,56 @@ func serveSearchFromJSONL(cmd *cobra.Command, query string) error {
 			}
 		}
 		rejections = append(rejections, r)
+	}
+
+	// Include tasks and bugs as synthetic decisions so they surface in the
+	// offline results. This is a best-effort representation — full task/bug
+	// objects are not available without Qdrant.
+	for _, e := range taskEntries {
+		d := store.Decision{ID: e.UUID, Author: e.Author}
+		if v, ok := e.Payload["title"].(string); ok {
+			d.Text = "[task] " + v
+		}
+		if v, ok := e.Payload["detail"].(string); ok {
+			d.Reason = v
+		}
+		if v, ok := e.Payload["task_id"].(string); ok {
+			d.TaskID = v
+		}
+		if v, ok := e.Payload["status"].(string); ok {
+			d.Status = v
+		}
+		if v, ok := e.Payload["created_at"].(string); ok {
+			d.CreatedAt = v
+		}
+		if tags, ok := e.Payload["tags"].([]any); ok {
+			for _, t := range tags {
+				if s, ok := t.(string); ok {
+					d.Tags = append(d.Tags, s)
+				}
+			}
+		}
+		decisions = append(decisions, d)
+	}
+	for _, e := range bugEntries {
+		d := store.Decision{ID: e.UUID, Author: e.Author}
+		if v, ok := e.Payload["title"].(string); ok {
+			d.Text = "[bug] " + v
+		}
+		if v, ok := e.Payload["detail"].(string); ok {
+			d.Reason = v
+		}
+		if v, ok := e.Payload["created_at"].(string); ok {
+			d.CreatedAt = v
+		}
+		if tags, ok := e.Payload["tags"].([]any); ok {
+			for _, t := range tags {
+				if s, ok := t.(string); ok {
+					d.Tags = append(d.Tags, s)
+				}
+			}
+		}
+		decisions = append(decisions, d)
 	}
 
 	return printSearchResults(cmd, decisions, rejections, banner, time.Time{})

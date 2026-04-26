@@ -47,6 +47,9 @@ func kindPath(ggDir, kind string) string {
 // Append writes an entry to .gg/brain/<kind>.jsonl, creating the file and
 // directory on first use.  Idempotent by UUID: callers set UUID before calling
 // so retries are safe.
+//
+// An exclusive flock is held for the duration of the write so that concurrent
+// PIDs do not produce torn lines for payloads larger than PIPE_BUF (~4096 B).
 func Append(ggDir, kind, id, author string, payload map[string]any) error {
 	if id == "" {
 		id = uuid.New().String()
@@ -65,46 +68,56 @@ func Append(ggDir, kind, id, author string, payload map[string]any) error {
 	if err := os.MkdirAll(dir(ggDir), 0o755); err != nil {
 		return fmt.Errorf("brain: mkdir: %w", err)
 	}
-	f, err := os.OpenFile(kindPath(ggDir, kind), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(kindPath(ggDir, kind), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return fmt.Errorf("brain: open %s: %w", kind, err)
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "%s\n", data)
-	if err != nil {
-		return fmt.Errorf("brain: write %s: %w", kind, err)
-	}
-	return nil
+	return withFileLock(f, func() error {
+		if _, wErr := fmt.Fprintf(f, "%s\n", data); wErr != nil {
+			return fmt.Errorf("brain: write %s: %w", kind, wErr)
+		}
+		return nil
+	})
 }
 
 // ReadAll reads every entry from .gg/brain/<kind>.jsonl.
 // Returns nil, nil when the file does not exist (empty brain for this kind).
-// Malformed lines are skipped.
+// Malformed lines are skipped silently; use ReadAllWithCount to observe them.
 func ReadAll(ggDir, kind string) ([]Entry, error) {
+	entries, _, err := ReadAllWithCount(ggDir, kind)
+	return entries, err
+}
+
+// ReadAllWithCount is like ReadAll but also returns the number of malformed
+// lines skipped. A non-zero count means the JSONL file is partially corrupted
+// (torn write or manual edit). Callers that want to surface this to the user
+// should emit a warning when skipped > 0.
+func ReadAllWithCount(ggDir, kind string) (entries []Entry, skipped int, err error) {
 	path := kindPath(ggDir, kind)
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
+	f, openErr := os.Open(path)
+	if openErr != nil {
+		if os.IsNotExist(openErr) {
+			return nil, 0, nil
 		}
-		return nil, fmt.Errorf("brain: open %s: %w", kind, err)
+		return nil, 0, fmt.Errorf("brain: open %s: %w", kind, openErr)
 	}
 	defer f.Close()
 
-	var entries []Entry
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 1<<20) // 1 MiB max line — large detail fields
 	for sc.Scan() {
 		var e Entry
 		if jsonErr := json.Unmarshal(sc.Bytes(), &e); jsonErr != nil {
-			continue // skip malformed
+			skipped++
+			continue
 		}
 		entries = append(entries, e)
 	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("brain: scan %s: %w", kind, err)
+	if scanErr := sc.Err(); scanErr != nil {
+		return nil, skipped, fmt.Errorf("brain: scan %s: %w", kind, scanErr)
 	}
-	return entries, nil
+	return entries, skipped, nil
 }
 
 // SearchByText returns entries whose payload "text" or "approach" field

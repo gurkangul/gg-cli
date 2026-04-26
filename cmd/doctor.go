@@ -254,6 +254,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	fmt.Println("\nOutbox (index pipeline crash-safety):")
 	doctorCheckOutbox(report)
 
+	// 5b. JSONL integrity — warn on malformed lines in brain files.
+	fmt.Println("\nBrain JSONL integrity:")
+	doctorCheckBrainJSONL(report)
+
 	// 6. Binary freshness — advisory warn, never blocks default run.
 	fmt.Println("\nBinary:")
 	doctorCheckBinaryAdvisory(report)

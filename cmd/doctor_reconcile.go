@@ -40,19 +40,7 @@ func runDoctorReconcile(cmd *cobra.Command) error {
 		return fmt.Errorf("find .gg dir: %w", err)
 	}
 
-	entries, err := outbox.List(ggDir)
-	if err != nil {
-		return fmt.Errorf("read outbox: %w", err)
-	}
-
-	if len(entries) == 0 {
-		fmt.Println("Outbox is empty — stores consistent.")
-		return nil
-	}
-
-	fmt.Printf("Found %d pending outbox entry(ies):\n\n", len(entries))
-
-	// Load Qdrant client for brain replay — if unavailable, report but don't abort.
+	// Load Qdrant client once — used by both outbox replay and JSONL scan.
 	var storeClient *store.Client
 	if d, dErr := loadDepsReadOnly(false); dErr == nil && !d.qdrantDown {
 		storeClient = d.store
@@ -60,60 +48,138 @@ func runDoctorReconcile(cmd *cobra.Command) error {
 	}
 
 	needsAction := false
-	for _, e := range entries {
-		fmt.Printf("  ID:      %s\n", e.ID)
-		fmt.Printf("  Kind:    %s\n", e.Kind)
-		fmt.Printf("  Created: %s\n", e.CreatedAt)
-		if e.Retries > 0 {
-			fmt.Printf("  Retries: %d\n", e.Retries)
-		}
 
-		if collSuffix, isBrainKind := brainKindToCollection[e.Kind]; isBrainKind {
-			// AC-3: replay brain entry from JSONL to Qdrant.
-			replayed, replayErr := replayBrainEntry(cmd.Context(), storeClient, ggDir, e, collSuffix)
-			if replayErr != nil {
-				fmt.Printf("  → replay failed: %v\n", replayErr)
-				_ = outbox.IncrementRetries(ggDir, e.ID)
-				needsAction = true
-			} else if replayed {
-				fmt.Printf("  ✓ replayed to Qdrant (collection: %s)\n", collSuffix)
-				_ = outbox.Delete(ggDir, e.ID)
-			} else {
-				fmt.Printf("  ~ Qdrant unreachable — replay deferred\n")
-				needsAction = true
+	// Phase 1: drain outbox entries.
+	entries, err := outbox.List(ggDir)
+	if err != nil {
+		return fmt.Errorf("read outbox: %w", err)
+	}
+
+	if len(entries) > 0 {
+		fmt.Printf("Found %d pending outbox entry(ies):\n\n", len(entries))
+		for _, e := range entries {
+			fmt.Printf("  ID:      %s\n", e.ID)
+			fmt.Printf("  Kind:    %s\n", e.Kind)
+			fmt.Printf("  Created: %s\n", e.CreatedAt)
+			if e.Retries > 0 {
+				fmt.Printf("  Retries: %d\n", e.Retries)
 			}
-		} else {
-			switch e.Kind {
-			case "full-index", "changed-index":
-				var p struct {
-					Root string `json:"root"`
-					Lang string `json:"lang"`
-					SHA  string `json:"sha"`
-				}
-				if jsonErr := json.Unmarshal(e.Payload, &p); jsonErr == nil {
-					shortSHA := p.SHA
-					if len(shortSHA) > 8 {
-						shortSHA = shortSHA[:8]
-					}
-					fmt.Printf("  → Memgraph write for sha=%s may be incomplete.\n", shortSHA)
-					fmt.Printf("    Repair: gg index --lang %s\n", p.Lang)
+
+			if collSuffix, isBrainKind := brainKindToCollection[e.Kind]; isBrainKind {
+				replayed, replayErr := replayBrainEntry(cmd.Context(), storeClient, ggDir, e, collSuffix)
+				if replayErr != nil {
+					fmt.Printf("  → replay failed: %v\n", replayErr)
+					_ = outbox.IncrementRetries(ggDir, e.ID)
+					needsAction = true
+				} else if replayed {
+					fmt.Printf("  ✓ replayed to Qdrant (collection: %s)\n", collSuffix)
+					_ = outbox.Delete(ggDir, e.ID)
 				} else {
-					fmt.Printf("  → Payload unreadable: %v\n", jsonErr)
+					fmt.Printf("  ~ Qdrant unreachable — replay deferred\n")
+					needsAction = true
 				}
-				needsAction = true
-			default:
-				fmt.Printf("  → Unknown kind %q — manual inspection required.\n", e.Kind)
-				needsAction = true
+			} else {
+				switch e.Kind {
+				case "full-index", "changed-index":
+					var p struct {
+						Root string `json:"root"`
+						Lang string `json:"lang"`
+						SHA  string `json:"sha"`
+					}
+					if jsonErr := json.Unmarshal(e.Payload, &p); jsonErr == nil {
+						shortSHA := p.SHA
+						if len(shortSHA) > 8 {
+							shortSHA = shortSHA[:8]
+						}
+						fmt.Printf("  → Memgraph write for sha=%s may be incomplete.\n", shortSHA)
+						fmt.Printf("    Repair: gg index --lang %s\n", p.Lang)
+					} else {
+						fmt.Printf("  → Payload unreadable: %v\n", jsonErr)
+					}
+					needsAction = true
+				default:
+					fmt.Printf("  → Unknown kind %q — manual inspection required.\n", e.Kind)
+					needsAction = true
+				}
 			}
+			fmt.Println()
 		}
-		fmt.Println()
+	} else {
+		fmt.Println("Outbox empty.")
+	}
+
+	// Phase 2: scan JSONL ∖ Qdrant — recover entries written to JSONL but never
+	// reaching Qdrant (SIGKILL window between Append and queueBrainOutbox).
+	fmt.Println("\nJSONL ∖ Qdrant scan:")
+	jsonlGap := runReconcileFromJSONL(cmd.Context(), storeClient, ggDir)
+	if jsonlGap {
+		needsAction = true
 	}
 
 	if needsAction {
-		return fmt.Errorf("pending outbox entries remain — fix issues above and re-run `gg doctor --reconcile`")
+		return fmt.Errorf("pending entries remain — fix issues above and re-run `gg doctor --reconcile`")
 	}
-	fmt.Println("All entries replayed — outbox is now empty.")
+	fmt.Println("\nAll stores consistent.")
 	return nil
+}
+
+// runReconcileFromJSONL compares every brain JSONL file against Qdrant and
+// re-upserts entries that are missing from Qdrant.  Returns true when any
+// entries needed recovery or Qdrant was unreachable (caller should retry).
+func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) bool {
+	if sc == nil {
+		fmt.Println("  ~ Qdrant unreachable — JSONL scan deferred")
+		return true
+	}
+	anyGap := false
+	for _, kind := range brainKinds {
+		entries, _, readErr := brain.ReadAllWithCount(ggDir, kind)
+		if readErr != nil {
+			fmt.Printf("  ✗ %s: read error: %v\n", kind, readErr)
+			anyGap = true
+			continue
+		}
+		if len(entries) == 0 {
+			continue
+		}
+
+		qdrantUUIDs, uuidErr := sc.CollectionUUIDs(ctx, kind)
+		if uuidErr != nil {
+			// Collection may not exist yet (fresh install) — treat as empty.
+			qdrantUUIDs = map[string]struct{}{}
+		}
+
+		recovered := 0
+		failed := 0
+		for _, e := range entries {
+			if _, exists := qdrantUUIDs[e.UUID]; exists {
+				continue
+			}
+			// Entry is in JSONL but not in Qdrant — re-upsert.
+			if replayErr := sc.ReplayBrainEntry(ctx, kind, e.UUID, e.Payload); replayErr != nil {
+				if errors.Is(replayErr, store.ErrQdrantDown) {
+					fmt.Printf("  ~ %s: Qdrant went down mid-scan — deferred\n", kind)
+					anyGap = true
+					break
+				}
+				fmt.Printf("  ✗ %s: replay %s failed: %v\n", kind, e.UUID[:8], replayErr)
+				failed++
+			} else {
+				recovered++
+			}
+		}
+		if recovered > 0 {
+			fmt.Printf("  ✓ %s: recovered %d missing entry(ies)\n", kind, recovered)
+		}
+		if failed > 0 {
+			fmt.Printf("  ✗ %s: %d replay failure(s)\n", kind, failed)
+			anyGap = true
+		}
+		if recovered == 0 && failed == 0 && len(entries) > 0 {
+			fmt.Printf("  ✓ %s: %d entries consistent\n", kind, len(entries))
+		}
+	}
+	return anyGap
 }
 
 // replayBrainEntry reads the JSONL entry for e.UUID from .gg/brain/<collSuffix>.jsonl
@@ -157,6 +223,36 @@ func replayBrainEntry(ctx context.Context, sc *store.Client, ggDir string, e out
 		return false, replayErr
 	}
 	return true, nil
+}
+
+// brainKinds lists the JSONL files checked by doctorCheckBrainJSONL.
+var brainKinds = []string{"decisions", "rejections", "tasks", "bugs", "messages", "discussions", "notes"}
+
+// doctorCheckBrainJSONL scans each .gg/brain/<kind>.jsonl for malformed lines
+// and emits an advisory warning per file that has any.  A malformed line means
+// the file was corrupted (torn write or manual edit) and those entries will be
+// silently skipped by all readers.
+func doctorCheckBrainJSONL(report *doctorReport) {
+	ggDir, err := config.GGDir()
+	if err != nil {
+		report.warn("brain jsonl", "could not locate .gg dir")
+		return
+	}
+	total := 0
+	for _, kind := range brainKinds {
+		_, skipped, scanErr := brain.ReadAllWithCount(ggDir, kind)
+		if scanErr != nil {
+			report.warn("brain jsonl/"+kind, fmt.Sprintf("scan error: %v", scanErr))
+			continue
+		}
+		if skipped > 0 {
+			total += skipped
+			report.warn("brain jsonl/"+kind, fmt.Sprintf("⚠ %d malformed line(s) in .gg/brain/%s.jsonl — entries skipped", skipped, kind))
+		}
+	}
+	if total == 0 {
+		report.ok("brain jsonl", "all files clean")
+	}
 }
 
 // doctorCheckOutbox reports whether there are unresolved outbox entries.

@@ -3,8 +3,10 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/gurkangul/gg-cli/internal/brain"
 	"github.com/gurkangul/gg-cli/internal/cache"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
@@ -205,5 +207,63 @@ func TestContext_CacheHit_LongDetail(t *testing.T) {
 	_, _, err := execCmd(t, "context", "long-detail")
 	if err != nil {
 		t.Errorf("unexpected error from context with long detail: %v", err)
+	}
+}
+
+// TestSearch_OfflineFallback_ScansTasksAndBugs verifies that brain.SearchByText
+// finds entries in tasks.jsonl and bugs.jsonl — this is the JSONL scan layer
+// exercised by serveSearchFromJSONL when Qdrant is unreachable.
+// The cmd-level render path writes to os.Stdout directly (not captured by
+// execCmd), so this test validates the scan contract at the brain layer.
+func TestSearch_OfflineFallback_ScansTasksAndBugs(t *testing.T) {
+	ggDir := setupGGDir(t)
+
+	// Seed task and bug entries in JSONL.
+	taskPayload := map[string]any{
+		"task_id": "TASK-099",
+		"title":   "offline resilience task",
+		"detail":  "test that tasks surface in offline search",
+		"status":  "pending",
+	}
+	if err := brain.Append(ggDir, "tasks", "task-uuid-099", "agent", taskPayload); err != nil {
+		t.Fatalf("brain.Append task: %v", err)
+	}
+
+	bugPayload := map[string]any{
+		"bug_id": "BUG-099",
+		"title":  "offline resilience bug",
+		"detail": "test that bugs surface in offline search",
+		"status": "open",
+	}
+	if err := brain.Append(ggDir, "bugs", "bug-uuid-099", "agent", bugPayload); err != nil {
+		t.Fatalf("brain.Append bug: %v", err)
+	}
+
+	// Verify task entries are found by SearchByText (used by serveSearchFromJSONL).
+	taskEntries, err := brain.SearchByText(ggDir, "tasks", "offline")
+	if err != nil {
+		t.Fatalf("SearchByText tasks: %v", err)
+	}
+	if len(taskEntries) == 0 {
+		t.Error("expected task entry in offline JSONL search, got none")
+	} else if title, _ := taskEntries[0].Payload["title"].(string); !strings.Contains(title, "offline resilience task") {
+		t.Errorf("task title = %q, want 'offline resilience task'", title)
+	}
+
+	// Verify bug entries are found by SearchByText.
+	bugEntries, err := brain.SearchByText(ggDir, "bugs", "offline")
+	if err != nil {
+		t.Fatalf("SearchByText bugs: %v", err)
+	}
+	if len(bugEntries) == 0 {
+		t.Error("expected bug entry in offline JSONL search, got none")
+	} else if title, _ := bugEntries[0].Payload["title"].(string); !strings.Contains(title, "offline resilience bug") {
+		t.Errorf("bug title = %q, want 'offline resilience bug'", title)
+	}
+
+	// Verify the cmd-level search exits cleanly with Qdrant down.
+	_, _, execErr := execCmd(t, "search", "offline")
+	if execErr != nil {
+		t.Errorf("gg search offline: unexpected error: %v", execErr)
 	}
 }

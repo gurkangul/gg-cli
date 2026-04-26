@@ -31,6 +31,28 @@ func (e *OutboxQueued) Error() string {
 
 func (e *OutboxQueued) Unwrap() error { return e.Cause }
 
+// CollectionUUIDs returns the set of all point UUIDs present in the given
+// collection suffix (e.g. "decisions"). Used by gg doctor --reconcile to find
+// entries that are in JSONL but missing from Qdrant after a SIGKILL.
+func (c *Client) CollectionUUIDs(ctx context.Context, collSuffix string) (map[string]struct{}, error) {
+	collName := c.projectID + "-" + collSuffix
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+		CollectionName: collName,
+		Limit:          qdrant.PtrOf(uint32(1000)),
+		WithPayload:    qdrant.NewWithPayloadInclude(), // no payload — IDs only
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scroll %s: %w", collSuffix, err)
+	}
+	out := make(map[string]struct{}, len(points))
+	for _, p := range points {
+		if uid := p.GetId().GetUuid(); uid != "" {
+			out[uid] = struct{}{}
+		}
+	}
+	return out, nil
+}
+
 // ReplayBrainEntry upserts a brain JSONL payload into a Qdrant collection
 // without a vector.  The collection name is derived from the collSuffix (e.g.
 // "decisions") combined with the client's projectID prefix.

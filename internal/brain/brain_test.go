@@ -1,7 +1,10 @@
 package brain_test
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/gurkangul/gg-cli/internal/brain"
@@ -146,5 +149,83 @@ func TestSearch_FallsBackToJSONLWhenQdrantDown(t *testing.T) {
 	expectedPath := filepath.Join(dir, "brain", "decisions.jsonl")
 	if _, err := brain.ReadAll(dir, "decisions"); err != nil {
 		t.Errorf("ReadAll after write failed: %v (path: %s)", err, expectedPath)
+	}
+}
+
+// TestReadAll_LogsMalformedSkipCount verifies that ReadAllWithCount returns the
+// count of malformed lines that were skipped instead of silently discarding them.
+func TestReadAll_LogsMalformedSkipCount(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write one valid entry.
+	if err := brain.Append(dir, "decisions", "uuid-valid", "agent", map[string]any{"text": "valid"}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	// Inject a malformed line directly into the JSONL file.
+	jsonlPath := filepath.Join(dir, "brain", "decisions.jsonl")
+	f, err := os.OpenFile(jsonlPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatalf("open jsonl: %v", err)
+	}
+	_, _ = f.WriteString("{not valid json\n")
+	f.Close()
+
+	// Write a second valid entry after the malformed line.
+	if err := brain.Append(dir, "decisions", "uuid-valid-2", "agent", map[string]any{"text": "also valid"}); err != nil {
+		t.Fatalf("Append 2: %v", err)
+	}
+
+	entries, skipped, err := brain.ReadAllWithCount(dir, "decisions")
+	if err != nil {
+		t.Fatalf("ReadAllWithCount: %v", err)
+	}
+	if skipped != 1 {
+		t.Errorf("skipped = %d, want 1", skipped)
+	}
+	if len(entries) != 2 {
+		t.Errorf("entries = %d, want 2", len(entries))
+	}
+}
+
+// TestBrainAppend_ConcurrentPIDs_NoTornLines verifies that concurrent Append
+// calls from goroutines (simulating concurrent PIDs) produce only valid JSONL
+// lines — no torn/interleaved output.
+func TestBrainAppend_ConcurrentPIDs_NoTornLines(t *testing.T) {
+	dir := t.TempDir()
+	const goroutines = 20
+	// Use a large payload to stress the POSIX PIPE_BUF boundary.
+	largeDetail := fmt.Sprintf("%04096d", 0) // 4096 zeros
+
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines)
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			payload := map[string]any{
+				"text":   fmt.Sprintf("concurrent entry %d", i),
+				"detail": largeDetail,
+			}
+			if err := brain.Append(dir, "decisions", fmt.Sprintf("uuid-%03d", i), "agent", payload); err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent Append error: %v", err)
+	}
+
+	entries, skipped, err := brain.ReadAllWithCount(dir, "decisions")
+	if err != nil {
+		t.Fatalf("ReadAllWithCount: %v", err)
+	}
+	if skipped != 0 {
+		t.Errorf("skipped = %d (torn lines!), want 0", skipped)
+	}
+	if len(entries) != goroutines {
+		t.Errorf("entries = %d, want %d", len(entries), goroutines)
 	}
 }
