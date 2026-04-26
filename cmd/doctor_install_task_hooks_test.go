@@ -26,6 +26,13 @@ func newHookInstallFixture(t *testing.T, withGoMod, withPackageJSON bool) *hookI
 	ggDir := setupGGDir(t)
 	root := filepath.Dir(ggDir)
 
+	// Create a minimal .git/hooks directory so installGitPreCommitDispatcher
+	// can install the pre-commit dispatcher without erroring.
+	gitHooksDir := filepath.Join(root, ".git", "hooks")
+	if err := os.MkdirAll(gitHooksDir, 0o755); err != nil {
+		t.Fatalf("create .git/hooks: %v", err)
+	}
+
 	if withGoMod {
 		if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0o644); err != nil {
 			t.Fatalf("write go.mod: %v", err)

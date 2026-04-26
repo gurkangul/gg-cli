@@ -13,25 +13,23 @@ import (
 const preCommitDispatcherBody = `#!/bin/sh
 # gg pre-commit dispatcher — installed by gg doctor --install-task-hooks
 # Runs every executable *.sh in .gg/hooks/pre-commit.d/ in lexicographic order.
-# Any script that exits non-zero fails the commit.
+# Any script that exits non-zero fails the commit immediately.
 # To bypass a script: set the env vars it documents (e.g. GG_BYPASS_RATIONALE).
 
-set +e
 GG_HOOK_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/.gg/hooks/pre-commit.d"
 if [ ! -d "$GG_HOOK_DIR" ]; then
   exit 0
 fi
 
-overall=0
-for hook in "$GG_HOOK_DIR"/*.sh; do
+for hook in $(ls "$GG_HOOK_DIR"/*.sh 2>/dev/null | sort); do
   [ -x "$hook" ] || continue
   "$hook" "$@"
   rc=$?
   if [ $rc -ne 0 ]; then
-    overall=$rc
+    exit $rc
   fi
 done
-exit $overall
+exit 0
 `
 
 // installGitPreCommitDispatcher installs the gg fan-out dispatcher at
@@ -41,7 +39,8 @@ exit $overall
 func installGitPreCommitDispatcher(projectRoot, preCommitDir string) error {
 	gitDir := filepath.Join(projectRoot, ".git")
 	if _, err := os.Stat(gitDir); err != nil {
-		return fmt.Errorf("no .git directory at %s — not a git repo", projectRoot)
+		fmt.Printf("⚠ .git not found at %s — skipping pre-commit dispatcher (run after `git init`)\n", projectRoot)
+		return nil
 	}
 	hooksDir := filepath.Join(gitDir, "hooks")
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
@@ -62,8 +61,11 @@ func installGitPreCommitDispatcher(projectRoot, preCommitDir string) error {
 		stanza := "\n# gg pre-commit.d fan-out (appended by gg doctor --install-task-hooks)\n" +
 			`GG_HOOK_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/.gg/hooks/pre-commit.d"` + "\n" +
 			`if [ -d "$GG_HOOK_DIR" ]; then` + "\n" +
-			`  for _gg_hook in "$GG_HOOK_DIR"/*.sh; do` + "\n" +
-			`    [ -x "$_gg_hook" ] && "$_gg_hook" "$@" || exit $?` + "\n" +
+			`  for _gg_hook in $(ls "$GG_HOOK_DIR"/*.sh 2>/dev/null | sort); do` + "\n" +
+			`    [ -x "$_gg_hook" ] || continue` + "\n" +
+			`    "$_gg_hook" "$@"` + "\n" +
+			`    _gg_rc=$?` + "\n" +
+			`    if [ $_gg_rc -ne 0 ]; then exit $_gg_rc; fi` + "\n" +
 			`  done` + "\n" +
 			`fi` + "\n"
 		f, err := os.OpenFile(dispatcherPath, os.O_APPEND|os.O_WRONLY, 0o755) //nolint:gosec

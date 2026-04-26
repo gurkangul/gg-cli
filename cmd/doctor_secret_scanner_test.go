@@ -284,12 +284,13 @@ func TestInstallGitPreCommitDispatcher_Idempotent(t *testing.T) {
 	}
 }
 
-// TestInstallGitPreCommitDispatcher_NoGitDir verifies an error is returned
-// when the project root has no .git directory.
+// TestInstallGitPreCommitDispatcher_NoGitDir verifies that a missing .git
+// directory is treated as a graceful skip (warn + nil) rather than an error,
+// so `gg doctor --install-task-hooks` is safe to run before `git init`.
 func TestInstallGitPreCommitDispatcher_NoGitDir(t *testing.T) {
 	root := t.TempDir() // no .git inside
 	err := installGitPreCommitDispatcher(root, filepath.Join(root, "pre-commit.d"))
-	if err == nil {
-		t.Fatal("expected error for missing .git, got nil")
+	if err != nil {
+		t.Fatalf("expected nil for missing .git (graceful skip), got: %v", err)
 	}
 }
