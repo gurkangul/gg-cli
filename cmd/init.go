@@ -203,15 +203,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("  AGENTS.md already exists, skipping (merge gg rules manually if needed)")
 	}
 
+	// Always attempt collection bootstrap — setupProjectCollections is resilient:
+	// it polls Qdrant and prints a warning if unreachable rather than failing.
+	// This matters when config.yaml is pre-written before `gg init` (e.g. smoke
+	// tests, brownfield setups) where Docker wasn't started by this run but
+	// external Qdrant services are already up.
+	if err := setupProjectCollections(parentCtx, projectID, ggDir); err != nil {
+		return err
+	}
 	if composeOK {
-		// Wait for Qdrant and create this project's collections.
-		if err := setupProjectCollections(parentCtx, projectID, ggDir); err != nil {
-			return err
-		}
 		fmt.Printf("\nGG ready. Project %s is registered in shared Qdrant.\n", projectID)
 	} else {
-		fmt.Println("\n⚠ Docker services not running. Project registered with ID", projectID)
-		fmt.Println("  Start services manually: docker compose -f ~/.gg/docker-compose.yaml up -d")
+		fmt.Printf("\nProject %s registered. Start services if not already running:\n", projectID)
+		fmt.Println("  docker compose -f ~/.gg/docker-compose.yaml up -d")
 	}
 
 	// Install agent-side hooks so subsequent sessions of any detected agent
