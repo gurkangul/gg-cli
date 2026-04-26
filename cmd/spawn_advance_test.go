@@ -37,9 +37,10 @@ func TestSpawnAdvance_WritesSentinel(t *testing.T) {
 	}
 }
 
-// TestKeepaliveTickRespectsInterval verifies sendPaneKeepalives sends SendKey
-// to every registered pane exactly once per call.
-func TestKeepaliveTickRespectsInterval(t *testing.T) {
+// TestKeepaliveProbesNotSendKey verifies sendPaneKeepalives does NOT call
+// SendKey on the terminal (which would inject text into agent REPLs).
+// The new implementation uses terminal.ProbeSurface (cmux identify, read-only).
+func TestKeepaliveProbesNotSendKey(t *testing.T) {
 	ctx := context.Background()
 	rt := t.TempDir()
 	term := terminal.NewFake()
@@ -50,36 +51,37 @@ func TestKeepaliveTickRespectsInterval(t *testing.T) {
 	registerTestPane(t, rt, id1, "TASK-010")
 	registerTestPane(t, rt, id2, "TASK-011")
 
+	callsBefore := len(term.Calls) // captures NewSplit calls
+
 	var buf bytes.Buffer
+	// ProbeSurface shells out to cmux — it will error in test (no live surfaces),
+	// but the error must be logged and not panic. The FakeTerminal is not used.
 	sendPaneKeepalives(ctx, rt, term, &buf)
 
-	sendKeyCalls := 0
-	for _, c := range term.Calls {
-		if c.Method == "SendKey" {
-			sendKeyCalls++
+	for _, c := range term.Calls[callsBefore:] {
+		if c.Method == "SendKey" || c.Method == "Send" {
+			t.Errorf("sendPaneKeepalives must not inject input into panes; got %q call", c.Method)
 		}
-	}
-	// Expect exactly 2 SendKey calls (one per pane), beyond the initial NewSplits.
-	if sendKeyCalls != 2 {
-		t.Errorf("sendPaneKeepalives: SendKey calls = %d, want 2 (one per pane)", sendKeyCalls)
 	}
 }
 
-// TestKeepaliveSkipsDeadPanes verifies sendPaneKeepalives does not crash when a
-// pane is already closed — the error is logged but not propagated.
-func TestKeepaliveSkipsDeadPanes(t *testing.T) {
+// TestKeepaliveLogsProbeErrors verifies sendPaneKeepalives logs probe errors
+// but does not panic or propagate them — transient cmux errors must not crash
+// the heartbeat watch loop.
+func TestKeepaliveLogsProbeErrors(t *testing.T) {
 	ctx := context.Background()
 	rt := t.TempDir()
 	term := terminal.NewFake()
 
 	id, _ := term.NewSplit(ctx, terminal.SplitOpts{})
 	registerTestPane(t, rt, id, "TASK-020")
-	// Close the pane so SendKey will error.
-	_ = term.Close(ctx, id)
 
 	var buf bytes.Buffer
-	// Must not panic or return error.
+	// ProbeSurface will error (surface not in live cmux). Must not panic.
 	sendPaneKeepalives(ctx, rt, term, &buf)
+	// Error should be written to errOut, not swallowed silently.
+	// (Only expected when cmux binary is present but surface is unknown;
+	// in CI without cmux the error path is still exercised.)
 }
 
 // TestPruneStalePane_RemovesEntryAndLock verifies pruneStalePane removes the

@@ -20,7 +20,7 @@ var spawnHeartbeatKeepaliveSecs int
 
 // defaultKeepaliveSecs returns the effective keepalive interval in seconds.
 // Priority: --keepalive flag > GG_PANE_KEEPALIVE_SEC env > 240.
-// Floor: 60s — below this the send rate floods the worker shell.
+// Floor: 60s — below this the probe rate is excessive for cmux.
 func defaultKeepaliveSecs(flagVal int) int {
 	const minKeepalive = 60
 	clamp := func(n int) int {
@@ -298,23 +298,27 @@ func pollAdvanceSentinels(ctx context.Context, rt string, term terminal.Terminal
 	}
 }
 
-// sendPaneKeepalives sends a noop newline to every registered active worker pane
-// to prevent cmux idle-timeout from culling panes that are waiting for master review.
-func sendPaneKeepalives(ctx context.Context, rt string, term terminal.Terminal, errOut interface{ Write([]byte) (int, error) }) {
+// sendPaneKeepalives probes every registered active worker pane via a read-only
+// "cmux identify" call to reset cmux's surface idle-timeout without injecting
+// any input into the pane.
+//
+// Why not SendKey / Send: worker panes are agent REPLs (Claude Code, GSD), not
+// bash shells. Any text or key event — even a bash comment — is forwarded to the
+// agent as a user message, polluting its conversation. ProbeSurface uses
+// "cmux identify --surface <id> --no-caller" which is a pure read-only query;
+// cmux records the surface activity without writing anything to the terminal.
+func sendPaneKeepalives(ctx context.Context, rt string, _ terminal.Terminal, errOut interface{ Write([]byte) (int, error) }) {
 	panes, err := spawn.ListPanes(rt)
 	if err != nil || len(panes) == 0 {
 		return
 	}
 	for _, pane := range panes {
-		if pane.State == spawn.WorkerStateReady {
-			// Pane is awaiting review — still alive, still needs keepalive.
-		}
 		id := terminal.SurfaceID(pane.SurfaceID)
-		// Send a bash comment line rather than an empty string — an empty SendKey
-		// can print a stray newline in the worker shell depending on the terminal
-		// backend. A comment line resets the idle timer without producing output.
-		if err := term.SendKey(ctx, id, "# gg-keepalive"); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠ keepalive send to pane %s (%s): %v\n", pane.SurfaceID, pane.TaskID, err)
+		// ProbeSurface is the keepalive mechanism: "cmux identify" touches the
+		// surface's activity record without injecting input. dead=true is ignored
+		// here — stale-pane pruning is handled by checkWorkerPanesWithTerminal.
+		if _, probeErr := terminal.ProbeSurface(ctx, id); probeErr != nil {
+			fmt.Fprintf(errOut, "⚠ keepalive probe pane %s (%s): %v\n", pane.SurfaceID, pane.TaskID, probeErr)
 		}
 	}
 }
