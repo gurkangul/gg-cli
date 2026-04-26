@@ -10,6 +10,7 @@ import (
 
 	"github.com/gurkangul/gg-cli/internal/agenthooks"
 	"github.com/gurkangul/gg-cli/internal/changelog"
+	"github.com/gurkangul/gg-cli/internal/orchestrator/spawn"
 	"github.com/gurkangul/gg-cli/internal/projectstate"
 )
 
@@ -284,5 +285,39 @@ func TestSyncManagedBlocks_SilentWhenAllCurrent(t *testing.T) {
 	}
 	if len(sr.Errors) > 0 {
 		t.Errorf("unexpected errors on clean project: %v", sr.Errors)
+	}
+}
+
+func TestSessionStartMasterHeartbeatNotice_WhenPaneActiveAndHeartbeatStale(t *testing.T) {
+	runtimeDir := t.TempDir()
+	if err := spawn.RegisterPane(runtimeDir, spawn.WorkerPane{
+		SurfaceID: "surface:123",
+		TaskID:    "TASK-123",
+		Agent:     "gsd",
+	}); err != nil {
+		t.Fatalf("RegisterPane: %v", err)
+	}
+
+	var out bytes.Buffer
+	writeMasterHeartbeatNotice(&out, runtimeDir)
+
+	got := out.String()
+	for _, want := range []string{
+		"MASTER HEARTBEAT STALE",
+		"active worker panes: 1",
+		"GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 &",
+		"gg spawn status",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("heartbeat notice missing %q; got:\n%s", want, got)
+		}
+	}
+}
+
+func TestSessionStartMasterHeartbeatNotice_SilentWithoutWorkerPanes(t *testing.T) {
+	var out bytes.Buffer
+	writeMasterHeartbeatNotice(&out, t.TempDir())
+	if out.Len() != 0 {
+		t.Fatalf("expected no notice without worker panes, got:\n%s", out.String())
 	}
 }
