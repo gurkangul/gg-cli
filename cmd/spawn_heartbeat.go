@@ -272,10 +272,13 @@ func pollAdvanceSentinels(ctx context.Context, rt string, term terminal.Terminal
 		return
 	}
 	for _, pane := range panes {
-		// Skip panes already marked ready — sentinel already consumed.
-		if pane.State == spawn.WorkerStateReady {
-			continue
-		}
+		// Amend-rework contract (Option C): do NOT skip panes in state=ready.
+		// After master rejects a commit and the worker amends + re-runs
+		// "gg spawn advance", a new sentinel is written while state is still
+		// "ready" from the previous accept. Skipping on state=ready would
+		// silently drop the rework signal. The atomic sentinel rename
+		// (.done → .consumed) is the sole double-fire guard — state is
+		// informational only.
 		s, err := spawn.ConsumeAdvanceSentinel(rt, pane.TaskID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "⚠ advance sentinel consume for %s: %v\n", pane.TaskID, err)

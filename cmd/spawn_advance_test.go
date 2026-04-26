@@ -188,6 +188,62 @@ func TestHeartbeatWatch_SignalsOnAdvance(t *testing.T) {
 	}
 }
 
+// TestPollAdvance_ReworkCycle_RedetectsAmend verifies the amend-rework contract:
+// after master rejects and the worker amends its commit + writes a new sentinel,
+// pollAdvanceSentinels must consume the new sentinel even though pane state is
+// already "ready" from the prior accept (Option C — state is informational only).
+func TestPollAdvance_ReworkCycle_RedetectsAmend(t *testing.T) {
+	ctx := context.Background()
+	rt := t.TempDir()
+	term := terminal.NewFake()
+
+	id, _ := term.NewSplit(ctx, terminal.SplitOpts{})
+	registerTestPane(t, rt, id, "TASK-051")
+
+	captureStderr := func(fn func()) string {
+		old := os.Stderr
+		r, w, _ := os.Pipe()
+		os.Stderr = w
+		fn()
+		w.Close()
+		os.Stderr = old
+		var buf bytes.Buffer
+		buf.ReadFrom(r)
+		return buf.String()
+	}
+
+	// --- First advance: original commit ---
+	const origSHA = "originalsha1"
+	if err := spawn.WriteAdvanceSentinel(rt, "TASK-051", string(id), origSHA); err != nil {
+		t.Fatalf("WriteAdvanceSentinel (original): %v", err)
+	}
+	out1 := captureStderr(func() { pollAdvanceSentinels(ctx, rt, term) })
+	if !spawnContains(out1, "worker ready") {
+		t.Fatalf("first poll: expected '⚡ worker ready', got: %s", out1)
+	}
+	if !spawnContains(out1, origSHA) {
+		t.Errorf("first poll: expected commit SHA %s, got: %s", origSHA, out1)
+	}
+
+	// Simulate master setting pane state to ready (as the real heartbeat loop does).
+	if err := spawn.UpdateWorkerState(rt, "TASK-051", spawn.WorkerStateReady); err != nil {
+		t.Fatalf("UpdateWorkerState ready: %v", err)
+	}
+
+	// --- Second advance: worker amends commit after master rejection ---
+	const amendSHA = "amendedsha2"
+	if err := spawn.WriteAdvanceSentinel(rt, "TASK-051", string(id), amendSHA); err != nil {
+		t.Fatalf("WriteAdvanceSentinel (amend): %v", err)
+	}
+	out2 := captureStderr(func() { pollAdvanceSentinels(ctx, rt, term) })
+	if !spawnContains(out2, "worker ready") {
+		t.Errorf("second poll (amend): expected '⚡ worker ready' but got none — rework not re-detected; got: %s", out2)
+	}
+	if !spawnContains(out2, amendSHA) {
+		t.Errorf("second poll (amend): expected amend SHA %s, got: %s", amendSHA, out2)
+	}
+}
+
 // TestDefaultKeepaliveSecs verifies priority: flag > env > default, and the 60s floor.
 func TestDefaultKeepaliveSecs(t *testing.T) {
 	t.Setenv("GG_PANE_KEEPALIVE_SEC", "120")

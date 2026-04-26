@@ -116,3 +116,30 @@ gg spawn queue start --agent gsd
 
 Workers write sentinels after commits; the heartbeat loop signals readiness
 within the next poll interval; the master reviews and closes the lifecycle.
+
+## Amend-rework re-detection
+
+When master rejects a commit and the worker amends + re-commits, the worker
+runs `gg spawn advance` again:
+
+```
+git commit --amend --no-edit && \
+  gg spawn advance --task TASK-NNN --commit $(git rev-parse HEAD)
+```
+
+This overwrites the previous `.done` sentinel with a new one carrying the
+amended SHA. The heartbeat loop **always** calls `ConsumeAdvanceSentinel`
+regardless of the pane's current `state` field — even when state is already
+`ready` from the prior accept.
+
+**Why:** the `state=ready` short-circuit was removed (TASK-351). Keeping it
+would silently drop the rework signal because state stays `ready` between
+the first accept and the second sentinel write. The atomic sentinel rename
+(`.done` → `.consumed`) is the sole double-fire guard — state is
+informational only and must not gate consumption.
+
+**Worker contract on amend:**
+1. Fix the code and commit (`git commit --amend` or a new commit).
+2. Call `gg spawn advance --task TASK-NNN --commit $(git rev-parse HEAD)`.
+3. The heartbeat loop detects the new sentinel within the next poll tick and
+   prints `⚡ worker ready: TASK-NNN at <new-sha> on <surface>` again.
