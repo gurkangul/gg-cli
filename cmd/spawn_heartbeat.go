@@ -20,13 +20,21 @@ var spawnHeartbeatKeepaliveSecs int
 
 // defaultKeepaliveSecs returns the effective keepalive interval in seconds.
 // Priority: --keepalive flag > GG_PANE_KEEPALIVE_SEC env > 240.
+// Floor: 60s — below this the send rate floods the worker shell.
 func defaultKeepaliveSecs(flagVal int) int {
+	const minKeepalive = 60
+	clamp := func(n int) int {
+		if n < minKeepalive {
+			return minKeepalive
+		}
+		return n
+	}
 	if flagVal > 0 {
-		return flagVal
+		return clamp(flagVal)
 	}
 	if v := os.Getenv("GG_PANE_KEEPALIVE_SEC"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
+			return clamp(n)
 		}
 	}
 	return 240
@@ -190,6 +198,11 @@ func checkWorkerPanesWithTerminal(ctx context.Context, rt string, term terminal.
 		if term.Capabilities().CanReadScreen {
 			content, readErr := term.ReadScreen(ctx, id)
 			if readErr != nil {
+				if !isSurfaceDefinitelyDead(ctx, id, readErr) {
+					// Transient error (e.g. slow cmux) — skip, retry next tick.
+					summary.Total-- // don't count as missing
+					continue
+				}
 				pruneStalePane(rt, pane)
 				summary.Missing++
 				continue
@@ -205,6 +218,10 @@ func checkWorkerPanesWithTerminal(ctx context.Context, rt string, term terminal.
 			continue
 		}
 		if focusErr := term.Focus(ctx, id); focusErr != nil {
+			if !isSurfaceDefinitelyDead(ctx, id, focusErr) {
+				summary.Total--
+				continue
+			}
 			pruneStalePane(rt, pane)
 			summary.Missing++
 			continue
@@ -214,6 +231,23 @@ func checkWorkerPanesWithTerminal(ctx context.Context, rt string, term terminal.
 		summary.Working++
 	}
 	return summary, nil
+}
+
+// isSurfaceDefinitelyDead decides whether a surface probe error is definitive
+// (the pane is truly gone) or transient (timeout, slow backend).
+//
+// Decision order:
+//  1. If the original error is terminal.ErrSurfaceNotFound, it is definitive —
+//     used by FakeTerminal and other backends that return typed errors.
+//  2. Otherwise, run "cmux identify --surface <id> --no-caller" with a 5-second
+//     deadline. Prune only on the exact surfaceDeadMsg response; ignore timeouts
+//     and all other errors.
+func isSurfaceDefinitelyDead(ctx context.Context, id terminal.SurfaceID, opErr error) bool {
+	if terminal.IsErrSurfaceNotFound(opErr) {
+		return true
+	}
+	dead, _ := terminal.ProbeSurface(ctx, id)
+	return dead
 }
 
 // pruneStalePane removes a dead pane entry from panes.json and its lock file,
@@ -276,8 +310,10 @@ func sendPaneKeepalives(ctx context.Context, rt string, term terminal.Terminal, 
 			// Pane is awaiting review — still alive, still needs keepalive.
 		}
 		id := terminal.SurfaceID(pane.SurfaceID)
-		// Send an empty line — no observable side effect beyond resetting idle timer.
-		if err := term.SendKey(ctx, id, ""); err != nil {
+		// Send a bash comment line rather than an empty string — an empty SendKey
+		// can print a stray newline in the worker shell depending on the terminal
+		// backend. A comment line resets the idle timer without producing output.
+		if err := term.SendKey(ctx, id, "# gg-keepalive"); err != nil {
 			fmt.Fprintf(os.Stderr, "⚠ keepalive send to pane %s (%s): %v\n", pane.SurfaceID, pane.TaskID, err)
 		}
 	}

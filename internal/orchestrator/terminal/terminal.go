@@ -6,6 +6,7 @@ package terminal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -61,6 +62,11 @@ var ErrCapabilityUnsupported = fmt.Errorf("capability unsupported by this termin
 
 // ErrSurfaceNotFound is returned when the supplied SurfaceID is unknown.
 var ErrSurfaceNotFound = fmt.Errorf("surface not found")
+
+// IsErrSurfaceNotFound reports whether err wraps ErrSurfaceNotFound.
+func IsErrSurfaceNotFound(err error) bool {
+	return errors.Is(err, ErrSurfaceNotFound)
+}
 
 // New resolves a Terminal from ggTerminalEnv ("cmux", "tmux", "fake").
 // If kind is empty it tries auto-detection via exec.LookPath.

@@ -186,7 +186,7 @@ func TestHeartbeatWatch_SignalsOnAdvance(t *testing.T) {
 	}
 }
 
-// TestDefaultKeepaliveSecs verifies priority: flag > env > default.
+// TestDefaultKeepaliveSecs verifies priority: flag > env > default, and the 60s floor.
 func TestDefaultKeepaliveSecs(t *testing.T) {
 	t.Setenv("GG_PANE_KEEPALIVE_SEC", "120")
 
@@ -204,5 +204,16 @@ func TestDefaultKeepaliveSecs(t *testing.T) {
 	t.Setenv("GG_PANE_KEEPALIVE_SEC", "")
 	if got := defaultKeepaliveSecs(0); got != 240 {
 		t.Errorf("no flag no env: got %d, want 240", got)
+	}
+
+	// Floor: flag below 60 clamps to 60.
+	if got := defaultKeepaliveSecs(10); got != 60 {
+		t.Errorf("flag=10 (below floor): got %d, want 60", got)
+	}
+
+	// Floor: env below 60 clamps to 60.
+	t.Setenv("GG_PANE_KEEPALIVE_SEC", "30")
+	if got := defaultKeepaliveSecs(0); got != 60 {
+		t.Errorf("env=30 (below floor): got %d, want 60", got)
 	}
 }

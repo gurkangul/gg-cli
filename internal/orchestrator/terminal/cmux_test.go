@@ -259,6 +259,64 @@ func TestNewFromEnv_Unknown(t *testing.T) {
 	}
 }
 
+// TestProbeSurface_DeadSurface verifies ProbeSurface returns dead=true when
+// the cmux binary emits the exact surfaceDeadMsg.
+func TestProbeSurface_DeadSurface(t *testing.T) {
+	// Build a stub binary that prints surfaceDeadMsg and exits 1.
+	stub := buildStubCmux(t, `#!/bin/sh
+echo "Surface is not a terminal"
+exit 1`)
+
+	origPATH := os.Getenv("PATH")
+	t.Setenv("PATH", stub+":"+origPATH)
+
+	dead, err := ProbeSurface(context.Background(), "surface:99")
+	if !dead {
+		t.Errorf("expected dead=true, got false (err=%v)", err)
+	}
+}
+
+// TestProbeSurface_TransientError verifies ProbeSurface returns dead=false
+// when the cmux binary returns a non-dead-message error (e.g. timeout, unknown
+// internal error).
+func TestProbeSurface_TransientError(t *testing.T) {
+	stub := buildStubCmux(t, `#!/bin/sh
+echo "internal error: connection refused"
+exit 2`)
+
+	origPATH := os.Getenv("PATH")
+	t.Setenv("PATH", stub+":"+origPATH)
+
+	dead, _ := ProbeSurface(context.Background(), "surface:99")
+	if dead {
+		t.Error("expected dead=false for non-definitive error")
+	}
+}
+
+// TestProbeSurface_CmuxMissing verifies ProbeSurface returns dead=false (not a
+// prune trigger) when the cmux binary is not in PATH — avoids false pruning in
+// non-cmux environments.
+func TestProbeSurface_CmuxMissing(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	dead, _ := ProbeSurface(context.Background(), "surface:99")
+	if dead {
+		t.Error("expected dead=false when cmux binary not found")
+	}
+}
+
+// buildStubCmux writes a shell script named "cmux" to a temp dir and returns
+// the dir path so callers can prepend it to PATH.
+func buildStubCmux(t *testing.T, script string) string {
+	t.Helper()
+	dir := t.TempDir()
+	bin := dir + "/cmux"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatalf("write stub cmux: %v", err)
+	}
+	return dir
+}
+
 // TestAutoDetect_FallbackEmpty verifies autoDetect returns "" when neither
 // cmux nor tmux is in PATH.  We manipulate PATH to guarantee neither is found.
 func TestAutoDetect_FallbackEmpty(t *testing.T) {

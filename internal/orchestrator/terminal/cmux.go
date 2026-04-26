@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // cmuxTerminal drives the cmux CLI binary.
@@ -116,4 +117,34 @@ func (c *cmuxTerminal) execRun(ctx context.Context, args ...string) ([]byte, err
 		return nil, fmt.Errorf("cmux %s: %s", args[0], msg)
 	}
 	return out, nil
+}
+
+// surfaceDeadMsg is the exact string cmux identify emits when a surface ID is
+// unknown. Only this verbatim response justifies pruning the pane registry.
+const surfaceDeadMsg = "Surface is not a terminal"
+
+// ProbeSurface runs "cmux identify --surface <id> --no-caller" with a 5-second
+// deadline. It returns dead=true only when cmux responds with the exact
+// surfaceDeadMsg — meaning the surface definitively does not exist.
+//
+// Timeouts and other transient errors return dead=false so callers do not
+// prune live panes due to a slow cmux response.
+func ProbeSurface(ctx context.Context, id SurfaceID) (dead bool, err error) {
+	probe, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(probe, "cmux", "identify", "--surface", string(id), "--no-caller")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+	combined := strings.TrimSpace(stdout.String())
+	if combined == "" {
+		combined = strings.TrimSpace(stderr.String())
+	}
+	if combined == surfaceDeadMsg {
+		return true, nil
+	}
+	return false, runErr
 }
