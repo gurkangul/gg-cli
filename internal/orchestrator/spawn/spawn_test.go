@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -316,6 +317,43 @@ func TestConsumeAdvanceSentinel_NilWhenAbsent(t *testing.T) {
 	}
 	if s != nil {
 		t.Errorf("expected nil sentinel when absent, got %+v", s)
+	}
+}
+
+// TestConsumeAdvanceSentinel_Concurrent verifies that two racing heartbeat
+// ticks (goroutines) can only consume a sentinel once — the atomic rename
+// guarantees exactly one winner and one nil return.
+func TestConsumeAdvanceSentinel_Concurrent(t *testing.T) {
+	dir := t.TempDir()
+	if err := spawn.WriteAdvanceSentinel(dir, "TASK-777", "surf-A", "sha-concurrent"); err != nil {
+		t.Fatalf("WriteAdvanceSentinel: %v", err)
+	}
+
+	const workers = 8
+	results := make([]*spawn.AdvanceSentinel, workers)
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := range workers {
+		go func(idx int) {
+			defer wg.Done()
+			results[idx], errs[idx] = spawn.ConsumeAdvanceSentinel(dir, "TASK-777")
+		}(i)
+	}
+	wg.Wait()
+
+	// Exactly one goroutine should have won the rename and received the sentinel.
+	wins := 0
+	for i, s := range results {
+		if errs[i] != nil {
+			t.Errorf("goroutine %d: unexpected error: %v", i, errs[i])
+		}
+		if s != nil {
+			wins++
+		}
+	}
+	if wins != 1 {
+		t.Errorf("expected exactly 1 consumer to win, got %d", wins)
 	}
 }
 
