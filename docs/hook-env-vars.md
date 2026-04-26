@@ -104,6 +104,31 @@ GG_FILE_SIZE_GATE=block GG_ALLOW_FILE_SIZE="TASK-042: generated file, exempt" \
 **Bypass (audited):** set `GG_ALLOW_LINT_REGRESSIONS="<reason>"`. Recorded
 via `gg record`.
 
+### `GG_SECRET_SCAN` — secret scan gate (`20-secret-scan.sh`)
+
+Controls whether the pre-commit secret scan hook blocks commits on findings.
+
+| Value | Effect |
+|---|---|
+| `on` *(default)* | Exits 7 when gitleaks (or the narrow-regex fallback) finds secrets |
+| `warn` | Prints warning; does not block the commit |
+| `off` | Gate is skipped entirely |
+
+**Bypass (audited):** set `GG_BYPASS_RATIONALE="<reason>"`. Recorded via `gg record`.
+
+Install gitleaks first for full coverage: `gg doctor --install-secret-scanner`.
+Without gitleaks the hook falls back to the narrow-regex patterns in `internal/scrub`.
+
+### `GG_GITLEAKS_BIN` — gitleaks binary override
+
+Override the gitleaks binary path used by the pre-commit hook and
+`gg doctor --check-secrets`. Takes precedence over `~/.gg/bin/gitleaks`
+and the `$PATH` lookup.
+
+```sh
+GG_GITLEAKS_BIN=/opt/homebrew/bin/gitleaks git commit ...
+```
+
 ### `GG_IMPACT_ATTESTATION` — impact-analysis gate (`60-impact-attestation.sh`)
 
 Requires an `Impact-Reviewed:` trailer in the commit body when ≥3 source
@@ -339,6 +364,8 @@ and merges it over `os.Environ()`. This is the correct pattern.
 | `GG_FILE_SIZE_GATE` | caller / session | `30-file-size.sh` |
 | `GG_ALLOW_FILE_SIZE` | caller / one-shot bypass | `30-file-size.sh` |
 | `GG_LINT_GATE` | caller / session | `60-lint-gate.sh` |
+| `GG_SECRET_SCAN` | caller / session | `20-secret-scan.sh` |
+| `GG_GITLEAKS_BIN` | caller / override | `20-secret-scan.sh`, `gg doctor --check-secrets` |
 | `GG_ALLOW_LINT_REGRESSIONS` | caller / one-shot bypass | `60-lint-gate.sh` |
 | `GG_IMPACT_ATTESTATION` | caller / session | `60-impact-attestation.sh` |
 | `GG_ENFORCEMENT` | caller / session | `90-bug-repros.sh`, CLI gate runner |

@@ -24,30 +24,34 @@ Exit codes:
 }
 
 var (
-	doctorInstallIndexers    bool
-	doctorReconcile          bool
-	doctorInstallAgentHooks  bool
-	doctorInstallAgentsMD    bool
-	doctorHooksAgent         string
-	doctorHooksDryRun        bool
-	doctorHooksForce         bool
-	doctorHeal               bool
-	doctorWipeBrain          bool
-	doctorWipeBrainYes       bool
-	doctorInstallTaskHooks   bool
-	doctorSyncArtifacts      bool
-	doctorSyncApply          bool
-	doctorBypassAudit        bool
-	doctorBypassAuditSince   string
-	doctorCheckContract      bool
-	doctorContractFix        bool
-	doctorContractForceReset bool
-	doctorSyncBaseline         bool
-	doctorCaptureLintBaseline  bool
-	doctorCheckMasterRole      bool
-	doctorCheckDevRouting      bool
-	doctorCheckBinary          bool
-	doctorFixBinary            bool
+	doctorInstallIndexers       bool
+	doctorReconcile             bool
+	doctorInstallAgentHooks     bool
+	doctorInstallAgentsMD       bool
+	doctorHooksAgent            string
+	doctorHooksDryRun           bool
+	doctorHooksForce            bool
+	doctorHeal                  bool
+	doctorWipeBrain             bool
+	doctorWipeBrainYes          bool
+	doctorInstallTaskHooks      bool
+	doctorSyncArtifacts         bool
+	doctorSyncApply             bool
+	doctorBypassAudit           bool
+	doctorBypassAuditSince      string
+	doctorCheckContract         bool
+	doctorContractFix           bool
+	doctorContractForceReset    bool
+	doctorSyncBaseline          bool
+	doctorCaptureLintBaseline   bool
+	doctorCheckMasterRole       bool
+	doctorCheckDevRouting       bool
+	doctorCheckBinary           bool
+	doctorFixBinary             bool
+	doctorInstallSecretScanner  bool
+	doctorCheckSecrets          bool
+	doctorCheckSecretsStaged    bool
+	doctorCheckSecretsHistory   bool
 )
 
 func init() {
@@ -99,6 +103,14 @@ func init() {
 		"verify the installed gg binary is not older than the HEAD commit of the local gg-cli source")
 	doctorCmd.Flags().BoolVar(&doctorFixBinary, "fix-binary", false,
 		"with --check-binary: rebuild and reinstall gg via go install ./cmd/gg when the binary is stale")
+	doctorCmd.Flags().BoolVar(&doctorInstallSecretScanner, "install-secret-scanner", false,
+		"download and install the pinned gitleaks binary into ~/.gg/bin/gitleaks (checksum-verified)")
+	doctorCmd.Flags().BoolVar(&doctorCheckSecrets, "check-secrets", false,
+		"scan the repo for secrets using gitleaks (staged + history); falls back to narrow-regex scan when gitleaks is absent")
+	doctorCmd.Flags().BoolVar(&doctorCheckSecretsStaged, "staged", false,
+		"with --check-secrets: run staged/working-tree scan only (gitleaks detect --no-git)")
+	doctorCmd.Flags().BoolVar(&doctorCheckSecretsHistory, "history", false,
+		"with --check-secrets: run full git history scan only (gitleaks detect)")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -201,6 +213,12 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	}
 	if doctorCheckBinary {
 		return runDoctorCheckBinary(doctorFixBinary)
+	}
+	if doctorInstallSecretScanner {
+		return runDoctorInstallSecretScanner()
+	}
+	if doctorCheckSecrets {
+		return runDoctorCheckSecrets(doctorCheckSecretsStaged, doctorCheckSecretsHistory)
 	}
 
 	fmt.Println("GG Doctor")

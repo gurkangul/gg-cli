@@ -116,11 +116,15 @@ func runDoctorInstallTaskHooks() error {
 
 	preDir := filepath.Join(ggDir, "hooks", "pre-task-done.d")
 	postDir := filepath.Join(ggDir, "hooks", "task-done.d")
+	preCommitDir := filepath.Join(ggDir, "hooks", "pre-commit.d")
 	if mkErr := os.MkdirAll(preDir, 0o755); mkErr != nil {
 		return fmt.Errorf("create pre-hook dir: %w", mkErr)
 	}
 	if mkErr := os.MkdirAll(postDir, 0o755); mkErr != nil {
 		return fmt.Errorf("create post-hook dir: %w", mkErr)
+	}
+	if mkErr := os.MkdirAll(preCommitDir, 0o755); mkErr != nil {
+		return fmt.Errorf("create pre-commit hook dir: %w", mkErr)
 	}
 
 	skipDirs, maxDepth := hookInstallSettings()
@@ -247,6 +251,16 @@ func runDoctorInstallTaskHooks() error {
 	impactAttestationPath := filepath.Join(preDir, "60-impact-attestation.sh")
 	if n, err := installHookIfAbsent(impactAttestationPath, templates.PreTaskDoneImpactAttestationHook,
 		"impact attestation gate — requires Impact-Reviewed: commit trailer when >=3 source files or >=5 dependents (GG_IMPACT_ATTESTATION=on|warn|off)"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
+	// 20-secret-scan.sh: runs gitleaks (or narrow-regex fallback) against staged
+	// files before a commit. Exits 7 on findings. Bypassable via GG_BYPASS_RATIONALE.
+	secretScanPath := filepath.Join(preCommitDir, "20-secret-scan.sh")
+	if n, err := installHookIfAbsent(secretScanPath, templates.PreCommitSecretScanHook,
+		"secret scan gate — blocks commit when gitleaks finds secrets; falls back to narrow-regex (GG_SECRET_SCAN=on|warn|off)"); err != nil {
 		return err
 	} else {
 		installed += n

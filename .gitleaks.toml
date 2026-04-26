@@ -1,0 +1,35 @@
+# .gitleaks.toml — gitleaks configuration for gg-cli
+# See: https://github.com/gitleaks/gitleaks?tab=readme-ov-file#configuration
+#
+# Policy: gitleaks built-in ruleset is active by default.
+# Allowlist entries are documented in docs/security.md.
+title = "gg-cli gitleaks config"
+
+# Use the gitleaks built-in ruleset.
+[extend]
+useDefault = true
+
+# Global allowlist — applies to every rule.
+[allowlist]
+description = "Project-wide false-positive suppression"
+paths = [
+  # Go test files contain synthetic secrets to exercise the scrub package.
+  # None of these are real credentials.
+  '''_test\.go''',
+  # testdata directories contain fixtures, not real secrets.
+  '''testdata''',
+  # gitleaks configuration file contains example patterns by design.
+  '''\.gitleaks\.toml''',
+  # Security policy documents example keys in allowlist tables.
+  '''docs/security\.md''',
+  # Dogfood baselines are historical gg status text snapshots, not code.
+  '''dogfood-baselines''',
+  # Bug repro scripts plant fake credentials to reproduce scanner bugs.
+  '''bugs/''',
+]
+regexes = [
+  # Canonical AWS documentation placeholder — not a real key.
+  '''AKIAIOSFODNN7EXAMPLE''',
+  # Synthetic key prefix used in unit tests to verify scanner detection.
+  '''sk-test[A-Za-z0-9]{10,}''',
+]
