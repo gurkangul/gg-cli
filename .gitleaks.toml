@@ -26,6 +26,13 @@ paths = [
   '''dogfood-baselines''',
   # Bug repro scripts plant fake credentials to reproduce scanner bugs.
   '''bugs/''',
+  # gg runtime directory — installed.json, telemetry, and cache files are
+  # not code and may contain incidental matches from scan reports.
+  '''\.gg/''',
+  # Temp gitleaks JSON report files (written by runGitleaksScan).
+  # In --no-git mode gitleaks scans the working tree including /tmp, so
+  # exclude the report pattern defensively in case /tmp is inside the tree.
+  '''gitleaks-report-.*\.json''',
 ]
 regexes = [
   # Canonical AWS documentation placeholder — not a real key.

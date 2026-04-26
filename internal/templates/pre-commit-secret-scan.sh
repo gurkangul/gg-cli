@@ -15,6 +15,13 @@
 
 set -e
 
+# Bypass (audited): GG_BYPASS_RATIONALE="<reason>" git commit ...
+# The rationale is logged to stderr for auditability — no silent bypasses.
+if [ -n "$GG_BYPASS_RATIONALE" ]; then
+  echo "[secret-scan] ⚠ bypass active: $GG_BYPASS_RATIONALE" >&2
+  exit 0
+fi
+
 mode="${GG_SECRET_SCAN:-on}"
 if [ "$mode" = "off" ]; then
   exit 0

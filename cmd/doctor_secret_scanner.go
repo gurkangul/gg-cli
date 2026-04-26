@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +19,11 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/scrub"
 )
+
+// ErrGitleaksAlreadyInstalled is returned by runDoctorInstallSecretScanner
+// when the binary already exists at the target path. Callers (e.g. CI) can
+// check for this sentinel to distinguish "already present" from a real error.
+var ErrGitleaksAlreadyInstalled = errors.New("gitleaks already installed")
 
 // gitleaksVersion is the single pinned release. Update this constant and
 // re-run `gg doctor --install-secret-scanner` to upgrade. The installer
@@ -72,9 +79,19 @@ func runDoctorInstallSecretScanner() error {
 		fmt.Println("    Remove it manually and re-run to reinstall.")
 		out, runErr := exec.Command(binPath, "version").Output()
 		if runErr == nil {
-			fmt.Printf("    current version: %s\n", strings.TrimSpace(string(out)))
+			installed := strings.TrimSpace(string(out))
+			fmt.Printf("    installed version: %s  (pinned: %s)\n", installed, gitleaksVersion)
 		}
-		return nil
+		// Check if a different gitleaks is also available on PATH.
+		if pathBin, lookErr := exec.LookPath("gitleaks"); lookErr == nil && pathBin != binPath {
+			pathOut, _ := exec.Command(pathBin, "version").Output()
+			pathVer := strings.TrimSpace(string(pathOut))
+			fmt.Printf("    PATH gitleaks: %s (version: %s)\n", pathBin, pathVer)
+			if pathVer != strings.TrimPrefix(gitleaksVersion, "v") && pathVer != gitleaksVersion {
+				fmt.Println("    ⚠ PATH version differs from gg-pinned version — gg commands use the pinned binary")
+			}
+		}
+		return fmt.Errorf("%w at %s", ErrGitleaksAlreadyInstalled, binPath)
 	}
 
 	platformKey, err := gitleaksPlatformKey()
@@ -325,9 +342,10 @@ func runGitleaksScan(binPath string, history bool) error {
 		return fmt.Errorf("find project root: %w", err)
 	}
 
-	// Write findings to a temp JSON report so we can always display them,
-	// regardless of gitleaks' TTY detection behaviour.
-	reportFile, err := os.CreateTemp(root, ".gitleaks-report-*.json")
+	// Write findings to a temp JSON report in os.TempDir() — NOT the repo root.
+	// Writing to the repo root causes the next --no-git scan to re-scan the file
+	// itself, producing false-positive findings on its own content.
+	reportFile, err := os.CreateTemp("", "gitleaks-report-*.json")
 	if err != nil {
 		return fmt.Errorf("create report file: %w", err)
 	}
@@ -372,6 +390,14 @@ func runGitleaksScan(binPath string, history bool) error {
 	return fmt.Errorf("gitleaks error: %w", runErr)
 }
 
+// gitleaksFinding mirrors the fields we care about from gitleaks' JSON output.
+type gitleaksFinding struct {
+	RuleID    string `json:"RuleID"`
+	File      string `json:"File"`
+	StartLine int    `json:"StartLine"`
+	Match     string `json:"Match"`
+}
+
 // printGitleaksFindings reads the JSON report written by gitleaks and prints
 // a compact human-readable summary. Falls back to a terse message on parse errors.
 func printGitleaksFindings(reportPath string) {
@@ -381,53 +407,18 @@ func printGitleaksFindings(reportPath string) {
 		return
 	}
 
-	// Minimal JSON parse: extract RuleID, File, StartLine, and Secret.
-	// We avoid pulling in encoding/json for a single field walk — just grep the raw JSON.
-	lines := strings.Split(string(data), "\n")
-	inFinding := false
-	var ruleID, file, startLine, match string
-	printFinding := func() {
-		if file != "" {
-			fmt.Fprintf(os.Stderr, "  ✗ %-12s  %s:%s  match: %s\n", ruleID, file, startLine, match)
+	var findings []gitleaksFinding
+	if jsonErr := json.Unmarshal(data, &findings); jsonErr != nil {
+		fmt.Fprintf(os.Stderr, "  (could not parse gitleaks report: %v)\n", jsonErr)
+		return
+	}
+	for _, f := range findings {
+		m := f.Match
+		if len(m) > 80 {
+			m = m[:77] + "..."
 		}
+		fmt.Fprintf(os.Stderr, "  ✗ %-12s  %s:%d  match: %s\n", f.RuleID, f.File, f.StartLine, m)
 	}
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		switch {
-		case line == "{":
-			inFinding = true
-			ruleID, file, startLine, match = "", "", "", ""
-		case line == "}," || line == "}":
-			if inFinding {
-				printFinding()
-			}
-			inFinding = false
-		case inFinding && strings.HasPrefix(line, `"RuleID":`):
-			ruleID = jsonStringVal(line)
-		case inFinding && strings.HasPrefix(line, `"File":`):
-			file = jsonStringVal(line)
-		case inFinding && strings.HasPrefix(line, `"StartLine":`):
-			startLine = strings.TrimSuffix(strings.TrimPrefix(line, `"StartLine": `), ",")
-		case inFinding && strings.HasPrefix(line, `"Match":`):
-			m := jsonStringVal(line)
-			if len(m) > 80 {
-				m = m[:77] + "..."
-			}
-			match = m
-		}
-	}
-}
-
-// jsonStringVal extracts the string value from a JSON line like `"Key": "value",`.
-func jsonStringVal(line string) string {
-	idx := strings.Index(line, `": "`)
-	if idx < 0 {
-		return ""
-	}
-	val := line[idx+4:]
-	val = strings.TrimSuffix(val, `",`)
-	val = strings.TrimSuffix(val, `"`)
-	return val
 }
 
 // runNarrowSecretScan is the fallback when gitleaks is unavailable. It uses

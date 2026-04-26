@@ -266,6 +266,13 @@ func runDoctorInstallTaskHooks() error {
 		installed += n
 	}
 
+	// Wire the .git/hooks/pre-commit dispatcher so the gg pre-commit.d hooks
+	// actually fire on `git commit`. Without this the scripts sit in the .gg
+	// directory but are never called by git.
+	if err := installGitPreCommitDispatcher(projectRoot, preCommitDir); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not install .git/hooks/pre-commit dispatcher: %v\n", err)
+	}
+
 	// Makefile tier template: written to .gg/templates/ so humans can discover
 	// + opt-in via `include .gg/templates/makefile-test-tiers.mk`.
 	tmplDir := filepath.Join(ggDir, "templates")
@@ -464,4 +471,5 @@ func installHookIfAbsent(path, body, summary string) (int, error) {
 	fmt.Printf("  %s\n", summary)
 	return 1, nil
 }
+
 
