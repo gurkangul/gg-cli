@@ -168,10 +168,14 @@ The `--watch` loop polls the advance/ directory each tick. On sentinel detection
 - Does NOT auto-close the pane or call `gg task done` — master must review first
 
 **AC — Pane keepalive (master heartbeat watch):**
-The `--watch` loop sends `# gg-keepalive` (a bash comment, silently eaten by the shell) to every
-registered pane every keepalive interval (default 240s, minimum 60s floor,
-configurable via `--keepalive N` or `GG_PANE_KEEPALIVE_SEC`). This resets cmux idle timer so panes
-awaiting master review are not culled:
+The `--watch` loop probes every registered pane via `cmux identify --surface <id> --no-caller`
+(a read-only query) every keepalive interval (default 240s, minimum 60s floor,
+configurable via `--keepalive N` or `GG_PANE_KEEPALIVE_SEC`). This resets cmux's surface
+activity tracking without injecting any input into the pane.
+
+**Why not SendKey/Send:** worker panes are Claude Code / GSD agent REPLs, not bash shells.
+Any text or key event — even a bash comment — is forwarded to the agent as a user message.
+`cmux identify` is a pure read-only probe; nothing is written to the terminal.
 ```
 GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 --keepalive 200 &
 ```
@@ -309,9 +313,13 @@ Start the keepalive + sentinel watch from the master session before spawning wor
 GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 --keepalive 200 &
 ```
 
-This sends `# gg-keepalive` (bash comment, silently discarded) to each worker pane every 200s
+This probes each worker pane via `cmux identify` (read-only, no input injected) every 200s
 (below cmux's 5-min idle cutoff, above the 60s flood floor), polls advance sentinels each tick,
 and auto-prunes stale pane entries only on definitive `Surface is not a terminal` probe result.
+
+**Note on keepalive mechanism:** worker panes are agent REPLs (Claude Code, GSD), not bash
+shells. The keepalive uses `cmux identify --surface <id> --no-caller` rather than SendKey/Send
+to avoid injecting text into the agent conversation.
 
 ### Fallback — no developer configured
 
