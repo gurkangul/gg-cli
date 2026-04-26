@@ -2,24 +2,18 @@
 
 ## Prerequisites
 
-1. **Qdrant** — the vector store. Run it locally:
+1. **Docker with Compose v2** — `gg init` starts Qdrant, Ollama, and
+   Memgraph through the shared `~/.gg/docker-compose.yaml`.
+
+2. **Go** — used to install the CLI:
    ```sh
-   docker run -p 6334:6334 qdrant/qdrant
+   go install github.com/gurkangul/gg-cli/cmd/gg@latest
    ```
 
-2. **Ollama** — local embedding model:
+   For private alpha access:
    ```sh
-   # Install from https://ollama.ai
-   ollama pull nomic-embed-text
-   ```
-
-3. **Memgraph** _(optional, for `gg index`)_ — the code knowledge graph:
-   ```sh
-   docker run -p 7687:7687 memgraph/memgraph
-   ```
-
-4. **gg** — install the CLI:
-   ```sh
+   gh auth login
+   go env -w GOPRIVATE=github.com/gurkangul/gg-cli
    go install github.com/gurkangul/gg-cli/cmd/gg@latest
    ```
 
@@ -39,6 +33,13 @@ Run `gg doctor` to verify everything is connected:
 gg doctor
 ```
 
+Install agent hooks so Claude/Codex/Cursor sessions automatically load the
+session-start briefing:
+
+```sh
+gg doctor --install-agent-hooks
+```
+
 ## First use
 
 ```sh
@@ -46,7 +47,10 @@ gg doctor
 gg record "use PostgreSQL for the user database" --reason "team familiarity, ACID compliance" --tags "database"
 
 # Create a task
-gg task create "set up database migrations" --priority high --detail "use golang-migrate"
+gg task create "set up database migrations" \
+  --priority high \
+  --detail "use golang-migrate" \
+  --requester user
 
 # Search for context
 gg search "database"
@@ -57,12 +61,23 @@ gg status
 
 ## Setting up for multi-agent use
 
-Add `AGENTS.md` (from [AGENTS.md](../AGENTS.md)) to your project root so agents know to use `gg`. Each agent should run `gg status` at the start of every session.
+`gg doctor --install-agent-hooks` installs the managed agent instructions for
+detected tools. Each agent should run `gg session-start` at the start of every
+session.
 
-Set `GG_ROLE` in each agent's environment so messages are attributed:
+Set `GG_AGENT` / `GG_ROLE` in each agent's environment so messages are attributed:
 
 ```sh
+export GG_AGENT=codex
 export GG_ROLE=developer   # or architect, reviewer, etc.
+gg session-start --agent=codex
+```
+
+For Claude Code master/worker flows:
+
+```sh
+gg become master
+GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 &
 ```
 
 ## Index your codebase (optional)

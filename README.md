@@ -27,7 +27,6 @@ When you run several AI agents in parallel (different terminals, different roles
 ![gg demo](docs/demo.svg)
 
 <!-- 90s demo embed placeholder — generated from docs/demo/record.sh -->
-<!-- TODO: replace with docs/demo/demo.svg once recorded -->
 <!-- See docs/demo/STORYBOARD.md for the recording script -->
 
 ---
@@ -64,6 +63,8 @@ into the Ollama container automatically on first run.
 
 ## Install
 
+### Public release
+
 ```sh
 go install github.com/gurkangul/gg-cli/cmd/gg@latest
 ```
@@ -71,7 +72,18 @@ go install github.com/gurkangul/gg-cli/cmd/gg@latest
 The binary is `gg`. The repo is `gg-cli` for descriptiveness; the
 command stays short.
 
-Or build from source:
+### Private alpha access
+
+If the repository is still private, ask the maintainer for GitHub access,
+authenticate `gh`, and tell Go that this module is private:
+
+```sh
+gh auth login
+go env -w GOPRIVATE=github.com/gurkangul/gg-cli
+go install github.com/gurkangul/gg-cli/cmd/gg@latest
+```
+
+### Build from source
 
 ```sh
 git clone https://github.com/gurkangul/gg-cli
@@ -91,17 +103,30 @@ gg init
 # 2. Verify services and binaries
 gg doctor
 
-# 3. Index the codebase (requires Memgraph + a SCIP indexer)
-gg index --lang go
+# 3. Install agent hooks so Claude/Codex/Cursor sessions load gg context
+gg doctor --install-agent-hooks
 
 # 4. Record a decision
 gg record "use JWT for auth" --reason "stateless, scales well" --tags "auth,api"
 
-# 5. Search context before making a change
+# 5. Create a task
+gg task create "add auth middleware" \
+  --detail "protect API routes using the JWT decision" \
+  --priority high \
+  --requester user
+
+# 6. Search context before making a change
 gg context "authentication"
 
-# 6. Check status (what tasks are open, any unread messages?)
+# 7. Check status (what tasks are open, any unread messages?)
 gg status
+```
+
+For code-impact queries, install SCIP indexers and index the repo:
+
+```sh
+gg doctor --install-indexers
+gg index --lang go
 ```
 
 ---
@@ -127,7 +152,7 @@ gg status
 
 | Command | Description |
 |---|---|
-| `gg task create "title" --detail "…" --priority high` | Open a task |
+| `gg task create "title" --detail "…" --priority high --requester user` | Open a task |
 | `gg task list` | List tasks (add `--ready` to filter unblocked ones) |
 | `gg task get TASK-ID` | Show task details |
 | `gg task done TASK-ID "summary"` | Mark a task as done |
@@ -288,7 +313,21 @@ Add `.gg/config.yaml` to your project's `.gitignore` as an extra precaution
 
 ## Multi-agent pattern
 
-Each agent runs `gg status` at session start — this is enforced by `AGENTS.md`.
+Install agent hooks once per project so each agent gets the shared-brain
+briefing at session start:
+
+```sh
+gg doctor --install-agent-hooks
+```
+
+Each agent then runs through `gg session-start` and sees `gg status`,
+recent decisions, pending tasks, and any managed policy repairs. For manual
+sessions, set an identity and run it explicitly:
+
+```sh
+export GG_AGENT=claude-code   # or codex, cursor, aider
+gg session-start --agent=claude-code
+```
 
 ```
 Agent A (architect)          Agent B (developer)          Agent C (reviewer)
@@ -299,6 +338,16 @@ unread messages              gg decide "JWT chosen"       gg search "JWT" → fi
 ```
 
 All agents write to the same Qdrant + Memgraph backend. A decision made by one is immediately visible to the others.
+
+For Claude Code master/worker flows, opt in from the master session:
+
+```sh
+gg become master
+GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 &
+```
+
+The heartbeat watcher keeps worker-pane supervision visible; `gg session-start`
+warns when worker panes exist but the master heartbeat is missing or stale.
 
 ---
 

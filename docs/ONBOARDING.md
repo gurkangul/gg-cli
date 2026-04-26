@@ -2,26 +2,41 @@
 
 This guide takes you from zero to a live gg brain in ~10 minutes.
 
-## Prerequisites (5 commands)
+## Prerequisites
+
+Public release:
 
 ```sh
-# 1. Run Qdrant (vector store)
-docker run -d -p 6334:6334 --name gg-qdrant qdrant/qdrant
-
-# 2. Run Ollama + pull embedding model
-ollama pull nomic-embed-text
-
-# 3. Install gg
 go install github.com/gurkangul/gg-cli/cmd/gg@latest
-
-# 4. Initialize your project (run from your project root)
-gg init
-
-# 5. Verify everything is connected
-gg doctor
 ```
 
-Memgraph is optional — skip it if you don't need code graph indexing.
+Private alpha:
+
+```sh
+gh auth login
+go env -w GOPRIVATE=github.com/gurkangul/gg-cli
+go install github.com/gurkangul/gg-cli/cmd/gg@latest
+```
+
+First project setup:
+
+```sh
+# Run from your project root
+gg init
+
+# Verify everything is connected
+gg doctor
+
+# Install agent hooks
+gg doctor --install-agent-hooks
+
+# Start an agent session briefing
+GG_AGENT=codex gg session-start --agent=codex
+```
+
+`gg init` starts the local Docker services through gg's shared compose file.
+Memgraph-backed code indexing is optional; the decision/task/search workflow
+works without running `gg index`.
 
 ---
 
@@ -40,7 +55,8 @@ gg record "use PostgreSQL for the primary datastore" \
 ```sh
 gg task create "set up schema migrations" \
   --priority high \
-  --detail "use golang-migrate"
+  --detail "use golang-migrate" \
+  --requester user
 ```
 
 ### Step 3 — Check status
@@ -92,17 +108,18 @@ gg status
 
 ## Multi-agent setup
 
-Set `GG_ROLE` so messages are attributed to the right agent:
+Set `GG_AGENT` and `GG_ROLE` so messages are attributed to the right agent:
 
 ```sh
+export GG_AGENT=codex
 export GG_ROLE=developer   # or: architect, reviewer, agent
 ```
 
 Send a message to another role:
 
 ```sh
-gg message send "Rate limiter is unblocked — proceeding with in-memory backend" \
-  --to architect
+gg tell architect "Rate limiter is unblocked — proceeding with in-memory backend" \
+  --from developer
 ```
 
 ---
@@ -112,7 +129,7 @@ gg message send "Rate limiter is unblocked — proceeding with in-memory backend
 | Command | What it does |
 |---------|-------------|
 | `gg record "..."` | Record a decision with reason + tags |
-| `gg task create "..."` | Create a task |
+| `gg task create "..." --requester user` | Create a task |
 | `gg task list` | List tasks (filtered by priority/status) |
 | `gg task done TASK-ID "summary"` | Mark task done (runs `.gg/hooks/pre-task-done.d/*.sh` first — exit 7 if a hook rejects) |
 | `gg doctor --install-task-hooks` | Install verify-gate starter hooks (Go / Node / Bun auto-detect) |
