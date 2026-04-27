@@ -32,6 +32,11 @@ This writes a JSON file to:
 Fields: `{task_id, surface_id, commit_sha, written_at}`. Idempotent —
 safe to call again on amend; the sentinel is overwritten with the new SHA.
 
+If the master heartbeat recorded a terminal surface, `gg spawn advance` also
+sends a best-effort wake prompt to the master pane immediately. This is only
+a notification path: the sentinel remains the durable source of truth, and
+the master still reviews before closing the task.
+
 #### 2. Master sentinel consumer (heartbeat watch)
 
 The master runs a persistent heartbeat loop:
@@ -43,7 +48,7 @@ GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 --keepalive 200 &
 Each tick the loop:
 - Writes the master heartbeat (liveness signal for worker guard hooks)
 - Checks registered worker panes for activity
-- **Polls the `advance/` directory** — when a sentinel is found:
+- **Polls the `advance/` directory** as a fallback — when a sentinel is found:
   - Renames it to `.consumed` (atomic, prevents double-fire)
   - Prints `⚡ worker ready: TASK-NNN at <sha> on <surface>`
   - Updates panes.json entry to `state=ready`

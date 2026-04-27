@@ -56,6 +56,10 @@ type Heartbeat struct {
 	PID int `json:"pid"`
 	// Agent is the value of GG_AGENT at the time of the heartbeat.
 	Agent string `json:"agent,omitempty"`
+	// SurfaceID is the master terminal surface when the backend exposes one.
+	// Workers use this for best-effort wake prompts after writing advance
+	// sentinels. Empty keeps older/non-cmux sessions compatible.
+	SurfaceID string `json:"surface_id,omitempty"`
 	// UpdatedAt is when this heartbeat was written.
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -144,12 +148,19 @@ func ensureDir(runtimeDir string) error {
 
 // WriteHeartbeat writes (or overwrites) the master heartbeat file.
 func WriteHeartbeat(runtimeDir, agent string) error {
+	return WriteHeartbeatWithSurface(runtimeDir, agent, os.Getenv("GG_SURFACE_ID"))
+}
+
+// WriteHeartbeatWithSurface writes (or overwrites) the master heartbeat file
+// with an explicit terminal surface ID.
+func WriteHeartbeatWithSurface(runtimeDir, agent, surfaceID string) error {
 	if err := ensureDir(runtimeDir); err != nil {
 		return err
 	}
 	hb := Heartbeat{
 		PID:       os.Getpid(),
 		Agent:     agent,
+		SurfaceID: surfaceID,
 		UpdatedAt: time.Now().UTC(),
 	}
 	return writeJSON(filepath.Join(Dir(runtimeDir), HeartbeatFile), hb)

@@ -13,6 +13,10 @@ The sentinel records {task_id, surface_id, commit_sha, written_at}. The
 master's heartbeat --watch loop polls this directory and transitions the
 pane to state=ready when it finds the sentinel.
 
+When the master heartbeat includes a terminal surface, this command also
+sends a best-effort wake prompt to the master pane immediately. The polling
+loop remains the fallback for disconnected or stuck workers.
+
 Idempotent: safe to call on amend — the sentinel is simply overwritten with
 the new commit SHA.
 
@@ -41,4 +45,3 @@ gg spawn advance --task TASK-NNN [--commit <sha>] [flags]
 ### SEE ALSO
 
 * [gg spawn](gg_spawn.md)	 - Multi-agent orchestration: spawn worker panes, run queue, track liveness
-

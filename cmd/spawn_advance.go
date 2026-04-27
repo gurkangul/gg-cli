@@ -3,10 +3,12 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/orchestrator/spawn"
+	"github.com/gurkangul/gg-cli/internal/orchestrator/terminal"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -26,6 +28,10 @@ awaiting review. Writes (or overwrites) a JSON sentinel at:
 The sentinel records {task_id, surface_id, commit_sha, written_at}. The
 master's heartbeat --watch loop polls this directory and transitions the
 pane to state=ready when it finds the sentinel.
+
+When the master heartbeat includes a terminal surface, this command also
+sends a best-effort wake prompt to the master pane immediately. The polling
+loop remains the fallback for disconnected or stuck workers.
 
 Idempotent: safe to call on amend — the sentinel is simply overwritten with
 the new commit SHA.
@@ -60,11 +66,14 @@ func runSpawnAdvance(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("write advance sentinel: %w", err)
 	}
 
+	wakeStatus := wakeMasterAfterAdvance(cmd, rt, taskID, surfaceID, spawnAdvanceCommitSHA)
+
 	return printJSON(map[string]any{
 		"task_id":    taskID,
 		"surface_id": surfaceID,
 		"commit_sha": spawnAdvanceCommitSHA,
 		"status":     "sentinel written",
+		"wake":       wakeStatus,
 	}, func() {
 		if spawnAdvanceCommitSHA != "" {
 			fmt.Printf("✓ Advance sentinel written for %s (commit: %s)\n", taskID, spawnAdvanceCommitSHA)
@@ -72,4 +81,36 @@ func runSpawnAdvance(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("✓ Advance sentinel written for %s\n", taskID)
 		}
 	})
+}
+
+func wakeMasterAfterAdvance(cmd *cobra.Command, rt, taskID, workerSurfaceID, commitSHA string) string {
+	hb, err := spawn.ReadHeartbeat(rt)
+	if err != nil || hb == nil || strings.TrimSpace(hb.SurfaceID) == "" {
+		return "skipped: no master surface"
+	}
+	if hb.SurfaceID == workerSurfaceID {
+		return "skipped: master surface matches worker"
+	}
+
+	term, err := terminal.NewFromEnv()
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ master wake skipped: terminal backend unavailable: %v\n", err)
+		return "skipped: terminal backend unavailable"
+	}
+
+	commitRef := strings.TrimSpace(commitSHA)
+	if commitRef == "" {
+		commitRef = "(no sha)"
+	}
+	prompt := fmt.Sprintf("Worker ready for review: %s at %s. Review the commit and worker pane before closing the task.", taskID, commitRef)
+	if workerSurfaceID != "" {
+		prompt = fmt.Sprintf("%s Worker pane: %s.", prompt, workerSurfaceID)
+	}
+
+	spawnDir := spawn.Dir(rt)
+	if err := terminal.WakeAndSendWithFlock(cmd.Context(), term, terminal.SurfaceID(hb.SurfaceID), prompt, spawnDir); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ master wake failed for %s: %v\n", hb.SurfaceID, err)
+		return "failed"
+	}
+	return "sent"
 }

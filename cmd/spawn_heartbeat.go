@@ -90,7 +90,7 @@ func runSpawnHeartbeat(cmd *cobra.Command, _ []string) error {
 	}
 
 	if !spawnHeartbeatWatch {
-		hb, summary, err := recordHeartbeatAndCheckWorkers(cmd.Context(), rt, agent, !spawnHeartbeatFromWorker)
+		hb, summary, err := recordHeartbeatAndCheckWorkers(cmd.Context(), rt, agent, !spawnHeartbeatFromWorker, heartbeatSurfaceID(rt, spawnHeartbeatFromWorker))
 		if err != nil {
 			return err
 		}
@@ -128,7 +128,7 @@ func runSpawnHeartbeat(cmd *cobra.Command, _ []string) error {
 	lastKeepalive := time.Now()
 
 	for {
-		hb, summary, err := recordHeartbeatAndCheckWorkers(cmd.Context(), rt, agent, true)
+		hb, summary, err := recordHeartbeatAndCheckWorkers(cmd.Context(), rt, agent, true, heartbeatSurfaceID(rt, false))
 		if err != nil {
 			return err
 		}
@@ -160,8 +160,8 @@ type heartbeatWorkerSummary struct {
 	Missing int `json:"missing"`
 }
 
-func recordHeartbeatAndCheckWorkers(ctx context.Context, rt, agent string, checkWorkers bool) (*spawn.Heartbeat, heartbeatWorkerSummary, error) {
-	if err := spawn.WriteHeartbeat(rt, agent); err != nil {
+func recordHeartbeatAndCheckWorkers(ctx context.Context, rt, agent string, checkWorkers bool, surfaceID string) (*spawn.Heartbeat, heartbeatWorkerSummary, error) {
+	if err := spawn.WriteHeartbeatWithSurface(rt, agent, surfaceID); err != nil {
 		return nil, heartbeatWorkerSummary{}, fmt.Errorf("write heartbeat: %w", err)
 	}
 	hb, _ := spawn.ReadHeartbeat(rt)
@@ -173,6 +173,17 @@ func recordHeartbeatAndCheckWorkers(ctx context.Context, rt, agent string, check
 		return nil, summary, err
 	}
 	return hb, summary, nil
+}
+
+func heartbeatSurfaceID(rt string, fromWorker bool) string {
+	if !fromWorker {
+		return os.Getenv("GG_SURFACE_ID")
+	}
+	hb, err := spawn.ReadHeartbeat(rt)
+	if err != nil || hb == nil {
+		return ""
+	}
+	return hb.SurfaceID
 }
 
 func checkWorkerPanes(ctx context.Context, rt string) (heartbeatWorkerSummary, error) {

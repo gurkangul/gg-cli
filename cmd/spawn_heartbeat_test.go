@@ -77,7 +77,7 @@ func TestRecordHeartbeatWorkerModeSkipsPaneCheck(t *testing.T) {
 
 	registerTestPane(t, rt, "missing-surface", "TASK-009")
 
-	hb, summary, err := recordHeartbeatAndCheckWorkers(ctx, rt, "worker-agent", false)
+	hb, summary, err := recordHeartbeatAndCheckWorkers(ctx, rt, "worker-agent", false, "")
 	if err != nil {
 		t.Fatalf("recordHeartbeatAndCheckWorkers: %v", err)
 	}
