@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/brain"
@@ -151,7 +152,12 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 
 		recovered := 0
 		failed := 0
+		invalidUUIDs := 0
 		for _, e := range entries {
+			if !validBrainUUID(e.UUID) {
+				invalidUUIDs++
+				continue
+			}
 			if _, exists := qdrantUUIDs[e.UUID]; exists {
 				continue
 			}
@@ -162,7 +168,7 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 					anyGap = true
 					break
 				}
-				fmt.Printf("  ✗ %s: replay %s failed: %v\n", kind, e.UUID[:8], replayErr)
+				fmt.Printf("  ✗ %s: replay %s failed: %v\n", kind, shortBrainUUID(e.UUID), replayErr)
 				failed++
 			} else {
 				recovered++
@@ -175,11 +181,42 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 			fmt.Printf("  ✗ %s: %d replay failure(s)\n", kind, failed)
 			anyGap = true
 		}
-		if recovered == 0 && failed == 0 && len(entries) > 0 {
+		if invalidUUIDs > 0 {
+			fmt.Printf("  ✗ %s: %d invalid UUID %s skipped — repair .gg/brain/%s.jsonl\n", kind, invalidUUIDs, reconcilePlural("entry", "entries", invalidUUIDs), kind)
+			anyGap = true
+		}
+		if recovered == 0 && failed == 0 && invalidUUIDs == 0 && len(entries) > 0 {
 			fmt.Printf("  ✓ %s: %d entries consistent\n", kind, len(entries))
 		}
 	}
 	return anyGap
+}
+
+func reconcilePlural(one, many string, n int) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+func validBrainUUID(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	_, err := uuid.Parse(id)
+	return err == nil
+}
+
+func shortBrainUUID(uuid string) string {
+	uuid = strings.TrimSpace(uuid)
+	if uuid == "" {
+		return "(empty uuid)"
+	}
+	if len(uuid) <= 8 {
+		return uuid
+	}
+	return uuid[:8]
 }
 
 // replayBrainEntry reads the JSONL entry for e.UUID from .gg/brain/<collSuffix>.jsonl
