@@ -1,11 +1,62 @@
 package agenthooks
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// TestMasterRoleTemplateMatchesCLAUDEMD guards against template drift: whenever
+// CLAUDE.md is updated inside the gg:master-role markers, master-role-extras.md
+// must be updated to match. This test fails immediately when they diverge so the
+// regression is caught in CI rather than discovered by a user whose CLAUDE.md gets
+// silently trimmed by gg system sync / gg become master --force-reset.
+func TestMasterRoleTemplateMatchesCLAUDEMD(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	claudePath := filepath.Join(repoRoot, "CLAUDE.md")
+
+	raw, err := os.ReadFile(claudePath)
+	if err != nil {
+		t.Fatalf("cannot read %s: %v — run tests from repo root or ensure CLAUDE.md exists", claudePath, err)
+	}
+	content := string(raw)
+
+	const beginMarker = "<!-- gg:master-role:begin v3 -->"
+	const endMarker = "<!-- gg:master-role:end -->"
+
+	startIdx := strings.Index(content, beginMarker)
+	endIdx := strings.Index(content, endMarker)
+	if startIdx == -1 || endIdx == -1 {
+		t.Fatalf("CLAUDE.md is missing master-role markers %q / %q — cannot compare", beginMarker, endMarker)
+	}
+	if endIdx <= startIdx {
+		t.Fatalf("CLAUDE.md master-role end marker appears before begin marker")
+	}
+
+	// Extract block body (strip the leading newline that the block format inserts after the marker).
+	body := strings.TrimPrefix(content[startIdx+len(beginMarker):endIdx], "\n")
+
+	want := MasterRoleBody()
+	if body != want {
+		// Produce a useful diff hint — show first differing line.
+		bodyLines := strings.Split(body, "\n")
+		wantLines := strings.Split(want, "\n")
+		hint := ""
+		for i := 0; i < len(bodyLines) && i < len(wantLines); i++ {
+			if bodyLines[i] != wantLines[i] {
+				hint = "first diff at line " + fmt.Sprint(i+1) + ":\n  CLAUDE.md: " + bodyLines[i] + "\n  template:  " + wantLines[i]
+				break
+			}
+		}
+		if hint == "" {
+			hint = "lengths differ: CLAUDE.md body=" + fmt.Sprint(len(bodyLines)) + " lines, template=" + fmt.Sprint(len(wantLines)) + " lines"
+		}
+		t.Errorf("MasterRoleBody() does not match gg:master-role block in CLAUDE.md\n"+
+			"Fix: update internal/templates/master-role-extras.md to match CLAUDE.md (or vice versa)\n%s", hint)
+	}
+}
 
 func TestMasterRoleBody_LoadsFromTemplate(t *testing.T) {
 	body := MasterRoleBody()

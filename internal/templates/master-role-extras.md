@@ -119,6 +119,48 @@ unit-of-work invariant: pane ≡ task, closed pane ≡ approved task.
 `GG_QUEUE_MAX` env var or `--max-concurrent` flag, default 3). When in queue mode, the
 per-task lifecycle invariant still applies; only the concurrency cap changes.
 
+#### Parallel worker lifecycle: advance sentinel + keepalive + stale-pane prune
+
+Worker panes can die from cmux idle-timeout (~5min) while awaiting master review. Three mechanisms
+prevent the master from discovering worker death only at nudge time:
+
+**AC — Worker advance sentinel (worker responsibility):**
+After a commit lands, the worker writes a ready-signal so the master heartbeat loop can detect it:
+```
+git commit -m "..." && gg spawn advance --task TASK-NNN --commit $(git rev-parse HEAD)
+```
+This writes `~/.gg/projects/<project_id>/spawn/advance/TASK-NNN.done` with `{task_id, surface_id,
+commit_sha, written_at}`. Idempotent — safe on amend. The sentinel is consumed (renamed to
+`.consumed`) by the master heartbeat loop to prevent double-fire.
+
+**AC — Master sentinel consumer (master heartbeat watch):**
+The `--watch` loop polls the advance/ directory each tick. On sentinel detection it:
+- Renames the sentinel to `.consumed` atomically (before processing — prevents double-fire on retry)
+- Prints `⚡ worker ready: TASK-NNN at <sha> on <surface>` to stderr
+- Sets the pane's state to `ready` in panes.json
+- Does NOT auto-close the pane or call `gg task done` — master must review first
+
+**AC — Pane keepalive (master heartbeat watch):**
+The `--watch` loop probes every registered pane via `cmux identify --surface <id> --no-caller`
+(a read-only query) every keepalive interval (default 240s, minimum 60s floor,
+configurable via `--keepalive N` or `GG_PANE_KEEPALIVE_SEC`). This resets cmux's surface
+activity tracking without injecting any input into the pane.
+
+**Why not SendKey/Send:** worker panes are Claude Code / GSD agent REPLs, not bash shells.
+Any text or key event — even a bash comment — is forwarded to the agent as a user message.
+`cmux identify` is a pure read-only probe; nothing is written to the terminal.
+```
+GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 --keepalive 200 &
+```
+
+**AC — Stale-pane auto-prune (master heartbeat watch):**
+When a pane probe definitively fails, the watch loop automatically removes the entry from panes.json
+and its lock file. "Definitively" means `cmux identify --surface <id> --no-caller` returns the exact
+string `Surface is not a terminal` within a 5s deadline. Timeouts and other errors are treated as
+transient and do NOT trigger a prune. On prune, logs:
+`⚠ pruned stale pane <id> for TASK-NNN — was this an unsupervised death? consider increasing keepalive`
+The manual python-edit-panes.json pattern is no longer needed.
+
 The master's credibility comes from catching problems early, being honest about trade-offs, and never
 rubber-stamping. The worker's credibility comes from ACs met without silent narrowing.
 
