@@ -260,8 +260,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	langHint := detectLangHint(cwd)
+	unsupportedHint := ""
+	if langHint == "" {
+		unsupportedHint = detectUnsupportedLang(cwd)
+	}
 	indexed := maybeRunIndex(cmd, langHint, composeOK)
-	printBootstrapPrompt(detectAgentHint(installResults), langHint, indexed)
+	printBootstrapPrompt(detectAgentHint(installResults), langHint, unsupportedHint, indexed)
 	return nil
 }
 

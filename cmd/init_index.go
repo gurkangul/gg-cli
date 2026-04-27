@@ -24,6 +24,12 @@ func maybeRunIndex(cmd *cobra.Command, langHint string, composeOK bool) bool {
 	if initNoIndex || !composeOK {
 		return false
 	}
+	// langHint == "" means no supported language detected (BUG-033 fix).
+	// Previously this fell through with langHint="go" and prompted users
+	// to run `gg index --lang go` on .NET/Java projects, which always failed.
+	if langHint == "" {
+		return false
+	}
 	if initWithIndex && initNoIndex {
 		// Mutually exclusive but --no-index already returned above; this is
 		// defensive: prefer the more conservative choice if both are passed.
