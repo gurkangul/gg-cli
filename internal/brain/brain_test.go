@@ -188,6 +188,52 @@ func TestReadAll_LogsMalformedSkipCount(t *testing.T) {
 	}
 }
 
+// TestReadAllWithCount_LegacyIDField verifies that entries written in the legacy
+// format ({"id":"<uuid>","payload":{...}}) are transparently parsed by ReadAllWithCount
+// and returned with Entry.UUID populated from the "id" field — so validBrainUUID
+// passes and the invalidUUIDs counter in doctor --reconcile reaches zero.
+func TestReadAllWithCount_LegacyIDField(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write one canonical (new-format) entry via Append.
+	if err := brain.Append(dir, "decisions", "aaaabbbb-0000-0000-0000-000000000001", "agent", map[string]any{"text": "new format"}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	// Inject a legacy-format entry directly (simulates pre-TASK-362 writes).
+	jsonlPath := filepath.Join(dir, "brain", "decisions.jsonl")
+	f, err := os.OpenFile(jsonlPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatalf("open jsonl: %v", err)
+	}
+	_, _ = f.WriteString(`{"id":"aaaabbbb-0000-0000-0000-000000000002","payload":{"text":"legacy format"}}` + "\n")
+	f.Close()
+
+	entries, skipped, err := brain.ReadAllWithCount(dir, "decisions")
+	if err != nil {
+		t.Fatalf("ReadAllWithCount: %v", err)
+	}
+	if skipped != 0 {
+		t.Errorf("skipped = %d, want 0 (legacy entries must not be skipped)", skipped)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %d, want 2", len(entries))
+	}
+	// The legacy entry must resolve its UUID from the "id" field.
+	legacyFound := false
+	for _, e := range entries {
+		if e.UUID == "aaaabbbb-0000-0000-0000-000000000002" {
+			legacyFound = true
+			if e.Payload["text"] != "legacy format" {
+				t.Errorf("legacy entry payload.text = %v, want 'legacy format'", e.Payload["text"])
+			}
+		}
+	}
+	if !legacyFound {
+		t.Error("legacy entry UUID not found — id→uuid mapping failed")
+	}
+}
+
 // TestBrainAppend_ConcurrentPIDs_NoTornLines verifies that concurrent Append
 // calls from goroutines (simulating concurrent PIDs) produce only valid JSONL
 // lines — no torn/interleaved output.

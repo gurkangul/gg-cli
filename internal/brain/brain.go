@@ -107,8 +107,8 @@ func ReadAllWithCount(ggDir, kind string) (entries []Entry, skipped int, err err
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 1<<20) // 1 MiB max line — large detail fields
 	for sc.Scan() {
-		var e Entry
-		if jsonErr := json.Unmarshal(sc.Bytes(), &e); jsonErr != nil {
+		e, parseErr := parseEntry(sc.Bytes())
+		if parseErr != nil {
 			skipped++
 			continue
 		}
@@ -118,6 +118,33 @@ func ReadAllWithCount(ggDir, kind string) (entries []Entry, skipped int, err err
 		return nil, skipped, fmt.Errorf("brain: scan %s: %w", kind, scanErr)
 	}
 	return entries, skipped, nil
+}
+
+// parseEntry unmarshals a single JSONL brain entry, handling both the current
+// format (uuid/kind/created_at/payload) and the legacy format (id/payload)
+// written before TASK-362. The legacy "id" field is mapped to Entry.UUID so
+// that validBrainUUID and downstream Qdrant replay both work without data loss.
+func parseEntry(line []byte) (Entry, error) {
+	// Try the canonical format first.
+	var e Entry
+	if err := json.Unmarshal(line, &e); err != nil {
+		return Entry{}, err
+	}
+	// If UUID is empty, the line used the legacy "id" key.
+	if e.UUID == "" {
+		var legacy struct {
+			ID      string         `json:"id"`
+			Payload map[string]any `json:"payload"`
+		}
+		if err := json.Unmarshal(line, &legacy); err != nil || legacy.ID == "" {
+			return Entry{}, fmt.Errorf("brain: entry missing both uuid and id fields")
+		}
+		e.UUID = legacy.ID
+		if e.Payload == nil {
+			e.Payload = legacy.Payload
+		}
+	}
+	return e, nil
 }
 
 // SearchByText returns entries whose payload "text" or "approach" field
