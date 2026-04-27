@@ -67,8 +67,9 @@ if [ -z "$GITLEAKS_BIN" ]; then
 fi
 
 echo "[secret-scan] running gitleaks on staged files ..."
-# --staged scans only what's in the git index (staged files), not the full tree.
-if "$GITLEAKS_BIN" detect --staged --no-banner --exit-code 1 2>/dev/null; then
+# 'git --staged' scans only what's in the git index (staged files), not the full tree.
+# gitleaks v8.21+ moved git scanning from 'detect --staged' into the 'git' subcommand.
+if "$GITLEAKS_BIN" git --staged --no-banner --exit-code 1 2>/dev/null; then
   echo "[secret-scan] ✓ no secrets found"
   exit 0
 fi
