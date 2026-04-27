@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -327,12 +328,21 @@ func emitBrainAutoBackup(stdout, stderr io.Writer) {
 		return
 	}
 
-	go func() { //nolint:gosec
+	go func() {
+		const backupTimeout = 30 * time.Second
+		ctx, cancel := context.WithTimeout(context.Background(), backupTimeout)
+		defer cancel()
+
 		var outBuf, errBuf strings.Builder
-		cmd := exec.Command(self, "brain", "export", "--if-stale="+interval) //nolint:gosec
+		cmd := exec.CommandContext(ctx, self, "brain", "export", "--if-stale="+interval) //nolint:gosec
 		cmd.Stdout = &outBuf
 		cmd.Stderr = &errBuf
 		runErr := cmd.Run()
+
+		if ctx.Err() != nil {
+			fmt.Fprintf(stderr, "[brain-backup] timeout after 30s — skipping\n")
+			return
+		}
 
 		// Route child stderr lines to parent stderr with [brain-backup] prefix.
 		if s := strings.TrimSpace(errBuf.String()); s != "" {
