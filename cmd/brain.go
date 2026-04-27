@@ -42,6 +42,8 @@ var brainStatusCmd = &cobra.Command{
 var (
 	brainExportDryRun bool
 	brainExportStrict bool
+	brainExportIfStale string // "" means no staleness check; non-empty is a Go duration string
+	brainExportVerbose bool
 )
 
 var brainImportCmd = &cobra.Command{
@@ -68,6 +70,8 @@ var (
 func init() {
 	brainExportCmd.Flags().BoolVar(&brainExportDryRun, "dry-run", false, "print what would be written without writing")
 	brainExportCmd.Flags().BoolVar(&brainExportStrict, "strict", false, "exit 1 if any secret pattern is found, write nothing")
+	brainExportCmd.Flags().StringVar(&brainExportIfStale, "if-stale", "", "only export when snapshot is older than DURATION (e.g. 24h); exit 0 when fresh")
+	brainExportCmd.Flags().BoolVar(&brainExportVerbose, "verbose", false, "show skip reason when --if-stale skips the export")
 
 	brainImportCmd.Flags().BoolVar(&brainImportDryRun, "dry-run", false, "report counts without writing")
 	brainImportCmd.Flags().BoolVar(&brainImportSkipEmbedCheck, "skip-embed-check", false, "bypass embedding model mismatch check")

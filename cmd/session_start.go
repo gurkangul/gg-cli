@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -109,6 +110,10 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// 7 days so the human at the keyboard sees bypass pressure before
 	// anything else. Silent when count is zero.
 	emitBypassDelta(loadedCfg)
+
+	// Auto-backup: snapshot brain when stale. Non-fatal — failure is logged
+	// to stderr with [brain-backup] prefix and never affects exit code.
+	emitBrainAutoBackup(sessionStartStderr)
 
 	// Inline `gg status` so the briefing carries the full current-state
 	// snapshot the agent would otherwise have to fetch separately. runStatus
@@ -298,4 +303,37 @@ func resolveSessionAgent() string {
 		return s
 	}
 	return strings.TrimSpace(os.Getenv("GG_AGENT"))
+}
+
+// emitBrainAutoBackup runs 'gg brain export --if-stale=INTERVAL' in the background.
+// Respects GG_AUTO_BACKUP=off to disable, and GG_AUTO_BACKUP_INTERVAL to override
+// the default 24h staleness threshold. Errors are written to w with a [brain-backup]
+// prefix and never propagate — session-start exit code is never affected.
+func emitBrainAutoBackup(w io.Writer) {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GG_AUTO_BACKUP")), "off") {
+		return
+	}
+	interval := strings.TrimSpace(os.Getenv("GG_AUTO_BACKUP_INTERVAL"))
+	if interval == "" {
+		interval = "24h"
+	}
+
+	self, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(w, "[brain-backup] could not locate gg binary: %v\n", err)
+		return
+	}
+
+	out, err := exec.Command(self, "brain", "export", "--if-stale="+interval).CombinedOutput() //nolint:gosec
+	if err != nil {
+		fmt.Fprintf(w, "[brain-backup] export failed: %v\n", err)
+		if len(out) > 0 {
+			fmt.Fprintf(w, "[brain-backup] %s\n", strings.TrimSpace(string(out)))
+		}
+		return
+	}
+	// On success, forward the one-liner note (if any) directly to stdout.
+	if msg := strings.TrimSpace(string(out)); msg != "" {
+		fmt.Println(msg)
+	}
 }

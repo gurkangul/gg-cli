@@ -29,6 +29,21 @@ func runBrainExport(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// --if-stale check: read manifest, compare ExportedAt to now.
+	if brainExportIfStale != "" {
+		threshold, parseErr := time.ParseDuration(brainExportIfStale)
+		if parseErr != nil {
+			return fmt.Errorf("--if-stale: invalid duration %q: %w", brainExportIfStale, parseErr)
+		}
+		skip, age, checkErr := brainSnapshotFresh(ggDir, threshold)
+		if checkErr == nil && skip {
+			if brainExportVerbose {
+				fmt.Printf("skipped: snapshot fresh (%s old)\n", age.Truncate(time.Minute))
+			}
+			return nil
+		}
+	}
+
 	if !jsonOutput {
 		fmt.Fprintf(os.Stderr, "Project: %s\n", cfg.ProjectID)
 	}
@@ -181,18 +196,27 @@ func runBrainExport(cmd *cobra.Command, _ []string) error {
 	for _, n := range counts {
 		total += n
 	}
-	fmt.Printf("✓ Brain exported → %s (%d records)\n", finalDir, total)
-	for _, kind := range store.BrainKind {
-		if n := counts[kind]; n > 0 {
-			fmt.Printf("  %-16s %d\n", kind, n)
+
+	// AC-4: when called via --if-stale (auto-backup mode), use the compact one-liner.
+	if brainExportIfStale != "" {
+		fmt.Printf("✓ brain auto-snapshotted (%d records)\n", total)
+	} else {
+		fmt.Printf("✓ Brain exported → %s (%d records)\n", finalDir, total)
+		for _, kind := range store.BrainKind {
+			if n := counts[kind]; n > 0 {
+				fmt.Printf("  %-16s %d\n", kind, n)
+			}
+		}
+		if n := counts["chunks"]; n > 0 {
+			fmt.Printf("  %-16s %d\n", "chunks (graph)", n)
+		}
+		if n := counts["edges"]; n > 0 {
+			fmt.Printf("  %-16s %d\n", "edges (graph)", n)
 		}
 	}
-	if n := counts["chunks"]; n > 0 {
-		fmt.Printf("  %-16s %d\n", "chunks (graph)", n)
-	}
-	if n := counts["edges"]; n > 0 {
-		fmt.Printf("  %-16s %d\n", "edges (graph)", n)
-	}
+
+	// AC-6: warn if brain directory size exceeds 200MB.
+	warnBrainSizeIfLarge(finalDir)
 	return nil
 }
 
@@ -335,6 +359,49 @@ func printBrainDryRun(qdrantData map[string][]any, nodes, edges []any) error {
 	}
 	fmt.Println("  manifest.json")
 	return nil
+}
+
+// brainSnapshotFresh reports whether the existing snapshot is newer than threshold.
+// Returns (true, age, nil) when fresh; (false, age, nil) when stale; (false, 0, err) when manifest is missing or unreadable.
+func brainSnapshotFresh(ggDir string, threshold time.Duration) (bool, time.Duration, error) {
+	manifestPath := filepath.Join(ggDir, brainDirName, "manifest.json")
+	data, err := os.ReadFile(manifestPath) //nolint:gosec
+	if err != nil {
+		return false, 0, err
+	}
+	var m brainManifest
+	if err := brainUnmarshalManifest(data, &m); err != nil {
+		return false, 0, err
+	}
+	exportedAt, err := time.Parse(time.RFC3339, m.ExportedAt)
+	if err != nil {
+		return false, 0, fmt.Errorf("parse ExportedAt: %w", err)
+	}
+	age := time.Since(exportedAt)
+	return age < threshold, age, nil
+}
+
+const brainSizeWarnBytes = 200 * 1024 * 1024 // 200 MB
+
+// warnBrainSizeIfLarge prints a single warning line when the brain directory
+// exceeds brainSizeWarnBytes. Non-fatal — any error is silently ignored.
+func warnBrainSizeIfLarge(dir string) {
+	var total int64
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if info, infoErr := e.Info(); infoErr == nil {
+			total += info.Size()
+		}
+	}
+	if total > brainSizeWarnBytes {
+		fmt.Fprintf(os.Stderr, "⚠ brain snapshot is %dMB — consider pruning older data. See: gg brain export docs\n", total/(1024*1024))
+	}
 }
 
 // ensureBrainPartialIgnored appends brain.partial/ to .gg/.gitignore if missing.
