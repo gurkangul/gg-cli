@@ -284,6 +284,33 @@ func RemovePane(runtimeDir, taskID string) error {
 	return writePanes(runtimeDir, filtered)
 }
 
+// FindPaneForTask returns the WorkerPane whose TaskID matches taskID, or nil
+// when no matching entry exists.
+func FindPaneForTask(runtimeDir, taskID string) (*WorkerPane, error) {
+	panes, err := readPanes(runtimeDir)
+	if err != nil {
+		return nil, err
+	}
+	for i := range panes {
+		if panes[i].TaskID == taskID {
+			p := panes[i]
+			return &p, nil
+		}
+	}
+	return nil, nil
+}
+
+// RemovePaneLocked removes a worker pane from panes.json by task ID under an
+// exclusive advisory flock on panes.json.lock. This prevents a concurrent
+// RegisterPane or RemovePaneLocked from racing on the same file.
+// On Windows the flock step is a no-op (see panes_flock_windows.go).
+func RemovePaneLocked(runtimeDir, taskID string) error {
+	lockPath := filepath.Join(Dir(runtimeDir), PanesFile+".lock")
+	return withPanesFlock(lockPath, func() error {
+		return RemovePane(runtimeDir, taskID)
+	})
+}
+
 // ListPanes returns all registered worker panes from panes.json.
 func ListPanes(runtimeDir string) ([]WorkerPane, error) {
 	return readPanes(runtimeDir)

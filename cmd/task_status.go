@@ -150,6 +150,13 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 
 	notifyTaskLifecycle(ctx, d.store, taskID, "done", summary)
 
+	// Close the worker pane registered for this task, if any.
+	// Best-effort: failure to close the terminal surface MUST NOT block the
+	// data-side completion — errors go to stderr with [pane-lifecycle] prefix.
+	if rt, rtErr := spawnRuntimeDir(); rtErr == nil {
+		closeWorkerPaneForTask(ctx, rt, taskID, cmd.OutOrStdout(), cmd.ErrOrStderr())
+	}
+
 	// Run post-done hooks from .gg/hooks/task-done.d/*.sh (warn-only unless hooks.strict=true).
 	if hookErr := runTaskDoneHooks(cmd, hookCfg, taskID, summary); hookErr != nil {
 		return hookErr // only non-nil when strict mode is enabled and a hook failed
