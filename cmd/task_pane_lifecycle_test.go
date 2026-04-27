@@ -101,6 +101,30 @@ func TestCloseWorkerPaneForTask_NoEntry_Idempotent(t *testing.T) {
 	}
 }
 
+func TestCloseWorkerPaneForTask_RefusesCurrentMasterSurface(t *testing.T) {
+	rt := t.TempDir()
+	spawnDir := filepath.Join(rt, "spawn")
+	writeTestPanesJSON(t, spawnDir, "TASK-666", "master-surface")
+
+	t.Setenv("GG_TERMINAL", "fake")
+	t.Setenv("GG_SURFACE_ID", "master-surface")
+
+	var stdout, stderr bytes.Buffer
+	closeWorkerPaneForTask(context.Background(), rt, "TASK-666", &stdout, &stderr)
+
+	if !strings.Contains(stderr.String(), "refusing to close protected master surface master-surface") {
+		t.Fatalf("expected protected master warning, got stderr=%q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "removed pane registry entry master-surface for TASK-666") {
+		t.Fatalf("expected registry-only cleanup, got stdout=%q", stdout.String())
+	}
+	for _, p := range readTestPanesJSON(t, spawnDir) {
+		if p.TaskID == "TASK-666" {
+			t.Fatal("protected stale pane registry entry should still be removed")
+		}
+	}
+}
+
 // TestCloseWorkerPaneForTask_AlreadyRemovedEntry_Idempotent verifies that calling
 // closeWorkerPaneForTask twice (second call finds no entry) does not error.
 func TestCloseWorkerPaneForTask_AlreadyRemovedEntry_Idempotent(t *testing.T) {

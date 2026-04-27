@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/gurkangul/gg-cli/internal/orchestrator/spawn"
 	"github.com/gurkangul/gg-cli/internal/orchestrator/terminal"
@@ -27,13 +28,19 @@ func closeWorkerPaneForTask(ctx context.Context, rt, taskID string, stdout, errO
 
 	surfaceID := terminal.SurfaceID(pane.SurfaceID)
 
-	term, termErr := terminal.NewFromEnv()
-	if termErr == nil {
-		if closeErr := term.Close(ctx, surfaceID); closeErr != nil {
-			fmt.Fprintf(errOut, "[pane-lifecycle] close %s for %s: %v\n", pane.SurfaceID, taskID, closeErr)
-		}
+	closeAttempted := false
+	if isProtectedMasterSurface(rt, pane.SurfaceID) {
+		fmt.Fprintf(errOut, "[pane-lifecycle] refusing to close protected master surface %s for %s; removing stale pane registry entry only\n", pane.SurfaceID, taskID)
 	} else {
-		fmt.Fprintf(errOut, "[pane-lifecycle] terminal backend unavailable for %s: %v\n", taskID, termErr)
+		term, termErr := terminal.NewFromEnv()
+		if termErr == nil {
+			closeAttempted = true
+			if closeErr := term.Close(ctx, surfaceID); closeErr != nil {
+				fmt.Fprintf(errOut, "[pane-lifecycle] close %s for %s: %v\n", pane.SurfaceID, taskID, closeErr)
+			}
+		} else {
+			fmt.Fprintf(errOut, "[pane-lifecycle] terminal backend unavailable for %s: %v\n", taskID, termErr)
+		}
 	}
 
 	// Remove from panes.json regardless of whether the terminal close succeeded.
@@ -42,5 +49,23 @@ func closeWorkerPaneForTask(ctx context.Context, rt, taskID string, stdout, errO
 		return
 	}
 
-	fmt.Fprintf(stdout, "✓ closed pane %s for %s\n", pane.SurfaceID, taskID)
+	if closeAttempted {
+		fmt.Fprintf(stdout, "✓ closed pane %s for %s\n", pane.SurfaceID, taskID)
+	} else {
+		fmt.Fprintf(stdout, "✓ removed pane registry entry %s for %s\n", pane.SurfaceID, taskID)
+	}
+}
+
+func isProtectedMasterSurface(rt, surfaceID string) bool {
+	if surfaceID == "" {
+		return false
+	}
+	if current := os.Getenv("GG_SURFACE_ID"); current != "" && surfaceID == current {
+		return true
+	}
+	hb, err := spawn.ReadHeartbeat(rt)
+	if err != nil || hb == nil {
+		return false
+	}
+	return hb.SurfaceID != "" && hb.SurfaceID == surfaceID
 }
