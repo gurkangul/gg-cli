@@ -3,9 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -18,8 +16,6 @@ import (
 // This guarantees concurrent `gg task create` calls with the same logical
 // ID would upsert into the same Qdrant point rather than creating duplicates.
 var taskIDNamespace = uuid.MustParse("c0c0c0c0-1a5c-4d0d-bab0-000000000001")
-
-var taskIDRegex = regexp.MustCompile(`^TASK-\d{3,}$`)
 
 type Task struct {
 	ID           string
@@ -492,10 +488,3 @@ func (c *Client) CancelTask(ctx context.Context, taskID string) error {
 	return nil
 }
 
-// ParseTaskID extracts the numeric suffix from a task ID like "TASK-001".
-func ParseTaskID(id string) (int, error) {
-	if !taskIDRegex.MatchString(id) {
-		return 0, fmt.Errorf("invalid task ID %q (expected TASK-NNN)", id)
-	}
-	return strconv.Atoi(id[5:])
-}
