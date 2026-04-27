@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -381,10 +382,19 @@ func brainSnapshotFresh(ggDir string, threshold time.Duration) (bool, time.Durat
 	return age < threshold, age, nil
 }
 
-const brainSizeWarnBytes = 200 * 1024 * 1024 // 200 MB
+const defaultBrainSizeWarnBytes = 200 * 1024 * 1024 // 200 MB
+
+func brainSizeWarnThreshold() int64 {
+	if v := os.Getenv("GG_BRAIN_SIZE_WARN_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultBrainSizeWarnBytes
+}
 
 // warnBrainSizeIfLarge prints a single warning line when the brain directory
-// exceeds brainSizeWarnBytes. Non-fatal — any error is silently ignored.
+// exceeds the configured size threshold. Non-fatal — any error is silently ignored.
 func warnBrainSizeIfLarge(dir string) {
 	var total int64
 	entries, err := os.ReadDir(dir)
@@ -399,7 +409,7 @@ func warnBrainSizeIfLarge(dir string) {
 			total += info.Size()
 		}
 	}
-	if total > brainSizeWarnBytes {
+	if total > brainSizeWarnThreshold() {
 		fmt.Fprintf(os.Stderr, "⚠ brain snapshot is %dMB — consider pruning older data. See: gg brain export docs\n", total/(1024*1024))
 	}
 }
