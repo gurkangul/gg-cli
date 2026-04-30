@@ -24,35 +24,37 @@ Exit codes:
 }
 
 var (
-	doctorInstallIndexers       bool
-	doctorReconcile             bool
-	doctorInstallAgentHooks     bool
-	doctorInstallAgentsMD       bool
-	doctorHooksAgent            string
-	doctorHooksDryRun           bool
-	doctorHooksForce            bool
-	doctorHeal                  bool
-	doctorWipeBrain             bool
-	doctorWipeBrainYes          bool
-	doctorInstallTaskHooks      bool
-	doctorSyncArtifacts         bool
-	doctorSyncApply             bool
-	doctorBypassAudit           bool
-	doctorBypassAuditSince      string
-	doctorCheckContract         bool
-	doctorContractFix           bool
-	doctorContractForceReset    bool
-	doctorSyncBaseline          bool
-	doctorCaptureLintBaseline   bool
-	doctorCheckMasterRole       bool
-	doctorCheckDevRouting       bool
-	doctorCheckBinary           bool
-	doctorFixBinary             bool
-	doctorInstallSecretScanner  bool
-	doctorCheckSecrets          bool
-	doctorCheckSecretsStaged    bool
-	doctorCheckSecretsHistory   bool
-	doctorDiagnoseSandbox       bool
+	doctorInstallIndexers      bool
+	doctorReconcile            bool
+	doctorInstallAgentHooks    bool
+	doctorInstallAgentsMD      bool
+	doctorHooksAgent           string
+	doctorHooksDryRun          bool
+	doctorHooksForce           bool
+	doctorHeal                 bool
+	doctorWipeBrain            bool
+	doctorWipeBrainYes         bool
+	doctorInstallTaskHooks     bool
+	doctorSyncArtifacts        bool
+	doctorSyncApply            bool
+	doctorBypassAudit          bool
+	doctorBypassAuditSince     string
+	doctorCheckContract        bool
+	doctorContractFix          bool
+	doctorContractForceReset   bool
+	doctorSyncBaseline         bool
+	doctorCaptureLintBaseline  bool
+	doctorCheckMasterRole      bool
+	doctorCheckDevRouting      bool
+	doctorCheckBinary          bool
+	doctorFixBinary            bool
+	doctorInstallSecretScanner bool
+	doctorCheckSecrets         bool
+	doctorCheckSecretsStaged   bool
+	doctorCheckSecretsHistory  bool
+	doctorDiagnoseSandbox      bool
+	doctorRefreshHooks         bool
+	doctorRefreshHooksForce    bool
 )
 
 func init() {
@@ -114,6 +116,10 @@ func init() {
 		"with --check-secrets: run full git history scan only (gitleaks detect)")
 	doctorCmd.Flags().BoolVar(&doctorDiagnoseSandbox, "diagnose-sandbox", false,
 		"probe localhost TCP to detect sandbox restrictions; reports 'TCP localhost permitted' or 'TCP localhost BLOCKED'")
+	doctorCmd.Flags().BoolVar(&doctorRefreshHooks, "refresh-hooks", false,
+		"overwrite drifted gg-managed hook templates after backing up each stale copy")
+	doctorCmd.Flags().BoolVar(&doctorRefreshHooksForce, "refresh-hooks-force", false,
+		"with --refresh-hooks: also overwrite user-customized hooks that lack gg-template markers")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -226,6 +232,9 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	if doctorDiagnoseSandbox {
 		return runDoctorDiagnoseSandbox(cmd)
 	}
+	if doctorRefreshHooks || doctorRefreshHooksForce {
+		return runDoctorRefreshHooks(doctorRefreshHooksForce)
+	}
 
 	fmt.Println("GG Doctor")
 	fmt.Println(strings.Repeat("─", 50))
@@ -267,6 +276,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// 6. Binary freshness — advisory warn, never blocks default run.
 	fmt.Println("\nBinary:")
 	doctorCheckBinaryAdvisory(report)
+
+	// 7. Hook template drift — marker-backed, blocks on drift but not customization.
+	fmt.Println("\nHook templates:")
+	doctorCheckHookTemplates(report)
 
 	// Artifact drift check (advisory — does not count as a problem).
 	driftCount := doctorCheckArtifactDrift()

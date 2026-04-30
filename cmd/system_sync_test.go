@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/templates"
 )
 
 // systemSyncFixture builds a temp HOME with a two-project registry and two
@@ -268,6 +269,32 @@ func TestSystemSync_DryRun_TwoProjects_BothGetForceReset(t *testing.T) {
 	count := strings.Count(out, "--check-master-role --fix --force-reset")
 	if count != 2 {
 		t.Errorf("expected --check-master-role --fix --force-reset to appear twice, got %d:\n%s", count, out)
+	}
+}
+
+func TestSystemSync_DryRunReportsHookTemplateDriftCount(t *testing.T) {
+	proj1Root, _ := systemSyncFixture(t)
+	if err := os.WriteFile(filepath.Join(proj1Root, "go.mod"), []byte("module alpha\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	hookDir := filepath.Join(proj1Root, ".gg", "hooks", "pre-task-done.d")
+	if err := os.MkdirAll(hookDir, 0o755); err != nil {
+		t.Fatalf("mkdir hook dir: %v", err)
+	}
+	body := templates.WithHookTemplateMarker("PreTaskDoneGoHook", templates.PreTaskDoneGoHook) + "\n# local drift\n"
+	if err := os.WriteFile(filepath.Join(hookDir, "10-go-verify.sh"), []byte(body), 0o755); err != nil {
+		t.Fatalf("write drifted hook: %v", err)
+	}
+
+	systemSyncDryRun = true
+	t.Cleanup(resetSyncFlags)
+
+	out := runSystemSyncCapture(t)
+	if !strings.Contains(out, "would refresh 1 drifted hook(s)") {
+		t.Fatalf("expected dry-run drift count, got:\n%s", out)
+	}
+	if strings.Contains(out, "--refresh-hooks") {
+		t.Fatalf("dry-run should report refresh count, not imply automatic refresh:\n%s", out)
 	}
 }
 

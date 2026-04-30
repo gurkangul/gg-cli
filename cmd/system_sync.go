@@ -111,6 +111,11 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 			if !systemSyncContractOnly {
 				fmt.Println("  (dry-run) would run: gg doctor --install-agent-hooks")
 				fmt.Println("  (dry-run) would run: gg doctor --install-task-hooks")
+				if drifted, err := countHookTemplateDriftInProject(p.Root); err == nil {
+					fmt.Printf("  (dry-run) would refresh %d drifted hook(s)\n", drifted)
+				} else {
+					fmt.Printf("  (dry-run) hook template drift check skipped: %v\n", err)
+				}
 			}
 			ok++
 			continue
@@ -157,6 +162,13 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("  ✗ task-hook refresh failed: %v\n", runErr)
 				failed++
 				continue
+			}
+			if drifted, err := reportHookTemplateDriftForProject(p.Root); err != nil {
+				fmt.Printf("  ✗ hook template drift check failed: %v\n", err)
+				failed++
+				continue
+			} else if drifted > 0 {
+				fmt.Println("  Run gg doctor --refresh-hooks to apply pending template updates.")
 			}
 		}
 		fmt.Println("  ✓ synced")
@@ -212,4 +224,63 @@ func splitKeepNL(s string) []string {
 		out = append(out, s[start:])
 	}
 	return out
+}
+
+func countHookTemplateDriftInProject(root string) (int, error) {
+	var drifted int
+	err := withWorkingDir(root, func() error {
+		checks, err := checkHookTemplates()
+		if err != nil {
+			return err
+		}
+		for _, check := range checks {
+			if check.state == hookTemplateDrift {
+				drifted++
+			}
+		}
+		return nil
+	})
+	return drifted, err
+}
+
+func reportHookTemplateDriftForProject(root string) (int, error) {
+	var drifted int
+	err := withWorkingDir(root, func() error {
+		checks, err := checkHookTemplates()
+		if err != nil {
+			return err
+		}
+		fmt.Println("  Hook templates:")
+		if len(checks) == 0 {
+			fmt.Println("    ✓ no deployed hook templates found")
+			return nil
+		}
+		for _, check := range checks {
+			rel, _ := filepath.Rel(root, check.spec.path)
+			label := filepath.ToSlash(rel)
+			switch check.state {
+			case hookTemplateInSync:
+				fmt.Printf("    ✓ %-42s in-sync\n", label)
+			case hookTemplateDrift:
+				drifted++
+				fmt.Printf("    ⚠ %-42s drift (%s)\n", label, hookTemplateDriftDetail(check))
+			case hookTemplateUserCustomized:
+				fmt.Printf("    ~ %-42s user-customized\n", label)
+			}
+		}
+		return nil
+	})
+	return drifted, err
+}
+
+func withWorkingDir(dir string, fn func() error) error {
+	previous, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	if err := os.Chdir(dir); err != nil {
+		return err
+	}
+	defer func() { _ = os.Chdir(previous) }()
+	return fn()
 }

@@ -149,13 +149,13 @@ func runDoctorInstallTaskHooks() error {
 		// the template assumes root; wrap it inside a cd subshell when needed.
 		postBody := wrapLegacyPostHook(templates.TaskDoneGoHook, sub)
 
-		if n, err := installHookIfAbsent(prePath, preBody,
+		if n, err := installHookIfAbsent(prePath, "PreTaskDoneGoHook", preBody,
 			fmt.Sprintf("Go verify gate at %s — blocking (build + vet + test)", sub)); err != nil {
 			return err
 		} else {
 			installed += n
 		}
-		if n, err := installHookIfAbsent(postPath, postBody,
+		if n, err := installHookIfAbsent(postPath, "TaskDoneGoHook", postBody,
 			fmt.Sprintf("Go post-done at %s — advisory (vet + test + lint)", sub)); err != nil {
 			return err
 		} else {
@@ -166,7 +166,7 @@ func runDoctorInstallTaskHooks() error {
 	for _, sub := range nodeDirs {
 		prePath := filepath.Join(preDir, hookFileName("10-node-verify", sub))
 		preBody := strings.ReplaceAll(templates.PreTaskDoneNodeHook, "__GG_SUBDIR__", sub)
-		if n, err := installHookIfAbsent(prePath, preBody,
+		if n, err := installHookIfAbsent(prePath, "PreTaskDoneNodeHook", preBody,
 			fmt.Sprintf("Node verify gate at %s — blocking (install + typecheck + build + test)", sub)); err != nil {
 			return err
 		} else {
@@ -176,7 +176,7 @@ func runDoctorInstallTaskHooks() error {
 
 	// Regression gate: always install 90-bug-repros.sh regardless of language.
 	bugReprosPath := filepath.Join(preDir, "90-bug-repros.sh")
-	if n, err := installHookIfAbsent(bugReprosPath, templates.BugReprosHook,
+	if n, err := installHookIfAbsent(bugReprosPath, "BugReprosHook", templates.BugReprosHook,
 		"regression gate — runs all repro scripts for fixed bugs (GG_ENFORCEMENT controls blocking)"); err != nil {
 		return err
 	} else {
@@ -185,7 +185,7 @@ func runDoctorInstallTaskHooks() error {
 
 	// Test-tier smoke gate: install everywhere, self-skips until project adopts test-tier Makefile pattern.
 	smokeHookPath := filepath.Join(preDir, "05-smoke-e2e.sh")
-	if n, err := installHookIfAbsent(smokeHookPath, templates.SmokeE2EHook,
+	if n, err := installHookIfAbsent(smokeHookPath, "SmokeE2EHook", templates.SmokeE2EHook,
 		"smoke gate — runs `make test-smoke` when the target exists (skips quietly otherwise)"); err != nil {
 		return err
 	} else {
@@ -195,7 +195,7 @@ func runDoctorInstallTaskHooks() error {
 	// Decision-capture gate: warns (or blocks with GG_DECIDE_GATE=block)
 	// when `gg task done` runs on a task with zero decisions linked.
 	decideHookPath := filepath.Join(preDir, "20-decide-capture.sh")
-	if n, err := installHookIfAbsent(decideHookPath, templates.PreTaskDoneDecideCaptureHook,
+	if n, err := installHookIfAbsent(decideHookPath, "PreTaskDoneDecideCaptureHook", templates.PreTaskDoneDecideCaptureHook,
 		"decide gate — warns on task close without a linked gg record (GG_DECIDE_GATE=warn|block|off)"); err != nil {
 		return err
 	} else {
@@ -205,7 +205,7 @@ func runDoctorInstallTaskHooks() error {
 	// 30-file-size.sh: warns (or blocks) when source/test files exceed the
 	// 500/800-line modularity cap.
 	fileSizeHookPath := filepath.Join(preDir, "30-file-size.sh")
-	if n, err := installHookIfAbsent(fileSizeHookPath, templates.FileSizeGateHook,
+	if n, err := installHookIfAbsent(fileSizeHookPath, "FileSizeGateHook", templates.FileSizeGateHook,
 		"file-size gate — warns on oversized source/test files (GG_FILE_SIZE_GATE=warn|block|off)"); err != nil {
 		return err
 	} else {
@@ -216,7 +216,7 @@ func runDoctorInstallTaskHooks() error {
 	// an explicit `gg task review --approve`. Target: close the nominal
 	// self-approval loophole in verifier_separation (2026-04-22 finding).
 	reviewHookPath := filepath.Join(preDir, "40-review-required.sh")
-	if n, err := installHookIfAbsent(reviewHookPath, templates.PreTaskDoneReviewRequiredHook,
+	if n, err := installHookIfAbsent(reviewHookPath, "PreTaskDoneReviewRequiredHook", templates.PreTaskDoneReviewRequiredHook,
 		"review gate — warns on task close without ReviewStatus=approved (GG_REVIEW_GATE=warn|block|off)"); err != nil {
 		return err
 	} else {
@@ -227,7 +227,7 @@ func runDoctorInstallTaskHooks() error {
 	// referenced in the commit message. Catches silent AC narrowing — where a
 	// worker commits addressing only some ACs and claims done.
 	acAttestationPath := filepath.Join(preDir, "50-ac-attestation.sh")
-	if n, err := installHookIfAbsent(acAttestationPath, templates.PreTaskDoneACAttestationHook,
+	if n, err := installHookIfAbsent(acAttestationPath, "PreTaskDoneACAttestationHook", templates.PreTaskDoneACAttestationHook,
 		"AC attestation gate — blocks when ACCEPTANCE bullets not referenced in commit (GG_AC_ATTESTATION=on|warn|off)"); err != nil {
 		return err
 	} else {
@@ -238,7 +238,7 @@ func runDoctorInstallTaskHooks() error {
 	// grandfathered baseline in .gg/lint-baseline.json. Initialise the baseline
 	// with: gg doctor --capture-lint-baseline
 	lintGatePath := filepath.Join(preDir, "60-lint-gate.sh")
-	if n, err := installHookIfAbsent(lintGatePath, templates.PreTaskDoneLintGateHook,
+	if n, err := installHookIfAbsent(lintGatePath, "PreTaskDoneLintGateHook", templates.PreTaskDoneLintGateHook,
 		"lint gate — blocks when golangci-lint issue count exceeds baseline (GG_LINT_GATE=on|warn|off); capture baseline: gg doctor --capture-lint-baseline"); err != nil {
 		return err
 	} else {
@@ -249,7 +249,7 @@ func runDoctorInstallTaskHooks() error {
 	// file has >=5 graph dependents; advisory otherwise. Requires Impact-Reviewed:
 	// trailer in the commit body. Bypass: GG_BYPASS_RATIONALE=<reason>.
 	impactAttestationPath := filepath.Join(preDir, "60-impact-attestation.sh")
-	if n, err := installHookIfAbsent(impactAttestationPath, templates.PreTaskDoneImpactAttestationHook,
+	if n, err := installHookIfAbsent(impactAttestationPath, "PreTaskDoneImpactAttestationHook", templates.PreTaskDoneImpactAttestationHook,
 		"impact attestation gate — requires Impact-Reviewed: commit trailer when >=3 source files or >=5 dependents (GG_IMPACT_ATTESTATION=on|warn|off)"); err != nil {
 		return err
 	} else {
@@ -259,7 +259,7 @@ func runDoctorInstallTaskHooks() error {
 	// 20-secret-scan.sh: runs gitleaks (or narrow-regex fallback) against staged
 	// files before a commit. Exits 7 on findings. Bypassable via GG_BYPASS_RATIONALE.
 	secretScanPath := filepath.Join(preCommitDir, "20-secret-scan.sh")
-	if n, err := installHookIfAbsent(secretScanPath, templates.PreCommitSecretScanHook,
+	if n, err := installHookIfAbsent(secretScanPath, "PreCommitSecretScanHook", templates.PreCommitSecretScanHook,
 		"secret scan gate — blocks commit when gitleaks finds secrets; falls back to narrow-regex (GG_SECRET_SCAN=on|warn|off)"); err != nil {
 		return err
 	} else {
@@ -459,17 +459,16 @@ func offerMakefileTestTierInclude(makefilePath, tierTemplatePath, projectRoot st
 
 // installHookIfAbsent writes body to path with 0755 permissions, unless a file
 // already exists there. Returns 1 if the file was written, 0 if skipped.
-func installHookIfAbsent(path, body, summary string) (int, error) {
+func installHookIfAbsent(path, templateName, body, summary string) (int, error) {
 	if _, err := os.Stat(path); err == nil {
 		fmt.Printf("⚠ %s already exists — skipping (remove it manually to reinstall)\n", path)
 		return 0, nil
 	}
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+	markedBody := templates.WithHookTemplateMarker(templateName, body)
+	if err := os.WriteFile(path, []byte(markedBody), 0o755); err != nil {
 		return 0, fmt.Errorf("write %s: %w", path, err)
 	}
 	fmt.Printf("✓ Installed %s\n", path)
 	fmt.Printf("  %s\n", summary)
 	return 1, nil
 }
-
-
