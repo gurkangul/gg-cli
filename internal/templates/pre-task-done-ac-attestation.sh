@@ -110,13 +110,22 @@ for line in lines:
 # Lines like 'TASK-292 Gap 2 GSD did X' that start with identifiers before the
 # word Gap are excluded by re.match anchoring.
 AC_SECTION_RE = re.compile(
-    r'(?im)^(ACCEPTANCE(?:\s+(?:CRITERIA|TESTS?))?|ACS?|GAPS?)\s*$'
+    r'(?im)^[ \t]*(?:#{1,6}[ \t]*)?(ACCEPTANCE(?:[ \t]+(?:CRITERIA|TESTS?))?|ACS?|GAPS?)[ \t]*:?[ \t]*$'
 )
-# FIX / REWORK / IMPLEMENTATION / NOTES sections contain implementation steps
-# or supporting context, not acceptance criteria.
+# FIX / REWORK / IMPLEMENTATION / verification / notes sections contain
+# implementation steps or supporting context, not acceptance criteria.
 SKIP_SECTION_RE = re.compile(
-    r'(?im)^(FIX(?:ES)?|REWORK|IMPLEMENTATION(?:\s+(?:HINTS?|GUIDANCE))?|HINTS?|NOTES?|REFERENCES?|REFS?)\s*:?\s*$'
+    r'(?im)^[ \t]*(?:#{1,6}[ \t]*)?'
+    r'(FIX(?:ES)?|REWORK|IMPLEMENTATION(?:[ \t]+(?:HINTS?|GUIDANCE))?|HINTS?|'
+    r'ENGINEERING[ \t]+NOTES?|LIVE[ \t]+VERIFICATION|VERIFICATION|UNIT[ \t]+TESTS?|'
+    r'OUT[ \t]+OF[ \t]+SCOPE|SCOPE|FILE[- ]SIZE[ \t]+CAP|SIZE|REGRESSION[ \t]+PROOF|'
+    r'NOTES?|REFERENCES?|REFS?)'
+    r'(?:[ \t]*\([^)]*\))?[ \t]*:?.*$'
 )
+HEADER_BREAK_RE = re.compile(r'^[ \t]*(?:#{1,6}[ \t]*)?[A-Z][A-Z0-9 _/()&-]{2,}[ \t]*:?.*$')
+
+def _is_section_header(s):
+    return bool(AC_SECTION_RE.match(s) or SKIP_SECTION_RE.match(s) or HEADER_BREAK_RE.match(s))
 
 def _collect_section_lines(header_re):
     lines_set = set()
@@ -129,7 +138,7 @@ def _collect_section_lines(header_re):
                 if in_section:
                     break
                 continue
-            if re.match(r'^[A-Z][A-Z0-9 _-]{2,}:?\s*$', s):
+            if _is_section_header(s):
                 break
             lines_set.add(idx)
             in_section = True
@@ -159,13 +168,15 @@ for idx, line in enumerate(lines):
         add(('Gap ' + m.group(1) + ': ' + m.group(2)).strip(': '), label)
 
 # Pass 3: numbered items at line start — '1. text', '1) text', '1: text'
-for line in lines:
+for idx, line in enumerate(lines):
+    if idx in skip_section_lines:
+        continue
     m = re.match(r'^\s*(\d+)[.):\s]\s+(.+)', line)
     if m:
         add(m.group(2).strip())
 
 # Pass 4: '- ' bullets under ACCEPTANCE / CRITERIA / TESTS heading
-acc_m = re.search(r'(?im)^ACCEPTANCE(?:\s+(?:CRITERIA|TESTS?))?\s*$', text)
+acc_m = re.search(r'(?im)^[ \t]*(?:#{1,6}[ \t]*)?ACCEPTANCE(?:[ \t]+(?:CRITERIA|TESTS?))?[ \t]*:?[ \t]*$', text)
 if acc_m:
     after = text[acc_m.end():]
     for line in after.splitlines():
@@ -182,6 +193,8 @@ if acc_m:
 # Skip bullets inside FIX/REWORK sections — those are implementation steps.
 for idx, line in enumerate(lines):
     if idx in skip_section_lines:
+        continue
+    if line.startswith((' ', '\t')):
         continue
     s = line.strip()
     if s.startswith('- '):

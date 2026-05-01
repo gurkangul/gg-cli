@@ -34,6 +34,7 @@ if [ "${GG_INSIDE_HOOK:-0}" = "1" ]; then
 fi
 
 echo "[verify] (__GG_SUBDIR__) go test ./..."
+GO_TEST="env -u GG_ALLOW_INCOMPLETE_AC go test"
 TEST_OUT="${TMPDIR:-/tmp}/gg-go-test.$$.out"
 TEST_JSON="${TMPDIR:-/tmp}/gg-go-test.$$.json"
 cleanup_go_test_logs() {
@@ -42,7 +43,7 @@ cleanup_go_test_logs() {
 trap cleanup_go_test_logs EXIT INT TERM
 
 # shellcheck disable=SC2086
-if go test ./... $TEST_FLAGS >"$TEST_OUT" 2>&1; then
+if $GO_TEST ./... $TEST_FLAGS >"$TEST_OUT" 2>&1; then
   cat "$TEST_OUT"
 else
   TEST_STATUS=$?
@@ -51,7 +52,7 @@ else
   # Run a second diagnostic pass so the verify-gate tail contains the package
   # or test action that failed instead of ending with an opaque bare FAIL.
   # shellcheck disable=SC2086
-  go test -json ./... $TEST_FLAGS >"$TEST_JSON" 2>&1 || true
+  $GO_TEST -json ./... $TEST_FLAGS >"$TEST_JSON" 2>&1 || true
   awk '/"Action":"fail"/ || /"Action":"panic"/ || (/"Action":"output"/ && /FAIL|panic|--- FAIL/) { print "[verify-json] " $0 }' "$TEST_JSON" >&2
   exit "$TEST_STATUS"
 fi

@@ -1,0 +1,10 @@
+{
+  "count": 5,
+  "entries": [
+    {"num": 1, "text_contains": "Template versioning", "gap_label": ""},
+    {"num": 2, "text_contains": "Drift detection", "gap_label": ""},
+    {"num": 3, "text_contains": "refresh-hooks", "gap_label": ""},
+    {"num": 4, "text_contains": "User-customize protection", "gap_label": ""},
+    {"num": 5, "text_contains": "system sync integration", "gap_label": ""}
+  ]
+}

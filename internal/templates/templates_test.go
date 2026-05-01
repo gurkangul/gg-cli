@@ -6,6 +6,7 @@ package templates
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -82,7 +83,7 @@ func TestTemplates_SubdirPlaceholder(t *testing.T) {
 
 func TestPreTaskDoneGoHook_DiagnosesGoTestFailure(t *testing.T) {
 	required := []string{
-		"go test -json ./...",
+		"$GO_TEST -json ./...",
 		"collecting JSON failure summary",
 		"[verify-json]",
 	}
@@ -90,6 +91,68 @@ func TestPreTaskDoneGoHook_DiagnosesGoTestFailure(t *testing.T) {
 		if !strings.Contains(PreTaskDoneGoHook, needle) {
 			t.Errorf("PreTaskDoneGoHook missing %q; failed hook output may end with opaque bare FAIL", needle)
 		}
+	}
+}
+
+func TestPreTaskDoneGoHook_ScrubsACBypassFromChildTests(t *testing.T) {
+	required := []string{
+		"GO_TEST=\"env -u GG_ALLOW_INCOMPLETE_AC go test\"",
+		"$GO_TEST ./...",
+		"$GO_TEST -json ./...",
+	}
+	for _, needle := range required {
+		if !strings.Contains(PreTaskDoneGoHook, needle) {
+			t.Errorf("PreTaskDoneGoHook missing %q; GG_ALLOW_INCOMPLETE_AC may leak into child go test processes", needle)
+		}
+	}
+}
+
+func TestPreTaskDoneGoHook_RuntimeScrubsACBypassFromGoTest(t *testing.T) {
+	root := t.TempDir()
+	hookDir := filepath.Join(root, ".gg", "hooks", "pre-task-done.d")
+	if err := os.MkdirAll(hookDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hookPath := filepath.Join(hookDir, "10-go-verify.sh")
+	body := strings.ReplaceAll(PreTaskDoneGoHook, "__GG_SUBDIR__", ".")
+	if err := os.WriteFile(hookPath, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	binDir := filepath.Join(root, "fakebin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "go.log")
+	fakeGo := `#!/bin/sh
+val="${GG_ALLOW_INCOMPLETE_AC:-<unset>}"
+printf '%s|%s\n' "$1" "$val" >> "` + logPath + `"
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(binDir, "go"), []byte(fakeGo), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("/bin/sh", hookPath)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(),
+		"PATH="+binDir+":"+os.Getenv("PATH"),
+		"GG_TASK_ID=TASK-370",
+		"GG_ALLOW_INCOMPLETE_AC=leak-probe",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("hook failed: %v\n%s", err, out)
+	}
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(logBytes)
+	if !strings.Contains(log, "test|<unset>") {
+		t.Fatalf("expected go test to run with GG_ALLOW_INCOMPLETE_AC scrubbed, log:\n%s", log)
+	}
+	if strings.Contains(log, "test|leak-probe") {
+		t.Fatalf("GG_ALLOW_INCOMPLETE_AC leaked into go test, log:\n%s", log)
 	}
 }
 

@@ -1,0 +1,44 @@
+Permanent solution for BUG-037. Five layers, ALL required:
+
+AC-1: Template versioning via content-sha256.
+  - For every template constant in internal/templates/: compute sha256(content).
+  - Embed marker as two header lines near the top of the deployed file.
+
+AC-2: Drift detection in gg doctor.
+  - New section in 'gg doctor' output: 'Hook templates'.
+  - For each known hook path: compare marker to current shipped template hash.
+
+AC-3: gg doctor --refresh-hooks flag.
+  - Backup deployed file to <path>.bak.<unix-timestamp>.
+  - Overwrite with current template body.
+
+AC-4: User-customize protection.
+  - Files without 'gg-template-sha256:' header are NEVER touched.
+  - Add --refresh-hooks-force to override.
+
+AC-5: gg system sync integration.
+  - Output ordering: install-task-hooks first, then drift report.
+  - Suggest action line at end.
+
+ENGINEERING NOTES:
+- Template marker is the SINGLE source of truth.
+- New file: cmd/doctor_refresh_hooks.go.
+
+UNIT TESTS:
+* marker write on fresh install
+* drift detection
+
+LIVE VERIFICATION (commit body):
+1. Build: go install ./cmd/gg
+2. Run 'gg doctor' on this repo.
+
+OUT OF SCOPE:
+- gg-templates registry CLI.
+- Auto-refresh in pre-commit / pre-task-done flows.
+
+FILE-SIZE CAP:
+- cmd/doctor_install.go MUST stay under 500 lines.
+
+REGRESSION PROOF (commit body):
+- Each AC line MUST cite file:line where AC is implemented.
+- Footer: 'fixes: BUG-037'.
