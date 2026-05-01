@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -22,13 +23,14 @@ func TestDrainResultReason(t *testing.T) {
 		{taskID: "TASK-001", reason: workerExitOK},
 		{taskID: "TASK-002", reason: workerExitContextDone},
 		{taskID: "TASK-003", reason: workerExitStalemaster},
+		{taskID: "TASK-005", reason: workerExitPaneGone},
 		{taskID: "TASK-004", reason: workerExitOK},
 	}
 
 	processed := 0
 	for _, res := range results {
 		switch res.reason {
-		case workerExitStalemaster, workerExitContextDone:
+		case workerExitStalemaster, workerExitContextDone, workerExitPaneGone:
 			// not counted
 		default:
 			sess.Completed = appendUniqID(sess.Completed, res.taskID)
@@ -42,10 +44,10 @@ func TestDrainResultReason(t *testing.T) {
 	if len(sess.Completed) != 2 {
 		t.Errorf("Completed = %v, want [TASK-001 TASK-004]", sess.Completed)
 	}
-	for _, id := range []string{"TASK-002", "TASK-003"} {
+	for _, id := range []string{"TASK-002", "TASK-003", "TASK-005"} {
 		for _, c := range sess.Completed {
 			if c == id {
-				t.Errorf("%s (cancelled/stale) should not be in Completed", id)
+				t.Errorf("%s (cancelled/stale/disappeared) should not be in Completed", id)
 			}
 		}
 	}
@@ -162,7 +164,7 @@ func TestWaitForWorkerContextCancel(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		reason = waitForWorker(ctx, term, rt, "TASK-001", surf, "test-master", 1)
+		reason = waitForWorker(ctx, term, rt, "TASK-001", surf, "test-master", 1, alwaysTaskPending)
 	}()
 
 	// Cancel the context; worker should exit quickly.
@@ -184,43 +186,93 @@ func TestWaitForWorkerContextCancel(t *testing.T) {
 	}
 }
 
-// TestWaitForWorkerAdvanceSentinelClosesPane verifies the task-done hook's
-// advance sentinel is consumed as the worker completion signal.
-func TestWaitForWorkerAdvanceSentinelClosesPane(t *testing.T) {
+// TestWaitForWorkerAdvanceSentinelMarksReady verifies a worker advance sentinel
+// is only a ready-for-review signal; it does not close the pane or complete the task.
+func TestWaitForWorkerAdvanceSentinelMarksReady(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	rt := t.TempDir()
 	term := terminal.NewFake()
 	surf, _ := term.NewSplit(ctx, terminal.SplitOpts{Dir: terminal.SplitHorizontal})
+	if err := spawn.RegisterPane(rt, spawn.WorkerPane{
+		SurfaceID: string(surf),
+		TaskID:    "TASK-042",
+		Agent:     "gsd",
+		State:     spawn.WorkerStateWorking,
+	}); err != nil {
+		t.Fatalf("RegisterPane: %v", err)
+	}
 
 	done := make(chan workerExitReason, 1)
 	go func() {
-		done <- waitForWorker(ctx, term, rt, "TASK-042", surf, "test-master", 1)
+		done <- waitForWorker(ctx, term, rt, "TASK-042", surf, "test-master", 1, alwaysTaskPending)
 	}()
 
-	sentinel := workerAdvanceSentinelPath(rt, "TASK-042")
-	if err := os.MkdirAll(filepath.Dir(sentinel), 0o700); err != nil {
-		t.Fatalf("mkdir sentinel dir: %v", err)
-	}
-	if err := os.WriteFile(sentinel, []byte("done\n"), 0o600); err != nil {
-		t.Fatalf("write sentinel: %v", err)
+	if err := spawn.WriteAdvanceSentinel(rt, "TASK-042", string(surf), "abc123"); err != nil {
+		t.Fatalf("WriteAdvanceSentinel: %v", err)
 	}
 
 	select {
 	case reason := <-done:
-		if reason != workerExitOK {
-			t.Fatalf("reason = %v, want workerExitOK", reason)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("waitForWorker did not return after advance sentinel")
+		t.Fatalf("waitForWorker returned early after advance sentinel: %v", reason)
+	case <-time.After(1500 * time.Millisecond):
 	}
 
-	if term.IsAlive(surf) {
-		t.Fatal("worker pane should be closed after advance sentinel")
+	if !term.IsAlive(surf) {
+		t.Fatal("worker pane should remain open after advance sentinel")
 	}
-	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+	if _, err := spawn.ReadAdvanceSentinel(rt, "TASK-042"); !errors.Is(err, spawn.ErrNoSentinel) {
 		t.Fatalf("sentinel should be consumed, stat err=%v", err)
+	}
+	panes, err := spawn.ListPanes(rt)
+	if err != nil {
+		t.Fatalf("ListPanes: %v", err)
+	}
+	if len(panes) != 1 {
+		t.Fatalf("panes = %v, want one pane", panes)
+	}
+	pane := panes[0]
+	if pane.State != spawn.WorkerStateReady {
+		t.Fatalf("pane state = %q, want %q", pane.State, spawn.WorkerStateReady)
+	}
+
+	cancel()
+	if reason := <-done; reason != workerExitContextDone {
+		t.Fatalf("reason after cancel = %v, want workerExitContextDone", reason)
+	}
+}
+
+// TestWaitForWorkerTaskDoneClosesPane verifies the queue only closes the worker
+// pane after the backing gg task is done.
+func TestWaitForWorkerTaskDoneClosesPane(t *testing.T) {
+	ctx := context.Background()
+	rt := t.TempDir()
+	term := terminal.NewFake()
+	surf, _ := term.NewSplit(ctx, terminal.SplitOpts{Dir: terminal.SplitHorizontal})
+
+	reason := waitForWorker(ctx, term, rt, "TASK-042", surf, "test-master", 1, alwaysTaskDone)
+	if reason != workerExitOK {
+		t.Fatalf("reason = %v, want workerExitOK", reason)
+	}
+	if term.IsAlive(surf) {
+		t.Fatal("worker pane should close after task is done")
+	}
+}
+
+// TestWaitForWorkerPaneGoneBeforeDone verifies a vanished pane is not counted as
+// completed unless the task is already done.
+func TestWaitForWorkerPaneGoneBeforeDone(t *testing.T) {
+	ctx := context.Background()
+	rt := t.TempDir()
+	term := terminal.NewFake()
+	surf, _ := term.NewSplit(ctx, terminal.SplitOpts{Dir: terminal.SplitHorizontal})
+	if err := term.Close(ctx, surf); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	reason := waitForWorker(ctx, term, rt, "TASK-042", surf, "test-master", 1, alwaysTaskPending)
+	if reason != workerExitPaneGone {
+		t.Fatalf("reason = %v, want workerExitPaneGone", reason)
 	}
 }
 
@@ -270,4 +322,12 @@ func TestBuildSkipSet(t *testing.T) {
 	if s["TASK-099"] {
 		t.Error("TASK-099 should not be in skip set")
 	}
+}
+
+func alwaysTaskPending(context.Context, string) bool {
+	return false
+}
+
+func alwaysTaskDone(context.Context, string) bool {
+	return true
 }

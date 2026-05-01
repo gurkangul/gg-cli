@@ -51,6 +51,7 @@ const (
 	workerExitOK          workerExitReason = iota
 	workerExitStalemaster                  // master heartbeat went stale
 	workerExitContextDone                  // ctx cancelled (Ctrl+C)
+	workerExitPaneGone                     // worker pane disappeared before task done
 )
 
 // workerResult carries the outcome of one worker slot.
@@ -111,6 +112,12 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 					// Context cancelled — don't count as completed or skipped.
 					sess.CurrentTask = ""
 					_ = spawn.WriteQueue(rt, sess)
+				case workerExitPaneGone:
+					fmt.Fprintf(cmd.ErrOrStderr(), "✗ Worker pane for %s disappeared before task was done — queue paused.\n", res.taskID)
+					sess.CurrentTask = ""
+					_ = spawn.WriteQueue(rt, sess)
+					wg.Wait()
+					return nil
 				default:
 					sess.Completed = appendUniqID(sess.Completed, res.taskID)
 					sess.CurrentTask = res.taskID
@@ -223,8 +230,9 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 		}
 
 		wg.Add(1)
+		isDone := taskDoneChecker(st)
 		go func(tid string, sid terminal.SurfaceID) {
-			reason := waitForWorker(ctx, term, rt, tid, sid, masterAgent, pollSecs)
+			reason := waitForWorker(ctx, term, rt, tid, sid, masterAgent, pollSecs, isDone)
 			results <- workerResult{taskID: tid, surfaceID: sid, reason: reason}
 		}(task.ID, surfaceID)
 	}
@@ -239,8 +247,8 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 		}
 		_ = spawn.RemovePane(rt, res.taskID)
 		switch res.reason {
-		case workerExitStalemaster, workerExitContextDone:
-			// Stale/cancelled workers are not counted as completed.
+		case workerExitStalemaster, workerExitContextDone, workerExitPaneGone:
+			// Stale/cancelled/disappeared workers are not counted as completed.
 		default:
 			sess.Completed = appendUniqID(sess.Completed, res.taskID)
 			processed++
@@ -291,14 +299,29 @@ func buildSkipSet(sess *spawn.QueueSession, active map[string]bool) map[string]b
 	return s
 }
 
-// waitForWorker polls until the worker completes, its pane closes, or a
-// stopping condition fires.
-func waitForWorker(ctx context.Context, term terminal.Terminal, rt, taskID string, surfaceID terminal.SurfaceID, masterAgent string, pollSecs int) workerExitReason {
+type taskDoneFunc func(context.Context, string) bool
+
+func taskDoneChecker(st *store.Client) taskDoneFunc {
+	return func(ctx context.Context, taskID string) bool {
+		task, err := st.GetTask(ctx, taskID)
+		if err != nil {
+			return false
+		}
+		return task.Status == "done"
+	}
+}
+
+// waitForWorker polls until the task is actually done, the pane disappears, or
+// a stopping condition fires. A worker advance sentinel means "ready for master
+// review"; it must not close the pane or count the task complete.
+func waitForWorker(ctx context.Context, term terminal.Terminal, rt, taskID string, surfaceID terminal.SurfaceID, masterAgent string, pollSecs int, isTaskDone taskDoneFunc) workerExitReason {
 	ticker := time.NewTicker(time.Duration(pollSecs) * time.Second)
 	defer ticker.Stop()
 
 	for {
-		if taskDoneByAdvanceSentinel(rt, taskID) {
+		consumeAdvanceSentinelAsReady(rt, taskID)
+
+		if isTaskDone(ctx, taskID) {
 			if err := term.Close(ctx, surfaceID); err != nil {
 				fmt.Fprintf(os.Stderr, "⚠ close worker pane %s for %s: %v\n", surfaceID, taskID, err)
 			}
@@ -320,7 +343,10 @@ func waitForWorker(ctx context.Context, term terminal.Terminal, rt, taskID strin
 			}
 
 			if !isPaneAlive(ctx, term, surfaceID) {
-				return workerExitOK
+				if isTaskDone(ctx, taskID) {
+					return workerExitOK
+				}
+				return workerExitPaneGone
 			}
 		}
 	}
@@ -339,17 +365,28 @@ func clearWorkerAdvanceSentinel(rt, taskID string) {
 	}
 }
 
-func taskDoneByAdvanceSentinel(rt, taskID string) bool {
+func consumeAdvanceSentinelAsReady(rt, taskID string) bool {
 	if taskID == "" {
 		return false
 	}
-	path := workerAdvanceSentinelPath(rt, taskID)
-	if err := os.Remove(path); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			fmt.Fprintf(os.Stderr, "⚠ consume advance sentinel for %s: %v\n", taskID, err)
-		}
+	s, err := spawn.ConsumeAdvanceSentinel(rt, taskID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ consume advance sentinel for %s: %v\n", taskID, err)
 		return false
 	}
+	if s == nil {
+		return false
+	}
+	commitRef := s.CommitSHA
+	if commitRef == "" {
+		commitRef = "(no sha)"
+	}
+	surfRef := s.SurfaceID
+	if surfRef == "" {
+		surfRef = "(unknown surface)"
+	}
+	fmt.Fprintf(os.Stderr, "⚡ worker ready: %s at %s on %s\n", taskID, commitRef, surfRef)
+	_ = spawn.UpdateWorkerState(rt, taskID, spawn.WorkerStateReady)
 	return true
 }
 
