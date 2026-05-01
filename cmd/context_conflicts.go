@@ -7,10 +7,10 @@ import (
 
 // contextConflict records a single narrative-vs-canonical state mismatch.
 type contextConflict struct {
-	ID           string `json:"id"`            // TASK-NNN or BUG-NNN
-	SourceType   string `json:"source_type"`   // "decision" | "note" | "rejection"
-	ClosureToken string `json:"closure_token"` // the token that triggered the conflict
-	LiveStatus   string `json:"live_status"`
+	ID            string `json:"id"`            // TASK-NNN or BUG-NNN
+	SourceType    string `json:"source_type"`   // "decision" | "note" | "rejection"
+	ClosureToken  string `json:"closure_token"` // the token that triggered the conflict
+	LiveStatus    string `json:"live_status"`
 	Authoritative string `json:"authoritative"` // always "live_status"
 }
 
@@ -24,15 +24,6 @@ var idExtractor = regexp.MustCompile(`\b(TASK|BUG)-\d+\b`)
 func nonTerminalTaskStatus(status string) bool {
 	switch status {
 	case "pending", "in_progress", "blocked", "ready_for_live":
-		return true
-	}
-	return false
-}
-
-// nonTerminalBugStatus returns true when a bug status is not terminal.
-func nonTerminalBugStatus(status string) bool {
-	switch status {
-	case "open", "fixing", "reopened":
 		return true
 	}
 	return false

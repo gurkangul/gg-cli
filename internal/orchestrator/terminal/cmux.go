@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -15,8 +13,6 @@ import (
 // It shells out to: cmux new-split, cmux send, cmux send-key,
 // cmux read-screen, cmux focus-pane, cmux close-surface.
 type cmuxTerminal struct {
-	mu     sync.Mutex
-	next   atomic.Int64
 	runner func(ctx context.Context, args ...string) ([]byte, error)
 }
 

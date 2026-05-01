@@ -15,9 +15,7 @@ const sandboxProbeTarget = "localhost:6334"
 
 // sandboxDialer is the TCP dial function used by runDoctorDiagnoseSandbox.
 // Replaced in tests to inject EPERM or connection-refused without real sockets.
-var sandboxDialer = func(network, addr string, timeout time.Duration) (net.Conn, error) {
-	return net.DialTimeout(network, addr, timeout)
-}
+var sandboxDialer = net.DialTimeout
 
 // runDoctorDiagnoseSandbox probes a known localhost TCP target and reports
 // whether the sandbox permits outbound TCP to localhost.

@@ -22,13 +22,13 @@ var validRecordIDRe = regexp.MustCompile(
 // When a task-scoped gate is bypassed (taskID non-empty), the TASK-NNN prefix
 // in the rationale is validated to match that task — a rationale written for a
 // different task is rejected so cross-task rationale recycling is caught.
-const BypassRationaleEnvVar = "GG_BYPASS_RATIONALE"
+const BypassRationaleEnvVar = "GG_BYPASS_RATIONALE" //nolint:gosec // Policy env var name, not a secret.
 
 // BypassRationaleRecordEnvVar is the integrity-grade companion to BypassRationaleEnvVar.
 // When set, it must contain a real gg record ID (UUID or "DEC-*" prefix).
 // Either env var satisfies the gate; the record form provides an auditable FK
 // into the brain so the rationale is permanently searchable via gg search.
-const BypassRationaleRecordEnvVar = "GG_BYPASS_RATIONALE_RECORD"
+const BypassRationaleRecordEnvVar = "GG_BYPASS_RATIONALE_RECORD" //nolint:gosec // Policy env var name, not a secret.
 
 // BypassRationaleResult is the outcome of CheckBypassRationale.
 type BypassRationaleResult struct {
@@ -65,8 +65,8 @@ func CheckBypassRationale(taskID string) (BypassRationaleResult, error) {
 	// Validate record ID format when provided — reject garbage strings early
 	// so callers can't accidentally use a free-form rationale via the wrong var.
 	if recordID != "" && !validRecordIDRe.MatchString(recordID) {
-		return BypassRationaleResult{}, fmt.Errorf(
-			"invalid %s value %q: must be a UUID (8-4-4-4-12 hex) or display ID (DEC-NNN).\n"+
+		return BypassRationaleResult{}, fmt.Errorf( //nolint:staticcheck // Multi-line CLI remediation text intentionally includes command punctuation.
+			"invalid %s value %q: must be a UUID (8-4-4-4-12 hex) or display ID (DEC-NNN)\n"+
 				"Use %s for free-form rationale text instead:\n\n"+
 				"  %s=%q gg task done %s ...",
 			BypassRationaleRecordEnvVar, recordID,
@@ -95,8 +95,8 @@ func CheckBypassRationale(taskID string) (BypassRationaleResult, error) {
 	// the prefix must match the task being closed. This catches the pattern
 	// where an agent re-uses an old rationale from a different task.
 	if taskID != "" && rationaleTaskID != "" && !strings.EqualFold(rationaleTaskID, taskID) {
-		return BypassRationaleResult{}, fmt.Errorf(
-			"bypass rationale task mismatch: %s=%q references %s but gate is for %s.\n"+
+		return BypassRationaleResult{}, fmt.Errorf( //nolint:staticcheck // Multi-line CLI remediation text intentionally includes command punctuation.
+			"bypass rationale task mismatch: %s=%q references %s but gate is for %s\n"+
 				"Update the rationale to reference the correct task:\n\n"+
 				"  %s=\"%s: <why>\" gg task done %s ...",
 			BypassRationaleEnvVar, raw, rationaleTaskID, taskID,

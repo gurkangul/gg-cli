@@ -98,11 +98,12 @@ func CheckContract(projectRoot string) []ContractCheckResult {
 			body = strings.TrimPrefix(body, "\n")
 			h := sha256.Sum256([]byte(body))
 			r.FoundVersion = fmt.Sprintf("%x", h)
-			if r.FoundVersion == want {
+			switch {
+			case r.FoundVersion == want:
 				r.Status = ContractOK
-			} else if isSuperset(body, templates.AgentContract) {
+			case isSuperset(body, templates.AgentContract):
 				r.Status = ContractEXTENDED
-			} else {
+			default:
 				r.Status = ContractSTALE
 			}
 		default:

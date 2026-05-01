@@ -39,11 +39,12 @@ func runSpawnStatus(_ *cobra.Command, _ []string) error {
 	return printJSON(buildSpawnStatusJSON(hb, alive, sess, workers), func() {
 		// --- Heartbeat ---
 		fmt.Println("── Master Liveness ──")
-		if errors.Is(hbErr, spawn.ErrNoHeartbeat) {
+		switch {
+		case errors.Is(hbErr, spawn.ErrNoHeartbeat):
 			fmt.Println("  No heartbeat recorded. Run 'gg spawn heartbeat' from the master session.")
-		} else if hbErr != nil {
+		case hbErr != nil:
 			fmt.Printf("  heartbeat error: %v\n", hbErr)
-		} else {
+		default:
 			age := time.Since(hb.UpdatedAt).Round(time.Second)
 			icon := "✓"
 			if !alive {
@@ -57,11 +58,12 @@ func runSpawnStatus(_ *cobra.Command, _ []string) error {
 
 		// --- Queue session ---
 		fmt.Println("── Queue Session ──")
-		if errors.Is(sessErr, spawn.ErrNoQueue) {
+		switch {
+		case errors.Is(sessErr, spawn.ErrNoQueue):
 			fmt.Println("  No active queue session. Run 'gg spawn queue start' to start one.")
-		} else if sessErr != nil {
+		case sessErr != nil:
 			fmt.Printf("  session error: %v\n", sessErr)
-		} else {
+		default:
 			dur := time.Since(sess.StartedAt).Round(time.Second)
 			pausedSuffix := ""
 			if sess.Paused {
@@ -76,11 +78,12 @@ func runSpawnStatus(_ *cobra.Command, _ []string) error {
 
 		// --- Workers ---
 		fmt.Println("── Active Workers ──")
-		if workersErr != nil {
+		switch {
+		case workersErr != nil:
 			fmt.Printf("  error: %v\n", workersErr)
-		} else if len(workers) == 0 {
+		case len(workers) == 0:
 			fmt.Println("  (none)")
-		} else {
+		default:
 			for _, w := range workers {
 				age := time.Since(w.SpawnedAt).Round(time.Second)
 				fmt.Printf("  ● %s  task: %s  pane: %s  age: %s\n",

@@ -100,11 +100,12 @@ func CheckMasterRole(projectRoot string) MasterRoleCheckResult {
 		body = strings.TrimPrefix(body, "\n")
 		h := sha256.Sum256([]byte(body))
 		r.FoundVersion = fmt.Sprintf("%x", h)
-		if r.FoundVersion == want {
+		switch {
+		case r.FoundVersion == want:
 			r.Status = MasterRoleOK
-		} else if isSuperset(body, templates.MasterRoleExtras) {
+		case isSuperset(body, templates.MasterRoleExtras):
 			r.Status = MasterRoleEXTENDED
-		} else {
+		default:
 			r.Status = MasterRoleSTALE
 		}
 	default:

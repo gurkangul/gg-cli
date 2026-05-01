@@ -37,15 +37,15 @@ var updateGolden = flag.Bool("update", false, "regenerate compact golden files")
 // the test fails loudly on any unintended version bump, and a reviewer can
 // see exactly which verbs changed and confirm their golden files were updated.
 var expectedRendererVersions = map[string]int{
-	"search":      compactRendererV_search,
-	"context":     compactRendererV_context,
-	"impact":      compactRendererV_impact,
-	"inbox":       compactRendererV_inbox,
-	"taskList":    compactRendererV_taskList,
-	"taskGet":     compactRendererV_taskGet,
-	"bugList":     compactRendererV_bugList,
-	"decideGaps":  compactRendererV_decideGaps,
-	"repeatWork":  compactRendererV_repeatWork,
+	"search":     compactRendererV_search,
+	"context":    compactRendererV_context,
+	"impact":     compactRendererV_impact,
+	"inbox":      compactRendererV_inbox,
+	"taskList":   compactRendererV_taskList,
+	"taskGet":    compactRendererV_taskGet,
+	"bugList":    compactRendererV_bugList,
+	"decideGaps": compactRendererV_decideGaps,
+	"repeatWork": compactRendererV_repeatWork,
 }
 
 // expectedRendererV_each holds the known-good version for each verb.
@@ -476,7 +476,9 @@ func TestAC3_TaskGetJSON_Unchanged(t *testing.T) {
 	_ = printJSON(&tk, func() {
 		renderTaskGetDefault(&buf, &tk)
 	})
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdout pipe: %v", err)
+	}
 	os.Stdout = origStdout
 
 	var jsonBuf bytes.Buffer

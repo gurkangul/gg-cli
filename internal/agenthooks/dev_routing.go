@@ -100,11 +100,12 @@ func CheckDevRouting(projectRoot string) DevRoutingCheckResult {
 		body = strings.TrimPrefix(body, "\n")
 		h := sha256.Sum256([]byte(body))
 		r.FoundVersion = fmt.Sprintf("%x", h)
-		if r.FoundVersion == want {
+		switch {
+		case r.FoundVersion == want:
 			r.Status = DevRoutingOK
-		} else if isSuperset(body, templates.DevRouting) {
+		case isSuperset(body, templates.DevRouting):
 			r.Status = DevRoutingEXTENDED
-		} else {
+		default:
 			r.Status = DevRoutingSTALE
 		}
 	default:

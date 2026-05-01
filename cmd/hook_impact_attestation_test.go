@@ -124,9 +124,9 @@ func buildImpactStub(lines map[string][]string) string {
 	sb.WriteString("# Fake gg stub for impact-attestation tests\n")
 	sb.WriteString("TARGET=\"${@: -1}\"\n") // last arg is the file path
 	for key, ls := range lines {
-		sb.WriteString(fmt.Sprintf("case \"$TARGET\" in *%s*)\n", key))
+		fmt.Fprintf(&sb, "case \"$TARGET\" in *%s*)\n", key)
 		for _, l := range ls {
-			sb.WriteString(fmt.Sprintf("  printf '%%s\\n' %q\n", l))
+			fmt.Fprintf(&sb, "  printf '%%s\\n' %q\n", l)
 		}
 		sb.WriteString("  ;;\nesac\n")
 	}
@@ -235,7 +235,7 @@ func TestImpactAttestation_ModeOff(t *testing.T) {
 func TestImpactAttestation_BypassAccepted(t *testing.T) {
 	files := []string{"a.go", "b.go", "c.go", "d.go"}
 	r := runImpactAttestationHook(t, files, "feat: four files no trailer",
-		nil, map[string]string{"GG_BYPASS_RATIONALE": "TASK-TEST: emergency hotfix"})
+		nil, map[string]string{"GG_BYPASS_RATIONALE": "TASK-TEST: emergency hotfix"}) //nolint:gosec // Test fixture env var, not a credential.
 	if r.ExitCode != 0 {
 		t.Errorf("expected exit 0 when GG_BYPASS_RATIONALE set, got %d\noutput:\n%s", r.ExitCode, r.Output)
 	}

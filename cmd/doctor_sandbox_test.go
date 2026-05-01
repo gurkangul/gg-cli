@@ -49,10 +49,14 @@ func TestDoctorCheckQdrant_PrintsSandboxHint(t *testing.T) {
 	cmd.SetContext(t.Context())
 	doctorCheckQdrant(cmd, cfg, report)
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stderr pipe: %v", err)
+	}
 	os.Stderr = origStderr
 	var buf bytes.Buffer
-	io.Copy(&buf, r) //nolint:errcheck
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("read stderr pipe: %v", err)
+	}
 
 	if report.problems != 1 {
 		t.Fatalf("expected 1 problem, got %d", report.problems)

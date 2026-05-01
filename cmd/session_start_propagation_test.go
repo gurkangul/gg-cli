@@ -181,7 +181,9 @@ func TestSessionStart_BMADDir_InstallsBlockAndEmitsNotice(t *testing.T) {
 		os.Stdout = devNull
 		t.Cleanup(func() {
 			os.Stdout = origStdout
-			devNull.Close()
+			if err := devNull.Close(); err != nil {
+				t.Fatalf("close dev null: %v", err)
+			}
 		})
 	}
 

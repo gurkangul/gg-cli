@@ -152,10 +152,8 @@ func TestCheckBypassRationale_RecordID_Validation(t *testing.T) {
 				if tc.errSubstr != "" && !strings.Contains(err.Error(), tc.errSubstr) {
 					t.Errorf("error %q does not contain %q", err.Error(), tc.errSubstr)
 				}
-			} else {
-				if err != nil {
-					t.Fatalf("expected success for record ID %q, got: %v", tc.recordID, err)
-				}
+			} else if err != nil {
+				t.Fatalf("expected success for record ID %q, got: %v", tc.recordID, err)
 			}
 		})
 	}

@@ -150,10 +150,14 @@ func TestHeartbeatWatch_SignalsOnAdvance(t *testing.T) {
 
 	pollAdvanceSentinels(ctx, rt, term)
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stderr pipe: %v", err)
+	}
 	os.Stderr = old
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("read stderr pipe: %v", err)
+	}
 
 	output := buf.String()
 	if !spawnContains(output, "worker ready") {
@@ -179,10 +183,14 @@ func TestHeartbeatWatch_SignalsOnAdvance(t *testing.T) {
 	r2, w2, _ := os.Pipe()
 	os.Stderr = w2
 	pollAdvanceSentinels(ctx, rt, term)
-	w2.Close()
+	if err := w2.Close(); err != nil {
+		t.Fatalf("close stderr pipe: %v", err)
+	}
 	os.Stderr = old
 	var buf2 bytes.Buffer
-	buf2.ReadFrom(r2)
+	if _, err := buf2.ReadFrom(r2); err != nil {
+		t.Fatalf("read stderr pipe: %v", err)
+	}
 	if spawnContains(buf2.String(), "worker ready") {
 		t.Error("ready signal should not fire twice — sentinel already consumed")
 	}
@@ -205,10 +213,14 @@ func TestPollAdvance_ReworkCycle_RedetectsAmend(t *testing.T) {
 		r, w, _ := os.Pipe()
 		os.Stderr = w
 		fn()
-		w.Close()
+		if err := w.Close(); err != nil {
+			t.Fatalf("close stderr pipe: %v", err)
+		}
 		os.Stderr = old
 		var buf bytes.Buffer
-		buf.ReadFrom(r)
+		if _, err := buf.ReadFrom(r); err != nil {
+			t.Fatalf("read stderr pipe: %v", err)
+		}
 		return buf.String()
 	}
 

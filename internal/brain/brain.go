@@ -72,7 +72,9 @@ func Append(ggDir, kind, id, author string, payload map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("brain: open %s: %w", kind, err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	return withFileLock(f, func() error {
 		if _, wErr := fmt.Fprintf(f, "%s\n", data); wErr != nil {
 			return fmt.Errorf("brain: write %s: %w", kind, wErr)
@@ -102,7 +104,9 @@ func ReadAllWithCount(ggDir, kind string) (entries []Entry, skipped int, err err
 		}
 		return nil, 0, fmt.Errorf("brain: open %s: %w", kind, openErr)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 1<<20) // 1 MiB max line — large detail fields

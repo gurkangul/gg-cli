@@ -169,7 +169,9 @@ func TestReadAll_LogsMalformedSkipCount(t *testing.T) {
 		t.Fatalf("open jsonl: %v", err)
 	}
 	_, _ = f.WriteString("{not valid json\n")
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("close jsonl: %v", err)
+	}
 
 	// Write a second valid entry after the malformed line.
 	if err := brain.Append(dir, "decisions", "uuid-valid-2", "agent", map[string]any{"text": "also valid"}); err != nil {
@@ -207,7 +209,9 @@ func TestReadAllWithCount_LegacyIDField(t *testing.T) {
 		t.Fatalf("open jsonl: %v", err)
 	}
 	_, _ = f.WriteString(`{"id":"aaaabbbb-0000-0000-0000-000000000002","payload":{"text":"legacy format"}}` + "\n")
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("close jsonl: %v", err)
+	}
 
 	entries, skipped, err := brain.ReadAllWithCount(dir, "decisions")
 	if err != nil {

@@ -25,7 +25,7 @@ func TestCountTokens(t *testing.T) {
 		{"newlines ignored", "a\nb\nc", 3},
 		{"tabs ignored", "a\tb\tc", 3},
 		{"turkish mixed", "tahmini kalibrasyon", 2},
-		{"unicode glyph", "✓ done", 2},  // "✓" = 1 token + "done" = 1 token
+		{"unicode glyph", "✓ done", 2}, // "✓" = 1 token + "done" = 1 token
 		{"all spaces", "   \t\n  ", 0},
 		{"id plus brackets", "[low]", 3}, // "[" + "low" + "]" = 3
 		{"sha", "a30c6b3", 1},            // alnum run
@@ -130,7 +130,11 @@ func loadCorpusGolden(t *testing.T) []string {
 	if err != nil {
 		t.Fatalf("loadCorpusGolden: %v", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Fatalf("close corpus golden: %v", err)
+		}
+	}()
 
 	var lines []string
 	sc := bufio.NewScanner(f)

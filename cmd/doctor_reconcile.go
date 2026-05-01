@@ -66,20 +66,22 @@ func runDoctorReconcile(cmd *cobra.Command) error {
 				fmt.Printf("  Retries: %d\n", e.Retries)
 			}
 
-			if collSuffix, isBrainKind := brainKindToCollection[e.Kind]; isBrainKind {
+			switch collSuffix, isBrainKind := brainKindToCollection[e.Kind]; {
+			case isBrainKind:
 				replayed, replayErr := replayBrainEntry(cmd.Context(), storeClient, ggDir, e, collSuffix)
-				if replayErr != nil {
+				switch {
+				case replayErr != nil:
 					fmt.Printf("  → replay failed: %v\n", replayErr)
 					_ = outbox.IncrementRetries(ggDir, e.ID)
 					needsAction = true
-				} else if replayed {
+				case replayed:
 					fmt.Printf("  ✓ replayed to Qdrant (collection: %s)\n", collSuffix)
 					_ = outbox.Delete(ggDir, e.ID)
-				} else {
+				default:
 					fmt.Printf("  ~ Qdrant unreachable — replay deferred\n")
 					needsAction = true
 				}
-			} else {
+			default:
 				switch e.Kind {
 				case "full-index", "changed-index":
 					var p struct {

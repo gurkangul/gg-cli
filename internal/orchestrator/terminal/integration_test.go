@@ -18,6 +18,7 @@ package terminal
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -170,7 +171,7 @@ func TestIntegration_Tmux_NewSplitSendClose(t *testing.T) {
 			if msg == "" {
 				msg = err.Error()
 			}
-			return nil, err
+			return nil, fmt.Errorf("tmux %v: %s: %w", enriched, msg, err)
 		}
 		return out, nil
 	})

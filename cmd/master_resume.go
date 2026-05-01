@@ -96,11 +96,12 @@ func runMasterResume(cmd *cobra.Command, _ []string) error {
 	var qdrantNote string
 	if depsErr == nil {
 		defer d.Close()
-		if d.qdrantDown {
+		switch {
+		case d.qdrantDown:
 			qdrantNote = "(Qdrant unreachable — tasks/inbox/decisions unavailable)"
-		} else if d.qdrantSlow {
+		case d.qdrantSlow:
 			qdrantNote = "(Qdrant slow — tasks/inbox/decisions unavailable)"
-		} else {
+		default:
 			ctx, cancel := withTimeout(cmd.Context())
 			defer cancel()
 
@@ -233,11 +234,12 @@ func printMasterResume(
 
 	// Active worker panes
 	sep("Active Worker Panes")
-	if workersErr != nil {
+	switch {
+	case workersErr != nil:
 		fmt.Fprintf(w, "  error: %v\n", workersErr)
-	} else if len(workers) == 0 {
+	case len(workers) == 0:
 		fmt.Fprintln(w, "  (none)")
-	} else {
+	default:
 		for _, wp := range workers {
 			age := time.Since(wp.SpawnedAt).Round(time.Second)
 			state := string(wp.State)

@@ -87,7 +87,9 @@ func runSystemSyncCapture(t *testing.T) string {
 
 	runErr := runSystemSync(systemSyncCmd, nil)
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdout pipe: %v", err)
+	}
 	os.Stdout = origStdout
 
 	var buf bytes.Buffer
@@ -315,7 +317,9 @@ func TestSystemSync_NoProjects_PrintsHelp(t *testing.T) {
 
 	runErr := runSystemSync(systemSyncCmd, nil)
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdout pipe: %v", err)
+	}
 	os.Stdout = origStdout
 
 	var buf bytes.Buffer

@@ -129,7 +129,11 @@ func runDoctorInstallSecretScanner() error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	defer func() {
+		if closeErr := tmpFile.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: close temp gitleaks archive: %v\n", closeErr)
+		}
+	}()
 
 	resp, err := client.Get(archiveURL) //nolint:noctx
 	if err != nil {
@@ -350,7 +354,9 @@ func runGitleaksScan(binPath string, history bool) error {
 		return fmt.Errorf("create report file: %w", err)
 	}
 	reportPath := reportFile.Name()
-	reportFile.Close()
+	if err := reportFile.Close(); err != nil {
+		return fmt.Errorf("close report file: %w", err)
+	}
 	defer os.Remove(reportPath)
 
 	args := []string{

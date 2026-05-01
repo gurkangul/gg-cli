@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 )
 
 // agentBusyExact are substrings matched anywhere in the tail content (case-insensitive).
@@ -163,16 +162,4 @@ func WakeAndSendWithFlock(ctx context.Context, term Terminal, id SurfaceID, text
 	}
 	defer release()
 	return WakeAndSend(ctx, term, id, text)
-}
-
-// lastNonBlankLine returns the last line in s that is not all whitespace,
-// or empty string if none exists.  Used in tests.
-func lastNonBlankLine(s string) string {
-	lines := strings.Split(s, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.IndexFunc(lines[i], func(r rune) bool { return !unicode.IsSpace(r) }) >= 0 {
-			return lines[i]
-		}
-	}
-	return ""
 }

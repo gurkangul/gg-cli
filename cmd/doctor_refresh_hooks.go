@@ -202,7 +202,7 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, mode)
+	return os.WriteFile(dst, data, mode) //nolint:gosec // dst is selected from managed hook specs, not user input.
 }
 
 func shortSHA(sha string) string {

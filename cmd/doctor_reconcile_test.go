@@ -59,7 +59,9 @@ func TestDoctorCheckBrainJSONL_MalformedWarning(t *testing.T) {
 		t.Fatalf("open jsonl: %v", err)
 	}
 	_, _ = f.WriteString("{bad json\n")
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("close jsonl: %v", err)
+	}
 
 	// Verify that ReadAllWithCount (used by doctorCheckBrainJSONL) detects the skip.
 	entries, skipped, readErr := brain.ReadAllWithCount(ggDir, "decisions")

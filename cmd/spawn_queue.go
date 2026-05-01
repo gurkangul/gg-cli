@@ -303,12 +303,13 @@ func runSpawnQueueCheck(_ *cobra.Command, _ []string) error {
 	}
 
 	sess, qErr := spawn.ReadQueue(rt)
-	if errors.Is(qErr, spawn.ErrNoQueue) {
+	switch {
+	case errors.Is(qErr, spawn.ErrNoQueue):
 		fmt.Println("⚠ Queue: no active session")
-	} else if qErr != nil {
+	case qErr != nil:
 		fmt.Printf("✗ Queue read error: %v\n", qErr)
 		ok = false
-	} else {
+	default:
 		pausedNote := ""
 		if sess.Paused {
 			pausedNote = " [PAUSED]"
