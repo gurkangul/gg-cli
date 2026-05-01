@@ -61,6 +61,17 @@ func runSpawnNudge(cmd *cobra.Command, args []string) error {
 	if err := terminal.WakeAndSendWithFlock(cmd.Context(), term, id, text, spawnDir); err != nil {
 		return fmt.Errorf("nudge %s: %w", id, err)
 	}
+	if rt, rtErr := spawnRuntimeDir(); rtErr == nil {
+		screenHash := ""
+		if term.Capabilities().CanReadScreen {
+			if content, readErr := term.ReadScreen(cmd.Context(), id); readErr == nil {
+				screenHash = spawn.ScreenHash(content)
+			}
+		}
+		if err := spawn.UpdateWorkerNudge(rt, string(id), text, screenHash); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ nudge metadata update failed for %s: %v\n", id, err)
+		}
+	}
 
 	fmt.Printf("✓ Prompt delivered to %s\n", id)
 	return nil

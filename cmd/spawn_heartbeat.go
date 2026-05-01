@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,8 @@ var spawnHeartbeatFromWorker bool
 var spawnHeartbeatWatch bool
 var spawnHeartbeatPollSecs int
 var spawnHeartbeatKeepaliveSecs int
+
+const workerNudgeStallAfter = 2 * time.Minute
 
 // defaultKeepaliveSecs returns the effective keepalive interval in seconds.
 // Priority: --keepalive flag > GG_PANE_KEEPALIVE_SEC env > 240.
@@ -157,6 +160,7 @@ type heartbeatWorkerSummary struct {
 	Total   int `json:"total"`
 	Working int `json:"working"`
 	Idle    int `json:"idle"`
+	Stalled int `json:"stalled"`
 	Missing int `json:"missing"`
 }
 
@@ -219,6 +223,18 @@ func checkWorkerPanesWithTerminal(ctx context.Context, rt string, term terminal.
 				continue
 			}
 			_ = spawn.UpdateWorkerHeartbeat(rt, pane.TaskID)
+			if workerStalledAfterNudge(pane, content) {
+				fresh, markErr := spawn.MarkWorkerStalled(rt, pane.TaskID)
+				if markErr != nil {
+					fmt.Fprintf(os.Stderr, "⚠ stalled worker mark for %s: %v\n", pane.TaskID, markErr)
+				}
+				if fresh {
+					fmt.Fprintf(os.Stderr, "⚠ worker stalled after nudge: %s on %s — no tool activity detected for %s; send a corrective gg spawn nudge\n",
+						pane.TaskID, pane.SurfaceID, time.Since(pane.LastNudgeAt).Round(time.Second))
+				}
+				summary.Stalled++
+				continue
+			}
 			if terminal.IsAgentIdle(content) {
 				_ = spawn.UpdateWorkerState(rt, pane.TaskID, spawn.WorkerStateIdle)
 				summary.Idle++
@@ -272,6 +288,45 @@ func pruneStalePane(rt string, pane spawn.WorkerPane) {
 	if lockPath != "" {
 		_ = os.Remove(lockPath)
 	}
+}
+
+func workerStalledAfterNudge(pane spawn.WorkerPane, content []byte) bool {
+	if pane.LastNudgeAt.IsZero() || time.Since(pane.LastNudgeAt) < workerNudgeStallAfter {
+		return false
+	}
+	text := string(content)
+	if hasWorkerExecutionAfterNudge(text, pane.LastNudgeText) {
+		return false
+	}
+	if pane.LastNudgeScreenHash != "" && spawn.ScreenHash(content) == pane.LastNudgeScreenHash {
+		return true
+	}
+	return strings.Contains(text, pane.LastNudgeText)
+}
+
+func hasWorkerExecutionAfterNudge(screen, nudge string) bool {
+	segment := screen
+	if nudge != "" {
+		if idx := strings.LastIndex(screen, nudge); idx >= 0 {
+			segment = screen[idx+len(nudge):]
+		}
+	}
+	markers := []string{
+		"Tool bash",
+		"Tool exec",
+		"Command exited",
+		"\n│  $ ",
+		"\n$ ",
+		"git commit",
+		"gg impact",
+		"gg task start",
+	}
+	for _, marker := range markers {
+		if strings.Contains(segment, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // pollAdvanceSentinels checks whether any registered worker pane has written an
@@ -342,6 +397,6 @@ func printWorkerCheckSummary(summary heartbeatWorkerSummary) {
 		fmt.Print("  workers: none\n")
 		return
 	}
-	fmt.Printf("  workers checked: %d working, %d idle, %d missing (total %d)\n",
-		summary.Working, summary.Idle, summary.Missing, summary.Total)
+	fmt.Printf("  workers checked: %d working, %d idle, %d stalled, %d missing (total %d)\n",
+		summary.Working, summary.Idle, summary.Stalled, summary.Missing, summary.Total)
 }

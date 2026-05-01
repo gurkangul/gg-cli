@@ -17,7 +17,7 @@ var taskAckCmd = &cobra.Command{
 	Long: `Record the worker's acceptance-criteria paraphrase before implementation.
 
 The ACK is stored as a task-linked decision, the task moves to in_progress, and
-the paraphrase is sent to claude-code so master can reply ACK-OK or ACK-FIX.`,
+the paraphrase is sent to the active master target(s) so master can reply ACK-OK or ACK-FIX.`,
 	Args: cobra.ExactArgs(2),
 	RunE: runTaskAck,
 }
@@ -92,19 +92,22 @@ func runTaskAck(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("set task in_progress: %w", err)
 		}
 	}
-	msg := store.Message{
-		FromRole: author,
-		ToRole:   "claude-code",
-		Content:  text,
-		Audience: "agents",
-		TaskID:   taskID,
-	}
-	if err := d.store.SendMessage(ctx, msg); err != nil {
-		return fmt.Errorf("send ack to master: %w", err)
+	targets := masterMessageTargets()
+	for _, target := range targets {
+		msg := store.Message{
+			FromRole: author,
+			ToRole:   target,
+			Content:  text,
+			Audience: "agents",
+			TaskID:   taskID,
+		}
+		if err := d.store.SendMessage(ctx, msg); err != nil {
+			return fmt.Errorf("send ack to %s: %w", target, err)
+		}
 	}
 
 	return printJSON(dec, func() {
-		fmt.Printf("✓ %s ACK recorded and sent to claude-code\n", taskID)
+		fmt.Printf("✓ %s ACK recorded and sent to %s\n", taskID, strings.Join(targets, ","))
 		fmt.Println("  Wait for ACK-OK or ACK-FIX before coding; after 5 minutes, proceed only with ACK-IMPLICIT in the commit body.")
 	})
 }

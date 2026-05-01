@@ -89,6 +89,92 @@ func TestRecordHeartbeatWorkerModeSkipsPaneCheck(t *testing.T) {
 	}
 }
 
+func TestCheckWorkerPanesMarksPaneStalledAfterNudgeWithoutToolActivity(t *testing.T) {
+	ctx := context.Background()
+	rt := t.TempDir()
+	term := terminal.NewFake()
+
+	id, err := term.NewSplit(ctx, terminal.SplitOpts{})
+	if err != nil {
+		t.Fatalf("NewSplit: %v", err)
+	}
+	nudge := "run gg task start TASK-367"
+	screen := []byte("You: " + nudge + "\nGSD: Proceeding now.\n")
+	term.SetScreen(id, screen)
+	if err := spawn.RegisterPane(rt, spawn.WorkerPane{
+		SurfaceID:           string(id),
+		TaskID:              "TASK-367",
+		Agent:               "gsd",
+		SpawnedAt:           time.Now().Add(-10 * time.Minute).UTC(),
+		State:               spawn.WorkerStateWorking,
+		LastNudgeAt:         time.Now().Add(-3 * time.Minute).UTC(),
+		LastNudgeText:       nudge,
+		LastNudgeScreenHash: spawn.ScreenHash(screen),
+	}); err != nil {
+		t.Fatalf("RegisterPane: %v", err)
+	}
+
+	panes, err := spawn.ListPanes(rt)
+	if err != nil {
+		t.Fatalf("ListPanes: %v", err)
+	}
+	summary, err := checkWorkerPanesWithTerminal(ctx, rt, term, panes)
+	if err != nil {
+		t.Fatalf("checkWorkerPanesWithTerminal: %v", err)
+	}
+	if summary.Stalled != 1 || summary.Working != 0 {
+		t.Fatalf("summary = %+v, want stalled=1 working=0", summary)
+	}
+
+	panes, err = spawn.ListPanes(rt)
+	if err != nil {
+		t.Fatalf("ListPanes after: %v", err)
+	}
+	if panes[0].State != spawn.WorkerStateWaiting {
+		t.Fatalf("state = %q, want waiting-on-master", panes[0].State)
+	}
+	if panes[0].StalledNotifiedAt.IsZero() {
+		t.Fatal("StalledNotifiedAt should be set")
+	}
+}
+
+func TestCheckWorkerPanesDoesNotMarkStalledWhenToolActivityAppears(t *testing.T) {
+	ctx := context.Background()
+	rt := t.TempDir()
+	term := terminal.NewFake()
+
+	id, err := term.NewSplit(ctx, terminal.SplitOpts{})
+	if err != nil {
+		t.Fatalf("NewSplit: %v", err)
+	}
+	nudge := "run gg task start TASK-367"
+	screen := []byte("You: " + nudge + "\nTool bash running\n")
+	term.SetScreen(id, screen)
+	if err := spawn.RegisterPane(rt, spawn.WorkerPane{
+		SurfaceID:     string(id),
+		TaskID:        "TASK-367",
+		Agent:         "gsd",
+		SpawnedAt:     time.Now().Add(-10 * time.Minute).UTC(),
+		State:         spawn.WorkerStateWorking,
+		LastNudgeAt:   time.Now().Add(-3 * time.Minute).UTC(),
+		LastNudgeText: nudge,
+	}); err != nil {
+		t.Fatalf("RegisterPane: %v", err)
+	}
+
+	panes, err := spawn.ListPanes(rt)
+	if err != nil {
+		t.Fatalf("ListPanes: %v", err)
+	}
+	summary, err := checkWorkerPanesWithTerminal(ctx, rt, term, panes)
+	if err != nil {
+		t.Fatalf("checkWorkerPanesWithTerminal: %v", err)
+	}
+	if summary.Stalled != 0 || summary.Working != 1 {
+		t.Fatalf("summary = %+v, want stalled=0 working=1", summary)
+	}
+}
+
 func registerTestPane(t *testing.T, rt string, id terminal.SurfaceID, taskID string) {
 	t.Helper()
 	if err := spawn.RegisterPane(rt, spawn.WorkerPane{

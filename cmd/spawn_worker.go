@@ -121,9 +121,11 @@ func buildWorkerEnv(taskID string, extra []string) []string {
 	var env []string
 	if v := os.Getenv("GG_AGENT"); v != "" {
 		env = append(env, "GG_AGENT="+v)
+		env = append(env, "GG_MASTER_AGENT="+v)
 	}
 	if v := os.Getenv("GG_ROLE"); v != "" {
 		env = append(env, "GG_ROLE="+v)
+		env = append(env, "GG_MASTER_ROLE="+v)
 	}
 	if taskID != "" {
 		env = append(env, "GG_TASK_ID="+taskID)
@@ -159,8 +161,10 @@ func buildWorkerPrompt(taskID string) string {
 			"Note any dependents whose tests must still pass after your change. "+
 			"Cite this in your commit body under an `Impact-Reviewed:` trailer line "+
 			"(e.g. `Impact-Reviewed: cmd/spawn_worker.go — 2 callers, tests green`). "+
-			"Signal completion via: gg tell claude-code \"%s commit <sha>, tests green\"",
-		taskID, taskID, taskID, taskID,
+			"After committing, signal readiness with `gg spawn advance --task %s --commit $(git rev-parse HEAD)` "+
+			"and send completion via: gg tell %s \"%s commit <sha>, tests green\" --from developer --audience agents. "+
+			"Do not stop at prose confirmation; run the next required shell command.",
+		taskID, taskID, taskID, taskID, masterMessageTargetCSV(), taskID,
 	)
 }
 

@@ -27,13 +27,15 @@ func TestSpawnAgentDefault_EnvOverride(t *testing.T) {
 // TestBuildWorkerEnv verifies that task ID and agent are always exported.
 func TestBuildWorkerEnv_TaskID(t *testing.T) {
 	t.Setenv("GG_AGENT", "claude-code")
-	t.Setenv("GG_ROLE", "developer")
+	t.Setenv("GG_ROLE", "master")
 
 	env := buildWorkerEnv("TASK-042", nil)
 
 	hasAgent := false
 	hasTask := false
 	hasRole := false
+	hasMasterAgent := false
+	hasMasterRole := false
 	for _, e := range env {
 		if e == "GG_AGENT=claude-code" {
 			hasAgent = true
@@ -41,8 +43,14 @@ func TestBuildWorkerEnv_TaskID(t *testing.T) {
 		if e == "GG_TASK_ID=TASK-042" {
 			hasTask = true
 		}
-		if e == "GG_ROLE=developer" {
+		if e == "GG_ROLE=master" {
 			hasRole = true
+		}
+		if e == "GG_MASTER_AGENT=claude-code" {
+			hasMasterAgent = true
+		}
+		if e == "GG_MASTER_ROLE=master" {
+			hasMasterRole = true
 		}
 	}
 	if !hasAgent {
@@ -53,6 +61,12 @@ func TestBuildWorkerEnv_TaskID(t *testing.T) {
 	}
 	if !hasRole {
 		t.Error("env missing GG_ROLE")
+	}
+	if !hasMasterAgent {
+		t.Error("env missing GG_MASTER_AGENT")
+	}
+	if !hasMasterRole {
+		t.Error("env missing GG_MASTER_ROLE")
 	}
 }
 
@@ -213,6 +227,37 @@ func TestSpawnWorker_PromptContainsAckProtocol(t *testing.T) {
 		if !spawnContains(prompt, want) {
 			t.Errorf("buildWorkerPrompt: missing %q\ngot: %s", want, prompt)
 		}
+	}
+}
+
+func TestSpawnWorker_PromptRoutesCompletionToActiveCodexMaster(t *testing.T) {
+	t.Setenv("GG_ROLE", "master")
+	t.Setenv("GG_AGENT", "codex")
+	t.Setenv("GG_MASTER_ROLE", "")
+	t.Setenv("GG_MASTER_AGENT", "")
+
+	prompt := buildWorkerPrompt("TASK-367")
+	for _, want := range []string{
+		"gg tell master,codex,claude-code",
+		"gg spawn advance --task TASK-367",
+		"Do not stop at prose confirmation",
+	} {
+		if !spawnContains(prompt, want) {
+			t.Errorf("buildWorkerPrompt: missing %q\ngot: %s", want, prompt)
+		}
+	}
+}
+
+func TestMasterMessageTargetsPreferSpawnedMasterEnv(t *testing.T) {
+	t.Setenv("GG_MASTER_ROLE", "master")
+	t.Setenv("GG_MASTER_AGENT", "codex")
+	t.Setenv("GG_ROLE", "developer")
+	t.Setenv("GG_AGENT", "claude-code")
+
+	got := masterMessageTargetCSV()
+	want := "master,codex,claude-code"
+	if got != want {
+		t.Fatalf("masterMessageTargetCSV() = %q, want %q", got, want)
 	}
 }
 
