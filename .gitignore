@@ -21,6 +21,7 @@ secrets.json
 .gsd/auto.lock
 
 # BMAD framework files — per-user install artifacts (run `bmad install` to recreate)
+.agents/
 _bmad/
 _bmad-output/
 

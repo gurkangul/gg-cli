@@ -4,7 +4,12 @@ set -eu
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 template="$repo_root/internal/templates/pre-task-done-go.sh"
 
-if ! grep -q "go test -json ./..." "$template"; then
+if ! grep -q "GO_TEST=.*go test" "$template"; then
+  echo "BUG-024 repro: pre-task-done Go hook no longer routes go test through a command variable" >&2
+  exit 1
+fi
+
+if ! grep -q '\$GO_TEST -json ./...' "$template"; then
   echo "BUG-024 repro: pre-task-done Go hook lacks go test -json diagnostic fallback" >&2
   exit 1
 fi

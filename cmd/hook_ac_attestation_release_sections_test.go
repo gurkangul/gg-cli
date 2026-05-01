@@ -17,6 +17,9 @@ AC-2: Drift detection in gg doctor.
   - For each known hook path: compare marker to current shipped template hash.
 
 AC-3: gg doctor --refresh-hooks flag.
+  1. Backup deployed file to <path>.bak.<unix-timestamp>.
+  2. Overwrite with current template body.
+  3. Print the refreshed path and backup path.
   - Backup deployed file to <path>.bak.<unix-timestamp>.
   - Overwrite with current template body.
 

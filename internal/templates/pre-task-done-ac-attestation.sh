@@ -171,6 +171,8 @@ for idx, line in enumerate(lines):
 for idx, line in enumerate(lines):
     if idx in skip_section_lines:
         continue
+    if line.startswith((' ', '\t')):
+        continue
     m = re.match(r'^\s*(\d+)[.):\s]\s+(.+)', line)
     if m:
         add(m.group(2).strip())
