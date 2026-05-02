@@ -276,6 +276,57 @@ exit 1`)
 	}
 }
 
+// TestProbeSurface_WrongFocusedSurface verifies cmux's false-positive shape:
+// identify exits 0 but returns the currently focused surface instead of the
+// requested missing one.
+func TestProbeSurface_WrongFocusedSurface(t *testing.T) {
+	stub := buildStubCmux(t, `#!/bin/sh
+cat <<'JSON'
+{
+  "focused": {
+    "surface_ref": "surface:76",
+    "surface_type": "terminal"
+  }
+}
+JSON
+exit 0`)
+
+	origPATH := os.Getenv("PATH")
+	t.Setenv("PATH", stub+":"+origPATH)
+
+	dead, err := ProbeSurface(context.Background(), "surface:88")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !dead {
+		t.Fatal("expected wrong surface identity to be treated as dead")
+	}
+}
+
+func TestProbeSurface_LiveRequestedSurface(t *testing.T) {
+	stub := buildStubCmux(t, `#!/bin/sh
+cat <<'JSON'
+{
+  "focused": {
+    "surface_ref": "surface:88",
+    "surface_type": "terminal"
+  }
+}
+JSON
+exit 0`)
+
+	origPATH := os.Getenv("PATH")
+	t.Setenv("PATH", stub+":"+origPATH)
+
+	dead, err := ProbeSurface(context.Background(), "surface:88")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dead {
+		t.Fatal("expected requested surface identity to be live")
+	}
+}
+
 // TestProbeSurface_TransientError verifies ProbeSurface returns dead=false
 // when the cmux binary returns a non-dead-message error (e.g. timeout, unknown
 // internal error).

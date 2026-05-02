@@ -120,8 +120,10 @@ func (c *cmuxTerminal) execRun(ctx context.Context, args ...string) ([]byte, err
 const surfaceDeadMsg = "Surface is not a terminal"
 
 // ProbeSurface runs "cmux identify --surface <id> --no-caller" with a 5-second
-// deadline. It returns dead=true only when cmux responds with the exact
-// surfaceDeadMsg — meaning the surface definitively does not exist.
+// deadline. It returns dead=true when cmux reports the surface is not a
+// terminal, or when cmux returns identity for a different surface. Some cmux
+// builds fall back to the focused surface instead of failing on an unknown
+// --surface; treating that as live leaves stale worker panes registered.
 //
 // Timeouts and other transient errors return dead=false so callers do not
 // prune live panes due to a slow cmux response.
@@ -139,8 +141,17 @@ func ProbeSurface(ctx context.Context, id SurfaceID) (dead bool, err error) {
 	if combined == "" {
 		combined = strings.TrimSpace(stderr.String())
 	}
-	if combined == surfaceDeadMsg {
+	if strings.Contains(combined, surfaceDeadMsg) {
 		return true, nil
+	}
+	if runErr == nil {
+		requested := string(id)
+		switch {
+		case strings.Contains(combined, requested):
+			return false, nil
+		case strings.Contains(combined, "surface:"):
+			return true, nil
+		}
 	}
 	return false, runErr
 }
