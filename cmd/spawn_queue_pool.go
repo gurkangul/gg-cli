@@ -448,7 +448,7 @@ func spawnWorkerForTask(ctx context.Context, term terminal.Terminal, rt, agentCm
 		return "", err
 	}
 
-	bootstrapAgentInPane(ctx, term, surfaceID, agentCmd, taskID, os.Stderr)
+	bootstrapAgentInPane(ctx, term, surfaceID, buildAgentLaunchCommand(agentCmd), taskID, os.Stderr)
 
 	_ = spawn.RegisterPane(rt, spawn.WorkerPane{
 		SurfaceID:     string(surfaceID),

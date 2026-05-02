@@ -86,7 +86,7 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open worker pane: %w", err)
 	}
 
-	bootstrapAgentInPane(ctx, term, surfaceID, agentCmd, taskID, cmd.ErrOrStderr())
+	bootstrapAgentInPane(ctx, term, surfaceID, buildAgentLaunchCommand(agentCmd), taskID, cmd.ErrOrStderr())
 
 	// Register the worker pane in panes.json.
 	rt, rtErr := spawnRuntimeDir()
@@ -142,6 +142,14 @@ func buildWorkerEnv(taskID string, extra []string) []string {
 // retained for tests / debugging flows that spawn a raw shell.
 func buildWorkerStartup(taskID string) string {
 	return fmt.Sprintf("gg task get %s && echo 'GG_TASK_ID=%s ready'", taskID, taskID)
+}
+
+func buildAgentLaunchCommand(agentCmd string) string {
+	root, err := config.FindRoot()
+	if err != nil {
+		return "exec " + agentCmd
+	}
+	return "cd " + shellQuote(root) + " && exec " + agentCmd
 }
 
 // buildWorkerPrompt returns the chat prompt to send to a running agent REPL.

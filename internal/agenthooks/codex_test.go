@@ -103,3 +103,16 @@ func TestCodex_Install_ReplacesDriftedBlock(t *testing.T) {
 		t.Errorf("expected 1 end marker, got %d", c)
 	}
 }
+
+func TestCodex_ManagedBody_AllowsGSDExecutionWorker(t *testing.T) {
+	body := codexManagedBody()
+	for _, want := range []string{
+		"GSD itself is **not banned**",
+		"developer execution worker",
+		"only on GSD-owned planning/tracker state becoming canonical",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("codex managed body missing %q", want)
+		}
+	}
+}

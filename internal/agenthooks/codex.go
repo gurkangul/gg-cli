@@ -42,6 +42,10 @@ func codexManagedBody() string {
 	sb.WriteString("only see what's in gg. Without a gg mirror, GSD work is invisible to the\n")
 	sb.WriteString("rest of the team.\n")
 	sb.WriteString("\n")
+	sb.WriteString("GSD itself is **not banned**. It is allowed as a developer execution worker\n")
+	sb.WriteString("when the work is created, coordinated, reviewed, and closed in gg. The ban is\n")
+	sb.WriteString("only on GSD-owned planning/tracker state becoming canonical.\n")
+	sb.WriteString("\n")
 	sb.WriteString("Rules when GSD is in use:\n")
 	sb.WriteString("\n")
 	sb.WriteString("- **Every GSD task (T-level, not milestone or slice) MUST have a gg task\n")
@@ -160,4 +164,3 @@ func (c *codexInstaller) Install(projectRoot string, opts Options) (Result, erro
 	}
 	return res, nil
 }
-

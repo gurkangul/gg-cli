@@ -29,4 +29,3 @@ gg task ack TASK-ID "AC-1: ...; AC-2: ..." [flags]
 ### SEE ALSO
 
 * [gg task](gg_task.md)	 - Manage tasks
-

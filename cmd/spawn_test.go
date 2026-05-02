@@ -119,6 +119,20 @@ func TestBuildWorkerStartup(t *testing.T) {
 	}
 }
 
+func TestBuildAgentLaunchCommand_CDsToProjectRoot(t *testing.T) {
+	setupGGDir(t)
+
+	launch := buildAgentLaunchCommand("gsd")
+	for _, want := range []string{
+		"cd '",
+		"exec gsd",
+	} {
+		if !spawnContains(launch, want) {
+			t.Fatalf("launch command missing %q: %s", want, launch)
+		}
+	}
+}
+
 // TestAppendUniqID verifies deduplication behaviour.
 func TestAppendUniqID(t *testing.T) {
 	s := []string{"TASK-001", "TASK-002"}

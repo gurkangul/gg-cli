@@ -27,7 +27,10 @@ Typical flow:
   # Master terminal — start heartbeat loop and queue runner
   export GG_AGENT=claude-code
   gg spawn heartbeat          # initial heartbeat
-  gg spawn queue --agent claude  # drains pending tasks
+  gg spawn queue start --agent gsd  # drains pending tasks
+
+  # Open an interactive GSD pane directly (no queue required)
+  gg gsd open
 
   # Worker terminals are opened automatically by ` + "`" + `gg spawn queue` + "`" + `.
   # Workers call ` + "`" + `gg spawn heartbeat` + "`" + ` via the master-guard hook to

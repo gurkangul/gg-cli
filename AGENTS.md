@@ -11,11 +11,13 @@ shared brain. Every agent (Claude Code, Codex, Cursor, Aider, …) reads
 the same decisions, tasks, rejections, discussions, notes, and code graph
 through gg — no agent starts from a blank slate.
 
-> **Note on GSD:** GSD is a workflow/skill (`mcp__gsd-workflow__*` MCP tools,
-> the `bmad-quick-dev` style, `.gsd/` state), NOT a separate agent. When this
-> repo's user says "route it to GSD" they mean "do it yourself, you are the
-> GSD implementer in this session." Never spawn a nested GSD session against
-> your own project dir — execute directly via Edit/Write/Bash.
+> **Note on GSD:** GSD may be used as a developer execution worker (for
+> example via `gg gsd open` or `gg spawn worker --agent gsd`) while gg remains
+> the canonical tracker. What is forbidden is using GSD's own planner/tracker
+> state as the source of truth: do not create milestones/tasks with
+> `gsd_plan_*` or treat `.gsd/gsd.db` as canonical. When this repo's user says
+> "route it to GSD", run GSD as the implementation worker under gg task,
+> decision, and broadcast control.
 
 **Who it's for:** Developers running 2+ AI agents in parallel terminals who
 keep hitting the same three pains:
@@ -501,6 +503,10 @@ GSD is a planning workflow with its own SQLite state in `.gsd/gsd.db`.
 Other agents (Claude Code, Cursor, Aider) **cannot read GSD state** — they
 only see what's in gg. Without a gg mirror, GSD work is invisible to the
 rest of the team.
+
+GSD itself is **not banned**. It is allowed as a developer execution worker
+when the work is created, coordinated, reviewed, and closed in gg. The ban is
+only on GSD-owned planning/tracker state becoming canonical.
 
 Rules when GSD is in use:
 

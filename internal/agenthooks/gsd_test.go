@@ -122,6 +122,8 @@ func TestGSD_BridgeBlock_ContainsAuthorityPreamble(t *testing.T) {
 		{"AUTHORITY:", "AUTHORITY: preamble opener"},
 		{"gg-cli is canonical", "gg-cli is canonical clause"},
 		{"gg mandatory contract", "gg mandatory contract clause"},
+		{"GSD is allowed as the developer execution environment", "GSD execution allowed clause"},
+		{"GSD-owned planning/tracker state replace gg", "planner-state ban scope"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(body, c.substr) {
