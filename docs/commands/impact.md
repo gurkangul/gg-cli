@@ -8,7 +8,7 @@ gg impact <file> [flags]
 
 ## What it reports
 
-1. **Downstream dependents** — files that directly `import` the given file (1-hop traversal from the code graph). Requires Memgraph and `gg index` to have been run.
+1. **Downstream dependents** — files that `import` the given file. By default this is a 1-hop traversal from the code graph; pass `--hops N` or `--depth N` for bounded multi-hop traversal. Requires Memgraph and `gg index` to have been run.
 2. **Exported symbols** — all `Symbol` nodes for the file in the graph (functions, types, constants, variables with public visibility or boundary-crossing relevance).
 3. **Related knowledge** — top-N decisions, tasks, and rejections from the Qdrant knowledge base, retrieved via semantic similarity to the file's basename and path.
 
@@ -17,6 +17,8 @@ gg impact <file> [flags]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--kb-limit N` | `5` | Max results per knowledge-base collection (decisions, tasks, rejections) |
+| `--hops N` | `1` | Traverse downstream dependents up to N hops in file mode |
+| `--depth N` | `1` | Alias for `--hops` |
 
 ## Exit codes
 
@@ -30,22 +32,26 @@ gg impact <file> [flags]
 
 ## Hop depth
 
-The current implementation uses a **1-hop direct-import** query:
+The default implementation uses a **1-hop direct-import** query:
 
 ```cypher
 MATCH (d:File {project_id: $pid})-[:IMPORTS]->(f:File {path: $path, project_id: $pid})
 RETURN d.path AS dep
 ```
 
-Multi-hop traversal (`--hops N`) is planned for a future release. For now, to see 2-hop impact manually:
+Use `--hops N` (or `--depth N`) for bounded downstream traversal:
 
 ```sh
-# Find direct dependents of foo.go
-gg impact internal/foo.go
-
-# Then run impact on each dependent
-gg impact internal/bar.go   # bar.go imports foo.go
+gg impact internal/foo.go --hops 3
+gg impact internal/foo.go --depth 3 --json
 ```
+
+Multi-hop output groups impacted files by hop, deduplicates cycles, and caps
+traversal at an implementation maximum so accidental huge graph walks stay
+bounded. JSON output includes `target_kind`, `hop_depth`, per-file
+`dependent_hops`, and `traversal` metadata with cycle/truncation signals.
+
+Integration test: run `GG_INTEGRATION_TEST=1 go test ./internal/graph -run TestDependentsOfDepthIntegration -count=1` with Memgraph available at `bolt://localhost:7687` (or set `GG_TEST_MEMGRAPH_URI`).
 
 ## Related knowledge selection
 

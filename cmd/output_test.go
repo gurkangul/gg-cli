@@ -614,7 +614,7 @@ func TestCompactSizeReduction_ContextBundle(t *testing.T) {
 		discussions: []store.Discussion{
 			{ID: "DISC-008", Topic: "Should we adopt FIDO2 / WebAuthn alongside password auth?", Status: "open",
 				Detail: "Security team flagged passwords-only as insufficient for admin accounts. WebAuthn would add phishing resistance but complicates account recovery flows.",
-				Turns: []store.Turn{{By: "sec-lead"}, {By: "platform"}, {By: "product"}}},
+				Turns:  []store.Turn{{By: "sec-lead"}, {By: "platform"}, {By: "product"}}},
 		},
 		notes: []store.Note{
 			{Text: "Observed a 15% spike in refresh-token requests between 09:00-10:00 UTC — investigate whether a client is aggressively pre-refreshing.",
@@ -644,8 +644,14 @@ func TestCompactSizeReduction_ContextBundle(t *testing.T) {
 func TestRenderImpactCompact_Structure(t *testing.T) {
 	r := impactResult{
 		File:       "/abs/path/src/auth.go",
+		TargetKind: "file",
+		HopDepth:   1,
 		Dependents: []string{"/abs/path/src/api.go"},
-		Symbols:    []map[string]any{{"name": "HandleLogin", "kind": "func"}},
+		DependentHops: []impactDependentHop{
+			{Path: "/abs/path/src/api.go", Hop: 1},
+		},
+		Traversal: impactTraversalMetadata{RequestedDepth: 1, MaxDepth: 1},
+		Symbols:   []map[string]any{{"name": "HandleLogin", "kind": "func"}},
 		Decisions: []store.Decision{
 			{Text: "use bcrypt", CreatedAt: "2026-04-10T12:00:00Z", TaskID: "TASK-007", Reason: "must not appear"},
 		},

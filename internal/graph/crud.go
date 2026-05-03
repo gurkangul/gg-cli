@@ -211,7 +211,7 @@ func (c *Client) InvalidateFile(ctx context.Context, filePath string) error {
 // invalidation set during --changed runs.
 func (c *Client) DependentsOf(ctx context.Context, filePath string) ([]string, error) {
 	result, cleanup, err := c.runQuery(ctx,
-		"MATCH (d:File {project_id: $pid})-[:IMPORTS]->(f:File {path: $path, project_id: $pid}) RETURN d.path AS dep",
+		"MATCH (d:File {project_id: $pid})-[:IMPORTS]->(f:File {path: $path, project_id: $pid}) RETURN d.path AS dep ORDER BY dep",
 		map[string]any{"path": filePath},
 	)
 	if err != nil {
@@ -302,7 +302,7 @@ func (c *Client) SweepProject(ctx context.Context) error {
 type Edge struct {
 	FromID     string
 	ToID       string
-	Type       string         // relationship type, e.g. "CALLS", "IMPORTS"
+	Type       string // relationship type, e.g. "CALLS", "IMPORTS"
 	Properties map[string]any
 }
 

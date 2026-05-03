@@ -42,22 +42,43 @@ works even without Memgraph.`,
 
 var impactKBLimit uint64
 var impactCompact bool
+var impactHops int
+
+const maxImpactHops = 10
 
 func init() {
 	impactCmd.Flags().Uint64Var(&impactKBLimit, "kb-limit", 5, "max results per knowledge-base collection")
 	impactCmd.Flags().BoolVar(&impactCompact, "compact", false, "one line per item — drops symbol kinds and reasons to preserve agent context window")
+	impactCmd.Flags().IntVar(&impactHops, "hops", 1, "max downstream dependency hops to traverse in file mode")
+	impactCmd.Flags().IntVar(&impactHops, "depth", 1, "alias for --hops")
 	rootCmd.AddCommand(impactCmd)
 }
 
+type impactDependentHop struct {
+	Path string `json:"path"`
+	Hop  int    `json:"hop"`
+}
+
+type impactTraversalMetadata struct {
+	RequestedDepth int      `json:"requested_depth"`
+	MaxDepth       int      `json:"max_depth"`
+	Truncated      bool     `json:"truncated"`
+	Cycles         []string `json:"cycles,omitempty"`
+}
+
 type impactResult struct {
-	File            string            `json:"file"`
-	Dependents      []string          `json:"dependents"`
-	Symbols         []map[string]any  `json:"symbols"`
-	Decisions       []store.Decision  `json:"decisions"`
-	Tasks           []store.Task      `json:"tasks"`
-	Rejections      []store.Rejection `json:"rejections"`
-	HistoricalBugs  []graph.BugRef    `json:"historical_bugs,omitempty"`
-	Warnings        []string          `json:"warnings,omitempty"`
+	File           string                  `json:"file"`
+	TargetKind     string                  `json:"target_kind"`
+	HopDepth       int                     `json:"hop_depth"`
+	Dependents     []string                `json:"dependents"`
+	DependentHops  []impactDependentHop    `json:"dependent_hops,omitempty"`
+	Traversal      impactTraversalMetadata `json:"traversal"`
+	Symbols        []map[string]any        `json:"symbols"`
+	Decisions      []store.Decision        `json:"decisions"`
+	Tasks          []store.Task            `json:"tasks"`
+	Rejections     []store.Rejection       `json:"rejections"`
+	HistoricalBugs []graph.BugRef          `json:"historical_bugs,omitempty"`
+	Warnings       []string                `json:"warnings,omitempty"`
 }
 
 func runImpact(cmd *cobra.Command, args []string) error {
@@ -72,6 +93,9 @@ func runImpact(cmd *cobra.Command, args []string) error {
 	}
 	if _, parseErr := store.ParseTaskID(rawArg); parseErr == nil {
 		return runImpactTask(cmd, rawArg)
+	}
+	if impactHops < 1 {
+		return fmt.Errorf("--hops/--depth must be >= 1")
 	}
 
 	// Resolve to project-relative path — that's what the graph indexes (BUG-010).
@@ -94,7 +118,22 @@ func runImpact(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	result := impactResult{File: relPath}
+	result := impactResult{
+		File:       relPath,
+		TargetKind: "file",
+		HopDepth:   impactHops,
+		Traversal: impactTraversalMetadata{
+			RequestedDepth: impactHops,
+			MaxDepth:       impactHops,
+		},
+	}
+	queryHops := impactHops
+	if queryHops > maxImpactHops {
+		queryHops = maxImpactHops
+		result.Traversal.MaxDepth = maxImpactHops
+		result.Traversal.Truncated = true
+		result.Warnings = append(result.Warnings, fmt.Sprintf("--hops capped at %d (requested %d)", maxImpactHops, impactHops))
+	}
 
 	// ── Graph queries (optional — skipped if Memgraph not configured) ──────
 	cfg, _ := config.Load()
@@ -114,11 +153,29 @@ func runImpact(cmd *cobra.Command, args []string) error {
 			}
 
 			// 1. Downstream dependents.
-			deps, depErr := gc.DependentsOf(gctx, relPath)
-			if depErr != nil {
-				result.Warnings = append(result.Warnings, fmt.Sprintf("dependents query: %v", depErr))
+			if queryHops == 1 {
+				deps, depErr := gc.DependentsOf(gctx, relPath)
+				if depErr != nil {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("dependents query: %v", depErr))
+				} else {
+					result.Dependents = deps
+					for _, dep := range deps {
+						result.DependentHops = append(result.DependentHops, impactDependentHop{Path: dep, Hop: 1})
+					}
+				}
 			} else {
-				result.Dependents = deps
+				traversal, depErr := gc.DependentsOfDepth(gctx, relPath, queryHops)
+				if depErr != nil {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("dependents query: %v", depErr))
+				} else {
+					result.Traversal.MaxDepth = traversal.MaxDepth
+					result.Traversal.Truncated = result.Traversal.Truncated || traversal.Truncated
+					result.Traversal.Cycles = traversal.Cycles
+					for _, dep := range traversal.Dependents {
+						result.Dependents = append(result.Dependents, dep.Path)
+						result.DependentHops = append(result.DependentHops, impactDependentHop{Path: dep.Path, Hop: dep.Hop})
+					}
+				}
 			}
 
 			// 2. Exported symbols.
@@ -200,6 +257,28 @@ func renderImpactDefault(w io.Writer, result impactResult) {
 	fmt.Fprintf(w, "\nDownstream Dependents (%d):\n", len(result.Dependents))
 	if len(result.Dependents) == 0 {
 		fmt.Fprintln(w, "  (none — or graph not indexed)")
+	} else if result.HopDepth > 1 {
+		for hop := 1; hop <= result.Traversal.MaxDepth; hop++ {
+			var group []string
+			for _, dep := range result.DependentHops {
+				if dep.Hop == hop {
+					group = append(group, dep.Path)
+				}
+			}
+			if len(group) == 0 {
+				continue
+			}
+			fmt.Fprintf(w, "  Hop %d:\n", hop)
+			for _, dep := range group {
+				fmt.Fprintf(w, "    → %s\n", dep)
+			}
+		}
+		if len(result.Traversal.Cycles) > 0 {
+			fmt.Fprintf(w, "  Cycles deduped: %s\n", strings.Join(result.Traversal.Cycles, ", "))
+		}
+		if result.Traversal.Truncated {
+			fmt.Fprintf(w, "  Traversal truncated at hop %d\n", result.Traversal.MaxDepth)
+		}
 	} else {
 		for _, dep := range result.Dependents {
 			fmt.Fprintf(w, "  → %s\n", dep)
@@ -264,11 +343,26 @@ func renderImpactDefault(w io.Writer, result impactResult) {
 }
 
 func renderImpactCompact(w io.Writer, r impactResult) {
-	fmt.Fprintf(w, "impact: %s — %d deps %d sym %dD %dT %dR %dB\n\n",
-		r.File, len(r.Dependents), len(r.Symbols),
-		len(r.Decisions), len(r.Tasks), len(r.Rejections), len(r.HistoricalBugs))
-	for _, dep := range r.Dependents {
-		fmt.Fprintf(w, "→ %s\n", dep)
+	if r.HopDepth <= 1 {
+		fmt.Fprintf(w, "impact: %s — %d deps %d sym %dD %dT %dR %dB\n\n",
+			r.File, len(r.Dependents), len(r.Symbols),
+			len(r.Decisions), len(r.Tasks), len(r.Rejections), len(r.HistoricalBugs))
+		for _, dep := range r.Dependents {
+			fmt.Fprintf(w, "→ %s\n", dep)
+		}
+	} else {
+		fmt.Fprintf(w, "impact: %s — %d deps h%d %d sym %dD %dT %dR %dB\n\n",
+			r.File, len(r.Dependents), r.HopDepth, len(r.Symbols),
+			len(r.Decisions), len(r.Tasks), len(r.Rejections), len(r.HistoricalBugs))
+		for _, dep := range r.DependentHops {
+			fmt.Fprintf(w, "H%d %s\n", dep.Hop, dep.Path)
+		}
+		if len(r.Traversal.Cycles) > 0 {
+			fmt.Fprintf(w, "C %s\n", strings.Join(r.Traversal.Cycles, ", "))
+		}
+		if r.Traversal.Truncated {
+			fmt.Fprintf(w, "T truncated at h%d\n", r.Traversal.MaxDepth)
+		}
 	}
 	for _, s := range r.Symbols {
 		name, _ := s["name"].(string)
@@ -286,4 +380,3 @@ func renderImpactCompact(w io.Writer, r impactResult) {
 		fmt.Fprintf(w, "\n! %s\n", strings.Join(r.Warnings, "; "))
 	}
 }
-
