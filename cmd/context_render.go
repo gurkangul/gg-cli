@@ -98,6 +98,7 @@ func printContextBundle(cmd *cobra.Command, query string, bundle contextBundle, 
 		"tasks":       bundle.tasks,
 		"discussions": bundle.discussions,
 		"notes":       bundle.notes,
+		"artifacts":   bundle.artifacts,
 		"conflicts":   conflicts,
 		"warnings":    errs,
 	}
@@ -217,9 +218,23 @@ func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs 
 		}
 	}
 
+	if len(bundle.artifacts) > 0 {
+		fmt.Fprintln(w, "\nARTIFACTS:")
+		for _, a := range bundle.artifacts {
+			stale := ""
+			if a.Stale {
+				stale = " stale"
+			}
+			fmt.Fprintf(w, "  [%s:%d-%d]%s\n", a.Path, a.StartLine, a.EndLine, stale)
+			for _, line := range strings.Split(compactTrim(a.Text, 220), "\n") {
+				fmt.Fprintf(w, "    %s\n", line)
+			}
+		}
+	}
+
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "  %d decisions  %d rejections  %d tasks  %d discussions  %d notes\n",
-		len(bundle.decisions), len(bundle.rejections), len(bundle.tasks), len(bundle.discussions), len(bundle.notes))
+	fmt.Fprintf(w, "  %d decisions  %d rejections  %d tasks  %d discussions  %d notes  %d artifacts\n",
+		len(bundle.decisions), len(bundle.rejections), len(bundle.tasks), len(bundle.discussions), len(bundle.notes), len(bundle.artifacts))
 
 	if len(errs) > 0 {
 		fmt.Fprintf(w, "\nWarnings:\n  %s\n", strings.Join(errs, "\n  "))
@@ -234,10 +249,11 @@ func renderContextCompact(w io.Writer, query string, bundle contextBundle, errs 
 	if len(conflicts) > 0 {
 		conflictSuffix = fmt.Sprintf(" ⚡%dX", len(conflicts))
 	}
-	fmt.Fprintf(w, "context: %q — %dD %dR %dT %d? %dN%s\n\n",
+	fmt.Fprintf(w, "context: %q — %dD %dR %dT %d? %dN %dA%s\n\n",
 		query,
 		len(bundle.decisions), len(bundle.rejections),
 		len(bundle.tasks), len(bundle.discussions), len(bundle.notes),
+		len(bundle.artifacts),
 		conflictSuffix)
 
 	for _, c := range conflicts {
@@ -252,6 +268,7 @@ func renderContextCompact(w io.Writer, query string, bundle contextBundle, errs 
 	writeCompactTasks(w, bundle.tasks)
 	writeCompactDiscussions(w, bundle.discussions)
 	writeCompactNotes(w, bundle.notes)
+	writeCompactArtifacts(w, bundle.artifacts)
 
 	if len(errs) > 0 {
 		fmt.Fprintf(w, "\n! %s\n", strings.Join(errs, "; "))

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/gurkangul/gg-cli/internal/contextartifacts"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -12,20 +13,23 @@ type contextBundle struct {
 	tasks       []store.Task
 	discussions []store.Discussion
 	notes       []store.Note
+	artifacts   []contextartifacts.Snippet
 	decErr      error
 	rejErr      error
 	taskErr     error
 	discErr     error
 	noteErr     error
+	artifactErr error
 }
 
 // contextPayload is the cacheable form of a context bundle (exported fields only).
 type contextPayload struct {
-	Decisions   []store.Decision   `json:"decisions"`
-	Rejections  []store.Rejection  `json:"rejections"`
-	Tasks       []store.Task       `json:"tasks"`
-	Discussions []store.Discussion `json:"discussions"`
-	Notes       []store.Note       `json:"notes"`
+	Decisions   []store.Decision           `json:"decisions"`
+	Rejections  []store.Rejection          `json:"rejections"`
+	Tasks       []store.Task               `json:"tasks"`
+	Discussions []store.Discussion         `json:"discussions"`
+	Notes       []store.Note               `json:"notes"`
+	Artifacts   []contextartifacts.Snippet `json:"artifacts"`
 }
 
 // taskContextBundle holds the result of a --for-task query.
@@ -52,6 +56,9 @@ func collectBundleErrors(bundle contextBundle) []string {
 	}
 	if bundle.noteErr != nil {
 		errs = append(errs, fmt.Sprintf("notes: %v", bundle.noteErr))
+	}
+	if bundle.artifactErr != nil {
+		errs = append(errs, fmt.Sprintf("artifacts: %v", bundle.artifactErr))
 	}
 	return errs
 }

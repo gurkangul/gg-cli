@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/contextartifacts"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -27,15 +28,15 @@ import (
 // All verbs start at 1 — this is v1 of per-verb tracking (the prior global
 // compactRendererV=2 was verb-agnostic and is superseded by this table).
 const (
-	compactRendererV_search      = 1
-	compactRendererV_context     = 1
-	compactRendererV_impact      = 1
-	compactRendererV_inbox       = 1
-	compactRendererV_taskList    = 1 // "list" verb (task list)
-	compactRendererV_taskGet     = 1 // "task" verb (task get)
-	compactRendererV_bugList     = 1 // "list" verb (bug list)
-	compactRendererV_decideGaps  = 1
-	compactRendererV_repeatWork  = 1
+	compactRendererV_search     = 1
+	compactRendererV_context    = 2
+	compactRendererV_impact     = 1
+	compactRendererV_inbox      = 1
+	compactRendererV_taskList   = 1 // "list" verb (task list)
+	compactRendererV_taskGet    = 1 // "task" verb (task get)
+	compactRendererV_bugList    = 1 // "list" verb (bug list)
+	compactRendererV_decideGaps = 1
+	compactRendererV_repeatWork = 1
 )
 
 // isCompactActive returns true when the caller wants compact rendering.
@@ -189,6 +190,15 @@ func compactMessageLine(m store.Message) string {
 	return fmt.Sprintf("M  %s  %s→%s  %s%s", ts, m.FromRole, m.ToRole, content, suffix)
 }
 
+func compactArtifactLine(a contextartifacts.Snippet) string {
+	stale := ""
+	if a.Stale {
+		stale = " stale"
+	}
+	text := compactTrim(strings.ReplaceAll(a.Text, "\n", " "), compactLineWidth)
+	return fmt.Sprintf("A  %s:%d-%d%s  %s", a.Path, a.StartLine, a.EndLine, stale, text)
+}
+
 // ── Writer variants ────────────────────────────────────────────────────────
 
 func writeCompactDecisions(w io.Writer, ds []store.Decision) {
@@ -224,6 +234,12 @@ func writeCompactDiscussions(w io.Writer, ds []store.Discussion) {
 func writeCompactBugs(w io.Writer, bs []store.Bug) {
 	for _, b := range bs {
 		fmt.Fprintln(w, compactBugLine(b))
+	}
+}
+
+func writeCompactArtifacts(w io.Writer, as []contextartifacts.Snippet) {
+	for _, a := range as {
+		fmt.Fprintln(w, compactArtifactLine(a))
 	}
 }
 

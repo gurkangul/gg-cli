@@ -76,6 +76,11 @@ func buildTieredItems(bundle contextBundle) []contextTieredItem {
 		items = append(items, contextTieredItem{tier: 4, line: line})
 	}
 
+	for _, a := range bundle.artifacts {
+		line := fmt.Sprintf("[P2] %s", compactArtifactLine(a))
+		items = append(items, contextTieredItem{tier: 2, line: line})
+	}
+
 	// Stable sort by tier so P1 items always come first.
 	sort.SliceStable(items, func(i, j int) bool {
 		return items[i].tier < items[j].tier
@@ -106,7 +111,7 @@ func renderContextBudget(w io.Writer, query string, bundle contextBundle, errs [
 		remaining -= cost
 	}
 
-	total := len(bundle.decisions) + len(bundle.rejections) + len(bundle.tasks) + len(bundle.discussions) + len(bundle.notes)
+	total := len(bundle.decisions) + len(bundle.rejections) + len(bundle.tasks) + len(bundle.discussions) + len(bundle.notes) + len(bundle.artifacts)
 	header := fmt.Sprintf("context: %q — %d items, budget %d tok", query, total, budget)
 	if dropped > 0 {
 		header += fmt.Sprintf(" (%d dropped)", dropped)

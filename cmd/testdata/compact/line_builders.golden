@@ -12,3 +12,4 @@ N  2026-04-11  deploy on Tuesday
 ? ✓ DISC-003  API versioning strategy
 M  04-20 10:00  pm→developer  ship TASK-042 by Friday →TASK-042
 M  04-20 09:30  qa→developer  line1 line2 multiline folded
+A  docs/auth.md:12-14 stale  refresh tokens rotate on every use JWT signing keys live in KMS

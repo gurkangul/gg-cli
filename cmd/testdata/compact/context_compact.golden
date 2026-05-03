@@ -1,4 +1,4 @@
-context: "auth" — 2D 1R 3T 2? 2N
+context: "auth" — 2D 1R 3T 2? 2N 1A
 
 D  2026-04-10  use JWT for stateless auth →TASK-001
 D  2026-04-08  rotate signing keys every 90 days
@@ -10,5 +10,6 @@ T ✓ TASK-003  write auth integration test (low)
 ? ✓ DISC-003  API versioning strategy
 N  2026-04-08  (TASK-042)  saw 15% refresh spike between 09:00-10:00 UTC
 N  2026-04-11  deploy on Tuesday
+A  docs/auth.md:12-14 stale  refresh tokens rotate on every use JWT signing keys live in KMS
 
 ! embedder timeout

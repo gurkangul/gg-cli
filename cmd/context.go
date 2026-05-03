@@ -82,7 +82,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 	// Run all searches in parallel.
 	var bundle contextBundle
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(6)
 
 	go func() {
 		defer wg.Done()
@@ -104,12 +104,16 @@ func runContext(cmd *cobra.Command, args []string) error {
 		defer wg.Done()
 		bundle.notes, bundle.noteErr = d.store.SearchNotes(ctx, vector, contextLimit)
 	}()
+	go func() {
+		defer wg.Done()
+		bundle.artifacts, bundle.artifactErr = searchContextArtifacts(query, contextLimit)
+	}()
 
 	wg.Wait()
 
 	// Persist a full successful bundle to the LKG cache (best-effort).
 	if bundle.decErr == nil && bundle.rejErr == nil && bundle.taskErr == nil &&
-		bundle.discErr == nil && bundle.noteErr == nil {
+		bundle.discErr == nil && bundle.noteErr == nil && bundle.artifactErr == nil {
 		if cfg, cfgErr := config.Load(); cfgErr == nil {
 			if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
 				_ = cache.Put(rtDir, contextCacheKind, query, contextPayload{
@@ -118,6 +122,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 					Tasks:       bundle.tasks,
 					Discussions: bundle.discussions,
 					Notes:       bundle.notes,
+					Artifacts:   bundle.artifacts,
 				})
 			}
 		}
@@ -125,7 +130,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 
 	errs := collectBundleErrors(bundle)
 
-	total := len(bundle.decisions) + len(bundle.rejections) + len(bundle.tasks) + len(bundle.discussions) + len(bundle.notes)
+	total := len(bundle.decisions) + len(bundle.rejections) + len(bundle.tasks) + len(bundle.discussions) + len(bundle.notes) + len(bundle.artifacts)
 	if total == 0 && len(errs) > 0 {
 		return fmt.Errorf("all searches failed:\n  %s", strings.Join(errs, "\n  "))
 	}
@@ -150,8 +155,20 @@ func serveContextFromCache(cmd *cobra.Command, query string) error {
 	var payload contextPayload
 	cachedAt, found, err := cache.Get(rtDir, contextCacheKind, query, &payload)
 	if err != nil || !found {
-		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached context available for this topic")
-		return nil
+		banner := "⚠ Qdrant unreachable — no cached context available for this topic"
+		fmt.Fprintln(cmd.OutOrStderr(), banner)
+		bundle := contextBundle{}
+		artifacts, artifactErr := searchContextArtifacts(query, contextLimit)
+		if artifactErr == nil {
+			bundle.artifacts = artifacts
+		} else {
+			bundle.artifactErr = artifactErr
+		}
+		if len(bundle.artifacts) == 0 && bundle.artifactErr == nil {
+			return nil
+		}
+		errs := append([]string{banner}, collectBundleErrors(bundle)...)
+		return printContextBundle(cmd, query, bundle, errs, time.Time{})
 	}
 
 	banner := fmt.Sprintf("⚠ Qdrant unreachable — cache may be stale; last update at %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
@@ -163,9 +180,17 @@ func serveContextFromCache(cmd *cobra.Command, query string) error {
 		tasks:       payload.Tasks,
 		discussions: payload.Discussions,
 		notes:       payload.Notes,
+		artifacts:   payload.Artifacts,
+	}
+	artifacts, artifactErr := searchContextArtifacts(query, contextLimit)
+	if artifactErr == nil {
+		bundle.artifacts = artifacts
+	} else {
+		bundle.artifactErr = artifactErr
 	}
 	// Pass banner as a warning and cachedAt so --json consumers see the stale signal.
-	return printContextBundle(cmd, query, bundle, []string{banner}, cachedAt)
+	errs := append([]string{banner}, collectBundleErrors(bundle)...)
+	return printContextBundle(cmd, query, bundle, errs, cachedAt)
 }
 
 // runContextForTask fetches the anchor task, its DependsOn dependencies, and

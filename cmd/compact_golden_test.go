@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gurkangul/gg-cli/internal/contextartifacts"
 	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
@@ -53,7 +54,7 @@ var expectedRendererVersions = map[string]int{
 // that their golden files are still valid.
 var expectedRendererV_each = map[string]int{
 	"search":     1,
-	"context":    1,
+	"context":    2,
 	"impact":     1,
 	"inbox":      1,
 	"taskList":   1,
@@ -151,6 +152,16 @@ var goldenMessages = []store.Message{
 	},
 }
 
+var goldenArtifacts = []contextartifacts.Snippet{
+	{
+		Path:      "docs/auth.md",
+		StartLine: 12,
+		EndLine:   14,
+		Stale:     true,
+		Text:      "refresh tokens rotate on every use\nJWT signing keys live in KMS",
+	},
+}
+
 // ── Golden helpers ────────────────────────────────────────────────────────────
 
 func goldenPath(name string) string {
@@ -238,6 +249,9 @@ func TestCompactGolden_LineBuilders(t *testing.T) {
 	for _, m := range goldenMessages {
 		buf.WriteString(compactMessageLine(m) + "\n")
 	}
+	for _, a := range goldenArtifacts {
+		buf.WriteString(compactArtifactLine(a) + "\n")
+	}
 
 	checkOrUpdate(t, "line_builders", buf.String())
 }
@@ -251,6 +265,7 @@ func TestCompactGolden_ContextCompact(t *testing.T) {
 		tasks:       goldenTasks,
 		discussions: goldenDiscussions,
 		notes:       goldenNotes,
+		artifacts:   goldenArtifacts,
 	}
 	var buf bytes.Buffer
 	renderContextCompact(&buf, "auth", bundle, []string{"embedder timeout"}, nil)
