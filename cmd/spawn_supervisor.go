@@ -152,6 +152,17 @@ func runSpawnSupervisorWatch(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("terminal backend: %w", err)
 	}
 
+	pollCtx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
+	startupMsgs, startupErr := supervisorInboxMessages(pollCtx, inboxClient, role)
+	cancel()
+	if startupErr != nil {
+		return fmt.Errorf("startup inbox poll: %w", startupErr)
+	}
+	seedSupervisorProcessed(state, startupMsgs)
+	if err := saveSupervisorState(runtimeDir, role, state); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ supervisor state save: %v\n", err)
+	}
+
 	ticker := time.NewTicker(time.Duration(spawnSupervisorPollSecs) * time.Second)
 	defer ticker.Stop()
 	fmt.Fprintf(cmd.ErrOrStderr(), "→ spawn supervisor watch active for role=%s (poll=%ds)\n", role, spawnSupervisorPollSecs)
@@ -213,6 +224,15 @@ func processSupervisorMessages(ctx context.Context, cmd *cobra.Command, runtimeD
 		if deliverSupervisorMessage(ctx, cmd, runtimeDir, term, m, openMissing) {
 			state.Processed[m.ID] = true
 		}
+	}
+}
+
+func seedSupervisorProcessed(state *supervisorState, msgs []store.Message) {
+	if state.Processed == nil {
+		state.Processed = map[string]bool{}
+	}
+	for _, m := range msgs {
+		state.Processed[m.ID] = true
 	}
 }
 

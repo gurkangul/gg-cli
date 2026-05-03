@@ -105,6 +105,55 @@ func TestSupervisorProcessMessages_DuplicateSuppression(t *testing.T) {
 	}
 }
 
+func TestSupervisorProcessMessages_StartupIgnoresPreexistingDeliversNew(t *testing.T) {
+	runtimeDir := t.TempDir()
+	fake := terminal.NewFake()
+	ctx := context.Background()
+	id, err := fake.NewSplit(ctx, terminal.SplitOpts{})
+	if err != nil {
+		t.Fatalf("NewSplit: %v", err)
+	}
+	if err := spawn.RegisterPane(runtimeDir, spawn.WorkerPane{
+		SurfaceID: string(id),
+		TaskID:    "TASK-383",
+		Agent:     "gsd",
+		SpawnedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("RegisterPane: %v", err)
+	}
+
+	state := &supervisorState{Processed: map[string]bool{}}
+	pre := store.Message{ID: "msg-pre", ToRole: "developer", TaskID: "TASK-383", Content: "old backlog"}
+	post := store.Message{ID: "msg-post", ToRole: "developer", TaskID: "TASK-383", Content: "new message"}
+	seedSupervisorProcessed(state, []store.Message{pre})
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+
+	processSupervisorMessages(ctx, cmd, runtimeDir, fake, "developer", state, []store.Message{pre, post}, false)
+
+	if !state.Processed[pre.ID] || !state.Processed[post.ID] {
+		t.Fatalf("expected both pre and post messages marked processed, got %+v", state.Processed)
+	}
+	preSent := 0
+	postSent := 0
+	for _, c := range fake.Calls {
+		if c.Method == "Send" && c.Arg == pre.Content {
+			preSent++
+		}
+		if c.Method == "Send" && c.Arg == post.Content {
+			postSent++
+		}
+	}
+	if preSent != 0 {
+		t.Fatalf("expected pre-existing message to be ignored, sent=%d calls=%+v", preSent, fake.Calls)
+	}
+	if postSent != 1 {
+		t.Fatalf("expected post-start message delivered once, sent=%d calls=%+v", postSent, fake.Calls)
+	}
+}
+
 func TestSupervisorDeliver_MissingPaneHandledWithClearError(t *testing.T) {
 	runtimeDir := t.TempDir()
 	fake := terminal.NewFake()
