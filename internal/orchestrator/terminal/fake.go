@@ -103,6 +103,14 @@ func (f *FakeTerminal) Capabilities() Caps {
 	return Caps{CanReadScreen: true}
 }
 
+func (f *FakeTerminal) CallsSnapshot() []Call {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	calls := make([]Call, len(f.Calls))
+	copy(calls, f.Calls)
+	return calls
+}
+
 // IsAlive reports whether the surface is still open.
 func (f *FakeTerminal) IsAlive(id SurfaceID) bool {
 	f.mu.Lock()

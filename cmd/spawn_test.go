@@ -192,6 +192,7 @@ func TestBootstrapAgentInPane_LaunchesAgentBeforePrompt(t *testing.T) {
 		t.Fatalf("expected task prompt to be sent; calls=%+v", fake.Calls)
 	}
 }
+
 // TestBootstrapAgentInPane_NoTaskIDSkipsPrompt verifies that an empty taskID
 // only launches the agent — no orientation prompt is sent.
 func TestBootstrapAgentInPane_NoTaskIDSkipsPrompt(t *testing.T) {
@@ -341,10 +342,11 @@ func TestBootstrapAgentInPane_GSDWaitsForReadyBeforePrompt(t *testing.T) {
 
 	deadline := time.Now().Add(120 * time.Millisecond)
 	for {
-		if sendTaskPromptSeen(fake.Calls) {
+		calls := fake.CallsSnapshot()
+		if sendTaskPromptSeen(calls) {
 			t.Fatal("task prompt sent before ready marker")
 		}
-		if countReadScreen(fake.Calls) > 0 {
+		if countReadScreen(calls) > 0 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -361,8 +363,9 @@ func TestBootstrapAgentInPane_GSDWaitsForReadyBeforePrompt(t *testing.T) {
 		t.Fatal("bootstrap did not finish after ready marker")
 	}
 
-	if !sendTaskPromptSeen(fake.Calls) {
-		t.Fatalf("expected task prompt after ready; calls=%+v", fake.Calls)
+	calls := fake.CallsSnapshot()
+	if !sendTaskPromptSeen(calls) {
+		t.Fatalf("expected task prompt after ready; calls=%+v", calls)
 	}
 }
 
