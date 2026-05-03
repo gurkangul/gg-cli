@@ -11,13 +11,19 @@ import (
 
 // captureRunner records calls and returns configurable output/error.
 type captureRunner struct {
-	calls  [][]string
-	output []byte
-	err    error
+	calls   [][]string
+	output  []byte
+	outputs [][]byte
+	err     error
 }
 
 func (r *captureRunner) run(ctx context.Context, args ...string) ([]byte, error) {
 	r.calls = append(r.calls, append([]string(nil), args...))
+	if len(r.outputs) > 0 {
+		out := r.outputs[0]
+		r.outputs = r.outputs[1:]
+		return out, r.err
+	}
 	return r.output, r.err
 }
 
@@ -25,8 +31,8 @@ func newCapture(out string) *captureRunner {
 	return &captureRunner{output: []byte(out)}
 }
 
-// TestCmux_NewSplit_HorizontalDefault verifies that horizontal (default) direction
-// does not append --vertical.
+// TestCmux_NewSplit_HorizontalDefault verifies that horizontal maps to a
+// below split direction while creating an independent pane in the workspace.
 func TestCmux_NewSplit_HorizontalDefault(t *testing.T) {
 	r := newCapture("OK surface:1 workspace:1\n")
 	c := newCmuxWithRunner(r.run)
@@ -43,8 +49,13 @@ func TestCmux_NewSplit_HorizontalDefault(t *testing.T) {
 	if len(r.calls) != 1 {
 		t.Fatalf("expected 1 call got %d", len(r.calls))
 	}
-	if r.calls[0][0] != "new-split" || r.calls[0][1] != "down" {
-		t.Fatalf("expected [new-split down ...], got: %v", r.calls[0])
+	if len(r.calls[0]) < 5 ||
+		r.calls[0][0] != "new-pane" ||
+		r.calls[0][1] != "--type" ||
+		r.calls[0][2] != "terminal" ||
+		r.calls[0][3] != "--direction" ||
+		r.calls[0][4] != "down" {
+		t.Fatalf("expected [new-pane --type terminal --direction down ...], got: %v", r.calls[0])
 	}
 }
 
@@ -57,10 +68,13 @@ func TestCmux_NewSplit_Vertical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// cmux new-split takes a positional direction: left|right|up|down.
+	// cmux new-pane takes --direction left|right|up|down.
 	// SplitVertical maps to "right".
-	if len(r.calls[0]) < 2 || r.calls[0][0] != "new-split" || r.calls[0][1] != "right" {
-		t.Fatalf("expected [new-split right ...], got: %v", r.calls[0])
+	if len(r.calls[0]) < 5 ||
+		r.calls[0][0] != "new-pane" ||
+		r.calls[0][3] != "--direction" ||
+		r.calls[0][4] != "right" {
+		t.Fatalf("expected [new-pane --type terminal --direction right ...], got: %v", r.calls[0])
 	}
 }
 
@@ -173,7 +187,10 @@ func TestCmux_SendKey(t *testing.T) {
 }
 
 func TestCmux_ReadScreen(t *testing.T) {
-	r := newCapture("screen content")
+	r := &captureRunner{outputs: [][]byte{
+		[]byte("surface:1  type=terminal in_window=false\n"),
+		[]byte("screen content"),
+	}}
 	c := newCmuxWithRunner(r.run)
 	ctx := context.Background()
 
@@ -184,9 +201,26 @@ func TestCmux_ReadScreen(t *testing.T) {
 	if string(out) != "screen content" {
 		t.Fatalf("want %q got %q", "screen content", string(out))
 	}
-	args := r.calls[0]
+	if len(r.calls) != 2 {
+		t.Fatalf("expected surface-health + read-screen calls, got %d", len(r.calls))
+	}
+	args := r.calls[1]
 	if args[0] != "read-screen" || args[1] != "--surface" || args[2] != "surface:1" {
 		t.Fatalf("unexpected args: %v", args)
+	}
+}
+
+func TestCmux_ReadScreen_MissingSurface(t *testing.T) {
+	r := newCapture("surface:2  type=terminal in_window=false\n")
+	c := newCmuxWithRunner(r.run)
+	ctx := context.Background()
+
+	_, err := c.ReadScreen(ctx, "surface:1")
+	if !IsErrSurfaceNotFound(err) {
+		t.Fatalf("expected ErrSurfaceNotFound, got %v", err)
+	}
+	if len(r.calls) != 1 || r.calls[0][0] != "surface-health" {
+		t.Fatalf("expected only surface-health call, got %v", r.calls)
 	}
 }
 
@@ -260,12 +294,11 @@ func TestNewFromEnv_Unknown(t *testing.T) {
 }
 
 // TestProbeSurface_DeadSurface verifies ProbeSurface returns dead=true when
-// the cmux binary emits the exact surfaceDeadMsg.
+// surface-health does not list the requested surface.
 func TestProbeSurface_DeadSurface(t *testing.T) {
-	// Build a stub binary that prints surfaceDeadMsg and exits 1.
 	stub := buildStubCmux(t, `#!/bin/sh
-echo "Surface is not a terminal"
-exit 1`)
+echo "surface:76  type=terminal in_window=false"
+exit 0`)
 
 	origPATH := os.Getenv("PATH")
 	t.Setenv("PATH", stub+":"+origPATH)
@@ -276,19 +309,10 @@ exit 1`)
 	}
 }
 
-// TestProbeSurface_WrongFocusedSurface verifies cmux's false-positive shape:
-// identify exits 0 but returns the currently focused surface instead of the
-// requested missing one.
+// TestProbeSurface_StarredLiveSurface verifies selected rows are parsed too.
 func TestProbeSurface_WrongFocusedSurface(t *testing.T) {
 	stub := buildStubCmux(t, `#!/bin/sh
-cat <<'JSON'
-{
-  "focused": {
-    "surface_ref": "surface:76",
-    "surface_type": "terminal"
-  }
-}
-JSON
+echo "* surface:88  task shell  [selected]"
 exit 0`)
 
 	origPATH := os.Getenv("PATH")
@@ -298,21 +322,14 @@ exit 0`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !dead {
-		t.Fatal("expected wrong surface identity to be treated as dead")
+	if dead {
+		t.Fatal("expected selected requested surface to be live")
 	}
 }
 
 func TestProbeSurface_LiveRequestedSurface(t *testing.T) {
 	stub := buildStubCmux(t, `#!/bin/sh
-cat <<'JSON'
-{
-  "focused": {
-    "surface_ref": "surface:88",
-    "surface_type": "terminal"
-  }
-}
-JSON
+echo "surface:88  type=terminal in_window=false"
 exit 0`)
 
 	origPATH := os.Getenv("PATH")

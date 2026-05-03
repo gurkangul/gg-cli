@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -28,20 +29,23 @@ func newCmuxWithRunner(r func(ctx context.Context, args ...string) ([]byte, erro
 }
 
 func (c *cmuxTerminal) NewSplit(ctx context.Context, opts SplitOpts) (SurfaceID, error) {
-	// cmux new-split requires a positional direction: left|right|up|down.
+	// cmux new-pane creates an independent terminal pane in the caller's
+	// workspace. Using new-split here couples worker launch to the caller's
+	// current surface, which can make task workers look like they were invoked
+	// inside the same agent session instead of as a dedicated pane.
 	// Map SplitDir: vertical → "right" (side-by-side), horizontal → "down" (above/below).
 	dir := "right"
 	if opts.Dir == SplitHorizontal {
 		dir = "down"
 	}
-	args := []string{"new-split", dir}
+	args := []string{"new-pane", "--type", "terminal", "--direction", dir}
 	if opts.Percent > 0 {
 		args = append(args, fmt.Sprintf("--percent=%d", opts.Percent))
 	}
 	for _, e := range opts.Env {
 		args = append(args, "--env="+e)
 	}
-	// Note: cmux new-split does not accept a trailing command — opts.Cmd is
+	// Note: cmux new-pane does not accept a trailing command — opts.Cmd is
 	// delivered via Send() after the pane opens (see cmd/spawn_worker.go).
 	out, err := c.runner(ctx, args...)
 	if err != nil {
@@ -81,8 +85,23 @@ func (c *cmuxTerminal) SendKey(ctx context.Context, id SurfaceID, key string) er
 }
 
 func (c *cmuxTerminal) ReadScreen(ctx context.Context, id SurfaceID) ([]byte, error) {
+	exists, err := c.surfaceExists(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, fmt.Errorf("%w: %s", ErrSurfaceNotFound, id)
+	}
 	out, err := c.runner(ctx, "read-screen", "--surface", string(id))
 	return out, err
+}
+
+func (c *cmuxTerminal) surfaceExists(ctx context.Context, id SurfaceID) (bool, error) {
+	out, err := c.runner(ctx, surfaceHealthArgs()...)
+	if err != nil {
+		return false, err
+	}
+	return surfaceHealthContains(out, id), nil
 }
 
 func (c *cmuxTerminal) Focus(ctx context.Context, id SurfaceID) error {
@@ -115,15 +134,10 @@ func (c *cmuxTerminal) execRun(ctx context.Context, args ...string) ([]byte, err
 	return out, nil
 }
 
-// surfaceDeadMsg is the exact string cmux identify emits when a surface ID is
-// unknown. Only this verbatim response justifies pruning the pane registry.
-const surfaceDeadMsg = "Surface is not a terminal"
-
-// ProbeSurface runs "cmux identify --surface <id> --no-caller" with a 5-second
-// deadline. It returns dead=true when cmux reports the surface is not a
-// terminal, or when cmux returns identity for a different surface. Some cmux
-// builds fall back to the focused surface instead of failing on an unknown
-// --surface; treating that as live leaves stale worker panes registered.
+// ProbeSurface checks cmux surface-health with a 5-second deadline. It returns
+// dead=true when the requested surface is not listed in the caller workspace.
+// cmux identify/read-screen can fall back to the focused surface for unknown
+// IDs, so liveness must be based on exact surface-health membership instead.
 //
 // Timeouts and other transient errors return dead=false so callers do not
 // prune live panes due to a slow cmux response.
@@ -131,27 +145,45 @@ func ProbeSurface(ctx context.Context, id SurfaceID) (dead bool, err error) {
 	probe, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(probe, "cmux", "identify", "--surface", string(id), "--no-caller")
+	args := surfaceHealthArgs()
+	cmd := exec.CommandContext(probe, "cmux", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	runErr := cmd.Run()
-	combined := strings.TrimSpace(stdout.String())
-	if combined == "" {
-		combined = strings.TrimSpace(stderr.String())
+	if runErr != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = runErr.Error()
+		}
+		return false, fmt.Errorf("cmux surface-health: %s", msg)
 	}
-	if strings.Contains(combined, surfaceDeadMsg) {
-		return true, nil
+	return !surfaceHealthContains(stdout.Bytes(), id), nil
+}
+
+func surfaceHealthArgs() []string {
+	args := []string{"surface-health"}
+	if workspace := os.Getenv("CMUX_WORKSPACE_ID"); workspace != "" {
+		args = append(args, "--workspace", workspace)
 	}
-	if runErr == nil {
-		requested := string(id)
-		switch {
-		case strings.Contains(combined, requested):
-			return false, nil
-		case strings.Contains(combined, "surface:"):
-			return true, nil
+	return args
+}
+
+func surfaceHealthContains(out []byte, id SurfaceID) bool {
+	requested := string(id)
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		candidate := fields[0]
+		if candidate == "*" && len(fields) > 1 {
+			candidate = fields[1]
+		}
+		if strings.TrimPrefix(candidate, "*") == requested {
+			return true
 		}
 	}
-	return false, runErr
+	return false
 }
