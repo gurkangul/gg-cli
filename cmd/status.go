@@ -184,6 +184,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				rtDir = rt
 			}
 			fmt.Print(renderRolesBlock(&cfg.Developer, rtDir))
+			if ggDir, ggErr := config.GGDir(); ggErr == nil {
+				if root, rootErr := config.FindRoot(); rootErr == nil {
+					fmt.Println(renderCodeGraphStatusCompact(codeGraphStatusWithTimeout(root, ggDir, cfg)))
+				}
+			}
 		}
 
 		fmt.Println("TASKS:")
@@ -313,4 +318,3 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 	})
 }
-
