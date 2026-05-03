@@ -49,7 +49,7 @@ func runTaskAck(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	if err := runInboxGatePreflight(ctx, d.store, "task ack"); err != nil {
+	if err := runInboxGatePreflightForTaskAck(ctx, d.store, taskID); err != nil {
 		return err
 	}
 
@@ -92,7 +92,7 @@ func runTaskAck(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("set task in_progress: %w", err)
 		}
 	}
-	targets := masterMessageTargets()
+	targets := taskAckMessageTargets(author)
 	for _, target := range targets {
 		msg := store.Message{
 			FromRole: author,
@@ -124,4 +124,16 @@ func validateTaskAckAllowed(taskID, status string) error {
 
 func formatTaskAckDecision(taskID, ackText string) string {
 	return fmt.Sprintf("%s ACK: %s", taskID, strings.TrimSpace(ackText))
+}
+
+func taskAckMessageTargets(author string) []string {
+	author = strings.ToLower(strings.TrimSpace(author))
+	var targets []string
+	for _, target := range masterMessageTargets() {
+		if strings.EqualFold(target, author) {
+			continue
+		}
+		targets = append(targets, target)
+	}
+	return targets
 }

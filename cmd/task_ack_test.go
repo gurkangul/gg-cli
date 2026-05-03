@@ -34,6 +34,38 @@ func TestFormatTaskAckDecision(t *testing.T) {
 	}
 }
 
+func TestSplitTaskAckInboxBlockers_ConsumesMatchingTaskOnly(t *testing.T) {
+	msgs := []store.Message{
+		{ID: "msg-task-field", TaskID: "TASK-387", ToRole: "developer", Content: "assignment"},
+		{ID: "msg-task-content", ToRole: "developer", Content: "please ack TASK-387"},
+		{ID: "msg-other", TaskID: "TASK-999", ToRole: "developer", Content: "other assignment"},
+	}
+
+	blocking, handled := splitTaskAckInboxBlockers(msgs, "TASK-387")
+	if len(handled) != 2 {
+		t.Fatalf("handled = %+v, want two matching task messages", handled)
+	}
+	if len(blocking) != 1 || blocking[0].ID != "msg-other" {
+		t.Fatalf("blocking = %+v, want only unrelated assignment", blocking)
+	}
+}
+
+func TestTaskAckMessageTargets_ExcludesAuthor(t *testing.T) {
+	t.Setenv("GG_ROLE", "developer")
+	t.Setenv("GG_AGENT", "codex")
+
+	got := taskAckMessageTargets("developer")
+	for _, target := range got {
+		if target == "developer" {
+			t.Fatalf("taskAckMessageTargets included author: %+v", got)
+		}
+	}
+	want := []string{"codex", "master", "claude-code"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("taskAckMessageTargets() = %+v, want %+v", got, want)
+	}
+}
+
 func TestFilterPendingAckTasks(t *testing.T) {
 	tasks := []store.Task{
 		{ID: "TASK-001", Status: "in_progress"},
