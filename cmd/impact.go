@@ -36,13 +36,16 @@ Task mode (TASK-NNN argument):
 
 Requires Memgraph (gg index must have been run). The knowledge-store search
 works even without Memgraph.`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runImpact,
 }
 
 var impactKBLimit uint64
 var impactCompact bool
 var impactHops int
+var impactSymbol string
+var impactFlow string
+var impactSymbolFile string
 
 const maxImpactHops = 10
 
@@ -51,6 +54,9 @@ func init() {
 	impactCmd.Flags().BoolVar(&impactCompact, "compact", false, "one line per item — drops symbol kinds and reasons to preserve agent context window")
 	impactCmd.Flags().IntVar(&impactHops, "hops", 1, "max downstream dependency hops to traverse in file mode")
 	impactCmd.Flags().IntVar(&impactHops, "depth", 1, "alias for --hops")
+	impactCmd.Flags().StringVar(&impactSymbol, "symbol", "", "show impact for a symbol name; use --file to disambiguate duplicates")
+	impactCmd.Flags().StringVar(&impactFlow, "flow", "", "render bounded forward CALLS flow for a symbol name; use --depth N and --file if ambiguous")
+	impactCmd.Flags().StringVar(&impactSymbolFile, "file", "", "source file used to disambiguate --symbol or --flow")
 	rootCmd.AddCommand(impactCmd)
 }
 
@@ -79,9 +85,19 @@ type impactResult struct {
 	Rejections     []store.Rejection       `json:"rejections"`
 	HistoricalBugs []graph.BugRef          `json:"historical_bugs,omitempty"`
 	Warnings       []string                `json:"warnings,omitempty"`
+	SymbolQuery    string                  `json:"symbol_query,omitempty"`
+	SymbolMatch    *graph.SymbolMatch      `json:"symbol_match,omitempty"`
+	SymbolMatches  []graph.SymbolMatch     `json:"symbol_matches,omitempty"`
+	Flow           *graph.CallFlow         `json:"flow,omitempty"`
 }
 
 func runImpact(cmd *cobra.Command, args []string) error {
+	if impactSymbol != "" || impactFlow != "" {
+		return runImpactSymbol(cmd)
+	}
+	if len(args) == 0 {
+		return fmt.Errorf("file, BUG-NNN, TASK-NNN, --symbol, or --flow is required")
+	}
 	rawArg, err := requireNonEmpty("file", args[0])
 	if err != nil {
 		return err
