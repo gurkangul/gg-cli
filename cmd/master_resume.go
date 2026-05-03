@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -88,6 +89,8 @@ func runMasterResume(cmd *cobra.Command, _ []string) error {
 	panesPath := filepath.Join(spawn.Dir(rt), spawn.PanesFile)
 	panesRaw, panesRawErr := os.ReadFile(panesPath)
 
+	supervisorFailures, _ := loadSupervisorDeliveryFailures(rt)
+
 	// 3-6. Qdrant-backed state — tolerate Qdrant down.
 	d, depsErr := loadDepsReadOnly(true)
 	var pendingTasks, readyTasks []store.Task
@@ -144,8 +147,76 @@ func runMasterResume(cmd *cobra.Command, _ []string) error {
 			pendingTasks, readyTasks, messages, decisions,
 			qdrantNote,
 			panesPath, panesRaw, panesRawErr,
+			supervisorFailures,
 		)
 	})
+}
+
+func loadSupervisorDeliveryFailures(runtimeDir string) ([]supervisorDeliveryReport, error) {
+	root := filepath.Join(spawn.Dir(runtimeDir), "supervisor")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	type fileState struct {
+		Delivery map[string]struct {
+			MessageID string `json:"message_id"`
+			TaskID    string `json:"task_id,omitempty"`
+			SurfaceID string `json:"surface_id,omitempty"`
+			Status    string `json:"status"`
+			Error     string `json:"error,omitempty"`
+			UpdatedAt string `json:"updated_at"`
+		} `json:"delivery"`
+	}
+
+	isFailure := func(status string) bool {
+		switch status {
+		case "missing-pane", "missing-pane-generic", "failed", "stale-pruned":
+			return true
+		default:
+			return false
+		}
+	}
+
+	failures := make([]supervisorDeliveryReport, 0)
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(root, entry.Name())
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			continue
+		}
+		var st fileState
+		if unmarshalErr := json.Unmarshal(raw, &st); unmarshalErr != nil {
+			continue
+		}
+		role := strings.TrimSuffix(entry.Name(), ".json")
+		for msgID, d := range st.Delivery {
+			if !isFailure(strings.TrimSpace(d.Status)) {
+				continue
+			}
+			id := strings.TrimSpace(d.MessageID)
+			if id == "" {
+				id = msgID
+			}
+			failures = append(failures, supervisorDeliveryReport{
+				Role:    role,
+				Message: id,
+				Task:    strings.TrimSpace(d.TaskID),
+				Status:  strings.TrimSpace(d.Status),
+				Error:   strings.TrimSpace(d.Error),
+				Surface: strings.TrimSpace(d.SurfaceID),
+				Updated: strings.TrimSpace(d.UpdatedAt),
+			})
+		}
+	}
+	return failures, nil
 }
 
 // recentGitLog returns the last 10 git log --oneline lines. Non-fatal on error.
@@ -164,6 +235,16 @@ func recentGitLog() []string {
 	return result
 }
 
+type supervisorDeliveryReport struct {
+	Role    string
+	Message string
+	Task    string
+	Status  string
+	Error   string
+	Surface string
+	Updated string
+}
+
 func printMasterResume(
 	w io.Writer,
 	gitLines []string,
@@ -175,6 +256,7 @@ func printMasterResume(
 	decisions []store.Decision,
 	qdrantNote string,
 	panesPath string, panesRaw []byte, panesRawErr error,
+	supervisorFailures []supervisorDeliveryReport,
 ) {
 	sep := func(title string) { fmt.Fprintf(w, "\n══ %s ══\n", title) }
 
@@ -319,6 +401,23 @@ func printMasterResume(
 		fmt.Fprintf(w, "  error reading panes.json: %v\n", panesRawErr)
 	default:
 		fmt.Fprintf(w, "%s\n", panesRaw)
+	}
+
+	sep("Supervisor Delivery Failures")
+	if len(supervisorFailures) == 0 {
+		fmt.Fprintln(w, "  (none)")
+	} else {
+		for _, f := range supervisorFailures {
+			task := f.Task
+			if task == "" {
+				task = "(none)"
+			}
+			errText := ""
+			if f.Error != "" {
+				errText = " — " + compactTrim(f.Error, 120)
+			}
+			fmt.Fprintf(w, "  ● [%s] task=%s message=%s role=%s%s\n", f.Status, task, f.Message, f.Role, errText)
+		}
 	}
 }
 

@@ -179,6 +179,66 @@ func TestMasterResume_WithHeartbeat(t *testing.T) {
 	}
 }
 
+func TestMasterResume_SupervisorDeliveryFailures(t *testing.T) {
+	setupGGDir(t)
+	rt := testRuntimeDir(t)
+	supervisorDir := filepath.Join(spawn.Dir(rt), "supervisor")
+	if err := os.MkdirAll(supervisorDir, 0o755); err != nil {
+		t.Fatalf("mkdir supervisor: %v", err)
+	}
+	state := map[string]any{
+		"delivery": map[string]any{
+			"msg-fail": map[string]any{
+				"message_id": "msg-fail",
+				"task_id":    "TASK-385",
+				"status":     "missing-pane",
+				"error":      "no pane registered",
+			},
+			"msg-ok": map[string]any{
+				"message_id": "msg-ok",
+				"task_id":    "TASK-385",
+				"status":     "delivered",
+			},
+		},
+	}
+	raw, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("marshal state: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(supervisorDir, "developer.json"), raw, 0o644); err != nil {
+		t.Fatalf("write supervisor state: %v", err)
+	}
+
+	failures, err := loadSupervisorDeliveryFailures(rt)
+	if err != nil {
+		t.Fatalf("load failures: %v", err)
+	}
+	if len(failures) != 1 {
+		t.Fatalf("expected one supervisor failure, got %+v", failures)
+	}
+
+	var buf strings.Builder
+	printMasterResume(&buf,
+		nil,
+		nil, spawn.ErrNoHeartbeat, false, "",
+		nil, spawn.ErrNoQueue,
+		nil, nil,
+		nil, nil, nil, nil,
+		"",
+		"", nil, nil,
+		failures,
+	)
+	out := buf.String()
+	for _, want := range []string{"Supervisor Delivery Failures", "missing-pane", "TASK-385", "msg-fail", "no pane registered"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in master resume output; got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "msg-ok") {
+		t.Fatalf("delivered supervisor messages should not be listed as failures; got:\n%s", out)
+	}
+}
+
 // TestBuildMasterResumeJSON_StableArrays verifies that the JSON builder
 // produces empty arrays (not null) for all nil slice inputs, and that
 // the serialised JSON round-trips correctly.
@@ -286,6 +346,7 @@ func TestPrintMasterResume_ShortCreatedAt(t *testing.T) {
 		nil, nil, nil, decisions,
 		"",
 		"", nil, nil,
+		nil,
 	)
 	if !strings.Contains(buf.String(), "some decision") {
 		t.Errorf("expected decision text in output; got:\n%s", buf.String())
@@ -306,6 +367,7 @@ func TestPrintMasterResume_EmptyDecisionCreatedAt(t *testing.T) {
 		nil, nil, nil, decisions,
 		"",
 		"", nil, nil,
+		nil,
 	)
 	if !strings.Contains(buf.String(), "another decision") {
 		t.Errorf("expected decision text in output; got:\n%s", buf.String())
@@ -325,6 +387,7 @@ func TestPrintMasterResume_QdrantNoteHidesQdrantSections(t *testing.T) {
 		tasks, nil, nil, nil,
 		"(Qdrant unreachable — tasks/inbox/decisions unavailable)",
 		"", nil, nil,
+		nil,
 	)
 	out := buf.String()
 	if strings.Contains(out, "TASK-001") {
@@ -348,6 +411,7 @@ func TestPrintMasterResume_PanesJSONRaw_Present(t *testing.T) {
 		nil, nil, nil, nil,
 		"",
 		"/tmp/fake/panes.json", []byte(rawContent), nil,
+		nil,
 	)
 	out := buf.String()
 	if !strings.Contains(out, "panes.json raw") {
@@ -370,6 +434,7 @@ func TestPrintMasterResume_PanesJSONRaw_Absent(t *testing.T) {
 		nil, nil, nil, nil,
 		"",
 		"/tmp/fake/panes.json", nil, os.ErrNotExist,
+		nil,
 	)
 	out := buf.String()
 	if !strings.Contains(out, "file absent") {
@@ -402,6 +467,7 @@ func TestPrintMasterResume_InboxTop10(t *testing.T) {
 		nil, nil, msgs, nil,
 		"",
 		"", nil, nil,
+		nil,
 	)
 	out := buf.String()
 	// First 10 messages must appear.

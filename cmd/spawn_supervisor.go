@@ -49,8 +49,18 @@ func init() {
 	spawnCmd.AddCommand(spawnSupervisorCmd)
 }
 
+type supervisorDeliveryStatus struct {
+	MessageID string `json:"message_id"`
+	TaskID    string `json:"task_id,omitempty"`
+	SurfaceID string `json:"surface_id,omitempty"`
+	Status    string `json:"status"`
+	Error     string `json:"error,omitempty"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 type supervisorState struct {
-	Processed map[string]bool `json:"processed"`
+	Processed map[string]bool                     `json:"processed"`
+	Delivery  map[string]supervisorDeliveryStatus `json:"delivery,omitempty"`
 }
 
 func safeSupervisorRoleFile(role string) string {
@@ -97,6 +107,9 @@ func loadSupervisorState(runtimeDir, role string) (*supervisorState, error) {
 	}
 	if s.Processed == nil {
 		s.Processed = map[string]bool{}
+	}
+	if s.Delivery == nil {
+		s.Delivery = map[string]supervisorDeliveryStatus{}
 	}
 	return &s, nil
 }
@@ -219,9 +232,17 @@ func processSupervisorMessages(ctx context.Context, cmd *cobra.Command, runtimeD
 		}
 		if !eligibleForSupervisor(role, m) {
 			state.Processed[m.ID] = true
+			recordSupervisorDelivery(state, supervisorDeliveryStatus{
+				MessageID: m.ID,
+				TaskID:    strings.TrimSpace(m.TaskID),
+				Status:    "skipped",
+				Error:     "message not eligible for supervisor role",
+			})
 			continue
 		}
-		if deliverSupervisorMessage(ctx, cmd, runtimeDir, term, m, openMissing) {
+		status := deliverSupervisorMessage(ctx, cmd, runtimeDir, term, m, openMissing)
+		recordSupervisorDelivery(state, status)
+		if status.Status == "delivered" || status.Status == "stale-pruned" || status.Status == "missing-pane" || status.Status == "missing-pane-generic" {
 			state.Processed[m.ID] = true
 		}
 	}
@@ -247,45 +268,137 @@ func eligibleForSupervisor(role string, m store.Message) bool {
 	return strings.EqualFold(strings.TrimSpace(m.Audience), "agents") || strings.TrimSpace(m.Audience) == ""
 }
 
-func deliverSupervisorMessage(ctx context.Context, cmd *cobra.Command, runtimeDir string, term terminal.Terminal, m store.Message, openMissing bool) bool {
+func deliverSupervisorMessage(ctx context.Context, cmd *cobra.Command, runtimeDir string, term terminal.Terminal, m store.Message, openMissing bool) supervisorDeliveryStatus {
+	actionable := supervisorActionablePrompt(m)
+	status := supervisorDeliveryStatus{
+		MessageID: m.ID,
+		TaskID:    strings.TrimSpace(m.TaskID),
+		Status:    "failed",
+	}
 	pane, err := paneForMessage(runtimeDir, m)
 	if err != nil {
+		status.Error = err.Error()
 		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ supervisor lookup message %s: %v\n", m.ID, err)
-		return false
+		return status
 	}
 	if pane == nil {
 		if openMissing && strings.TrimSpace(m.TaskID) != "" {
 			sid, spawnErr := spawnWorkerForTask(ctx, term, runtimeDir, spawnAgentDefault(), m.TaskID)
 			if spawnErr != nil {
+				status.Error = spawnErr.Error()
 				fmt.Fprintf(cmd.ErrOrStderr(), "⚠ missing pane for %s (%s): auto-open failed: %v\n", m.TaskID, m.ID, spawnErr)
-				return false
+				return status
 			}
 			pane = &spawn.WorkerPane{TaskID: m.TaskID, SurfaceID: string(sid)}
 			fmt.Fprintf(cmd.ErrOrStderr(), "✓ opened pane %s for %s (message %s)\n", pane.SurfaceID, pane.TaskID, m.ID)
 		} else {
 			if strings.TrimSpace(m.TaskID) == "" {
+				status.Status = "missing-pane-generic"
+				status.Error = "no task id on message"
 				fmt.Fprintf(cmd.ErrOrStderr(), "⚠ no worker pane registered for message %s — open a worker with: gg spawn worker --task TASK-NNN\n", m.ID)
-				return true
+				return status
 			}
+			status.Status = "missing-pane"
+			status.Error = fmt.Sprintf("no pane registered for %s", m.TaskID)
 			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ missing pane for task %s (message %s) — open with: gg spawn worker --task %s\n", m.TaskID, m.ID, m.TaskID)
-			return true
+			return status
 		}
 	}
 
+	status.SurfaceID = pane.SurfaceID
 	surfaceID := terminal.SurfaceID(pane.SurfaceID)
-	if err := terminal.WakeAndSendWithFlock(ctx, term, surfaceID, m.Content, spawn.Dir(runtimeDir)); err != nil {
+	if err := terminal.WakeAndSendWithFlock(ctx, term, surfaceID, actionable, spawn.Dir(runtimeDir)); err != nil {
 		if isSurfaceDefinitelyDead(ctx, surfaceID, err) {
+			status.Status = "stale-pruned"
+			status.Error = err.Error()
 			pruneStalePane(runtimeDir, *pane)
 			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ stale pane %s for %s (message %s) — pruned; reopen with gg spawn worker --task %s\n", pane.SurfaceID, pane.TaskID, m.ID, pane.TaskID)
-			return true
+			return status
 		}
+		status.Error = err.Error()
 		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ supervisor delivery failed for %s on %s: %v\n", m.ID, pane.SurfaceID, err)
-		return false
+		return status
 	}
 
-	_ = spawn.UpdateWorkerNudge(runtimeDir, pane.SurfaceID, m.Content, "")
+	status.Status = "delivered"
+	status.Error = ""
+	_ = spawn.UpdateWorkerNudge(runtimeDir, pane.SurfaceID, actionable, "")
 	fmt.Fprintf(cmd.OutOrStdout(), "✓ supervisor delivered %s to %s (%s)\n", m.ID, pane.TaskID, pane.SurfaceID)
-	return true
+	return status
+}
+
+func recordSupervisorDelivery(state *supervisorState, status supervisorDeliveryStatus) {
+	if state.Delivery == nil {
+		state.Delivery = map[string]supervisorDeliveryStatus{}
+	}
+	status.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	state.Delivery[status.MessageID] = status
+}
+
+func supervisorActionablePrompt(m store.Message) string {
+	base := strings.TrimSpace(m.Content)
+	if base == "" {
+		base = "Incoming supervisor instruction."
+	}
+	if strings.Contains(base, "Required next command:") {
+		return base
+	}
+
+	taskID := strings.TrimSpace(m.TaskID)
+	if taskID == "" {
+		taskID = "(none)"
+	}
+
+	acLine := "not provided"
+	if parsed := extractAcceptanceCriteriaLine(base); parsed != "" {
+		acLine = parsed
+	}
+
+	nextCmd := "no command detected; run `gg inbox --role $GG_ROLE --since-cursor` and follow assignment"
+	if parsed := detectNextCommand(base); parsed != "" {
+		nextCmd = parsed
+	}
+
+	return fmt.Sprintf("%s\n\nTask ID: %s\nAcceptance criteria: %s\nRequired next command: %s", base, taskID, acLine, nextCmd)
+}
+
+func extractAcceptanceCriteriaLine(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if strings.Contains(lower, "acceptance criteria") || strings.Contains(lower, "ac-") {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func detectNextCommand(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "$ ") {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, "$ "))
+		}
+		if strings.Contains(trimmed, "`") {
+			parts := strings.Split(trimmed, "`")
+			for i := 1; i < len(parts); i += 2 {
+				candidate := strings.TrimSpace(parts[i])
+				if strings.HasPrefix(candidate, "gg ") {
+					return candidate
+				}
+			}
+		}
+		if strings.HasPrefix(trimmed, "gg ") {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func paneForMessage(runtimeDir string, m store.Message) (*spawn.WorkerPane, error) {
