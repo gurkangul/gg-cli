@@ -94,3 +94,6 @@ gg record           gg task create       gg search
 ```
 
 No central coordinator. No daemon. Each agent is a subprocess that reads/writes the shared store via the `gg` CLI.
+
+For the alpha supervision decision, see
+[`docs/adr-foreground-supervisor.md`](adr-foreground-supervisor.md).
