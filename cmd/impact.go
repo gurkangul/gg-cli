@@ -255,9 +255,10 @@ func renderImpactDefault(w io.Writer, result impactResult) {
 	fmt.Fprintln(w, strings.Repeat("─", 60))
 
 	fmt.Fprintf(w, "\nDownstream Dependents (%d):\n", len(result.Dependents))
-	if len(result.Dependents) == 0 {
+	switch {
+	case len(result.Dependents) == 0:
 		fmt.Fprintln(w, "  (none — or graph not indexed)")
-	} else if result.HopDepth > 1 {
+	case result.HopDepth > 1:
 		for hop := 1; hop <= result.Traversal.MaxDepth; hop++ {
 			var group []string
 			for _, dep := range result.DependentHops {
@@ -279,7 +280,7 @@ func renderImpactDefault(w io.Writer, result impactResult) {
 		if result.Traversal.Truncated {
 			fmt.Fprintf(w, "  Traversal truncated at hop %d\n", result.Traversal.MaxDepth)
 		}
-	} else {
+	default:
 		for _, dep := range result.Dependents {
 			fmt.Fprintf(w, "  → %s\n", dep)
 		}
