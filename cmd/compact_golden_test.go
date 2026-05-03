@@ -53,7 +53,7 @@ var expectedRendererVersions = map[string]int{
 // Update ONLY the verb you changed — leaving others untouched signals
 // that their golden files are still valid.
 var expectedRendererV_each = map[string]int{
-	"search":     1,
+	"search":     2,
 	"context":    2,
 	"impact":     1,
 	"inbox":      1,

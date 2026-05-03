@@ -28,7 +28,7 @@ import (
 // All verbs start at 1 — this is v1 of per-verb tracking (the prior global
 // compactRendererV=2 was verb-agnostic and is superseded by this table).
 const (
-	compactRendererV_search     = 1
+	compactRendererV_search     = 2
 	compactRendererV_context    = 2
 	compactRendererV_impact     = 1
 	compactRendererV_inbox      = 1

@@ -1,4 +1,4 @@
-search — 2D 1R
+search — 2D 1R 0T 0B 0N
 
 D  2026-04-10  use JWT for stateless auth →TASK-001
 D  2026-04-08  rotate signing keys every 90 days

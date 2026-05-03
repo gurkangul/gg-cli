@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -43,6 +45,9 @@ func init() {
 type searchPayload struct {
 	Decisions  []store.Decision  `json:"decisions"`
 	Rejections []store.Rejection `json:"rejections"`
+	Tasks      []store.Task      `json:"tasks"`
+	Bugs       []store.Bug       `json:"bugs"`
+	Notes      []store.Note      `json:"notes"`
 }
 
 func runSearch(cmd *cobra.Command, args []string) error {
@@ -73,24 +78,52 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generate embedding: %w", err)
 	}
 
-	decisions, err := d.store.SearchDecisions(ctx, vector, searchLimit)
-	if err != nil {
-		return fmt.Errorf("search decisions: %w", err)
+	semanticLimit := searchLimit * 4
+	if semanticLimit < 20 {
+		semanticLimit = 20
 	}
-
-	rejections, err := d.store.SearchRejections(ctx, vector, searchLimit)
-	if err != nil {
-		return fmt.Errorf("search rejections: %w", err)
+	var decisions []store.Decision
+	var rejections []store.Rejection
+	var tasks []store.Task
+	var bugs []store.Bug
+	var notes []store.Note
+	var decErr, rejErr, taskErr, bugErr, noteErr error
+	var wg sync.WaitGroup
+	wg.Add(5)
+	go func() { defer wg.Done(); decisions, decErr = d.store.SearchDecisions(ctx, vector, semanticLimit) }()
+	go func() { defer wg.Done(); rejections, rejErr = d.store.SearchRejections(ctx, vector, semanticLimit) }()
+	go func() { defer wg.Done(); tasks, taskErr = d.store.SearchTasks(ctx, vector, semanticLimit, false) }()
+	go func() { defer wg.Done(); bugs, bugErr = d.store.SearchBugs(ctx, vector, semanticLimit) }()
+	go func() { defer wg.Done(); notes, noteErr = d.store.SearchNotes(ctx, vector, semanticLimit) }()
+	wg.Wait()
+	if decErr != nil {
+		return fmt.Errorf("search decisions: %w", decErr)
 	}
+	if rejErr != nil {
+		return fmt.Errorf("search rejections: %w", rejErr)
+	}
+	if taskErr != nil {
+		return fmt.Errorf("search tasks: %w", taskErr)
+	}
+	if bugErr != nil {
+		return fmt.Errorf("search bugs: %w", bugErr)
+	}
+	if noteErr != nil {
+		return fmt.Errorf("search notes: %w", noteErr)
+	}
+	tasks = prependExactTask(ctx, d.store, query, tasks)
+	bugs = prependExactBug(ctx, d.store, query, bugs)
 
 	// Write results to the LKG cache for future offline use (best-effort).
 	if cfg, cfgErr := config.Load(); cfgErr == nil {
 		if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
-			_ = cache.Put(rtDir, "search", query, searchPayload{Decisions: decisions, Rejections: rejections})
+			_ = cache.Put(rtDir, "search", query, searchPayload{
+				Decisions: decisions, Rejections: rejections, Tasks: tasks, Bugs: bugs, Notes: notes,
+			})
 		}
 	}
 
-	return printSearchResults(cmd, decisions, rejections, "", time.Time{})
+	return printSearchResults(cmd, query, decisions, rejections, tasks, bugs, notes, "", time.Time{})
 }
 
 // serveSearchFromJSONL performs a text-scan of the brain JSONL files as a
@@ -223,7 +256,7 @@ func serveSearchFromJSONL(cmd *cobra.Command, query string) error {
 		decisions = append(decisions, d)
 	}
 
-	return printSearchResults(cmd, decisions, rejections, banner, time.Time{})
+	return printSearchResults(cmd, query, decisions, rejections, nil, nil, nil, banner, time.Time{})
 }
 
 // serveSearchFromCache looks up the last-known-good cache entry for query
@@ -248,13 +281,19 @@ func serveSearchFromCache(cmd *cobra.Command, query string) error {
 	}
 
 	banner := fmt.Sprintf("⚠ Qdrant unreachable — cache may be stale; last update at %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
-	return printSearchResults(cmd, payload.Decisions, payload.Rejections, banner, cachedAt)
+	return printSearchResults(cmd, query, payload.Decisions, payload.Rejections, payload.Tasks, payload.Bugs, payload.Notes, banner, cachedAt)
 }
 
-func printSearchResults(cmd *cobra.Command, decisions []store.Decision, rejections []store.Rejection, banner string, cachedAt time.Time) error {
+func printSearchResults(cmd *cobra.Command, query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, banner string, cachedAt time.Time) error {
+	results := trimSearchResults(buildSearchResults(query, decisions, rejections, tasks, bugs, notes), searchLimit)
 	jsonMap := map[string]any{
 		"decisions":  decisions,
 		"rejections": rejections,
+		"tasks":      tasks,
+		"bugs":       bugs,
+		"notes":      notes,
+		"matches":    results,
+		"ranking":    "semantic results with deterministic lexical exact-match boost; BM25/sparse fallback not required",
 	}
 	if banner != "" {
 		jsonMap["warning"] = banner // include stale signal for agents parsing --json output
@@ -269,24 +308,26 @@ func printSearchResults(cmd *cobra.Command, decisions []store.Decision, rejectio
 		}
 		if isCompactActive(cmd) {
 			emitCompact(cmd, "search",
-				func(w io.Writer) { renderSearchDefault(w, decisions, rejections) },
-				func(w io.Writer) { renderSearchCompact(w, decisions, rejections) },
+				func(w io.Writer) { renderSearchResultsDefault(w, results) },
+				func(w io.Writer) { renderSearchResultsCompact(w, results) },
 				compactRendererV_search,
 			)
 			return
 		}
-		renderSearchDefault(os.Stdout, decisions, rejections)
+		renderSearchResultsDefault(os.Stdout, results)
 	})
 }
 
-func renderSearchDefault(w io.Writer, decisions []store.Decision, rejections []store.Rejection) {
-	if len(decisions) == 0 && len(rejections) == 0 {
+func renderSearchResultsDefault(w io.Writer, results []searchResult) {
+	if len(results) == 0 {
 		fmt.Fprintln(w, "No results found.")
 		return
 	}
-	if len(decisions) > 0 {
-		fmt.Fprintln(w, "DECISIONS:")
-		for _, dec := range decisions {
+	fmt.Fprintln(w, "RESULTS:")
+	for _, result := range results {
+		switch {
+		case result.Decision != nil:
+			dec := *result.Decision
 			fmt.Fprintf(w, "  • %s\n", dec.Text)
 			if dec.Reason != "" {
 				fmt.Fprintf(w, "    Reason: %s\n", dec.Reason)
@@ -300,11 +341,8 @@ func renderSearchDefault(w io.Writer, decisions []store.Decision, rejections []s
 			if dec.Author != "" {
 				fmt.Fprintf(w, "    By: %s\n", dec.Author)
 			}
-		}
-	}
-	if len(rejections) > 0 {
-		fmt.Fprintln(w, "REJECTIONS:")
-		for _, r := range rejections {
+		case result.Rejection != nil:
+			r := *result.Rejection
 			fmt.Fprintf(w, "  ✗ %s\n", r.Approach)
 			if r.Reason != "" {
 				fmt.Fprintf(w, "    Reason: %s\n", r.Reason)
@@ -318,16 +356,89 @@ func renderSearchDefault(w io.Writer, decisions []store.Decision, rejections []s
 			if r.Author != "" {
 				fmt.Fprintf(w, "    By: %s\n", r.Author)
 			}
+		case result.Task != nil:
+			t := *result.Task
+			fmt.Fprintf(w, "  %s [%s] %s — %s\n", taskStatusIcon(t.Status), t.ID, t.Title, t.Priority)
+			if t.Detail != "" {
+				fmt.Fprintf(w, "    %s\n", compactTrim(t.Detail, 120))
+			}
+		case result.Bug != nil:
+			b := *result.Bug
+			fmt.Fprintf(w, "  ● [%s] %s — %s/%s\n", b.ID, b.Title, b.Severity, b.Status)
+			if b.Detail != "" {
+				fmt.Fprintf(w, "    %s\n", compactTrim(b.Detail, 120))
+			}
+		case result.Note != nil:
+			n := *result.Note
+			fmt.Fprintf(w, "  [%s]", shortDate(n.CreatedAt))
+			if n.TaskID != "" {
+				fmt.Fprintf(w, " (%s)", n.TaskID)
+			}
+			fmt.Fprintf(w, " %s\n", n.Text)
 		}
 	}
 }
 
 func renderSearchCompact(w io.Writer, decisions []store.Decision, rejections []store.Rejection) {
-	fmt.Fprintf(w, "search — %dD %dR\n\n", len(decisions), len(rejections))
-	if len(decisions) == 0 && len(rejections) == 0 {
+	renderSearchResultsCompact(w, buildSearchResults("", decisions, rejections, nil, nil, nil))
+}
+
+func renderSearchResultsCompact(w io.Writer, results []searchResult) {
+	counts := map[string]int{}
+	for _, r := range results {
+		counts[r.Kind]++
+	}
+	fmt.Fprintf(w, "search — %dD %dR %dT %dB %dN\n\n", counts["decision"], counts["rejection"], counts["task"], counts["bug"], counts["note"])
+	if len(results) == 0 {
 		fmt.Fprintln(w, "(no results)")
 		return
 	}
-	writeCompactDecisions(w, decisions)
-	writeCompactRejections(w, rejections)
+	for _, r := range results {
+		fmt.Fprintln(w, compactSearchResultLine(r))
+	}
+}
+
+func prependExactTask(ctx context.Context, c *store.Client, query string, tasks []store.Task) []store.Task {
+	id := exactID(query, "TASK")
+	if id == "" {
+		return tasks
+	}
+	t, err := c.GetTask(ctx, id)
+	if err != nil || t == nil {
+		return tasks
+	}
+	out := []store.Task{*t}
+	for _, task := range tasks {
+		if task.ID != id {
+			out = append(out, task)
+		}
+	}
+	return out
+}
+
+func prependExactBug(ctx context.Context, c *store.Client, query string, bugs []store.Bug) []store.Bug {
+	id := exactID(query, "BUG")
+	if id == "" {
+		return bugs
+	}
+	b, err := c.GetBug(ctx, id)
+	if err != nil || b == nil {
+		return bugs
+	}
+	out := []store.Bug{*b}
+	for _, bug := range bugs {
+		if bug.ID != id {
+			out = append(out, bug)
+		}
+	}
+	return out
+}
+
+func exactID(query, prefix string) string {
+	for _, match := range exactSearchID.FindAllString(strings.ToUpper(query), -1) {
+		if strings.HasPrefix(match, prefix+"-") {
+			return match
+		}
+	}
+	return ""
 }
