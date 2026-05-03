@@ -226,9 +226,12 @@ type Config struct {
 	Doctor    DoctorConfig    `yaml:"doctor"`
 	Tracker   TrackerConfig   `yaml:"tracker"`
 	Developer DeveloperConfig `yaml:"developer,omitempty"`
-	Bugs      BugsConfig      `yaml:"bugs"`
-	Tasks     TasksConfig     `yaml:"tasks"`
-	Audit     AuditConfig     `yaml:"audit"`
+	// LinkedProjects lists read-only project IDs or paths that search/context
+	// may consult only when the caller passes --include-linked.
+	LinkedProjects []LinkedProjectConfig `yaml:"linked_projects,omitempty"`
+	Bugs           BugsConfig            `yaml:"bugs"`
+	Tasks          TasksConfig           `yaml:"tasks"`
+	Audit          AuditConfig           `yaml:"audit"`
 }
 
 func DefaultConfig() *Config {
@@ -365,20 +368,7 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(ggDir, ConfigFile)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config: %w", err)
-	}
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
-	}
-	applyMemgraphEnvOverrides(&cfg.Memgraph)
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid config at %s: %w", path, err)
-	}
-	return &cfg, nil
+	return LoadFromGGDir(ggDir)
 }
 
 // applyMemgraphEnvOverrides sets Memgraph credentials from environment variables

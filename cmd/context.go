@@ -33,6 +33,7 @@ var contextFullTranscript bool
 var contextCompact bool
 var contextBudget int
 var contextForTask string
+var contextIncludeLinked bool
 
 func init() {
 	contextCmd.Flags().Uint64Var(&contextLimit, "limit", 5, "max results per collection")
@@ -41,6 +42,7 @@ func init() {
 	contextCmd.Flags().BoolVar(&contextCompact, "compact", false, "emit one line per item — drops reasons/details/transcripts to preserve agent context window")
 	contextCmd.Flags().IntVar(&contextBudget, "budget", 0, "token budget: emit P1 items first, drop lower-priority tiers when over budget (0 = no limit; implies --compact)")
 	contextCmd.Flags().StringVar(&contextForTask, "for-task", "", "task-scoped rehydration: fetch the task, its dependencies, and related decisions/rejections")
+	contextCmd.Flags().BoolVar(&contextIncludeLinked, "include-linked", false, "also search read-only linked projects from .gg/config.yaml")
 	rootCmd.AddCommand(contextCmd)
 }
 
@@ -128,7 +130,18 @@ func runContext(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	var linkedWarnings []string
+	if contextIncludeLinked {
+		cfg, cfgErr := config.Load()
+		if cfgErr != nil {
+			return cfgErr
+		}
+		markBundleSource(&bundle, cfg.ProjectID)
+		linkedWarnings = appendLinkedContext(ctx, cfg, &bundle, vector)
+	}
+
 	errs := collectBundleErrors(bundle)
+	errs = append(errs, linkedWarnings...)
 
 	total := len(bundle.decisions) + len(bundle.rejections) + len(bundle.tasks) + len(bundle.discussions) + len(bundle.notes) + len(bundle.artifacts)
 	if total == 0 && len(errs) > 0 {

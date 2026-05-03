@@ -92,15 +92,16 @@ func printContextBundle(cmd *cobra.Command, query string, bundle contextBundle, 
 	conflicts := detectConflicts(bundle)
 
 	jsonPayload := map[string]any{
-		"query":       query,
-		"decisions":   bundle.decisions,
-		"rejections":  bundle.rejections,
-		"tasks":       bundle.tasks,
-		"discussions": bundle.discussions,
-		"notes":       bundle.notes,
-		"artifacts":   bundle.artifacts,
-		"conflicts":   conflicts,
-		"warnings":    errs,
+		"query":           query,
+		"decisions":       bundle.decisions,
+		"rejections":      bundle.rejections,
+		"tasks":           bundle.tasks,
+		"discussions":     bundle.discussions,
+		"notes":           bundle.notes,
+		"artifacts":       bundle.artifacts,
+		"source_projects": bundle.sources,
+		"conflicts":       conflicts,
+		"warnings":        errs,
 	}
 	if !cachedAt.IsZero() {
 		jsonPayload["cached_at"] = cachedAt.UTC().Format(time.RFC3339)
@@ -143,7 +144,7 @@ func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs 
 	if len(bundle.decisions) > 0 {
 		fmt.Fprintln(w, "\nDECISIONS:")
 		for _, dec := range bundle.decisions {
-			fmt.Fprintf(w, "  • [%s] %s\n", shortDate(dec.CreatedAt), dec.Text)
+			fmt.Fprintf(w, "  • %s[%s] %s\n", sourcePrefix(bundle.sources.get("decision", dec.ID)), shortDate(dec.CreatedAt), dec.Text)
 			if dec.Reason != "" {
 				fmt.Fprintf(w, "    Reason: %s\n", dec.Reason)
 			}
@@ -159,7 +160,7 @@ func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs 
 	if len(bundle.rejections) > 0 {
 		fmt.Fprintln(w, "\nREJECTIONS:")
 		for _, r := range bundle.rejections {
-			fmt.Fprintf(w, "  ✗ [%s] %s\n", shortDate(r.CreatedAt), r.Approach)
+			fmt.Fprintf(w, "  ✗ %s[%s] %s\n", sourcePrefix(bundle.sources.get("rejection", r.ID)), shortDate(r.CreatedAt), r.Approach)
 			if r.Reason != "" {
 				fmt.Fprintf(w, "    Reason: %s\n", r.Reason)
 			}
@@ -175,7 +176,7 @@ func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs 
 	if len(bundle.tasks) > 0 {
 		fmt.Fprintln(w, "\nTASKS:")
 		for _, t := range bundle.tasks {
-			fmt.Fprintf(w, "  %s [%s] %s — %s\n", taskStatusIcon(t.Status), t.ID, t.Title, t.Priority)
+			fmt.Fprintf(w, "  %s %s[%s] %s — %s\n", taskStatusIcon(t.Status), sourcePrefix(bundle.sources.get("task", t.ID)), t.ID, t.Title, t.Priority)
 			if t.Detail != "" {
 				fmt.Fprintf(w, "    %s\n", compactTrim(t.Detail, 120))
 			}
@@ -185,7 +186,7 @@ func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs 
 	if len(bundle.discussions) > 0 {
 		fmt.Fprintln(w, "\nDISCUSSIONS:")
 		for _, disc := range bundle.discussions {
-			fmt.Fprintf(w, "  %s [%s] %s\n", discStatusMark(disc.Status), disc.ID, disc.Topic)
+			fmt.Fprintf(w, "  %s %s[%s] %s\n", discStatusMark(disc.Status), sourcePrefix(bundle.sources.get("discussion", disc.ID)), disc.ID, disc.Topic)
 			if disc.Detail != "" {
 				fmt.Fprintf(w, "    %s\n", compactTrim(disc.Detail, 120))
 			}
@@ -210,7 +211,7 @@ func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs 
 	if len(bundle.notes) > 0 {
 		fmt.Fprintln(w, "\nNOTES:")
 		for _, n := range bundle.notes {
-			fmt.Fprintf(w, "  [%s]", shortDate(n.CreatedAt))
+			fmt.Fprintf(w, "  %s[%s]", sourcePrefix(bundle.sources.get("note", n.ID)), shortDate(n.CreatedAt))
 			if n.TaskID != "" {
 				fmt.Fprintf(w, " (%s)", n.TaskID)
 			}
@@ -263,11 +264,11 @@ func renderContextCompact(w io.Writer, query string, bundle contextBundle, errs 
 		fmt.Fprintln(w)
 	}
 
-	writeCompactDecisions(w, bundle.decisions)
-	writeCompactRejections(w, bundle.rejections)
-	writeCompactTasks(w, bundle.tasks)
-	writeCompactDiscussions(w, bundle.discussions)
-	writeCompactNotes(w, bundle.notes)
+	writeCompactDecisionsWithSource(w, bundle.decisions, bundle.sources)
+	writeCompactRejectionsWithSource(w, bundle.rejections, bundle.sources)
+	writeCompactTasksWithSource(w, bundle.tasks, bundle.sources)
+	writeCompactDiscussionsWithSource(w, bundle.discussions, bundle.sources)
+	writeCompactNotesWithSource(w, bundle.notes, bundle.sources)
 	writeCompactArtifacts(w, bundle.artifacts)
 
 	if len(errs) > 0 {

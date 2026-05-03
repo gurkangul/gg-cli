@@ -34,10 +34,12 @@ See also: gg status (project overview), gg task get (task details)`,
 
 var searchLimit uint64
 var searchCompact bool
+var searchIncludeLinked bool
 
 func init() {
 	searchCmd.Flags().Uint64Var(&searchLimit, "limit", 5, "max results to return")
 	searchCmd.Flags().BoolVar(&searchCompact, "compact", false, "one line per item — drops reasons/tags/author to preserve agent context window")
+	searchCmd.Flags().BoolVar(&searchIncludeLinked, "include-linked", false, "also search read-only linked projects from .gg/config.yaml")
 	rootCmd.AddCommand(searchCmd)
 }
 
@@ -113,6 +115,17 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 	tasks = prependExactTask(ctx, d.store, query, tasks)
 	bugs = prependExactBug(ctx, d.store, query, bugs)
+
+	if searchIncludeLinked {
+		cfg, cfgErr := config.Load()
+		if cfgErr != nil {
+			return cfgErr
+		}
+		results := labelSearchResults(buildSearchResults(query, decisions, rejections, tasks, bugs, notes), cfg.ProjectID)
+		linkedResults, warnings := linkedSearchResults(ctx, cfg, query, vector, semanticLimit)
+		results = trimSearchResults(rankSearchResults(append(results, linkedResults...)), searchLimit)
+		return printSearchMatches(cmd, query, results, "", time.Time{}, warnings)
+	}
 
 	// Write results to the LKG cache for future offline use (best-effort).
 	if cfg, cfgErr := config.Load(); cfgErr == nil {
@@ -328,7 +341,7 @@ func renderSearchResultsDefault(w io.Writer, results []searchResult) {
 		switch {
 		case result.Decision != nil:
 			dec := *result.Decision
-			fmt.Fprintf(w, "  • %s\n", dec.Text)
+			fmt.Fprintf(w, "  • %s%s\n", sourcePrefix(result.SourceProjectID), dec.Text)
 			if dec.Reason != "" {
 				fmt.Fprintf(w, "    Reason: %s\n", dec.Reason)
 			}
@@ -343,7 +356,7 @@ func renderSearchResultsDefault(w io.Writer, results []searchResult) {
 			}
 		case result.Rejection != nil:
 			r := *result.Rejection
-			fmt.Fprintf(w, "  ✗ %s\n", r.Approach)
+			fmt.Fprintf(w, "  ✗ %s%s\n", sourcePrefix(result.SourceProjectID), r.Approach)
 			if r.Reason != "" {
 				fmt.Fprintf(w, "    Reason: %s\n", r.Reason)
 			}
@@ -358,19 +371,19 @@ func renderSearchResultsDefault(w io.Writer, results []searchResult) {
 			}
 		case result.Task != nil:
 			t := *result.Task
-			fmt.Fprintf(w, "  %s [%s] %s — %s\n", taskStatusIcon(t.Status), t.ID, t.Title, t.Priority)
+			fmt.Fprintf(w, "  %s %s[%s] %s — %s\n", taskStatusIcon(t.Status), sourcePrefix(result.SourceProjectID), t.ID, t.Title, t.Priority)
 			if t.Detail != "" {
 				fmt.Fprintf(w, "    %s\n", compactTrim(t.Detail, 120))
 			}
 		case result.Bug != nil:
 			b := *result.Bug
-			fmt.Fprintf(w, "  ● [%s] %s — %s/%s\n", b.ID, b.Title, b.Severity, b.Status)
+			fmt.Fprintf(w, "  ● %s[%s] %s — %s/%s\n", sourcePrefix(result.SourceProjectID), b.ID, b.Title, b.Severity, b.Status)
 			if b.Detail != "" {
 				fmt.Fprintf(w, "    %s\n", compactTrim(b.Detail, 120))
 			}
 		case result.Note != nil:
 			n := *result.Note
-			fmt.Fprintf(w, "  [%s]", shortDate(n.CreatedAt))
+			fmt.Fprintf(w, "  %s[%s]", sourcePrefix(result.SourceProjectID), shortDate(n.CreatedAt))
 			if n.TaskID != "" {
 				fmt.Fprintf(w, " (%s)", n.TaskID)
 			}

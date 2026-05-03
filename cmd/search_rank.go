@@ -12,14 +12,15 @@ import (
 var exactSearchID = regexp.MustCompile(`\b(TASK|BUG)-\d{3,}\b`)
 
 type searchResult struct {
-	Kind      string           `json:"kind"`
-	Rank      int              `json:"rank"`
-	Score     int              `json:"lexical_score"`
-	Decision  *store.Decision  `json:"decision,omitempty"`
-	Rejection *store.Rejection `json:"rejection,omitempty"`
-	Task      *store.Task      `json:"task,omitempty"`
-	Bug       *store.Bug       `json:"bug,omitempty"`
-	Note      *store.Note      `json:"note,omitempty"`
+	Kind            string           `json:"kind"`
+	Rank            int              `json:"rank"`
+	Score           int              `json:"lexical_score"`
+	SourceProjectID string           `json:"source_project_id,omitempty"`
+	Decision        *store.Decision  `json:"decision,omitempty"`
+	Rejection       *store.Rejection `json:"rejection,omitempty"`
+	Task            *store.Task      `json:"task,omitempty"`
+	Bug             *store.Bug       `json:"bug,omitempty"`
+	Note            *store.Note      `json:"note,omitempty"`
 }
 
 func buildSearchResults(query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note) []searchResult {
@@ -50,16 +51,20 @@ func buildSearchResults(query string, decisions []store.Decision, rejections []s
 		out = append(out, searchResult{Kind: "note", Rank: rank, Score: lexicalScoreWithPrimary(query, n.ID, noteSearchText(n)), Note: &n})
 		rank++
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Score != out[j].Score {
-			return out[i].Score > out[j].Score
+	return rankSearchResults(out)
+}
+
+func rankSearchResults(results []searchResult) []searchResult {
+	sort.SliceStable(results, func(i, j int) bool {
+		if results[i].Score != results[j].Score {
+			return results[i].Score > results[j].Score
 		}
-		return out[i].Rank < out[j].Rank
+		return results[i].Rank < results[j].Rank
 	})
-	for i := range out {
-		out[i].Rank = i + 1
+	for i := range results {
+		results[i].Rank = i + 1
 	}
-	return out
+	return results
 }
 
 func trimSearchResults(results []searchResult, limit uint64) []searchResult {
@@ -125,15 +130,15 @@ func noteSearchText(n store.Note) string {
 func compactSearchResultLine(r searchResult) string {
 	switch {
 	case r.Decision != nil:
-		return compactDecisionLine(*r.Decision)
+		return compactDecisionLine(*r.Decision) + sourceSuffix(r.SourceProjectID)
 	case r.Rejection != nil:
-		return compactRejectionLine(*r.Rejection)
+		return compactRejectionLine(*r.Rejection) + sourceSuffix(r.SourceProjectID)
 	case r.Task != nil:
-		return compactTaskLine(*r.Task)
+		return compactTaskLine(*r.Task) + sourceSuffix(r.SourceProjectID)
 	case r.Bug != nil:
-		return compactBugLine(*r.Bug)
+		return compactBugLine(*r.Bug) + sourceSuffix(r.SourceProjectID)
 	case r.Note != nil:
-		return compactNoteLine(*r.Note)
+		return compactNoteLine(*r.Note) + sourceSuffix(r.SourceProjectID)
 	default:
 		return fmt.Sprintf("?  %s", r.Kind)
 	}

@@ -14,6 +14,7 @@ type contextBundle struct {
 	discussions []store.Discussion
 	notes       []store.Note
 	artifacts   []contextartifacts.Snippet
+	sources     sourceLabels
 	decErr      error
 	rejErr      error
 	taskErr     error
