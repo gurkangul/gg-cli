@@ -24,6 +24,23 @@ When you run several AI agents in parallel (different terminals, different roles
 
 ---
 
+## Agent install
+
+Pick the path that matches the agent you use. All paths keep gg as a local
+CLI/subprocess tool; no MCP server or hosted service is required.
+
+| Agent | Install path |
+|---|---|
+| Codex | `go install github.com/gurkangul/gg-cli/cmd/gg@latest`, then `gg init`; Codex reads project `AGENTS.md`. Optional global reminder: `~/.codex/instructions.md`. |
+| Claude Code | `go install ...`, `gg init`, then `gg doctor --install-agent-hooks`; Claude reads generated `CLAUDE.md`/`AGENTS.md`. |
+| Cursor | `go install ...`, `gg init`, then `gg doctor --install-agent-hooks`; Cursor reads generated `.cursor/rules/gg.mdc`. |
+| Manual shell | `export GG_AGENT=manual GG_ROLE=developer`, then run `gg status` and `gg inbox --role "$GG_ROLE" --since-cursor` at session start. |
+
+See [docs/agent-native-install.md](docs/agent-native-install.md) for the
+session-start, task, reviewer, and search/context/impact/inbox workflow.
+
+---
+
 ![gg demo](docs/demo.svg)
 
 <!-- 90s demo embed placeholder — generated from docs/demo/record.sh -->
@@ -439,7 +456,7 @@ When `gg index` writes to both Qdrant and Memgraph, a crash between the two writ
 Rejected: Memgraph 3.x multi-database feature (not broadly available, adds infra coupling). Chosen: every Qdrant point and every Memgraph node carries a `project_id` UUID injected at the `runQuery` level in `internal/graph/queries.go`. A new project gets a new UUID from `gg init`; shared infra at `~/.gg/` serves all projects without data leakage.
 
 **SCIP-first hybrid parser (SCIP + tree-sitter fallback).**
-Pure SCIP gives high-quality cross-file symbol resolution for supported languages (Go, TypeScript, Python via `scip-go`, `scip-typescript`, `scip-python`). Tree-sitter covers languages with no SCIP indexer. The spike showed scip-go at 0.97s for a real repo, 3.78ms ParseFile, 1365 symbols — production-ready. Rejected: writing a custom AST parser (maintenance surface); Docker-based SCIP fallback (day-1 complexity).
+Pure SCIP gives high-quality cross-file symbol resolution for supported languages (Go, TypeScript, Python via `scip-go`, `scip-typescript`, `scip-python`). Tree-sitter covers languages with no SCIP indexer. The spike showed scip-go at 0.97s for one repo, 3.78ms ParseFile, 1365 symbols — enough for the current alpha, not a broad production claim. Rejected: writing a custom AST parser (maintenance surface); Docker-based SCIP fallback (day-1 complexity).
 
 ---
 
