@@ -3,7 +3,6 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -449,36 +448,4 @@ func countReadScreen(calls []terminal.Call) int {
 		}
 	}
 	return n
-}
-
-type noScreenTerminal struct {
-	inner *terminal.FakeTerminal
-}
-
-func (n *noScreenTerminal) NewSplit(ctx context.Context, opts terminal.SplitOpts) (terminal.SurfaceID, error) {
-	return n.inner.NewSplit(ctx, opts)
-}
-
-func (n *noScreenTerminal) Send(ctx context.Context, id terminal.SurfaceID, text string) error {
-	return n.inner.Send(ctx, id, text)
-}
-
-func (n *noScreenTerminal) SendKey(ctx context.Context, id terminal.SurfaceID, key string) error {
-	return n.inner.SendKey(ctx, id, key)
-}
-
-func (n *noScreenTerminal) ReadScreen(_ context.Context, _ terminal.SurfaceID) ([]byte, error) {
-	return nil, errors.New("unsupported")
-}
-
-func (n *noScreenTerminal) Focus(ctx context.Context, id terminal.SurfaceID) error {
-	return n.inner.Focus(ctx, id)
-}
-
-func (n *noScreenTerminal) Close(ctx context.Context, id terminal.SurfaceID) error {
-	return n.inner.Close(ctx, id)
-}
-
-func (n *noScreenTerminal) Capabilities() terminal.Caps {
-	return terminal.Caps{CanReadScreen: false}
 }
