@@ -3,8 +3,10 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gurkangul/gg-cli/internal/orchestrator/terminal"
 )
@@ -164,35 +166,33 @@ func TestAppendUniqID_Empty(t *testing.T) {
 // route through bootstrapAgentInPane(); this test asserts the Send order so a
 // future refactor cannot reintroduce the divergence.
 func TestBootstrapAgentInPane_LaunchesAgentBeforePrompt(t *testing.T) {
-	if testing.Short() {
-		t.Skip("3s sleep between agent launch and prompt makes this slow")
-	}
+	prevDelay, prevTimeout, prevInterval := spawnAgentPromptDelay, spawnAgentReadyTimeout, spawnAgentReadyInterval
+	spawnAgentPromptDelay = 0
+	spawnAgentReadyTimeout = 20 * time.Millisecond
+	spawnAgentReadyInterval = 5 * time.Millisecond
+	t.Cleanup(func() {
+		spawnAgentPromptDelay, spawnAgentReadyTimeout, spawnAgentReadyInterval = prevDelay, prevTimeout, prevInterval
+	})
+
 	fake := terminal.NewFake()
 	id, err := fake.NewSplit(context.Background(), terminal.SplitOpts{})
 	if err != nil {
 		t.Fatalf("NewSplit: %v", err)
 	}
+	fake.SetScreen(id, []byte("Get Shit Done\nSystem OK"))
 	var buf bytes.Buffer
 	bootstrapAgentInPane(context.Background(), fake, id, "gsd", "TASK-042", &buf)
 
-	// Expect: NewSplit, Send(gsd), SendKey(enter), Send(prompt), SendKey(enter)
-	if got := len(fake.Calls); got != 5 {
-		t.Fatalf("Calls = %d, want 5: %+v", got, fake.Calls)
-	}
 	if c := fake.Calls[1]; c.Method != "Send" || c.Arg != "gsd" {
 		t.Errorf("call[1] = %+v, want Send gsd", c)
 	}
 	if c := fake.Calls[2]; c.Method != "SendKey" || c.Arg != "enter" {
 		t.Errorf("call[2] = %+v, want SendKey enter", c)
 	}
-	if c := fake.Calls[3]; c.Method != "Send" || !spawnContains(c.Arg, "TASK-042") {
-		t.Errorf("call[3] = %+v, want Send <prompt with TASK-042>", c)
-	}
-	if c := fake.Calls[4]; c.Method != "SendKey" || c.Arg != "enter" {
-		t.Errorf("call[4] = %+v, want SendKey enter", c)
+	if !sendTaskPromptSeen(fake.Calls) {
+		t.Fatalf("expected task prompt to be sent; calls=%+v", fake.Calls)
 	}
 }
-
 // TestBootstrapAgentInPane_NoTaskIDSkipsPrompt verifies that an empty taskID
 // only launches the agent — no orientation prompt is sent.
 func TestBootstrapAgentInPane_NoTaskIDSkipsPrompt(t *testing.T) {
@@ -282,6 +282,143 @@ func TestSpawnWorker_PromptIsSingleLineForGSD(t *testing.T) {
 	}
 }
 
+func TestGSDLikeAgentDetection(t *testing.T) {
+	setupGGDir(t)
+
+	if !isGSDLikeAgent("gsd") {
+		t.Fatal("bare gsd should be detected as GSD-like agent")
+	}
+	if !isGSDLikeAgent(buildAgentLaunchCommand("gsd")) {
+		t.Fatalf("launch command should be detected as GSD-like: %q", buildAgentLaunchCommand("gsd"))
+	}
+	if isGSDLikeAgent("codex") {
+		t.Fatal("non-GSD agent should not be detected as GSD-like")
+	}
+}
+
+func TestGSDReadyScreenDetection(t *testing.T) {
+	tests := []struct {
+		name   string
+		screen string
+		want   bool
+	}{
+		{name: "ready prompt marker", screen: "Get Shit Done\n/gsd to begin", want: true},
+		{name: "system ok marker", screen: "GET SHIT DONE\nSystem OK", want: true},
+		{name: "mcp ready marker", screen: "Get Shit Done\nMCP client ready", want: true},
+		{name: "missing title", screen: "/gsd to begin", want: false},
+		{name: "title but no marker", screen: "Get Shit Done\nloading", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isGSDReadyScreen([]byte(tc.screen))
+			if got != tc.want {
+				t.Fatalf("isGSDReadyScreen(%q) = %v, want %v", tc.screen, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBootstrapAgentInPane_GSDWaitsForReadyBeforePrompt(t *testing.T) {
+	prevDelay, prevTimeout, prevInterval := spawnAgentPromptDelay, spawnAgentReadyTimeout, spawnAgentReadyInterval
+	spawnAgentPromptDelay = 0
+	spawnAgentReadyTimeout = 100 * time.Millisecond
+	spawnAgentReadyInterval = 5 * time.Millisecond
+	t.Cleanup(func() {
+		spawnAgentPromptDelay, spawnAgentReadyTimeout, spawnAgentReadyInterval = prevDelay, prevTimeout, prevInterval
+	})
+
+	fake := terminal.NewFake()
+	id, err := fake.NewSplit(context.Background(), terminal.SplitOpts{})
+	if err != nil {
+		t.Fatalf("NewSplit: %v", err)
+	}
+
+	var buf bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		bootstrapAgentInPane(context.Background(), fake, id, "gsd", "TASK-042", &buf)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(120 * time.Millisecond)
+	for {
+		if sendTaskPromptSeen(fake.Calls) {
+			t.Fatal("task prompt sent before ready marker")
+		}
+		if countReadScreen(fake.Calls) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("bootstrap did not poll screen for readiness")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	fake.SetScreen(id, []byte("Get Shit Done\n/gsd to begin"))
+
+	select {
+	case <-done:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("bootstrap did not finish after ready marker")
+	}
+
+	if !sendTaskPromptSeen(fake.Calls) {
+		t.Fatalf("expected task prompt after ready; calls=%+v", fake.Calls)
+	}
+}
+
+func TestBootstrapAgentInPane_GSDTimeoutSkipsPrompt(t *testing.T) {
+	prevDelay, prevTimeout, prevInterval := spawnAgentPromptDelay, spawnAgentReadyTimeout, spawnAgentReadyInterval
+	spawnAgentPromptDelay = 0
+	spawnAgentReadyTimeout = 20 * time.Millisecond
+	spawnAgentReadyInterval = 5 * time.Millisecond
+	t.Cleanup(func() {
+		spawnAgentPromptDelay, spawnAgentReadyTimeout, spawnAgentReadyInterval = prevDelay, prevTimeout, prevInterval
+	})
+
+	fake := terminal.NewFake()
+	id, err := fake.NewSplit(context.Background(), terminal.SplitOpts{})
+	if err != nil {
+		t.Fatalf("NewSplit: %v", err)
+	}
+
+	var buf bytes.Buffer
+	bootstrapAgentInPane(context.Background(), fake, id, "gsd", "TASK-042", &buf)
+
+	if sendTaskPromptSeen(fake.Calls) {
+		t.Fatalf("did not expect task prompt before GSD ready; calls=%+v", fake.Calls)
+	}
+	if !strings.Contains(buf.String(), "skipping task prompt delivery") {
+		t.Fatalf("expected skip warning, got %q", buf.String())
+	}
+}
+
+func TestBootstrapAgentInPane_NonGSDSkipsScreenPolling(t *testing.T) {
+	prevDelay, prevTimeout, prevInterval := spawnAgentPromptDelay, spawnAgentReadyTimeout, spawnAgentReadyInterval
+	spawnAgentPromptDelay = 0
+	spawnAgentReadyTimeout = 50 * time.Millisecond
+	spawnAgentReadyInterval = 5 * time.Millisecond
+	t.Cleanup(func() {
+		spawnAgentPromptDelay, spawnAgentReadyTimeout, spawnAgentReadyInterval = prevDelay, prevTimeout, prevInterval
+	})
+
+	fake := terminal.NewFake()
+	id, err := fake.NewSplit(context.Background(), terminal.SplitOpts{})
+	if err != nil {
+		t.Fatalf("NewSplit: %v", err)
+	}
+
+	var buf bytes.Buffer
+	bootstrapAgentInPane(context.Background(), fake, id, "codex", "TASK-042", &buf)
+
+	if countReadScreen(fake.Calls) != 0 {
+		t.Fatalf("non-GSD path should not read screen; calls=%+v", fake.Calls)
+	}
+	if !sendTaskPromptSeen(fake.Calls) {
+		t.Fatalf("non-GSD path should still send task prompt; calls=%+v", fake.Calls)
+	}
+}
+
 // spawnContains is a simple substring helper for spawn tests.
 func spawnContains(s, sub string) bool {
 	if len(sub) == 0 {
@@ -293,4 +430,55 @@ func spawnContains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+func sendTaskPromptSeen(calls []terminal.Call) bool {
+	for _, c := range calls {
+		if c.Method == "Send" && strings.Contains(c.Arg, "TASK-042") && strings.Contains(c.Arg, "gg task get") {
+			return true
+		}
+	}
+	return false
+}
+
+func countReadScreen(calls []terminal.Call) int {
+	n := 0
+	for _, c := range calls {
+		if c.Method == "ReadScreen" {
+			n++
+		}
+	}
+	return n
+}
+
+type noScreenTerminal struct {
+	inner *terminal.FakeTerminal
+}
+
+func (n *noScreenTerminal) NewSplit(ctx context.Context, opts terminal.SplitOpts) (terminal.SurfaceID, error) {
+	return n.inner.NewSplit(ctx, opts)
+}
+
+func (n *noScreenTerminal) Send(ctx context.Context, id terminal.SurfaceID, text string) error {
+	return n.inner.Send(ctx, id, text)
+}
+
+func (n *noScreenTerminal) SendKey(ctx context.Context, id terminal.SurfaceID, key string) error {
+	return n.inner.SendKey(ctx, id, key)
+}
+
+func (n *noScreenTerminal) ReadScreen(_ context.Context, _ terminal.SurfaceID) ([]byte, error) {
+	return nil, errors.New("unsupported")
+}
+
+func (n *noScreenTerminal) Focus(ctx context.Context, id terminal.SurfaceID) error {
+	return n.inner.Focus(ctx, id)
+}
+
+func (n *noScreenTerminal) Close(ctx context.Context, id terminal.SurfaceID) error {
+	return n.inner.Close(ctx, id)
+}
+
+func (n *noScreenTerminal) Capabilities() terminal.Caps {
+	return terminal.Caps{CanReadScreen: false}
 }

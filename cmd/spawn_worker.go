@@ -40,6 +40,12 @@ var (
 	spawnWorkerDir    string // split direction: horizontal or vertical
 )
 
+var (
+	spawnAgentPromptDelay   = 3 * time.Second
+	spawnAgentReadyTimeout  = 12 * time.Second
+	spawnAgentReadyInterval = 250 * time.Millisecond
+)
+
 func init() {
 	spawnWorkerCmd.Flags().StringVar(&spawnWorkerAgent, "agent", "", "agent command to run in the new pane (default: $GG_SPAWN_AGENT or 'gsd')")
 	spawnWorkerCmd.Flags().StringVar(&spawnWorkerTaskID, "task", "", "task ID to assign to this worker (e.g. TASK-042)")
@@ -177,7 +183,8 @@ func buildWorkerPrompt(taskID string) string {
 }
 
 // bootstrapAgentInPane launches the agent REPL in surfaceID and orients it to taskID.
-// Sequence: send agentCmd + Enter, sleep 3s for REPL init, send orientation prompt + Enter.
+// Sequence: send agentCmd + Enter, wait for GSD readiness when applicable,
+// send orientation prompt + Enter.
 // When taskID is empty, only the agent is launched (no orientation step).
 // Send/SendKey failures are logged to errOut and skipped — a human can always finish manually.
 // Both the single-worker (cmd/spawn_worker.go) and queue-pool (cmd/spawn_queue_pool.go) paths
@@ -192,7 +199,9 @@ func bootstrapAgentInPane(ctx context.Context, term terminal.Terminal, surfaceID
 	if taskID == "" {
 		return
 	}
-	time.Sleep(3 * time.Second)
+	if isGSDLikeAgent(agentCmd) && !waitForAgentPromptReady(ctx, term, surfaceID, agentCmd, errOut) {
+		return
+	}
 	prompt := buildWorkerPrompt(taskID)
 	if sErr := term.Send(ctx, surfaceID, prompt); sErr != nil {
 		fmt.Fprintf(errOut, "⚠ could not send task prompt to pane %s: %v\n", surfaceID, sErr)
@@ -200,4 +209,70 @@ func bootstrapAgentInPane(ctx context.Context, term terminal.Terminal, surfaceID
 	if kErr := term.SendKey(ctx, surfaceID, "enter"); kErr != nil {
 		fmt.Fprintf(errOut, "⚠ could not send Enter after prompt: %v\n", kErr)
 	}
+}
+
+func waitForAgentPromptReady(ctx context.Context, term terminal.Terminal, surfaceID terminal.SurfaceID, agentCmd string, errOut io.Writer) bool {
+	if !isGSDLikeAgent(agentCmd) {
+		time.Sleep(spawnAgentPromptDelay)
+		return true
+	}
+	if !term.Capabilities().CanReadScreen {
+		fmt.Fprintf(errOut, "⚠ GSD pane %s cannot be read (screen capability unavailable); skipping task prompt delivery\n", surfaceID)
+		return false
+	}
+
+	deadline := time.NewTimer(spawnAgentReadyTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(spawnAgentReadyInterval)
+	defer ticker.Stop()
+
+	for {
+		content, err := term.ReadScreen(ctx, surfaceID)
+		if err != nil {
+			fmt.Fprintf(errOut, "⚠ could not verify GSD ready state in pane %s: %v; skipping task prompt delivery\n", surfaceID, err)
+			return false
+		}
+		if isGSDReadyScreen(content) {
+			return true
+		}
+
+		select {
+		case <-ctx.Done():
+			fmt.Fprintf(errOut, "⚠ context canceled while waiting for GSD ready UI in pane %s; skipping task prompt delivery\n", surfaceID)
+			return false
+		case <-deadline.C:
+			fmt.Fprintf(errOut, "⚠ GSD pane %s did not show ready UI within %s; skipping task prompt delivery\n", surfaceID, spawnAgentReadyTimeout)
+			return false
+		case <-ticker.C:
+		}
+	}
+}
+
+func isGSDLikeAgent(agentCmd string) bool {
+	trimmed := strings.TrimSpace(agentCmd)
+	if trimmed == "" {
+		return false
+	}
+	if strings.Contains(trimmed, "exec gsd") {
+		return true
+	}
+	fields := strings.Fields(trimmed)
+	if len(fields) == 0 {
+		return false
+	}
+	base := fields[0]
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	return base == "gsd"
+}
+
+func isGSDReadyScreen(screen []byte) bool {
+	text := strings.ToLower(string(screen))
+	if !strings.Contains(text, "get shit done") {
+		return false
+	}
+	return strings.Contains(text, "/gsd to begin") ||
+		strings.Contains(text, "system ok") ||
+		strings.Contains(text, "mcp client ready")
 }
