@@ -36,15 +36,20 @@ With    --changed: incremental update — only files changed since the last
 var (
 	indexChanged bool
 	indexLang    string
+	indexWatch   bool
 )
 
 func init() {
 	indexCmd.Flags().BoolVar(&indexChanged, "changed", false, "incremental: re-index only files changed since last index")
+	indexCmd.Flags().BoolVar(&indexWatch, "watch", false, "foreground watch mode: debounce source changes and run incremental index updates")
 	indexCmd.Flags().StringVar(&indexLang, "lang", "go", "language to index: go, python, typescript")
 	rootCmd.AddCommand(indexCmd)
 }
 
 func runIndex(cmd *cobra.Command, _ []string) error {
+	if indexWatch {
+		return runIndexWatch(cmd)
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return configErr(fmt.Sprintf("load config: %v", err))

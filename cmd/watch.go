@@ -35,7 +35,8 @@ Examples:
   gg watch --since 5m                  # replay last 5 min, then tail
   gg watch --format ndjson             # machine-readable NDJSON output
   gg watch --no-inbox                  # telemetry events only
-  gg watch --no-telemetry              # inbox messages only`,
+  gg watch --no-telemetry              # inbox messages only
+  gg watch --index                     # foreground index watcher (alias for gg index --watch)`,
 	RunE: runWatch,
 }
 
@@ -47,6 +48,7 @@ var (
 	watchFormat      string
 	watchNoInbox     bool
 	watchNoTelemetry bool
+	watchIndex       bool
 )
 
 func init() {
@@ -57,6 +59,7 @@ func init() {
 	watchCmd.Flags().StringVar(&watchFormat, "format", "pretty", "output format: pretty or ndjson")
 	watchCmd.Flags().BoolVar(&watchNoInbox, "no-inbox", false, "skip inbox messages, show telemetry events only")
 	watchCmd.Flags().BoolVar(&watchNoTelemetry, "no-telemetry", false, "skip telemetry events, show inbox messages only")
+	watchCmd.Flags().BoolVar(&watchIndex, "index", false, "foreground index watcher alias for gg index --watch")
 	rootCmd.AddCommand(watchCmd)
 }
 
@@ -73,6 +76,10 @@ type watchItem struct {
 }
 
 func runWatch(cmd *cobra.Command, _ []string) error {
+	if watchIndex {
+		indexWatch = true
+		return runIndexWatch(cmd)
+	}
 	if watchFormat != "pretty" && watchFormat != "ndjson" {
 		return fmt.Errorf("--format must be 'pretty' or 'ndjson'")
 	}

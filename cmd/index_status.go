@@ -39,6 +39,7 @@ type codeGraphStatus struct {
 	Stats             graph.Stats `json:"stats"`
 	PendingOutbox     int         `json:"pending_outbox"`
 	NoWatcherStarted  bool        `json:"no_watcher_started"`
+	Watcher           string      `json:"watcher,omitempty"`
 }
 
 func runIndexStatus(cmd *cobra.Command, _ []string) error {
@@ -90,6 +91,7 @@ func collectCodeGraphStatus(ctx context.Context, root, ggDir string, cfg *config
 
 	status.fillGitFreshness(ctx, root)
 	status.fillGraphStats(ctx, cfg)
+	status.fillWatcher(ggDir)
 	status.finalize()
 	return status
 }
@@ -162,6 +164,19 @@ func (s *codeGraphStatus) finalize() {
 	}
 }
 
+func (s *codeGraphStatus) fillWatcher(ggDir string) {
+	lock, ok := readIndexWatchLock(ggDir + "/" + indexWatchLockFile)
+	if !ok {
+		return
+	}
+	if !processRunning(lock.PID) {
+		s.Watcher = fmt.Sprintf("stale pid=%d", lock.PID)
+		return
+	}
+	s.NoWatcherStarted = false
+	s.Watcher = fmt.Sprintf("running pid=%d lang=%s started=%s", lock.PID, lock.Lang, lock.StartedAt)
+}
+
 func renderCodeGraphStatus(w io.Writer, s codeGraphStatus) {
 	fmt.Fprintln(w, "CODE GRAPH:")
 	fmt.Fprintf(w, "  Status: %s", s.Status)
@@ -184,7 +199,11 @@ func renderCodeGraphStatus(w io.Writer, s codeGraphStatus) {
 	if s.PendingOutbox > 0 {
 		fmt.Fprintf(w, "  Outbox: %d pending index write(s)\n", s.PendingOutbox)
 	}
-	fmt.Fprintln(w, "  Watcher: not started implicitly")
+	if s.NoWatcherStarted {
+		fmt.Fprintln(w, "  Watcher: not started implicitly")
+	} else {
+		fmt.Fprintf(w, "  Watcher: %s\n", s.Watcher)
+	}
 }
 
 func indexStatusShortSHA(sha string) string {
@@ -217,6 +236,9 @@ func renderCodeGraphStatusCompact(s codeGraphStatus) string {
 	}
 	if s.Detail != "" {
 		parts = append(parts, compactTrim(s.Detail, 90))
+	}
+	if !s.NoWatcherStarted {
+		parts = append(parts, "watch="+compactTrim(s.Watcher, 50))
 	}
 	return strings.Join(parts, "  ")
 }
