@@ -32,8 +32,8 @@ CLI/subprocess tool; no MCP server or hosted service is required.
 | Agent | Install path |
 |---|---|
 | Codex | `go install github.com/gurkangul/gg-cli/cmd/gg@latest`, then `gg init`; Codex reads project `AGENTS.md`. Optional global reminder: `~/.codex/instructions.md`. |
-| Claude Code | `go install ...`, `gg init`, then `gg doctor --install-agent-hooks`; Claude reads generated `CLAUDE.md`/`AGENTS.md`. |
-| Cursor | `go install ...`, `gg init`, then `gg doctor --install-agent-hooks`; Cursor reads generated `.cursor/rules/gg.mdc`. |
+| Claude Code | Install `gg`, run `gg init`, then `gg doctor --install-agent-hooks`; Claude reads generated `CLAUDE.md`/`AGENTS.md`. |
+| Cursor | Install `gg`, run `gg init`, then `gg doctor --install-agent-hooks`; Cursor reads generated `.cursor/rules/gg.mdc`. |
 | Manual shell | `export GG_AGENT=manual GG_ROLE=developer`, then run `gg status` and `gg inbox --role "$GG_ROLE" --since-cursor` at session start. |
 
 See [docs/agent-native-install.md](docs/agent-native-install.md) for the
@@ -80,7 +80,7 @@ into the Ollama container automatically on first run.
 
 ## Install
 
-### Public release
+### Go install
 
 ```sh
 go install github.com/gurkangul/gg-cli/cmd/gg@latest
@@ -89,10 +89,17 @@ go install github.com/gurkangul/gg-cli/cmd/gg@latest
 The binary is `gg`. The repo is `gg-cli` for descriptiveness; the
 command stays short.
 
-### Private alpha access
+If the first tagged release is not available yet, install from the current
+main branch instead:
 
-If the repository is still private, ask the maintainer for GitHub access,
-authenticate `gh`, and tell Go that this module is private:
+```sh
+go install github.com/gurkangul/gg-cli/cmd/gg@main
+```
+
+### Private repository access
+
+If you are testing a private fork or pre-public alpha branch, authenticate
+`gh` and tell Go that this module is private:
 
 ```sh
 gh auth login
