@@ -96,17 +96,6 @@ main branch instead:
 go install github.com/gurkangul/gg-cli/cmd/gg@main
 ```
 
-### Private repository access
-
-If you are testing a private fork or pre-public alpha branch, authenticate
-`gh` and tell Go that this module is private:
-
-```sh
-gh auth login
-go env -w GOPRIVATE=github.com/gurkangul/gg-cli
-go install github.com/gurkangul/gg-cli/cmd/gg@latest
-```
-
 ### Build from source
 
 ```sh
