@@ -62,6 +62,7 @@ Allowlist entries in `.gitleaks.toml` must:
 |---|---|
 | `AKIAIOSFODNN7EXAMPLE` | AWS example key from docs/tests; this is the canonical AWS documentation placeholder |
 | `sk-test[A-Za-z0-9]{16,}` | Synthetic key prefix used in unit tests to verify the scrub package correctly detects and redacts it |
+| `ghp_R4nd0mF4k3T0k3nF0rD3m0Purp0s3sOnly12` | Historical synthetic GitHub PAT fixture accidentally committed in TASK-348 and removed; exact literal allowlist keeps history scans green without suppressing real PATs |
 | `YOUR_API_KEY_HERE` | Doc placeholder — appears in README and getting-started guides |
 | `<your-token-here>` | Doc placeholder — appears in onboarding examples |
 | docs + README paths | Documentation files may contain illustrative key-like strings |

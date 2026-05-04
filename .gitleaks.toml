@@ -39,4 +39,7 @@ regexes = [
   '''AKIAIOSFODNN7EXAMPLE''',
   # Synthetic key prefix used in unit tests to verify scanner detection.
   '''sk-test[A-Za-z0-9]{10,}''',
+  # Historical synthetic GitHub PAT fixture accidentally committed and removed
+  # in TASK-348; exact literal only, never broaden this to real PAT shapes.
+  '''ghp_R4nd0mF4k3T0k3nF0rD3m0Purp0s3sOnly12''',
 ]
