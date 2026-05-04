@@ -7,7 +7,7 @@ import (
 var masterCmd = &cobra.Command{
 	Use:   "master",
 	Short: "Master-session utilities: session handoff, resume state",
-	Long: `Utilities for the Opus master session that orchestrates worker panes.
+	Long: `Utilities for the master/orchestrator session that coordinates worker panes.
 
 Subcommands:
   resume — print a structured session-handoff dump so a fresh master session

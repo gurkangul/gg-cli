@@ -62,8 +62,8 @@ func TestBriefing_Render_IncludesProtocolSteps(t *testing.T) {
 
 func TestPasteBlock_DefaultAgent(t *testing.T) {
 	got := PasteBlock("")
-	if !strings.Contains(got, "GG_AGENT=claude-code") {
-		t.Errorf("empty hint should default to claude-code, got %q", got)
+	if !strings.Contains(got, "GG_AGENT=agent") {
+		t.Errorf("empty hint should default to generic agent, got %q", got)
 	}
 }
 
@@ -76,8 +76,8 @@ func TestPasteBlock_CustomAgent(t *testing.T) {
 
 func TestPasteBlock_TrimsWhitespaceHint(t *testing.T) {
 	got := PasteBlock("   ")
-	if !strings.Contains(got, "GG_AGENT=claude-code") {
-		t.Errorf("whitespace hint should fall back to claude-code, got %q", got)
+	if !strings.Contains(got, "GG_AGENT=agent") {
+		t.Errorf("whitespace hint should fall back to generic agent, got %q", got)
 	}
 }
 

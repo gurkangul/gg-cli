@@ -17,7 +17,8 @@ Subcommands:
 
 Typical flow:
   # Master terminal — start heartbeat loop and queue runner
-  export GG_AGENT=claude-code
+  export GG_AGENT="${GG_AGENT:-agent}"
+  export GG_ROLE=master
   gg spawn heartbeat          # initial heartbeat
   gg spawn queue start --agent gsd  # drains pending tasks
 
@@ -49,4 +50,3 @@ Typical flow:
 * [gg spawn queue](gg_spawn_queue.md)	 - Manage the parallel task queue for multi-agent orchestration
 * [gg spawn status](gg_spawn_status.md)	 - Show spawn session status: heartbeat age, active workers, queue progress
 * [gg spawn worker](gg_spawn_worker.md)	 - Open a new terminal pane and run an agent against a task
-

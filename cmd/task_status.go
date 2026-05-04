@@ -92,7 +92,8 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	// we return ExitVerifyFailed so agents can detect the blocked transition.
 	//
 	// Opt-out: skipped when GG_ENFORCEMENT=off. Set it to opt out for a session.
-	// Agent lifecycle gate: GSD / Sonnet agents are not permitted to close tasks.
+	// Agent lifecycle gate: implementation roles are not permitted to close
+	// tasks, regardless of which agent runtime they use.
 	if !enforcement.Enabled() {
 		if rej := emitGuardSkipEvent("agent-lifecycle-done", taskID); rej != nil {
 			return rej

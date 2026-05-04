@@ -134,7 +134,7 @@ These rules are individually recorded via `gg record` (tags:
 
 The very first thing to do at the start of any conversation:
 ```
-export GG_AGENT="claude-code"   # or "codex", "cursor", "gsd", etc.
+export GG_AGENT="${GG_AGENT:-agent}"  # replace "agent" with this runtime's name
 gg status
 ```
 
@@ -142,10 +142,11 @@ The `GG_AGENT` export tags every subsequent gg call as agent-initiated in
 telemetry — without it the dogfood metric undercounts and gives false signals
 about adoption. Set it once per shell.
 
-**Do not set `GG_AGENT=gsd`:** GSD is a workflow layered on top of Claude Code
-in this repo, not a peer agent. Use `claude-code` as your agent tag even when
-following a GSD milestone/slice — telemetry should reflect the runtime, not
-the workflow.
+Set `GG_AGENT` to the runtime that is actually executing commands. If a side
+pane is a real GSD runtime, `GG_AGENT=gsd` is valid. If Claude Code, Codex,
+Cursor, or another runtime is orchestrating GSD work, keep that runtime's
+identity in `GG_AGENT` and use `GG_ROLE` for authority (`master`, `developer`,
+`reviewer`, etc.).
 
 After `gg status`, summarize the open tasks, unread messages, and recent
 decisions for the user.

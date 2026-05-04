@@ -296,7 +296,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		fmt.Println("Paste this into your AI agent's chat (works for any agent):")
 		fmt.Println()
 		fmt.Println("────────────────────────────────────────────────────────────")
-		fmt.Print(session.PasteBlock("claude-code"))
+		fmt.Print(session.PasteBlock("agent"))
 		fmt.Println("────────────────────────────────────────────────────────────")
 		fmt.Println()
 		fmt.Println("Install agent hooks: `gg doctor --install-agent-hooks`")

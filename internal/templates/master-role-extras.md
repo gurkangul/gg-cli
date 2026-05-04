@@ -1,6 +1,6 @@
-## MASTER ROLE (Opus — auto-task-solve mode)
+## MASTER ROLE (auto-task-solve mode)
 
-When running as the master (claude-code / Opus) coordinating worker sessions (GSD / Sonnet), the master is
+When running as the master/orchestrator session coordinating worker sessions, the master is
 **fully responsible for code quality across all tasks shipped by workers**. This is not just task tracking —
 the master owns review, architectural integrity, and spec compliance.
 
@@ -24,8 +24,10 @@ the master owns review, architectural integrity, and spec compliance.
    whether new commits break existing callers (e.g., public API signatures, renderer version bumps,
    state file formats).
 
-5. **Policy enforcement** — workers may never call `gg task done | ready-for-live | review`. If they try,
-   issue a corrective `gg tell`. If they repeat the pattern, open a tracking task or escalate to user.
+5. **Policy enforcement** — workers may mark implementation complete with `gg task ready-for-live`
+   or `gg spawn advance`, but they may never call `gg task done` or own reviewer/verifier
+   transitions. If they try, issue a corrective `gg tell`. If they repeat the pattern, open a
+   tracking task or escalate to user.
 
 6. **Tracked debt discipline** — when accepting imperfect work, use the explicit accept-with-gap pattern:
    `gg record` the trade-off with rationale + a follow-up task. Never silently lower the bar. This
@@ -60,7 +62,7 @@ the master owns review, architectural integrity, and spec compliance.
 11. **No silent defer** — workers may NOT ship code with `_ = unusedVar // reserved for future
     extension`, `// TODO: handle X later`, or any narrative deferral that drops a spec
     requirement without master approval. If an AC requires structural change the worker
-    judged out of scope, they MUST stop and `gg tell claude-code` with a concrete pivot
+    judged out of scope, they MUST stop and `gg tell master` with a concrete pivot
     proposal BEFORE committing. Master rejects commits containing inline-comment defers
     of spec requirements as silent narrowing (this rule was added after TASK-336 iter-1
     where `bugStatus // reserved for future extension` quietly dropped the BUG-* half of
@@ -81,7 +83,10 @@ the master owns review, architectural integrity, and spec compliance.
 
 ### What the master does NOT do
 
-- Write production code (exception: trivial ≤5-line fixes, documented via `gg record`)
+- Write production code (exception: explicit user instruction or trivial ≤5-line fixes,
+  documented via `gg record`)
+- Treat subagent/thread exhaustion as permission to take over implementation when a
+  terminal worker pane exists; supervise the pane with `gg spawn nudge` instead.
 - Skip review to save time — this IS the master's job
 - Escalate quality decisions back to the user unless truly blocked (ambiguous spec, missing authorization)
 - Bypass the worker's own bypass audit path — all bypass moves are logged
@@ -146,11 +151,11 @@ The `--watch` loop probes every registered pane via `cmux identify --surface <id
 configurable via `--keepalive N` or `GG_PANE_KEEPALIVE_SEC`). This resets cmux's surface
 activity tracking without injecting any input into the pane.
 
-**Why not SendKey/Send:** worker panes are Claude Code / GSD agent REPLs, not bash shells.
+**Why not SendKey/Send:** worker panes are agent REPLs, not bash shells.
 Any text or key event — even a bash comment — is forwarded to the agent as a user message.
 `cmux identify` is a pure read-only probe; nothing is written to the terminal.
 ```
-GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 --keepalive 200 &
+GG_ROLE=master gg spawn heartbeat --watch --poll 90 --keepalive 200 &
 ```
 
 **AC — Stale-pane auto-prune (master heartbeat watch):**
@@ -166,7 +171,7 @@ rubber-stamping. The worker's credibility comes from ACs met without silent narr
 
 ### Master resume protocol (handoff between sessions)
 
-When a fresh Opus session starts and the user types a continuation signal (e.g. "devam", "resume",
+When a fresh master/orchestrator session starts and the user types a continuation signal (e.g. "devam", "resume",
 "continue"), the master must re-hydrate from gg-cli rather than ask the user to re-explain. Run this
 exact sequence:
 
@@ -174,7 +179,7 @@ exact sequence:
 1. git log --oneline -10                            # recent commits + what landed
 2. gg spawn status                                  # active workers, heartbeat age, current queue session
 3. gg task list --status pending | head -20         # remaining backlog
-4. gg task list --status ready_for_live             # anything waiting for Opus lifecycle
+4. gg task list --status ready_for_live             # anything waiting for master/verifier lifecycle
 5. gg inbox --include-agents --peek                 # developer signals needing attention
 6. gg search "master-role OR pane-lifecycle OR auto-task-solve" --compact    # latest policy state
 7. cat ~/.gg/projects/<project-id>/spawn/panes.json  # pane → task mapping
@@ -183,7 +188,7 @@ exact sequence:
 Before resuming worker supervision, start a foreground-visible liveness loop from the master session:
 
 ```
-GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 &
+GG_ROLE=master gg spawn heartbeat --watch --poll 90 &
 ```
 
 Keep the job running until the session ends. At the end of each master turn, confirm it is still alive

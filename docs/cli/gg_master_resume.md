@@ -4,7 +4,7 @@ Print a structured session-handoff dump for a fresh master session
 
 ### Synopsis
 
-Produce a one-shot snapshot of all gg state a fresh Opus master session needs
+Produce a one-shot snapshot of all gg state a fresh master/orchestrator session needs
 to resume without asking the user to re-explain. Runs the 7-source pipeline from
 the master-resume protocol documented in CLAUDE.md:
 
@@ -38,4 +38,3 @@ gg master resume [flags]
 ### SEE ALSO
 
 * [gg master](gg_master.md)	 - Master-session utilities: session handoff, resume state
-

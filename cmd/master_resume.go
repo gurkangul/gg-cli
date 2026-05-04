@@ -47,7 +47,7 @@ func fetchMasterDecisions(ctx context.Context, emb masterEmbedder, fetcher maste
 var masterResumeCmd = &cobra.Command{
 	Use:   "resume",
 	Short: "Print a structured session-handoff dump for a fresh master session",
-	Long: `Produce a one-shot snapshot of all gg state a fresh Opus master session needs
+	Long: `Produce a one-shot snapshot of all gg state a fresh master/orchestrator session needs
 to resume without asking the user to re-explain. Runs the 7-source pipeline from
 the master-resume protocol documented in CLAUDE.md:
 

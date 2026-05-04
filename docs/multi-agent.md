@@ -42,7 +42,7 @@ the master still reviews before closing the task.
 The master runs a persistent heartbeat loop:
 
 ```
-GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 --keepalive 200 &
+GG_ROLE=master gg spawn heartbeat --watch --poll 90 --keepalive 200 &
 ```
 
 Each tick the loop:
@@ -110,7 +110,8 @@ is no longer needed.
 ## Recommended master session startup
 
 ```sh
-export GG_AGENT=claude-code
+export GG_AGENT="${GG_AGENT:-agent}"
+export GG_ROLE=master
 
 # Start persistent heartbeat watch with keepalive
 gg spawn heartbeat --watch --poll 90 --keepalive 200 &

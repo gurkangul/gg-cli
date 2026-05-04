@@ -11,7 +11,7 @@ import (
 
 // detectAgentHint picks the most likely "current runtime agent" from the
 // install report so the paste-block example uses the right GG_AGENT value.
-// First successful HARD-tier install wins; falls back to claude-code.
+// First successful HARD-tier install wins; falls back to a generic placeholder.
 func detectAgentHint(results []agenthooks.Result) string {
 	for _, r := range results {
 		if r.Tier != agenthooks.TierHard {
@@ -26,7 +26,7 @@ func detectAgentHint(results []agenthooks.Result) string {
 			}
 		}
 	}
-	return "claude-code"
+	return "agent"
 }
 
 // detectLangHint returns the most likely SUPPORTED index language based on

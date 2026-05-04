@@ -14,7 +14,7 @@ func masterMessageTargets() []string {
 	if agent == "" {
 		agent = os.Getenv("GG_AGENT")
 	}
-	return uniqueNonEmpty(role, agent, "master", "claude-code")
+	return uniqueNonEmpty(role, agent, "master")
 }
 
 func masterMessageTargetCSV() string {

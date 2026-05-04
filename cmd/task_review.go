@@ -41,7 +41,8 @@ func init() {
 }
 
 func runTaskReview(cmd *cobra.Command, args []string) error {
-	// Agent lifecycle gate: GSD / Sonnet agents are not permitted to self-approve via review.
+	// Agent lifecycle gate: implementation roles are not permitted to
+	// self-approve via review, regardless of agent runtime.
 	if !enforcement.Enabled() {
 		if rej := emitGuardSkipEvent("agent-lifecycle-review", ""); rej != nil {
 			return rej

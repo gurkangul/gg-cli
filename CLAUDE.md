@@ -25,9 +25,9 @@ gg-cli is the mandatory coordination channel for this project.
 <!-- gg:contract:end -->
 
 <!-- gg:master-role:begin v3 -->
-## MASTER ROLE (Opus — auto-task-solve mode)
+## MASTER ROLE (auto-task-solve mode)
 
-When running as the master (claude-code / Opus) coordinating worker sessions (GSD / Sonnet), the master is
+When running as the master/orchestrator session coordinating worker sessions, the master is
 **fully responsible for code quality across all tasks shipped by workers**. This is not just task tracking —
 the master owns review, architectural integrity, and spec compliance.
 
@@ -51,8 +51,10 @@ the master owns review, architectural integrity, and spec compliance.
    whether new commits break existing callers (e.g., public API signatures, renderer version bumps,
    state file formats).
 
-5. **Policy enforcement** — workers may never call `gg task done | ready-for-live | review`. If they try,
-   issue a corrective `gg tell`. If they repeat the pattern, open a tracking task or escalate to user.
+5. **Policy enforcement** — workers may mark implementation complete with `gg task ready-for-live`
+   or `gg spawn advance`, but they may never call `gg task done` or own reviewer/verifier
+   transitions. If they try, issue a corrective `gg tell`. If they repeat the pattern, open a
+   tracking task or escalate to user.
 
 6. **Tracked debt discipline** — when accepting imperfect work, use the explicit accept-with-gap pattern:
    `gg record` the trade-off with rationale + a follow-up task. Never silently lower the bar. This
@@ -87,7 +89,7 @@ the master owns review, architectural integrity, and spec compliance.
 11. **No silent defer** — workers may NOT ship code with `_ = unusedVar // reserved for future
     extension`, `// TODO: handle X later`, or any narrative deferral that drops a spec
     requirement without master approval. If an AC requires structural change the worker
-    judged out of scope, they MUST stop and `gg tell claude-code` with a concrete pivot
+    judged out of scope, they MUST stop and `gg tell master` with a concrete pivot
     proposal BEFORE committing. Master rejects commits containing inline-comment defers
     of spec requirements as silent narrowing (this rule was added after TASK-336 iter-1
     where `bugStatus // reserved for future extension` quietly dropped the BUG-* half of
@@ -108,7 +110,10 @@ the master owns review, architectural integrity, and spec compliance.
 
 ### What the master does NOT do
 
-- Write production code (exception: trivial ≤5-line fixes, documented via `gg record`)
+- Write production code (exception: explicit user instruction or trivial ≤5-line fixes,
+  documented via `gg record`)
+- Treat subagent/thread exhaustion as permission to take over implementation when a
+  terminal worker pane exists; supervise the pane with `gg spawn nudge` instead.
 - Skip review to save time — this IS the master's job
 - Escalate quality decisions back to the user unless truly blocked (ambiguous spec, missing authorization)
 - Bypass the worker's own bypass audit path — all bypass moves are logged
@@ -173,11 +178,11 @@ The `--watch` loop probes every registered pane via `cmux identify --surface <id
 configurable via `--keepalive N` or `GG_PANE_KEEPALIVE_SEC`). This resets cmux's surface
 activity tracking without injecting any input into the pane.
 
-**Why not SendKey/Send:** worker panes are Claude Code / GSD agent REPLs, not bash shells.
+**Why not SendKey/Send:** worker panes are agent REPLs, not bash shells.
 Any text or key event — even a bash comment — is forwarded to the agent as a user message.
 `cmux identify` is a pure read-only probe; nothing is written to the terminal.
 ```
-GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 --keepalive 200 &
+GG_ROLE=master gg spawn heartbeat --watch --poll 90 --keepalive 200 &
 ```
 
 **AC — Stale-pane auto-prune (master heartbeat watch):**
@@ -193,7 +198,7 @@ rubber-stamping. The worker's credibility comes from ACs met without silent narr
 
 ### Master resume protocol (handoff between sessions)
 
-When a fresh Opus session starts and the user types a continuation signal (e.g. "devam", "resume",
+When a fresh master/orchestrator session starts and the user types a continuation signal (e.g. "devam", "resume",
 "continue"), the master must re-hydrate from gg-cli rather than ask the user to re-explain. Run this
 exact sequence:
 
@@ -201,7 +206,7 @@ exact sequence:
 1. git log --oneline -10                            # recent commits + what landed
 2. gg spawn status                                  # active workers, heartbeat age, current queue session
 3. gg task list --status pending | head -20         # remaining backlog
-4. gg task list --status ready_for_live             # anything waiting for Opus lifecycle
+4. gg task list --status ready_for_live             # anything waiting for master/verifier lifecycle
 5. gg inbox --include-agents --peek                 # developer signals needing attention
 6. gg search "master-role OR pane-lifecycle OR auto-task-solve" --compact    # latest policy state
 7. cat ~/.gg/projects/<project-id>/spawn/panes.json  # pane → task mapping
@@ -210,7 +215,7 @@ exact sequence:
 Before resuming worker supervision, start a foreground-visible liveness loop from the master session:
 
 ```
-GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 &
+GG_ROLE=master gg spawn heartbeat --watch --poll 90 &
 ```
 
 Keep the job running until the session ends. At the end of each master turn, confirm it is still alive
@@ -267,11 +272,11 @@ without a queryable artifact.
 ## Developer Routing
 
 By default, this session reviews and coordinates; implementation is delegated
-to a side-session developer (GSD + Sonnet 4.6 in a separate pane).
+to the configured side-session developer in a separate pane.
 
 ### Default developer agent
 
-- **Runtime:** GSD workflow on Claude Sonnet 4.6
+- **Runtime:** configured developer agent selected in `.gg/config.yaml`
 - **Spawn:** `gg spawn worker --task TASK-N`
 - **Nudge:** `gg spawn nudge --surface <pane-id> "<prompt>"`
 
@@ -281,7 +286,7 @@ to a side-session developer (GSD + Sonnet 4.6 in a separate pane).
 gg spawn worker --task TASK-N
 ```
 
-This bootstraps a GSD+Sonnet-4.6 session in a new pane and sends the task
+This bootstraps the configured developer session in a new pane and sends the task
 prompt automatically. The pane ID is registered in
 `~/.gg/projects/<project_id>/spawn/panes.json`.
 
@@ -290,6 +295,23 @@ To send a follow-up prompt to an already-running pane:
 ```
 gg spawn nudge --surface <pane-id> "<prompt text>"
 ```
+
+### Worker availability and thread limits
+
+Do not confuse an LLM subagent/thread limit with the absence of a side-session
+developer. A live terminal pane registered in `gg spawn status` is the worker
+surface even when in-process subagent spawning is unavailable.
+
+When a worker pane exists, the master must continue by supervising that pane:
+- inspect `gg spawn status` and the pane's task mapping,
+- send concrete next instructions with `gg spawn nudge --surface <pane-id>`,
+- poll/keepalive with `GG_ROLE=master gg spawn heartbeat --watch ...`,
+- review the worker's commit when it reports ready.
+
+The master does not take over non-trivial implementation just because a
+parallel subagent/thread spawn failed. If no pane exists, first try
+`gg spawn worker --task TASK-N`; if that fails, block or escalate the task with
+the exact spawn failure instead of silently switching to local implementation.
 
 ### Worker commit protocol (advance sentinel)
 
@@ -310,21 +332,23 @@ still must review the commit before calling `gg task done`.
 Start the keepalive + sentinel watch from the master session before spawning workers:
 
 ```
-GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 --keepalive 200 &
+GG_ROLE=master gg spawn heartbeat --watch --poll 90 --keepalive 200 &
 ```
 
 This probes each worker pane via `cmux identify` (read-only, no input injected) every 200s
 (below cmux's 5-min idle cutoff, above the 60s flood floor), polls advance sentinels each tick,
 and auto-prunes stale pane entries only on definitive `Surface is not a terminal` probe result.
 
-**Note on keepalive mechanism:** worker panes are agent REPLs (Claude Code, GSD), not bash
+**Note on keepalive mechanism:** worker panes are agent REPLs, not bash
 shells. The keepalive uses `cmux identify --surface <id> --no-caller` rather than SendKey/Send
 to avoid injecting text into the agent conversation.
 
 ### Fallback — no developer configured
 
-If no developer agent is configured, fall back to implementing directly in
-this session. When implementing directly:
+If no developer agent is configured and the change is non-trivial, stop and
+open/block a setup task for developer routing rather than silently implementing
+as master. Direct implementation in this session is allowed only for explicit
+user requests or the trivial bypass rule below. When implementing directly:
 - Read the task spec fully before writing any code.
 - Run `go test ./... -count=1 -race` before closing the task.
 - Record any spec pivots via `gg record` before deviating.

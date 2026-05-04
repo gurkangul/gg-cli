@@ -48,7 +48,7 @@ Output layout:
   Then:     current gg status output
 
 Examples:
-  gg session-start --agent=claude-code
+  gg session-start --agent=<agent-name>
   GG_AGENT=cursor gg session-start`,
 	Args: cobra.NoArgs,
 	RunE: runSessionStart,
@@ -56,7 +56,7 @@ Examples:
 
 func init() {
 	sessionStartCmd.Flags().StringVar(&sessionStartAgent, "agent", "",
-		"agent name (claude-code, cursor, codex, ...) — overrides $GG_AGENT")
+		"agent name (codex, cursor, gsd, aider, ...) — overrides $GG_AGENT")
 	sessionStartCmd.Flags().BoolVar(&sessionStartBench, "bench", false,
 		"print timing for the managed-block resync step to stderr")
 	rootCmd.AddCommand(sessionStartCmd)
@@ -68,7 +68,7 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	agent := resolveSessionAgent()
 	if agent == "" {
 		fmt.Fprintln(os.Stderr, "error: no agent identity — set GG_AGENT or pass --agent=<name>")
-		fmt.Fprintln(os.Stderr, "       examples: claude-code, gsd, codex, cursor")
+		fmt.Fprintln(os.Stderr, "       examples: codex, cursor, gsd, aider")
 		fmt.Fprintln(os.Stderr, "       agents must self-identify so telemetry can distinguish")
 		fmt.Fprintln(os.Stderr, "       agent-initiated calls from human ones.")
 		return configErr("agent identity required (set GG_AGENT or pass --agent)")
@@ -162,8 +162,15 @@ func emitMasterHeartbeatNotice(cfg *config.Config, agent string, w io.Writer) {
 }
 
 func isMasterSessionAgent(agent string) bool {
+	role := strings.ToLower(strings.TrimSpace(os.Getenv("GG_MASTER_ROLE")))
+	if role == "" {
+		role = strings.ToLower(strings.TrimSpace(os.Getenv("GG_ROLE")))
+	}
+	if role == "master" || role == "orchestrator" || role == "verifier" {
+		return true
+	}
 	a := strings.ToLower(strings.TrimSpace(agent))
-	return a == "claude-code" || a == "master"
+	return a == "master" || strings.Contains(a, "master") || strings.Contains(a, "orchestrator")
 }
 
 func writeMasterHeartbeatNotice(w io.Writer, runtimeDir string) {
@@ -178,7 +185,7 @@ func writeMasterHeartbeatNotice(w io.Writer, runtimeDir string) {
 
 	fmt.Fprintln(w, "─── MASTER HEARTBEAT STALE ───")
 	fmt.Fprintf(w, "  ✗ active worker panes: %d; master heartbeat: %s\n", len(panes), reason)
-	fmt.Fprintln(w, "  run: GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 &")
+	fmt.Fprintln(w, "  run: GG_ROLE=master gg spawn heartbeat --watch --poll 90 &")
 	fmt.Fprintln(w, "  then: gg spawn status")
 	fmt.Fprintln(w)
 }

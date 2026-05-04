@@ -75,12 +75,12 @@ func (b Briefing) Render(w io.Writer) error {
 // agent's chat to kickstart compliance when no SessionStart hook is
 // available (Codex, generic CLIs) or as reinforcement.
 //
-// agentHint seeds the example GG_AGENT value; if empty, "claude-code"
-// is used. The block is plain ASCII — no markdown fences, no emojis —
+// agentHint seeds the example GG_AGENT value; if empty, "agent" is used.
+// The block is plain ASCII — no markdown fences, no emojis —
 // so it survives terminal paste across every agent we care about.
 func PasteBlock(agentHint string) string {
 	if strings.TrimSpace(agentHint) == "" {
-		agentHint = "claude-code"
+		agentHint = "agent"
 	}
 	var sb strings.Builder
 	sb.WriteString("I am operating inside a gg-cli enforced project.\n")

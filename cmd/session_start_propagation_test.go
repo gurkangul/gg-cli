@@ -307,7 +307,7 @@ func TestSessionStartMasterHeartbeatNotice_WhenPaneActiveAndHeartbeatStale(t *te
 	for _, want := range []string{
 		"MASTER HEARTBEAT STALE",
 		"active worker panes: 1",
-		"GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 &",
+		"GG_ROLE=master gg spawn heartbeat --watch --poll 90 &",
 		"gg spawn status",
 	} {
 		if !strings.Contains(got, want) {

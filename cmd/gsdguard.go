@@ -18,48 +18,49 @@ import (
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
-// gsdAgentPrefixes lists the agent identifier prefixes that are prohibited
-// from owning task lifecycle transitions (done / ready-for-live). Matched
-// case-insensitively via strings.HasPrefix so "claude-sonnet-4-6" and future
-// variants are caught by the "claude-sonnet-" prefix.
-var gsdLifecycleBlockedAgents = []string{"gsd", "claude-sonnet-"}
+// lifecycleBlockedRoles lists implementation roles that are prohibited from
+// owning reviewer/verifier lifecycle transitions. This is deliberately
+// role-based, not agent-brand based: Codex, Claude, Cursor, GSD, or any future
+// runtime may be the worker or the master depending on GG_ROLE.
+var lifecycleBlockedRoles = []string{"developer", "worker", "implementer"}
 
-// isLifecycleBlockedAgent reports whether the given agent string matches any
-// blocked prefix. Matching is case-insensitive.
-func isLifecycleBlockedAgent(agent string) bool {
-	lower := strings.ToLower(strings.TrimSpace(agent))
-	for _, prefix := range gsdLifecycleBlockedAgents {
-		if strings.HasPrefix(lower, prefix) {
+// isLifecycleBlockedRole reports whether role is an implementation role that
+// cannot approve/review/close its own work. Matching is case-insensitive.
+func isLifecycleBlockedRole(role string) bool {
+	lower := strings.ToLower(strings.TrimSpace(role))
+	for _, blocked := range lifecycleBlockedRoles {
+		if lower == blocked {
 			return true
 		}
 	}
 	return false
 }
 
-// checkAgentLifecycleGate enforces the Opus-owned lifecycle policy:
-// GSD agents (GG_AGENT=gsd) and Sonnet models (GG_AGENT=claude-sonnet-*)
-// must not call gg task done or gg task ready-for-live directly — only Opus
-// (claude-code / claude-opus-*) owns these transitions.
+// checkAgentLifecycleGate enforces the role-owned lifecycle policy:
+// implementation roles may mark work ready-for-live, but they must not own
+// reviewer/verifier transitions (`gg task done` / `gg task review`). The policy
+// is intentionally agent-agnostic: authority comes from GG_ROLE, not from
+// whether the process is Codex, Claude, Cursor, GSD, or another runtime.
 //
-// The check reads GG_AGENT (primary) and GG_ROLE (fallback). Returns nil
-// when the agent is allowed, or an *ExitError with ExitVerifyFailed when
-// blocked. Returns nil without checking when enforcement.Enabled() is false
-// — callers must emit the bypass audit event themselves.
+// The check reads GG_ROLE. Returns nil when allowed, or an *ExitError with
+// ExitVerifyFailed when blocked. Returns nil without checking when
+// enforcement.Enabled() is false — callers must emit the bypass audit event
+// themselves.
 func checkAgentLifecycleGate(verb string) *ExitError {
-	agent := os.Getenv("GG_AGENT")
-	if agent == "" {
-		agent = os.Getenv("GG_ROLE")
+	if verb == "ready-for-live" {
+		return nil
 	}
-	if agent == "" || !isLifecycleBlockedAgent(agent) {
+	role := os.Getenv("GG_ROLE")
+	if role == "" || !isLifecycleBlockedRole(role) {
 		return nil
 	}
 	return &ExitError{
 		Code: ExitVerifyFailed,
 		Message: fmt.Sprintf(
-			"lifecycle gate rejected '%s': GG_AGENT=%q is not permitted to own task lifecycle transitions.\n"+
-				"Only Opus (claude-code / claude-opus-*) may call 'gg task %s'.\n"+
+			"lifecycle gate rejected '%s': GG_ROLE=%q is an implementation role and cannot own reviewer/verifier transitions.\n"+
+				"Use GG_ROLE=master/reviewer/verifier for 'gg task %s', or mark implementation complete with 'gg task ready-for-live'.\n"+
 				"Set GG_ENFORCEMENT=off to bypass for this session (emergency use only).",
-			verb, agent, verb),
+			verb, role, verb),
 	}
 }
 

@@ -53,7 +53,7 @@ gg doctor --install-agent-hooks
 ```
 
 Claude should start each project session by reading `CLAUDE.md`/`AGENTS.md`,
-setting `GG_AGENT=claude-code`, running `gg status`, and summarizing open
+setting `GG_AGENT` to the runtime identity, running `gg status`, and summarizing open
 tasks, unread inbox, and recent decisions.
 
 ## 4. Cursor

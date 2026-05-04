@@ -22,7 +22,7 @@ Output layout:
   Then:     current gg status output
 
 Examples:
-  gg session-start --agent=claude-code
+  gg session-start --agent=codex
   GG_AGENT=cursor gg session-start
 
 ```
@@ -32,7 +32,7 @@ gg session-start [flags]
 ### Options
 
 ```
-      --agent string   agent name (claude-code, cursor, codex, ...) — overrides $GG_AGENT
+      --agent string   agent name (codex, cursor, gsd, ...) — overrides $GG_AGENT
       --bench          print timing for the managed-block resync step to stderr
   -h, --help           help for session-start
 ```
@@ -46,4 +46,3 @@ gg session-start [flags]
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
-

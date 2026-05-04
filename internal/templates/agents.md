@@ -71,7 +71,7 @@ visible to the others through shared memory.
 
 The very first thing to do at the start of any conversation:
 ```
-export GG_AGENT="claude-code"   # or "gsd", "cursor", "codex", etc.
+export GG_AGENT="${GG_AGENT:-agent}"  # replace "agent" with this runtime's name
 gg status
 ```
 

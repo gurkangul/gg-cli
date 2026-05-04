@@ -25,7 +25,8 @@ Subcommands:
 
 Typical flow:
   # Master terminal — start heartbeat loop and queue runner
-  export GG_AGENT=claude-code
+  export GG_AGENT="${GG_AGENT:-agent}"
+  export GG_ROLE=master
   gg spawn heartbeat          # initial heartbeat
   gg spawn queue start --agent gsd  # drains pending tasks
 

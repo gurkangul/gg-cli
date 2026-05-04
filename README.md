@@ -342,8 +342,8 @@ recent decisions, pending tasks, and any managed policy repairs. For manual
 sessions, set an identity and run it explicitly:
 
 ```sh
-export GG_AGENT=claude-code   # or codex, cursor, aider
-gg session-start --agent=claude-code
+export GG_AGENT="${GG_AGENT:-agent}"  # set to this runtime's name, e.g. codex/cursor/aider
+gg session-start --agent "$GG_AGENT"
 ```
 
 ```
@@ -356,11 +356,11 @@ unread messages              gg decide "JWT chosen"       gg search "JWT" → fi
 
 All agents write to the same Qdrant + Memgraph backend. A decision made by one is immediately visible to the others.
 
-For Claude Code master/worker flows, opt in from the master session:
+For master/worker flows, opt in from the master session:
 
 ```sh
 gg become master
-GG_AGENT=claude-code gg spawn heartbeat --watch --poll 90 &
+GG_ROLE=master gg spawn heartbeat --watch --poll 90 &
 ```
 
 The heartbeat watcher keeps worker-pane supervision visible; `gg session-start`

@@ -1,6 +1,6 @@
-// Package cmd — tests for the agent-lifecycle gate added by TASK-272.
-// Verifies that GSD / Sonnet agents cannot call gg task done or
-// gg task ready-for-live, while Opus / untagged sessions pass through.
+// Package cmd — tests for the role-based lifecycle gate.
+// Verifies that implementation roles cannot call reviewer/verifier lifecycle
+// transitions, while agent brands themselves do not determine authority.
 package cmd
 
 import (
@@ -8,41 +8,26 @@ import (
 	"testing"
 )
 
-// isLifecycleBlockedAgent tests — pure predicate, no I/O or env reads.
+// isLifecycleBlockedRole tests — pure predicate, no I/O or env reads.
 
-func TestIsLifecycleBlockedAgent_GSD_Blocked(t *testing.T) {
-	for _, agent := range []string{"gsd", "GSD", "GsD", "gsd-workflow"} {
-		if !isLifecycleBlockedAgent(agent) {
-			t.Errorf("expected %q to be blocked", agent)
+func TestIsLifecycleBlockedRole_ImplementationRolesBlocked(t *testing.T) {
+	for _, role := range []string{"developer", "DEVELOPER", "worker", "implementer"} {
+		if !isLifecycleBlockedRole(role) {
+			t.Errorf("expected %q to be blocked", role)
 		}
 	}
 }
 
-func TestIsLifecycleBlockedAgent_Sonnet_Blocked(t *testing.T) {
-	for _, agent := range []string{
-		"claude-sonnet-4-6",
-		"claude-sonnet-4-5",
-		"CLAUDE-SONNET-4-6",
-		"claude-sonnet-",
-	} {
-		if !isLifecycleBlockedAgent(agent) {
-			t.Errorf("expected %q to be blocked", agent)
-		}
-	}
-}
-
-func TestIsLifecycleBlockedAgent_Opus_Allowed(t *testing.T) {
-	for _, agent := range []string{
-		"claude-code",
-		"claude-opus-4-7",
-		"claude-opus-4-6",
-		"opus",
-		"developer",
+func TestIsLifecycleBlockedRole_NonImplementationRolesAllowed(t *testing.T) {
+	for _, role := range []string{
+		"master",
+		"reviewer",
+		"verifier",
 		"architect",
 		"",
 	} {
-		if isLifecycleBlockedAgent(agent) {
-			t.Errorf("expected %q to be allowed", agent)
+		if isLifecycleBlockedRole(role) {
+			t.Errorf("expected %q to be allowed", role)
 		}
 	}
 }
@@ -50,41 +35,38 @@ func TestIsLifecycleBlockedAgent_Opus_Allowed(t *testing.T) {
 // checkAgentLifecycleGate tests — exercises the env-dependent function via
 // t.Setenv so each case is hermetic.
 
-func TestAgentLifecycleGate_GSD_Blocked(t *testing.T) {
-	t.Setenv("GG_AGENT", "gsd")
-	t.Setenv("GG_ROLE", "")
+func TestAgentLifecycleGate_DeveloperRoleBlockedForDone(t *testing.T) {
+	t.Setenv("GG_AGENT", "codex")
+	t.Setenv("GG_ROLE", "developer")
 	rej := checkAgentLifecycleGate("done")
 	if rej == nil {
-		t.Fatal("expected gate to block GG_AGENT=gsd")
+		t.Fatal("expected gate to block GG_ROLE=developer")
 	}
 	if rej.Code != ExitVerifyFailed {
 		t.Errorf("expected ExitVerifyFailed(%d), got %d", ExitVerifyFailed, rej.Code)
 	}
-	if !strings.Contains(rej.Message, "gsd") {
-		t.Errorf("message should name the blocked agent, got %q", rej.Message)
+	if !strings.Contains(rej.Message, "developer") {
+		t.Errorf("message should name the blocked role, got %q", rej.Message)
 	}
 	if !strings.Contains(rej.Message, "done") {
 		t.Errorf("message should name the verb, got %q", rej.Message)
 	}
 }
 
-func TestAgentLifecycleGate_Sonnet_Blocked(t *testing.T) {
+func TestAgentLifecycleGate_AgentBrandAloneDoesNotBlockReadyForLive(t *testing.T) {
 	t.Setenv("GG_AGENT", "claude-sonnet-4-6")
-	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_ROLE", "developer")
 	rej := checkAgentLifecycleGate("ready-for-live")
-	if rej == nil {
-		t.Fatal("expected gate to block GG_AGENT=claude-sonnet-4-6")
-	}
-	if rej.Code != ExitVerifyFailed {
-		t.Errorf("expected ExitVerifyFailed(%d), got %d", ExitVerifyFailed, rej.Code)
+	if rej != nil {
+		t.Fatalf("ready-for-live should be allowed for implementation roles, got %v", rej)
 	}
 }
 
-func TestAgentLifecycleGate_OpusAllowed(t *testing.T) {
-	t.Setenv("GG_AGENT", "claude-code")
-	t.Setenv("GG_ROLE", "")
+func TestAgentLifecycleGate_MasterRoleAllowedRegardlessOfAgent(t *testing.T) {
+	t.Setenv("GG_AGENT", "codex")
+	t.Setenv("GG_ROLE", "master")
 	if rej := checkAgentLifecycleGate("done"); rej != nil {
-		t.Fatalf("claude-code must be allowed, got refusal: %v", rej)
+		t.Fatalf("master role must be allowed, got refusal: %v", rej)
 	}
 }
 
@@ -96,32 +78,31 @@ func TestAgentLifecycleGate_EmptyAgent_Allowed(t *testing.T) {
 	}
 }
 
-func TestAgentLifecycleGate_RoleFallback_GSD_Blocked(t *testing.T) {
-	// When GG_AGENT is unset but GG_ROLE=gsd, the gate must still block.
-	t.Setenv("GG_AGENT", "")
-	t.Setenv("GG_ROLE", "gsd")
+func TestAgentLifecycleGate_AgentNameGSDWithoutWorkerRoleAllowed(t *testing.T) {
+	t.Setenv("GG_AGENT", "gsd")
+	t.Setenv("GG_ROLE", "master")
 	rej := checkAgentLifecycleGate("done")
-	if rej == nil {
-		t.Fatal("expected gate to block when GG_ROLE=gsd and GG_AGENT is empty")
+	if rej != nil {
+		t.Fatalf("agent/runtime brand must not decide authority, got %v", rej)
 	}
 }
 
-func TestAgentLifecycleGate_GSDPrefix_CaseInsensitive(t *testing.T) {
+func TestAgentLifecycleGate_GSDAsDeveloperRoleBlocked(t *testing.T) {
 	t.Setenv("GG_AGENT", "GSD")
-	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_ROLE", "developer")
 	if rej := checkAgentLifecycleGate("done"); rej == nil {
-		t.Fatal("GSD (uppercase) must be blocked — matching is case-insensitive")
+		t.Fatal("developer role must be blocked even when runtime is GSD")
 	}
 }
 
 // review verb gate tests (TASK-288)
 
-func TestAgentLifecycleGate_Review_GSD_Blocked(t *testing.T) {
+func TestAgentLifecycleGate_ReviewDeveloperRoleBlocked(t *testing.T) {
 	t.Setenv("GG_AGENT", "gsd")
-	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_ROLE", "developer")
 	rej := checkAgentLifecycleGate("review")
 	if rej == nil {
-		t.Fatal("expected gate to block GG_AGENT=gsd for 'review' verb")
+		t.Fatal("expected gate to block GG_ROLE=developer for 'review' verb")
 	}
 	if rej.Code != ExitVerifyFailed {
 		t.Errorf("expected ExitVerifyFailed(%d), got %d", ExitVerifyFailed, rej.Code)
@@ -131,22 +112,10 @@ func TestAgentLifecycleGate_Review_GSD_Blocked(t *testing.T) {
 	}
 }
 
-func TestAgentLifecycleGate_Review_Sonnet_Blocked(t *testing.T) {
-	t.Setenv("GG_AGENT", "claude-sonnet-4-6")
-	t.Setenv("GG_ROLE", "")
-	rej := checkAgentLifecycleGate("review")
-	if rej == nil {
-		t.Fatal("expected gate to block claude-sonnet-4-6 for 'review' verb")
-	}
-	if rej.Code != ExitVerifyFailed {
-		t.Errorf("expected ExitVerifyFailed(%d), got %d", ExitVerifyFailed, rej.Code)
-	}
-}
-
-func TestAgentLifecycleGate_Review_OpusAllowed(t *testing.T) {
-	t.Setenv("GG_AGENT", "claude-code")
-	t.Setenv("GG_ROLE", "")
+func TestAgentLifecycleGate_ReviewReviewerRoleAllowed(t *testing.T) {
+	t.Setenv("GG_AGENT", "cursor")
+	t.Setenv("GG_ROLE", "reviewer")
 	if rej := checkAgentLifecycleGate("review"); rej != nil {
-		t.Fatalf("claude-code must be allowed to call 'review', got refusal: %v", rej)
+		t.Fatalf("reviewer role must be allowed to call 'review', got refusal: %v", rej)
 	}
 }

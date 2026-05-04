@@ -256,7 +256,7 @@ func TestMasterRoleExtras_HasItem11(t *testing.T) {
 	required := []string{
 		"11. **No silent defer**",
 		"reserved for future",
-		"gg tell claude-code",
+		"gg tell master",
 	}
 	for _, want := range required {
 		if !strings.Contains(MasterRoleExtras, want) {

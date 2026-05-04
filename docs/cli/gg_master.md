@@ -4,7 +4,7 @@ Master-session utilities: session handoff, resume state
 
 ### Synopsis
 
-Utilities for the Opus master session that orchestrates worker panes.
+Utilities for the master/orchestrator session that coordinates worker panes.
 
 Subcommands:
   resume — print a structured session-handoff dump so a fresh master session
@@ -30,4 +30,3 @@ Typical use:
 
 * [gg](gg.md)	 - Shared brain for AI agents
 * [gg master resume](gg_master_resume.md)	 - Print a structured session-handoff dump for a fresh master session
-

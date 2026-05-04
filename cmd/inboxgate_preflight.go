@@ -25,7 +25,7 @@ func resolveActorRole() string {
 // unset. State-changing commands must call this before writing to the store.
 func requireAgentIdentity() error {
 	if resolveActorRole() == "" {
-		return fmt.Errorf("identify yourself: export GG_AGENT=<name> (e.g. claude-code, cursor, gsd)")
+		return fmt.Errorf("identify yourself: export GG_AGENT=<runtime-name> (e.g. codex, cursor, gsd)")
 	}
 	return nil
 }

@@ -27,7 +27,7 @@ func TestSpawnAgentDefault_EnvOverride(t *testing.T) {
 
 // TestBuildWorkerEnv verifies that task ID and agent are always exported.
 func TestBuildWorkerEnv_TaskID(t *testing.T) {
-	t.Setenv("GG_AGENT", "claude-code")
+	t.Setenv("GG_AGENT", "codex")
 	t.Setenv("GG_ROLE", "master")
 
 	env := buildWorkerEnv("TASK-042", nil)
@@ -38,7 +38,7 @@ func TestBuildWorkerEnv_TaskID(t *testing.T) {
 	hasMasterAgent := false
 	hasMasterRole := false
 	for _, e := range env {
-		if e == "GG_AGENT=claude-code" {
+		if e == "GG_AGENT=codex" {
 			hasAgent = true
 		}
 		if e == "GG_TASK_ID=TASK-042" {
@@ -47,7 +47,7 @@ func TestBuildWorkerEnv_TaskID(t *testing.T) {
 		if e == "GG_ROLE=master" {
 			hasRole = true
 		}
-		if e == "GG_MASTER_AGENT=claude-code" {
+		if e == "GG_MASTER_AGENT=codex" {
 			hasMasterAgent = true
 		}
 		if e == "GG_MASTER_ROLE=master" {
@@ -252,7 +252,7 @@ func TestSpawnWorker_PromptRoutesCompletionToActiveCodexMaster(t *testing.T) {
 
 	prompt := buildWorkerPrompt("TASK-367")
 	for _, want := range []string{
-		"gg tell master,codex,claude-code",
+		"gg tell master,codex",
 		"gg spawn advance --task TASK-367",
 		"Do not stop at prose confirmation",
 	} {
@@ -269,7 +269,7 @@ func TestMasterMessageTargetsPreferSpawnedMasterEnv(t *testing.T) {
 	t.Setenv("GG_AGENT", "claude-code")
 
 	got := masterMessageTargetCSV()
-	want := "master,codex,claude-code"
+	want := "master,codex"
 	if got != want {
 		t.Fatalf("masterMessageTargetCSV() = %q, want %q", got, want)
 	}

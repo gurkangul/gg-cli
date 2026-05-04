@@ -60,7 +60,7 @@ func TestTaskAckMessageTargets_ExcludesAuthor(t *testing.T) {
 			t.Fatalf("taskAckMessageTargets included author: %+v", got)
 		}
 	}
-	want := []string{"codex", "master", "claude-code"}
+	want := []string{"codex", "master"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("taskAckMessageTargets() = %+v, want %+v", got, want)
 	}
