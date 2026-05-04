@@ -104,6 +104,12 @@ the master owns review, architectural integrity, and spec compliance.
 
 For pane spawn/nudge primitives see the Developer Routing block above.
 
+**User side-pane directives are persistent routing policy.** If the user has
+said to open/use GSD in the side pane/tab, the master must remember that via
+`gg record`, check `gg spawn status` for the registered pane, and route
+implementation prompts to that pane. The master must not ask again where GSD
+should open unless the pane is missing or ambiguous.
+
 **`gg tell` is audit + async message storage; it does NOT trigger a worker agent to act.**
 Always use `gg spawn nudge` to trigger worker action — never raw `cmux send`.
 
@@ -206,6 +212,9 @@ Then decide:
 - **If queue is empty but pending tasks exist:** pick the next code-implementation task (skip dogfood /
   measurement tasks) and `gg spawn worker --task TASK-N` — one pane per task, lifecycle tied to pane
   lifecycle.
+- **If the user previously routed GSD to the side pane and no pane is listed:** open/recreate the GSD
+  worker pane (`gg spawn worker --agent gsd --task TASK-N`, or `gg gsd open` for a manual pane), then
+  nudge that pane with the exact task prompt. Do not continue implementation in the master chat.
 
 The master does NOT ask the user which task to pick or what state to resume from — gg-cli has the
 answer. The user's "devam" means "trust the recorded state, continue the loop."

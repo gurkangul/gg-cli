@@ -27,6 +27,11 @@ gg spawn nudge --surface <pane-id> "<prompt text>"
 
 ### Worker availability and thread limits
 
+User routing directives are durable policy. If the user says "open GSD in the
+side pane/tab", "GSD'yi yanda aç", or equivalent once, record that with
+`gg record` and treat the registered GSD terminal pane as the developer worker
+surface for future tasks in this project/session.
+
 Do not confuse an LLM subagent/thread limit with the absence of a side-session
 developer. A live terminal pane registered in `gg spawn status` is the worker
 surface even when in-process subagent spawning is unavailable.
@@ -39,8 +44,12 @@ When a worker pane exists, the master must continue by supervising that pane:
 
 The master does not take over non-trivial implementation just because a
 parallel subagent/thread spawn failed. If no pane exists, first try
-`gg spawn worker --task TASK-N`; if that fails, block or escalate the task with
-the exact spawn failure instead of silently switching to local implementation.
+`gg spawn worker --agent gsd --task TASK-N` when GSD is the routed worker
+(otherwise use the configured developer agent). For a manually-opened GSD pane,
+use `gg gsd open`, wait until the GSD REPL is active, then route the task prompt
+with `gg spawn nudge --surface <pane-id>`. If opening/nudging fails, block or
+escalate the task with the exact pane/spawn failure instead of silently
+switching to local implementation.
 
 ### Worker commit protocol (advance sentinel)
 
