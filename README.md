@@ -43,21 +43,6 @@ session-start, task, reviewer, and search/context/impact/inbox workflow.
 
 ![gg demo](docs/demo.svg)
 
-<!-- 90s demo embed placeholder — generated from docs/demo/record.sh -->
-<!-- See docs/demo/STORYBOARD.md for the recording script -->
-
----
-
-## Why this exists
-
-Running multiple AI agents in parallel is increasingly common — different terminals, different specializations, different tasks. The problem is that each agent starts with a blank slate every time. Three failure modes follow reliably:
-
-1. **Every agent re-derives the same context.** Agent A figures out the auth approach; Agent B spends 10 minutes reaching the same conclusion. Multiply by n agents and n sessions.
-2. **Impact-blind fixes create fix loops.** An agent patches a symptom without knowing what else calls the function. The next agent sees the symptom again and patches it again.
-3. **Rejected approaches keep getting re-proposed.** "What about using Redis for the session store?" — answered three times across three sessions because nothing remembered the rejection.
-
-gg is a shared brain. Agents call it as a subprocess. Decisions, rejections, tasks, and code-graph facts live in a local vector store that all agents query. A decision made by one is immediately visible to the others.
-
 ---
 
 ## Prerequisites
@@ -88,13 +73,6 @@ go install github.com/gurkangul/gg-cli/cmd/gg@latest
 
 The binary is `gg`. The repo is `gg-cli` for descriptiveness; the
 command stays short.
-
-If the first tagged release is not available yet, install from the current
-main branch instead:
-
-```sh
-go install github.com/gurkangul/gg-cli/cmd/gg@main
-```
 
 ### Build from source
 
@@ -211,7 +189,7 @@ not `lift-cli/` is the Go module root.
 ### Keeping agent context small
 
 gg output grows with the knowledge base; on mature projects a single `gg
-context` can span hundreds of lines. Three orthogonal options:
+context` can span hundreds of lines. Two options keep it short:
 
 - `--compact` on verbose commands — one line per item (IDs, titles, dates),
   no reasons or detail bodies. The agent picks which items to fetch in full:
@@ -238,12 +216,7 @@ context` can span hundreds of lines. Three orthogonal options:
   ```
 
   Resolution order: explicit `--compact` flag > `GG_COMPACT` env >
-  `GG_ROLE`/`GG_AGENT`/`--from` origin > off. `gg status` surfaces the
-  dogfood savings (`Compact  74 calls, 208.5 KB / ~53K tok saved`).
-
-- A generic shell-output compressor like [RTK](https://github.com/rtk-ai/rtk)
-  transparently shrinks all tool output (git, tests, gg) before it reaches
-  the model's context. Independent of gg; optional.
+  `GG_ROLE`/`GG_AGENT`/`--from` origin > off.
 
 ### Observability (GG_TRACE=1)
 
@@ -268,14 +241,14 @@ Enable recording: `GG_TRACE=1 gg search "topic"`. See [`docs/commands/trace.md`]
 
 #### Verify gate
 
-`gg task done` runs every `*.sh` in `.gg/hooks/pre-task-done.d/` **before** writing the new state. Any non-zero exit aborts the transition with exit code `7` (`ExitVerifyFailed`) — the task stays in its current state.
+`gg task done` can run project-local checks before a task is closed. Install
+starter hooks with:
 
-On rejection three signals fire in parallel:
-1. A human-readable line on **stderr** explaining which hook failed and why.
-2. A machine-parseable **NDJSON line** on stderr: `{"event":"verify_failed","gate":"pre-task-done","task":"TASK-ID","hook":"script.sh","exit":1,"ts":"…","detail":"…"}` — parse it with `jq` or any JSON reader.
-3. An automatic cross-agent **`gg tell`** from `verify-gate` to `all` so parallel sessions see the rejection in `gg status`.
+```sh
+gg doctor --install-task-hooks
+```
 
-Install the starter hooks with `gg doctor --install-task-hooks`. Suppress the broadcast in CI or reentrant scripts with `GG_NO_AUTO_NOTIFY=1`.
+If a check fails, the task stays open and gg prints the failing hook output.
 
 ---
 
@@ -352,16 +325,6 @@ unread messages              gg decide "JWT chosen"       gg search "JWT" → fi
 
 All agents write to the same Qdrant + Memgraph backend. A decision made by one is immediately visible to the others.
 
-For master/worker flows, opt in from the master session:
-
-```sh
-gg become master
-GG_ROLE=master gg spawn heartbeat --watch --poll 90 &
-```
-
-The heartbeat watcher keeps worker-pane supervision visible; `gg session-start`
-warns when worker panes exist but the master heartbeat is missing or stale.
-
 ---
 
 ## Architecture
@@ -393,26 +356,11 @@ flowchart LR
     OB -->|symbols · calls · imports| MG
 ```
 
-```
-gg (CLI)
-├── cmd/           — cobra commands
-├── internal/
-│   ├── store/     — Qdrant client (decisions, tasks, bugs, notes, discussions, messages)
-│   ├── graph/     — Memgraph client (code knowledge graph: Symbol, File, Package nodes)
-│   ├── index/
-│   │   ├── parser/    — SCIP file parser
-│   │   ├── runner/    — SCIP indexer resolution and execution
-│   │   ├── changed/   — git diff + IsAncestor for incremental indexing
-│   │   ├── state/     — index-state.json (last indexed SHA)
-│   │   └── compat/    — indexer version manifest
-│   ├── embedding/ — Ollama embedding generator + model metadata
-│   └── outbox/    — file-based crash-safety queue for Memgraph writes
-└── AGENTS.md      — agent behavior rules (session start, decisions, tasks, …)
-```
+**Isolation:** every stored record is tagged with a project ID. Multiple
+projects can share the same local backend without data leakage.
 
-**Isolation:** every Qdrant point and every Memgraph node carries a `project_id` property. Multiple projects can share the same backend without data leakage.
-
-**Crash safety:** `gg index` writes an outbox entry before touching Memgraph. On success the entry is deleted. If the process dies mid-write, `gg doctor --reconcile` surfaces the pending entry and shows the exact repair command.
+**Crash safety:** index operations use an outbox. If a write is interrupted,
+`gg doctor --reconcile` surfaces the pending work and shows the repair command.
 
 ---
 
@@ -429,39 +377,28 @@ gg (CLI)
 
 ---
 
-## Engineering Decisions
+## Design principles
 
-Decisions that shaped the design — and why the alternatives lost.
-
-**No daemon, subprocess interface only.**
-A background daemon would require a service manager, a PID file, and crash recovery. Instead, `gg` is a stateless CLI: agents call it as a subprocess, Docker provides the stores. This eliminated an entire class of process-lifecycle bugs and kept the distribution a single binary. See [docs/architecture.md](docs/architecture.md).
+**No daemon, subprocess interface only.** Agents call `gg` directly from the
+shell. Docker provides the local stores; gg itself stays a normal CLI.
 
 **Two-store architecture: Qdrant + Memgraph.**
-Decisions, tasks, and rejections need fuzzy semantic search (`gg search "auth"` should surface JWT discussions even if the query doesn't match exact words). Code impact queries need structural traversal (`gg impact src/auth.go` follows call chains). A single store forces a compromise in both. Two purpose-built stores, one per query type.
-
-**`gg record` with `--stance` flag instead of separate `decide`/`reject` verbs.**
-Early design had six command verbs. Five (record, note, task, bug, discuss) covers the full lifecycle with less surface area. `gg decide` and `gg reject` remain as aliases for agent compatibility, but `record --stance=accept|reject` is canonical. See the 6→5 verb taxonomy decision.
+Semantic memory and code impact queries need different storage models. Qdrant
+handles fuzzy search over decisions and tasks; Memgraph handles structural
+code relationships.
 
 **JSONL-primary brain writes with Qdrant as derived index.**
-`gg record`, `gg task create`, and `gg bug report` write to `.gg/brain/<kind>.jsonl` first, then attempt a Qdrant upsert.  When Qdrant is unreachable the write still succeeds (exit 0) and an outbox entry is queued for later replay.  `gg doctor --reconcile` drains the outbox when Qdrant recovers.  `gg search` falls back to a local JSONL text scan when Qdrant is unavailable, printing an offline banner.  See [docs/offline-resilience.md](docs/offline-resilience.md) for the full design.
-
-**Outbox pattern for dual-store consistency.**
-When `gg index` writes to both Qdrant and Memgraph, a crash between the two writes leaves the stores out of sync. gg writes a `.gg/outbox/<id>.json` entry before the Memgraph write and deletes it on success. `gg doctor --reconcile` surfaces any dangling entries and replays pending brain writes to Qdrant. No saga framework, no distributed transaction — just a file and a reconciler.
-
-**`project_id` as the isolation primitive.**
-Rejected: Memgraph 3.x multi-database feature (not broadly available, adds infra coupling). Chosen: every Qdrant point and every Memgraph node carries a `project_id` UUID injected at the `runQuery` level in `internal/graph/queries.go`. A new project gets a new UUID from `gg init`; shared infra at `~/.gg/` serves all projects without data leakage.
-
-**SCIP-first hybrid parser (SCIP + tree-sitter fallback).**
-Pure SCIP gives high-quality cross-file symbol resolution for supported languages (Go, TypeScript, Python via `scip-go`, `scip-typescript`, `scip-python`). Tree-sitter covers languages with no SCIP indexer. The spike showed scip-go at 0.97s for one repo, 3.78ms ParseFile, 1365 symbols — enough for the current alpha, not a broad production claim. Rejected: writing a custom AST parser (maintenance surface); Docker-based SCIP fallback (day-1 complexity).
+Writes land in local JSONL first, then sync to Qdrant. If the vector store is
+temporarily unavailable, gg can still keep a durable local record and reconcile
+later.
 
 ---
 
 ## Telemetry (local-only, opt-out)
 
-`gg` writes a single JSON line per command to `~/.gg/projects/<project_id>/telemetry.jsonl`
-recording verb usage (which `gg` commands ran, agent vs human). This data is
-**strictly local — never sent anywhere over the network** — and powers gg's
-own dogfood metric (DISC-008): are agents actually following AGENTS.md rules?
+`gg` writes a single JSON line per command to
+`~/.gg/projects/<project_id>/telemetry.jsonl` recording verb usage. This data
+is **strictly local — never sent anywhere over the network**.
 
 The file is append-only; you can rotate, inspect, or delete it freely.
 
@@ -490,14 +427,11 @@ export GG_TELEMETRY=0   # also: false, no, off
 
 ## Current Status
 
-gg is alpha but dogfood-ready: the core CLI, code graph, agent hooks,
-verify gates, and multi-project isolation are implemented and used in this
-repo. The remaining work is hardening for broader external use rather than
-finishing the initial feature phases.
+gg is alpha: the core CLI, code graph, agent hooks, verify gates, and
+multi-project isolation are implemented, but the API and storage format may
+still change between releases.
 
-Use `gg status` inside this repo for live project state. See
-[docs/roadmap.md](docs/roadmap.md) for historical phase context and future
-direction.
+See [docs/roadmap.md](docs/roadmap.md) for future direction.
 
 ---
 
