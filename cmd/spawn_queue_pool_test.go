@@ -11,10 +11,11 @@ import (
 
 	"github.com/gurkangul/gg-cli/internal/orchestrator/spawn"
 	"github.com/gurkangul/gg-cli/internal/orchestrator/terminal"
+	"github.com/gurkangul/gg-cli/internal/store"
 )
 
-// TestDrainResultReason verifies that workerExitContextDone and
-// workerExitStalemaster results are NOT counted in sess.Completed.
+// TestDrainResultReason verifies that non-done worker outcomes are NOT counted
+// in sess.Completed.
 func TestDrainResultReason(t *testing.T) {
 	sess := &spawn.QueueSession{}
 
@@ -24,13 +25,14 @@ func TestDrainResultReason(t *testing.T) {
 		{taskID: "TASK-002", reason: workerExitContextDone},
 		{taskID: "TASK-003", reason: workerExitStalemaster},
 		{taskID: "TASK-005", reason: workerExitPaneGone},
+		{taskID: "TASK-006", reason: workerExitReady},
 		{taskID: "TASK-004", reason: workerExitOK},
 	}
 
 	processed := 0
 	for _, res := range results {
 		switch res.reason {
-		case workerExitStalemaster, workerExitContextDone, workerExitPaneGone:
+		case workerExitStalemaster, workerExitContextDone, workerExitPaneGone, workerExitReady:
 			// not counted
 		default:
 			sess.Completed = appendUniqID(sess.Completed, res.taskID)
@@ -44,7 +46,7 @@ func TestDrainResultReason(t *testing.T) {
 	if len(sess.Completed) != 2 {
 		t.Errorf("Completed = %v, want [TASK-001 TASK-004]", sess.Completed)
 	}
-	for _, id := range []string{"TASK-002", "TASK-003", "TASK-005"} {
+	for _, id := range []string{"TASK-002", "TASK-003", "TASK-005", "TASK-006"} {
 		for _, c := range sess.Completed {
 			if c == id {
 				t.Errorf("%s (cancelled/stale/disappeared) should not be in Completed", id)
@@ -187,7 +189,7 @@ func TestWaitForWorkerContextCancel(t *testing.T) {
 }
 
 // TestWaitForWorkerAdvanceSentinelMarksReady verifies a worker advance sentinel
-// is only a ready-for-review signal; it does not close the pane or complete the task.
+// returns a ready-for-review signal; it does not close the pane or complete the task.
 func TestWaitForWorkerAdvanceSentinelMarksReady(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -214,8 +216,11 @@ func TestWaitForWorkerAdvanceSentinelMarksReady(t *testing.T) {
 
 	select {
 	case reason := <-done:
-		t.Fatalf("waitForWorker returned early after advance sentinel: %v", reason)
-	case <-time.After(1500 * time.Millisecond):
+		if reason != workerExitReady {
+			t.Fatalf("reason = %v, want workerExitReady", reason)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("waitForWorker did not return after advance sentinel")
 	}
 
 	if !term.IsAlive(surf) {
@@ -235,11 +240,7 @@ func TestWaitForWorkerAdvanceSentinelMarksReady(t *testing.T) {
 	if pane.State != spawn.WorkerStateReady {
 		t.Fatalf("pane state = %q, want %q", pane.State, spawn.WorkerStateReady)
 	}
-
 	cancel()
-	if reason := <-done; reason != workerExitContextDone {
-		t.Fatalf("reason after cancel = %v, want workerExitContextDone", reason)
-	}
 }
 
 // TestWaitForWorkerTaskDoneClosesPane verifies the queue only closes the worker
@@ -321,6 +322,54 @@ func TestBuildSkipSet(t *testing.T) {
 	}
 	if s["TASK-099"] {
 		t.Error("TASK-099 should not be in skip set")
+	}
+}
+
+func TestSelectNextReadyForLiveTaskBlocksImplementationDispatch(t *testing.T) {
+	ready := []store.Task{
+		{ID: "TASK-430", Status: "ready_for_live", Priority: "medium"},
+		{ID: "TASK-428", Status: "ready_for_live", Priority: "high"},
+	}
+
+	got := selectNextReadyForLiveTask(ready, map[string]bool{})
+	if got == nil {
+		t.Fatal("expected a ready_for_live task")
+	}
+	if got.ID != "TASK-428" {
+		t.Fatalf("ready_for_live dispatch order = %s, want TASK-428", got.ID)
+	}
+}
+
+func TestSelectNextReadyTaskDoesNotRedispatchInProgressByDefault(t *testing.T) {
+	inProgress := []store.Task{
+		{ID: "TASK-401", Status: "in_progress", Priority: "high"},
+	}
+	pending := []store.Task{
+		{ID: "TASK-402", Status: "pending", Priority: "medium"},
+	}
+
+	got := selectNextReadyTask(pending, inProgress, nil, map[string]bool{}, false)
+	if got == nil {
+		t.Fatal("expected pending task to be selected")
+	}
+	if got.ID != "TASK-402" {
+		t.Fatalf("selected %s, want pending TASK-402; in_progress must not be redispatched by default", got.ID)
+	}
+}
+
+func TestSelectNextReadyTaskRecoversInProgressOnlyWhenEnabled(t *testing.T) {
+	inProgress := []store.Task{
+		{ID: "TASK-401", Status: "in_progress", Priority: "high"},
+	}
+
+	got := selectNextReadyTask(nil, inProgress, nil, map[string]bool{}, false)
+	if got != nil {
+		t.Fatalf("in_progress selected without recovery flag: %+v", got)
+	}
+
+	got = selectNextReadyTask(nil, inProgress, nil, map[string]bool{}, true)
+	if got == nil || got.ID != "TASK-401" {
+		t.Fatalf("expected opt-in recovery of TASK-401, got %+v", got)
 	}
 }
 

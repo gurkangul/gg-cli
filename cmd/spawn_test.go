@@ -3,18 +3,22 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gurkangul/gg-cli/internal/orchestrator/terminal"
+	"github.com/gurkangul/gg-cli/internal/store"
 )
 
 // TestSpawnAgentDefault verifies fallback behaviour for the agent default.
 func TestSpawnAgentDefault_Fallback(t *testing.T) {
+	t.Chdir(t.TempDir())
 	t.Setenv("GG_SPAWN_AGENT", "")
-	if got := spawnAgentDefault(); got != "gsd" {
-		t.Errorf("spawnAgentDefault() = %q, want %q", got, "gsd")
+	if got := spawnAgentDefault(); got != "" {
+		t.Errorf("spawnAgentDefault() = %q, want empty", got)
 	}
 }
 
@@ -25,12 +29,52 @@ func TestSpawnAgentDefault_EnvOverride(t *testing.T) {
 	}
 }
 
+func TestSpawnAgentDefault_ConfigCommand(t *testing.T) {
+	ggDir := setupGGDir(t)
+	cfgWithCommand := ggConfig + "developer:\n  command: gsd --model openai-codex/gpt-5.3-codex\n  transport: cmux\n"
+	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfgWithCommand), 0o644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+	t.Setenv("GG_SPAWN_AGENT", "")
+
+	want := "gsd --model openai-codex/gpt-5.3-codex"
+	if got := spawnAgentDefault(); got != want {
+		t.Errorf("spawnAgentDefault() = %q, want %q", got, want)
+	}
+}
+
+func TestSpawnAgentDefault_LegacyGSDAgentMapsToCommand(t *testing.T) {
+	ggDir := setupGGDir(t)
+	cfgWithLegacyAgent := ggConfig + "developer:\n  agent: gsd-sonnet-4.6\n  transport: cmux\n"
+	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfgWithLegacyAgent), 0o644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+	t.Setenv("GG_SPAWN_AGENT", "")
+
+	if got := spawnAgentDefault(); got != "gsd" {
+		t.Errorf("spawnAgentDefault() = %q, want gsd", got)
+	}
+}
+
+func TestSpawnAgentDefault_LegacyModelIDIsNotCommand(t *testing.T) {
+	ggDir := setupGGDir(t)
+	cfgWithLegacyAgent := ggConfig + "developer:\n  agent: claude-sonnet-4.5\n  transport: cmux\n"
+	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfgWithLegacyAgent), 0o644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+	t.Setenv("GG_SPAWN_AGENT", "")
+
+	if got := spawnAgentDefault(); got != "" {
+		t.Errorf("spawnAgentDefault() = %q, want empty", got)
+	}
+}
+
 // TestBuildWorkerEnv verifies that task ID and agent are always exported.
 func TestBuildWorkerEnv_TaskID(t *testing.T) {
 	t.Setenv("GG_AGENT", "codex")
 	t.Setenv("GG_ROLE", "master")
 
-	env := buildWorkerEnv("TASK-042", nil)
+	env := buildWorkerEnv("TASK-042", nil, "gsd --model openai-codex/gpt-5.3-codex")
 
 	hasAgent := false
 	hasTask := false
@@ -38,13 +82,13 @@ func TestBuildWorkerEnv_TaskID(t *testing.T) {
 	hasMasterAgent := false
 	hasMasterRole := false
 	for _, e := range env {
-		if e == "GG_AGENT=codex" {
+		if e == "GG_AGENT=gsd" {
 			hasAgent = true
 		}
 		if e == "GG_TASK_ID=TASK-042" {
 			hasTask = true
 		}
-		if e == "GG_ROLE=master" {
+		if e == "GG_ROLE=developer" {
 			hasRole = true
 		}
 		if e == "GG_MASTER_AGENT=codex" {
@@ -55,13 +99,13 @@ func TestBuildWorkerEnv_TaskID(t *testing.T) {
 		}
 	}
 	if !hasAgent {
-		t.Error("env missing GG_AGENT")
+		t.Error("env missing GG_AGENT=gsd")
 	}
 	if !hasTask {
 		t.Error("env missing GG_TASK_ID")
 	}
 	if !hasRole {
-		t.Error("env missing GG_ROLE")
+		t.Error("env missing GG_ROLE=developer")
 	}
 	if !hasMasterAgent {
 		t.Error("env missing GG_MASTER_AGENT")
@@ -75,7 +119,7 @@ func TestBuildWorkerEnv_EmptyTaskID(t *testing.T) {
 	t.Setenv("GG_AGENT", "")
 	t.Setenv("GG_ROLE", "")
 
-	env := buildWorkerEnv("", nil)
+	env := buildWorkerEnv("", nil, "gsd")
 	for _, e := range env {
 		if len(e) > len("GG_TASK_ID=") && e[:len("GG_TASK_ID=")] == "GG_TASK_ID=" {
 			t.Errorf("should not export GG_TASK_ID when taskID is empty, got %q", e)
@@ -88,7 +132,7 @@ func TestBuildWorkerEnv_ExtraEnv(t *testing.T) {
 	t.Setenv("GG_ROLE", "")
 
 	extra := []string{"FOO=bar", "BAZ=qux"}
-	env := buildWorkerEnv("TASK-001", extra)
+	env := buildWorkerEnv("TASK-001", extra, "codex")
 
 	hasFoo := false
 	hasBaz := false
@@ -105,6 +149,24 @@ func TestBuildWorkerEnv_ExtraEnv(t *testing.T) {
 	}
 	if !hasBaz {
 		t.Error("env missing BAZ=qux")
+	}
+}
+
+func TestWorkerAgentIdentity(t *testing.T) {
+	tests := []struct {
+		cmd  string
+		want string
+	}{
+		{cmd: "gsd --model openai-codex/gpt-5.3-codex", want: "gsd"},
+		{cmd: "zsh -lc 'exec gsd --model openai-codex/gpt-5.3-codex'", want: "gsd"},
+		{cmd: "/Users/example/.gg/bin/ggdev-worker", want: "gsd"},
+		{cmd: "codex --model gpt-5.3-codex", want: "codex"},
+		{cmd: "", want: "developer"},
+	}
+	for _, tc := range tests {
+		if got := workerAgentIdentity(tc.cmd); got != tc.want {
+			t.Fatalf("workerAgentIdentity(%q) = %q, want %q", tc.cmd, got, tc.want)
+		}
 	}
 }
 
@@ -223,15 +285,77 @@ func TestSpawnWorker_PromptContainsImpactStep(t *testing.T) {
 	if !spawnContains(prompt, "Impact-Reviewed:") {
 		t.Errorf("buildWorkerPrompt: missing 'Impact-Reviewed:' trailer instruction\ngot: %s", prompt)
 	}
+	if !spawnContains(prompt, "Review-Convergence:") {
+		t.Errorf("buildWorkerPrompt: missing 'Review-Convergence:' trailer instruction\ngot: %s", prompt)
+	}
 	if !spawnContains(prompt, "TASK-042") {
 		t.Errorf("buildWorkerPrompt: missing task ID TASK-042\ngot: %s", prompt)
+	}
+}
+
+func TestPreflightSpawnWorkerTask_RejectsBlockedTask(t *testing.T) {
+	tasks := fakeSpawnTaskReader{
+		"TASK-042": {ID: "TASK-042", Status: "blocked", BlockReason: "waiting on TASK-041"},
+	}
+
+	err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042")
+	if err == nil {
+		t.Fatal("expected blocked task to be rejected")
+	}
+	for _, want := range []string{"TASK-042 is blocked", "waiting on TASK-041"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+}
+
+func TestPreflightSpawnWorkerTask_RejectsReadyForLiveTask(t *testing.T) {
+	tasks := fakeSpawnTaskReader{
+		"TASK-042": {ID: "TASK-042", Status: "ready_for_live"},
+	}
+
+	err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042")
+	if err == nil {
+		t.Fatal("expected ready_for_live task to be rejected")
+	}
+	if !strings.Contains(err.Error(), "assign a verifier/reviewer") {
+		t.Fatalf("error should route to verifier/reviewer, got: %v", err)
+	}
+}
+
+func TestPreflightSpawnWorkerTask_RejectsUnfinishedDependencies(t *testing.T) {
+	tasks := fakeSpawnTaskReader{
+		"TASK-042": {ID: "TASK-042", Status: "pending", DependsOn: []string{"TASK-041", "TASK-040"}},
+		"TASK-041": {ID: "TASK-041", Status: "blocked"},
+		"TASK-040": {ID: "TASK-040", Status: "done"},
+	}
+
+	err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042")
+	if err == nil {
+		t.Fatal("expected unfinished dependency to be rejected")
+	}
+	for _, want := range []string{"unfinished dependencies", "TASK-041 (blocked)", "gg task deps TASK-042"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+}
+
+func TestPreflightSpawnWorkerTask_AllowsReadyPendingTask(t *testing.T) {
+	tasks := fakeSpawnTaskReader{
+		"TASK-042": {ID: "TASK-042", Status: "pending", DependsOn: []string{"TASK-041"}},
+		"TASK-041": {ID: "TASK-041", Status: "done"},
+	}
+
+	if err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042"); err != nil {
+		t.Fatalf("preflightSpawnWorkerTask() error = %v, want nil", err)
 	}
 }
 
 func TestSpawnWorker_PromptContainsAckProtocol(t *testing.T) {
 	prompt := buildWorkerPrompt("TASK-042")
 	for _, want := range []string{
-		"export GG_ROLE=developer",
+		"export GG_AGENT=${GG_AGENT:-developer} GG_ROLE=developer",
 		"gg task get TASK-042 --json",
 		"gg task ack TASK-042",
 		"ACK-OK",
@@ -253,6 +377,8 @@ func TestSpawnWorker_PromptRoutesCompletionToActiveCodexMaster(t *testing.T) {
 	prompt := buildWorkerPrompt("TASK-367")
 	for _, want := range []string{
 		"gg tell master,codex",
+		"gg task ready-for-live TASK-367",
+		"--from developer",
 		"gg spawn advance --task TASK-367",
 		"Do not stop at prose confirmation",
 	} {
@@ -282,6 +408,16 @@ func TestSpawnWorker_PromptIsSingleLineForGSD(t *testing.T) {
 	}
 }
 
+func TestSpawnWorker_GGDevWorkerUsesShortRunTaskPrompt(t *testing.T) {
+	prompt := buildWorkerPromptForAgent("/Users/example/.gg/bin/ggdev-worker", "TASK-427")
+	if prompt != "RUN_TASK TASK-427" {
+		t.Fatalf("buildWorkerPromptForAgent() = %q, want RUN_TASK TASK-427", prompt)
+	}
+	if len(prompt) > 80 {
+		t.Fatalf("ggdev-worker prompt should stay short for PTY line discipline, got %d bytes", len(prompt))
+	}
+}
+
 func TestGSDLikeAgentDetection(t *testing.T) {
 	setupGGDir(t)
 
@@ -290,6 +426,9 @@ func TestGSDLikeAgentDetection(t *testing.T) {
 	}
 	if !isGSDLikeAgent(buildAgentLaunchCommand("gsd")) {
 		t.Fatalf("launch command should be detected as GSD-like: %q", buildAgentLaunchCommand("gsd"))
+	}
+	if !isGSDLikeAgent("cd '/tmp/project' && exec /Users/example/.gg/bin/ggdev-worker") {
+		t.Fatal("ggdev-worker adapter should be detected as GSD-like so spawn waits for readiness")
 	}
 	if isGSDLikeAgent("codex") {
 		t.Fatal("non-GSD agent should not be detected as GSD-like")
@@ -305,6 +444,7 @@ func TestGSDReadyScreenDetection(t *testing.T) {
 		{name: "ready prompt marker", screen: "Get Shit Done\n/gsd to begin", want: true},
 		{name: "system ok marker", screen: "GET SHIT DONE\nSystem OK", want: true},
 		{name: "mcp ready marker", screen: "Get Shit Done\nMCP client ready", want: true},
+		{name: "ggdev adapter marker", screen: "ggdev-worker ready: GG_AGENT=gsd GG_ROLE=developer", want: true},
 		{name: "missing title", screen: "/gsd to begin", want: false},
 		{name: "title but no marker", screen: "Get Shit Done\nloading", want: false},
 	}
@@ -451,4 +591,14 @@ func countReadScreen(calls []terminal.Call) int {
 		}
 	}
 	return n
+}
+
+type fakeSpawnTaskReader map[string]store.Task
+
+func (f fakeSpawnTaskReader) GetTask(_ context.Context, taskID string) (*store.Task, error) {
+	t, ok := f[taskID]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return &t, nil
 }

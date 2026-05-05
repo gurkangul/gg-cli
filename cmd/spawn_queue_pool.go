@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -52,6 +53,7 @@ const (
 	workerExitStalemaster                  // master heartbeat went stale
 	workerExitContextDone                  // ctx cancelled (Ctrl+C)
 	workerExitPaneGone                     // worker pane disappeared before task done
+	workerExitReady                        // worker signaled ready-for-review via advance sentinel
 )
 
 // workerResult carries the outcome of one worker slot.
@@ -92,9 +94,11 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 			case res := <-results:
 				wg.Done()
 				<-sem
-				_ = spawn.RemovePane(rt, res.taskID)
-				if rErr := lockStore.Release(res.taskID); rErr != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "⚠ release lock for %s: %v\n", res.taskID, rErr)
+				if res.reason != workerExitReady {
+					_ = spawn.RemovePane(rt, res.taskID)
+					if rErr := lockStore.Release(res.taskID); rErr != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "⚠ release lock for %s: %v\n", res.taskID, rErr)
+					}
 				}
 
 				mu.Lock()
@@ -118,6 +122,10 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 					_ = spawn.WriteQueue(rt, sess)
 					wg.Wait()
 					return nil
+				case workerExitReady:
+					fmt.Fprintf(cmd.ErrOrStderr(), "⚡ %s ready for review — leaving pane registered and continuing queue.\n", res.taskID)
+					sess.CurrentTask = ""
+					_ = spawn.WriteQueue(rt, sess)
 				default:
 					sess.Completed = appendUniqID(sess.Completed, res.taskID)
 					sess.CurrentTask = res.taskID
@@ -165,6 +173,25 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 		mu.Lock()
 		skipSet := buildSkipSet(sess, activeByTask)
 		mu.Unlock()
+
+		readyTask, readyErr := nextReadyForLiveTask(ctx, st, skipSet)
+		if readyErr != nil {
+			<-sem
+			return fmt.Errorf("fetch ready_for_live task: %w", readyErr)
+		}
+		if readyTask != nil {
+			<-sem
+			if activeCount == 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(),
+					"◉ %s is ready_for_live — verify and close it before dispatching more implementation work.\n  Next: review live evidence, then run `gg task done %s \"<summary>\" --verifier master`.\n",
+					readyTask.ID, readyTask.ID)
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		addRegisteredPaneTasksToSkipSet(rt, skipSet)
 
 		task, taskErr := nextReadyTask(ctx, st, skipSet)
 		if taskErr != nil {
@@ -242,13 +269,15 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 	// Drain remaining results — must check reason, same as the hot loop.
 	close(results)
 	for res := range results {
-		if rErr := lockStore.Release(res.taskID); rErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ release lock for %s: %v\n", res.taskID, rErr)
+		if res.reason != workerExitReady {
+			if rErr := lockStore.Release(res.taskID); rErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "⚠ release lock for %s: %v\n", res.taskID, rErr)
+			}
+			_ = spawn.RemovePane(rt, res.taskID)
 		}
-		_ = spawn.RemovePane(rt, res.taskID)
 		switch res.reason {
-		case workerExitStalemaster, workerExitContextDone, workerExitPaneGone:
-			// Stale/cancelled/disappeared workers are not counted as completed.
+		case workerExitStalemaster, workerExitContextDone, workerExitPaneGone, workerExitReady:
+			// Stale/cancelled/disappeared/ready-for-review workers are not counted as completed.
 		default:
 			sess.Completed = appendUniqID(sess.Completed, res.taskID)
 			processed++
@@ -322,7 +351,9 @@ func waitForWorker(ctx context.Context, term terminal.Terminal, rt, taskID strin
 	defer ticker.Stop()
 
 	for {
-		consumeAdvanceSentinelAsReady(rt, taskID)
+		if consumeAdvanceSentinelAsReady(rt, taskID) {
+			return workerExitReady
+		}
 
 		if isTaskDone(ctx, taskID) {
 			if err := term.Close(ctx, surfaceID); err != nil {
@@ -404,9 +435,15 @@ func isPaneAlive(ctx context.Context, term terminal.Terminal, id terminal.Surfac
 }
 
 // nextReadyTask returns the next pending task that is not in skipSet and whose
-// deps are all done. Returns nil when no ready task exists.
+// deps are all done. Orphaned in-progress recovery is opt-in via
+// GG_QUEUE_RECOVER_IN_PROGRESS=1; blindly redispatching every in-progress task
+// duplicates legitimate work in another pane/session.
 func nextReadyTask(ctx context.Context, st *store.Client, skipSet map[string]bool) (*store.Task, error) {
 	pending, err := st.ListTasks(ctx, "pending")
+	if err != nil {
+		return nil, err
+	}
+	inProgress, err := st.ListTasks(ctx, "in_progress")
 	if err != nil {
 		return nil, err
 	}
@@ -414,13 +451,41 @@ func nextReadyTask(ctx context.Context, st *store.Client, skipSet map[string]boo
 	if err != nil {
 		return nil, err
 	}
+	return selectNextReadyTask(pending, inProgress, done, skipSet, queueRecoverInProgress()), nil
+}
+
+func nextReadyForLiveTask(ctx context.Context, st *store.Client, skipSet map[string]bool) (*store.Task, error) {
+	ready, err := st.ListTasks(ctx, "ready_for_live")
+	if err != nil {
+		return nil, err
+	}
+	return selectNextReadyForLiveTask(ready, skipSet), nil
+}
+
+func selectNextReadyForLiveTask(ready []store.Task, skipSet map[string]bool) *store.Task {
+	sortTasksForDispatch(ready)
+	for i := range ready {
+		if !skipSet[ready[i].ID] {
+			return &ready[i]
+		}
+	}
+	return nil
+}
+
+func selectNextReadyTask(pending, inProgress, done []store.Task, skipSet map[string]bool, includeInProgress bool) *store.Task {
 	doneSet := make(map[string]bool, len(done))
 	for _, t := range done {
 		doneSet[t.ID] = true
 	}
 
-	for i := range pending {
-		t := &pending[i]
+	candidates := append([]store.Task{}, pending...)
+	if includeInProgress {
+		candidates = append(candidates, inProgress...)
+	}
+	sortTasksForDispatch(candidates)
+
+	for i := range candidates {
+		t := &candidates[i]
 		if skipSet[t.ID] {
 			continue
 		}
@@ -432,17 +497,58 @@ func nextReadyTask(ctx context.Context, st *store.Client, skipSet map[string]boo
 			}
 		}
 		if allDepsOK {
-			return t, nil
+			return t
 		}
 	}
-	return nil, nil
+	return nil
+}
+
+func sortTasksForDispatch(tasks []store.Task) {
+	sort.SliceStable(tasks, func(i, j int) bool {
+		pi, pj := priorityRank(tasks[i].Priority), priorityRank(tasks[j].Priority)
+		if pi != pj {
+			return pi < pj
+		}
+		ni, _ := store.ParseTaskID(tasks[i].ID)
+		nj, _ := store.ParseTaskID(tasks[j].ID)
+		return ni < nj
+	})
+}
+
+func queueRecoverInProgress() bool {
+	return os.Getenv("GG_QUEUE_RECOVER_IN_PROGRESS") == "1"
+}
+
+func addRegisteredPaneTasksToSkipSet(rt string, skipSet map[string]bool) {
+	panes, err := spawn.ListPanes(rt)
+	if err != nil {
+		return
+	}
+	for _, pane := range panes {
+		if pane.TaskID != "" {
+			skipSet[pane.TaskID] = true
+		}
+	}
+}
+
+func priorityRank(priority string) int {
+	switch priority {
+	case "high":
+		return 0
+	case "medium":
+		return 1
+	case "low":
+		return 2
+	default:
+		return 3
+	}
 }
 
 // spawnWorkerForTask opens a new pane for taskID and registers it in panes.json.
 func spawnWorkerForTask(ctx context.Context, term terminal.Terminal, rt, agentCmd, taskID string) (terminal.SurfaceID, error) {
 	clearWorkerAdvanceSentinel(rt, taskID)
 
-	env := buildWorkerEnv(taskID, nil)
+	env := buildWorkerEnv(taskID, nil, agentCmd)
 	surfaceID, err := term.NewSplit(ctx, terminal.SplitOpts{
 		Dir: terminal.SplitHorizontal,
 		Env: env,

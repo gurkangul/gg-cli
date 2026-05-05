@@ -49,13 +49,15 @@ func TestCmux_NewSplit_HorizontalDefault(t *testing.T) {
 	if len(r.calls) != 1 {
 		t.Fatalf("expected 1 call got %d", len(r.calls))
 	}
-	if len(r.calls[0]) < 5 ||
-		r.calls[0][0] != "new-pane" ||
-		r.calls[0][1] != "--type" ||
-		r.calls[0][2] != "terminal" ||
-		r.calls[0][3] != "--direction" ||
-		r.calls[0][4] != "down" {
-		t.Fatalf("expected [new-pane --type terminal --direction down ...], got: %v", r.calls[0])
+	if len(r.calls[0]) < 7 ||
+		r.calls[0][0] != "--id-format" ||
+		r.calls[0][1] != "both" ||
+		r.calls[0][2] != "new-pane" ||
+		r.calls[0][3] != "--type" ||
+		r.calls[0][4] != "terminal" ||
+		r.calls[0][5] != "--direction" ||
+		r.calls[0][6] != "down" {
+		t.Fatalf("expected [--id-format both new-pane --type terminal --direction down ...], got: %v", r.calls[0])
 	}
 }
 
@@ -70,11 +72,11 @@ func TestCmux_NewSplit_Vertical(t *testing.T) {
 	}
 	// cmux new-pane takes --direction left|right|up|down.
 	// SplitVertical maps to "right".
-	if len(r.calls[0]) < 5 ||
-		r.calls[0][0] != "new-pane" ||
-		r.calls[0][3] != "--direction" ||
-		r.calls[0][4] != "right" {
-		t.Fatalf("expected [new-pane --type terminal --direction right ...], got: %v", r.calls[0])
+	if len(r.calls[0]) < 7 ||
+		r.calls[0][2] != "new-pane" ||
+		r.calls[0][5] != "--direction" ||
+		r.calls[0][6] != "right" {
+		t.Fatalf("expected [--id-format both new-pane --type terminal --direction right ...], got: %v", r.calls[0])
 	}
 }
 
@@ -144,6 +146,37 @@ func TestCmux_NewSplit_ParsesOKSurfaceFormat(t *testing.T) {
 	}
 }
 
+// TestCmux_NewSplit_PrefersUUIDFromBothIDFormat verifies the global surface
+// UUID is stored instead of the workspace-scoped surface:N ref.
+func TestCmux_NewSplit_PrefersUUIDFromBothIDFormat(t *testing.T) {
+	r := newCapture("OK surface:42 (3125946C-CF35-4BFB-BC40-465278C073D0) pane:8 workspace:1\n")
+	c := newCmuxWithRunner(r.run)
+	ctx := context.Background()
+
+	id, err := c.NewSplit(ctx, SplitOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "3125946C-CF35-4BFB-BC40-465278C073D0" {
+		t.Fatalf("want global UUID got %q", id)
+	}
+}
+
+func TestCmux_NewSplit_ReturnsWorkspaceScopedUUID(t *testing.T) {
+	r := newCapture("OK surface:42 (3125946C-CF35-4BFB-BC40-465278C073D0) pane:8 (PANE-ID) workspace:1 (6A58B7DF-3F19-431C-9F47-F3E1E6D535E6)\n")
+	c := newCmuxWithRunner(r.run)
+	ctx := context.Background()
+
+	id, err := c.NewSplit(ctx, SplitOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "6A58B7DF-3F19-431C-9F47-F3E1E6D535E6/3125946C-CF35-4BFB-BC40-465278C073D0"
+	if id != SurfaceID(want) {
+		t.Fatalf("want scoped surface ID %q got %q", want, id)
+	}
+}
+
 func TestCmux_NewSplit_RunnerError(t *testing.T) {
 	r := &captureRunner{err: errors.New("cmux not found")}
 	c := newCmuxWithRunner(r.run)
@@ -169,6 +202,21 @@ func TestCmux_Send(t *testing.T) {
 	args := r.calls[0]
 	if args[0] != "send" || args[1] != "--surface" || args[2] != "surface:1" || args[3] != "hello world" {
 		t.Fatalf("unexpected args: %v", args)
+	}
+}
+
+func TestCmux_Send_UsesWorkspaceForScopedID(t *testing.T) {
+	r := newCapture("")
+	c := newCmuxWithRunner(r.run)
+	ctx := context.Background()
+
+	if err := c.Send(ctx, "workspace-uuid/surface-uuid", "hello world"); err != nil {
+		t.Fatal(err)
+	}
+	args := r.calls[0]
+	want := []string{"send", "--workspace", "workspace-uuid", "--surface", "surface-uuid", "hello world"}
+	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("unexpected args: got %v want %v", args, want)
 	}
 }
 
@@ -219,8 +267,49 @@ func TestCmux_ReadScreen_MissingSurface(t *testing.T) {
 	if !IsErrSurfaceNotFound(err) {
 		t.Fatalf("expected ErrSurfaceNotFound, got %v", err)
 	}
-	if len(r.calls) != 1 || r.calls[0][0] != "surface-health" {
+	if len(r.calls) != 1 || r.calls[0][0] != "--id-format" || r.calls[0][2] != "surface-health" {
 		t.Fatalf("expected only surface-health call, got %v", r.calls)
+	}
+}
+
+func TestCmux_ReadScreen_SurfaceHealthMatchesUUID(t *testing.T) {
+	r := &captureRunner{outputs: [][]byte{
+		[]byte("surface:42 3125946C-CF35-4BFB-BC40-465278C073D0 type=terminal in_window=false\n"),
+		[]byte("screen content"),
+	}}
+	c := newCmuxWithRunner(r.run)
+	ctx := context.Background()
+
+	out, err := c.ReadScreen(ctx, "3125946C-CF35-4BFB-BC40-465278C073D0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != "screen content" {
+		t.Fatalf("want screen content got %q", string(out))
+	}
+}
+
+func TestCmux_ReadScreen_UsesWorkspaceForScopedID(t *testing.T) {
+	r := &captureRunner{outputs: [][]byte{
+		[]byte("surface:42 surface-uuid type=terminal in_window=false\n"),
+		[]byte("screen content"),
+	}}
+	c := newCmuxWithRunner(r.run)
+	ctx := context.Background()
+
+	out, err := c.ReadScreen(ctx, "workspace-uuid/surface-uuid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != "screen content" {
+		t.Fatalf("want screen content got %q", string(out))
+	}
+	if strings.Join(r.calls[0], " ") != "--id-format both surface-health --workspace workspace-uuid" {
+		t.Fatalf("unexpected health args: %v", r.calls[0])
+	}
+	wantRead := []string{"read-screen", "--workspace", "workspace-uuid", "--surface", "surface-uuid"}
+	if strings.Join(r.calls[1], "\x00") != strings.Join(wantRead, "\x00") {
+		t.Fatalf("unexpected read args: got %v want %v", r.calls[1], wantRead)
 	}
 }
 

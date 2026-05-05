@@ -26,6 +26,10 @@ plus any additional KEY=VALUE pairs supplied via --env. A startup command is
 sent to the pane to orient the agent: it exports GG_AGENT, exports
 GG_TASK_ID, and runs 'gg task get <task-id>' to load task context.
 
+When --task is provided, gg checks task state before opening a pane. Blocked,
+done, ready_for_live, and dependency-blocked tasks are refused so agents do not
+start the wrong lifecycle step.
+
 The spawned pane is registered in the runtime spawn directory so
 'gg spawn status' can list active workers.
 
@@ -42,12 +46,12 @@ var (
 
 var (
 	spawnAgentPromptDelay   = 3 * time.Second
-	spawnAgentReadyTimeout  = 12 * time.Second
+	spawnAgentReadyTimeout  = 30 * time.Second
 	spawnAgentReadyInterval = 250 * time.Millisecond
 )
 
 func init() {
-	spawnWorkerCmd.Flags().StringVar(&spawnWorkerAgent, "agent", "", "agent command to run in the new pane (default: $GG_SPAWN_AGENT or 'gsd')")
+	spawnWorkerCmd.Flags().StringVar(&spawnWorkerAgent, "agent", "", "agent command to run in the new pane (default: $GG_SPAWN_AGENT or developer.command)")
 	spawnWorkerCmd.Flags().StringVar(&spawnWorkerTaskID, "task", "", "task ID to assign to this worker (e.g. TASK-042)")
 	spawnWorkerCmd.Flags().StringArrayVar(&spawnWorkerEnvs, "env", nil, "KEY=VALUE env vars to set in the worker pane (repeatable)")
 	spawnWorkerCmd.Flags().StringVar(&spawnWorkerDir, "split", "vertical", "pane split direction: horizontal (below) or vertical (right, default)")
@@ -61,11 +65,22 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 		if _, err := store.ParseTaskID(taskID); err != nil {
 			return fmt.Errorf("--task: %w", err)
 		}
+		d, err := loadDeps(false)
+		if err != nil {
+			return err
+		}
+		defer d.Close()
+		if err := preflightSpawnWorkerTask(cmd.Context(), d.store, taskID); err != nil {
+			return err
+		}
 	}
 
 	agentCmd := spawnWorkerAgent
 	if agentCmd == "" {
 		agentCmd = spawnAgentDefault()
+		if agentCmd == "" {
+			return developerCommandUnconfiguredError()
+		}
 	}
 
 	splitDir := terminal.SplitHorizontal
@@ -74,7 +89,7 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Build the env slice to pass to the pane.
-	env := buildWorkerEnv(taskID, spawnWorkerEnvs)
+	env := buildWorkerEnv(taskID, spawnWorkerEnvs, agentCmd)
 
 	term, err := terminal.NewFromEnv()
 	if err != nil {
@@ -121,16 +136,17 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 	})
 }
 
-// buildWorkerEnv constructs the env slice for the new pane.
-// Always exports GG_TASK_ID (if set) and inherits GG_AGENT from the current env.
-func buildWorkerEnv(taskID string, extra []string) []string {
+// buildWorkerEnv constructs the env slice for the new pane. The worker gets
+// its own runtime identity + developer role; the spawning session is preserved
+// separately as GG_MASTER_* so completion messages can still route back.
+func buildWorkerEnv(taskID string, extra []string, agentCmd string) []string {
 	var env []string
+	env = append(env, "GG_AGENT="+workerAgentIdentity(agentCmd))
+	env = append(env, "GG_ROLE=developer")
 	if v := os.Getenv("GG_AGENT"); v != "" {
-		env = append(env, "GG_AGENT="+v)
 		env = append(env, "GG_MASTER_AGENT="+v)
 	}
 	if v := os.Getenv("GG_ROLE"); v != "" {
-		env = append(env, "GG_ROLE="+v)
 		env = append(env, "GG_MASTER_ROLE="+v)
 	}
 	if taskID != "" {
@@ -142,6 +158,26 @@ func buildWorkerEnv(taskID string, extra []string) []string {
 	}
 	env = append(env, extra...)
 	return env
+}
+
+func workerAgentIdentity(agentCmd string) string {
+	if isGSDLikeAgent(agentCmd) {
+		return "gsd"
+	}
+	fields := strings.Fields(strings.TrimSpace(agentCmd))
+	if len(fields) == 0 {
+		return "developer"
+	}
+	base := fields[0]
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	switch base {
+	case "codex", "claude", "claude-code", "cursor", "aider":
+		return base
+	default:
+		return "developer"
+	}
 }
 
 // buildWorkerStartup returns a shell command that orients an agentless pane —
@@ -166,7 +202,7 @@ func buildAgentLaunchCommand(agentCmd string) string {
 func buildWorkerPrompt(taskID string) string {
 	return fmt.Sprintf(
 		"You are working on %s. Before anything else, export your identity so gg commands are attributed correctly: "+
-			"export GG_ROLE=developer. "+
+			"export GG_AGENT=${GG_AGENT:-developer} GG_ROLE=developer. "+
 			"Then run 'gg task get %s --json' to load the full spec. Before writing code, paraphrase every acceptance criterion in your own words and send the ACK: "+
 			"gg task ack %s \"AC-1: <my paraphrase>; AC-2: <my paraphrase>; AC-N: <my paraphrase>\". "+
 			"Then wait for master to reply ACK-OK or ACK-FIX. If no reply arrives within 5 minutes, you may proceed, but your commit body must include ACK-IMPLICIT and expect higher review risk. "+
@@ -175,11 +211,59 @@ func buildWorkerPrompt(taskID string) string {
 			"Note any dependents whose tests must still pass after your change. "+
 			"Cite this in your commit body under an `Impact-Reviewed:` trailer line "+
 			"(e.g. `Impact-Reviewed: cmd/spawn_worker.go — 2 callers, tests green`). "+
-			"After committing, signal readiness with `gg spawn advance --task %s --commit $(git rev-parse HEAD)` "+
+			"Before claiming ready, run a review-convergence pass: compare acceptance criteria, implementation diff, tests, docs/hooks, and prior review findings; "+
+			"cite the result in your commit body under a `Review-Convergence:` trailer line. "+
+			"After committing, transition lifecycle ownership as the implementer with `gg task ready-for-live %s \"<one-sentence verification plan>\" --from developer`, "+
+			"then signal the master queue with `gg spawn advance --task %s --commit $(git rev-parse HEAD)` "+
 			"and send completion via: gg tell %s \"%s commit <sha>, tests green\" --from developer --audience agents. "+
 			"Do not stop at prose confirmation; run the next required shell command.",
-		taskID, taskID, taskID, taskID, masterMessageTargetCSV(), taskID,
+		taskID, taskID, taskID, taskID, taskID, masterMessageTargetCSV(), taskID,
 	)
+}
+
+type spawnTaskReader interface {
+	GetTask(ctx context.Context, taskID string) (*store.Task, error)
+}
+
+func preflightSpawnWorkerTask(ctx context.Context, tasks spawnTaskReader, taskID string) error {
+	task, err := tasks.GetTask(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("spawn preflight: %w", err)
+	}
+
+	switch task.Status {
+	case "blocked":
+		reason := strings.TrimSpace(task.BlockReason)
+		if reason == "" {
+			reason = "no block reason recorded"
+		}
+		return fmt.Errorf("spawn preflight: %s is blocked: %s", taskID, reason)
+	case "done":
+		return fmt.Errorf("spawn preflight: %s is already done; refusing to open an implementation worker", taskID)
+	case "ready_for_live":
+		return fmt.Errorf("spawn preflight: %s is ready_for_live; assign a verifier/reviewer instead of opening an implementation worker", taskID)
+	case "pending", "in_progress":
+		// allowed after dependency checks below
+	default:
+		return fmt.Errorf("spawn preflight: %s has unsupported status %q", taskID, task.Status)
+	}
+
+	var unfinished []string
+	for _, depID := range task.DependsOn {
+		dep, err := tasks.GetTask(ctx, depID)
+		if err != nil {
+			unfinished = append(unfinished, fmt.Sprintf("%s (not found)", depID))
+			continue
+		}
+		if dep.Status != "done" {
+			unfinished = append(unfinished, fmt.Sprintf("%s (%s)", dep.ID, dep.Status))
+		}
+	}
+	if len(unfinished) > 0 {
+		return fmt.Errorf("spawn preflight: %s has unfinished dependencies: %s; run `gg task deps %s` and work the blocker first", taskID, strings.Join(unfinished, ", "), taskID)
+	}
+
+	return nil
 }
 
 // bootstrapAgentInPane launches the agent REPL in surfaceID and orients it to taskID.
@@ -202,13 +286,20 @@ func bootstrapAgentInPane(ctx context.Context, term terminal.Terminal, surfaceID
 	if isGSDLikeAgent(agentCmd) && !waitForAgentPromptReady(ctx, term, surfaceID, agentCmd, errOut) {
 		return
 	}
-	prompt := buildWorkerPrompt(taskID)
+	prompt := buildWorkerPromptForAgent(agentCmd, taskID)
 	if sErr := term.Send(ctx, surfaceID, prompt); sErr != nil {
 		fmt.Fprintf(errOut, "⚠ could not send task prompt to pane %s: %v\n", surfaceID, sErr)
 	}
 	if kErr := term.SendKey(ctx, surfaceID, "enter"); kErr != nil {
 		fmt.Fprintf(errOut, "⚠ could not send Enter after prompt: %v\n", kErr)
 	}
+}
+
+func buildWorkerPromptForAgent(agentCmd, taskID string) string {
+	if isGGDevWorkerAgent(agentCmd) {
+		return "RUN_TASK " + taskID
+	}
+	return buildWorkerPrompt(taskID)
 }
 
 func waitForAgentPromptReady(ctx context.Context, term terminal.Terminal, surfaceID terminal.SurfaceID, agentCmd string, errOut io.Writer) bool {
@@ -256,6 +347,9 @@ func isGSDLikeAgent(agentCmd string) bool {
 	if strings.Contains(trimmed, "exec gsd") {
 		return true
 	}
+	if isGGDevWorkerAgent(trimmed) {
+		return true
+	}
 	fields := strings.Fields(trimmed)
 	if len(fields) == 0 {
 		return false
@@ -267,12 +361,20 @@ func isGSDLikeAgent(agentCmd string) bool {
 	return base == "gsd"
 }
 
+func isGGDevWorkerAgent(agentCmd string) bool {
+	return strings.Contains(strings.TrimSpace(agentCmd), "ggdev-worker")
+}
+
 func isGSDReadyScreen(screen []byte) bool {
 	text := strings.ToLower(string(screen))
+	if strings.Contains(text, "ggdev-worker ready") {
+		return true
+	}
 	if !strings.Contains(text, "get shit done") {
 		return false
 	}
 	return strings.Contains(text, "/gsd to begin") ||
+		strings.Contains(text, "project initialized") ||
 		strings.Contains(text, "system ok") ||
 		strings.Contains(text, "mcp client ready")
 }

@@ -38,7 +38,7 @@ func (c *cmuxTerminal) NewSplit(ctx context.Context, opts SplitOpts) (SurfaceID,
 	if opts.Dir == SplitHorizontal {
 		dir = "down"
 	}
-	args := []string{"new-pane", "--type", "terminal", "--direction", dir}
+	args := []string{"--id-format", "both", "new-pane", "--type", "terminal", "--direction", dir}
 	if opts.Percent > 0 {
 		args = append(args, fmt.Sprintf("--percent=%d", opts.Percent))
 	}
@@ -51,8 +51,9 @@ func (c *cmuxTerminal) NewSplit(ctx context.Context, opts SplitOpts) (SurfaceID,
 	if err != nil {
 		return "", err
 	}
-	// cmux new-split output shape: "OK surface:N workspace:M\n".
-	// Extract the surface:N token so downstream --surface=<id> calls work.
+	// cmux new-pane output shape: "OK surface:N (...) pane:N (...) workspace:M (...)\n".
+	// Store workspace/surface when cmux exposes both UUIDs so downstream calls
+	// can address panes from a different master workspace.
 	id := parseSurfaceID(string(out))
 	if id == "" {
 		return "", fmt.Errorf("cmux new-split returned unparseable output: %q", strings.TrimSpace(string(out)))
@@ -60,27 +61,58 @@ func (c *cmuxTerminal) NewSplit(ctx context.Context, opts SplitOpts) (SurfaceID,
 	return id, nil
 }
 
-// parseSurfaceID extracts the "surface:N" ref from cmux new-split output.
-// Output format: "OK surface:29 workspace:1" (or bare "surface:29" in older builds).
+// parseSurfaceID extracts a cmux surface ref from new-pane output.
+// When --id-format both includes UUIDs for both workspace and surface, return
+// "workspaceUUID/surfaceUUID"; cmux needs --workspace for cross-workspace
+// send/read-screen calls. Older output falls back to the surface token.
 func parseSurfaceID(out string) SurfaceID {
-	for _, tok := range strings.Fields(out) {
+	tokens := strings.Fields(out)
+	var surface string
+	var workspace string
+	for i, tok := range tokens {
 		if strings.HasPrefix(tok, "surface:") {
-			return SurfaceID(tok)
+			if i+1 < len(tokens) && strings.HasPrefix(tokens[i+1], "(") && strings.HasSuffix(tokens[i+1], ")") {
+				uuid := strings.TrimSuffix(strings.TrimPrefix(tokens[i+1], "("), ")")
+				if uuid != "" {
+					surface = uuid
+					continue
+				}
+			}
+			surface = tok
+			continue
+		}
+		if strings.HasPrefix(tok, "workspace:") {
+			if i+1 < len(tokens) && strings.HasPrefix(tokens[i+1], "(") && strings.HasSuffix(tokens[i+1], ")") {
+				uuid := strings.TrimSuffix(strings.TrimPrefix(tokens[i+1], "("), ")")
+				if uuid != "" {
+					workspace = uuid
+				}
+			}
 		}
 	}
-	return ""
+	if surface == "" {
+		return ""
+	}
+	if workspace != "" && !strings.HasPrefix(surface, "surface:") {
+		return SurfaceID(workspace + "/" + surface)
+	}
+	return SurfaceID(surface)
 }
 
 // cmux CLI quirk: --flag=value form mis-parses (treats positional args as the
 // flag value). Pass --flag and value as separate tokens instead.
 
 func (c *cmuxTerminal) Send(ctx context.Context, id SurfaceID, text string) error {
-	_, err := c.runner(ctx, "send", "--surface", string(id), text)
+	args := append([]string{"send"}, cmuxSurfaceArgs(id)...)
+	args = append(args, text)
+	_, err := c.runner(ctx, args...)
 	return err
 }
 
 func (c *cmuxTerminal) SendKey(ctx context.Context, id SurfaceID, key string) error {
-	_, err := c.runner(ctx, "send-key", "--surface", string(id), key)
+	args := append([]string{"send-key"}, cmuxSurfaceArgs(id)...)
+	args = append(args, key)
+	_, err := c.runner(ctx, args...)
 	return err
 }
 
@@ -92,12 +124,13 @@ func (c *cmuxTerminal) ReadScreen(ctx context.Context, id SurfaceID) ([]byte, er
 	if !exists {
 		return nil, fmt.Errorf("%w: %s", ErrSurfaceNotFound, id)
 	}
-	out, err := c.runner(ctx, "read-screen", "--surface", string(id))
+	args := append([]string{"read-screen"}, cmuxSurfaceArgs(id)...)
+	out, err := c.runner(ctx, args...)
 	return out, err
 }
 
 func (c *cmuxTerminal) surfaceExists(ctx context.Context, id SurfaceID) (bool, error) {
-	out, err := c.runner(ctx, surfaceHealthArgs()...)
+	out, err := c.runner(ctx, surfaceHealthArgs(id)...)
 	if err != nil {
 		return false, err
 	}
@@ -106,12 +139,19 @@ func (c *cmuxTerminal) surfaceExists(ctx context.Context, id SurfaceID) (bool, e
 
 func (c *cmuxTerminal) Focus(ctx context.Context, id SurfaceID) error {
 	// Note: focus-pane uses --pane flag (not --surface like the other ops).
-	_, err := c.runner(ctx, "focus-pane", "--pane", string(id))
+	workspace, surface := splitCmuxScopedID(id)
+	args := []string{"focus-pane"}
+	if workspace != "" {
+		args = append(args, "--workspace", workspace)
+	}
+	args = append(args, "--pane", surface)
+	_, err := c.runner(ctx, args...)
 	return err
 }
 
 func (c *cmuxTerminal) Close(ctx context.Context, id SurfaceID) error {
-	_, err := c.runner(ctx, "close-surface", "--surface", string(id))
+	args := append([]string{"close-surface"}, cmuxSurfaceArgs(id)...)
+	_, err := c.runner(ctx, args...)
 	return err
 }
 
@@ -145,7 +185,7 @@ func ProbeSurface(ctx context.Context, id SurfaceID) (dead bool, err error) {
 	probe, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	args := surfaceHealthArgs()
+	args := surfaceHealthArgs(id)
 	cmd := exec.CommandContext(probe, "cmux", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -162,16 +202,20 @@ func ProbeSurface(ctx context.Context, id SurfaceID) (dead bool, err error) {
 	return !surfaceHealthContains(stdout.Bytes(), id), nil
 }
 
-func surfaceHealthArgs() []string {
-	args := []string{"surface-health"}
-	if workspace := os.Getenv("CMUX_WORKSPACE_ID"); workspace != "" {
+func surfaceHealthArgs(id SurfaceID) []string {
+	args := []string{"--id-format", "both", "surface-health"}
+	workspace, _ := splitCmuxScopedID(id)
+	if workspace == "" {
+		workspace = os.Getenv("CMUX_WORKSPACE_ID")
+	}
+	if workspace != "" {
 		args = append(args, "--workspace", workspace)
 	}
 	return args
 }
 
 func surfaceHealthContains(out []byte, id SurfaceID) bool {
-	requested := string(id)
+	_, requested := splitCmuxScopedID(id)
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
@@ -184,6 +228,27 @@ func surfaceHealthContains(out []byte, id SurfaceID) bool {
 		if strings.TrimPrefix(candidate, "*") == requested {
 			return true
 		}
+		if len(fields) > 1 && strings.Trim(fields[1], "()") == requested {
+			return true
+		}
 	}
 	return false
+}
+
+func cmuxSurfaceArgs(id SurfaceID) []string {
+	workspace, surface := splitCmuxScopedID(id)
+	args := []string{}
+	if workspace != "" {
+		args = append(args, "--workspace", workspace)
+	}
+	return append(args, "--surface", surface)
+}
+
+func splitCmuxScopedID(id SurfaceID) (workspace string, surface string) {
+	raw := string(id)
+	parts := strings.SplitN(raw, "/", 2)
+	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+		return parts[0], parts[1]
+	}
+	return "", raw
 }

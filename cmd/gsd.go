@@ -81,7 +81,11 @@ func runGSDOpen(cmd *cobra.Command, _ []string) error {
 
 	agentCmd := gsdOpenAgent
 	if agentCmd == "" {
-		agentCmd = spawnAgentDefault()
+		if v := os.Getenv("GG_SPAWN_AGENT"); v != "" {
+			agentCmd = v
+		} else {
+			agentCmd = "gsd"
+		}
 	}
 	if err := validateGSDOpenAgent(agentCmd); err != nil {
 		return err
@@ -97,7 +101,7 @@ func runGSDOpen(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("terminal backend: %w", err)
 	}
 
-	env := buildWorkerEnv("", nil)
+	env := buildWorkerEnv("", nil, agentCmd)
 	surfaceID, err := term.NewSplit(cmd.Context(), terminal.SplitOpts{
 		Dir: splitDir,
 		Env: env,
