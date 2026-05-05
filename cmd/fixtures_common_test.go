@@ -27,7 +27,7 @@ const testProjectID = "test-project-fixture"
 // setupGGDir writes a minimal .gg/config.yaml into a fresh temp dir, changes
 // the test's working directory to that temp dir, sets HOME to a separate temp
 // dir so config.RuntimeDir() is isolated per test without colliding with the
-// project .gg/, and returns the .gg path.
+// project .gg/, resets the inherited agent role, and returns the .gg path.
 // The test's Cleanup restores the original working directory and HOME automatically.
 func setupGGDir(t *testing.T) string {
 	t.Helper()
@@ -43,6 +43,7 @@ func setupGGDir(t *testing.T) string {
 	}
 	t.Setenv("HOME", home)
 	t.Setenv("GG_AGENT", "test")
+	t.Setenv("GG_ROLE", "")
 	t.Chdir(dir)
 	return ggDir
 }
