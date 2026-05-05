@@ -60,7 +60,7 @@ func init() {
 	updateCmd.Flags().BoolVar(&updateForce, "force", false,
 		"run go install even when the current version appears up to date")
 	updateCmd.Flags().BoolVar(&updateYes, "yes", false,
-		"non-interactive: confirm update without prompts")
+		"accepted for automation compatibility; gg update never prompts")
 	updateCmd.AddCommand(updateCheckCmd)
 	rootCmd.AddCommand(updateCmd)
 }
@@ -71,6 +71,15 @@ type updateInfo struct {
 	Update      bool   `json:"update_available"`
 	Comparable  bool   `json:"comparable"`
 	InstallHint string `json:"install_hint,omitempty"`
+}
+
+type updateResult struct {
+	updateInfo
+	Installed     bool     `json:"installed"`
+	Synced        bool     `json:"synced"`
+	SkipReason    string   `json:"skip_reason,omitempty"`
+	InstallReason string   `json:"install_reason,omitempty"`
+	Warnings      []string `json:"warnings,omitempty"`
 }
 
 type goListModule struct {
@@ -98,30 +107,64 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	renderUpdateInfo(info)
-	if !info.Update && !updateForce {
+	result := updateResult{updateInfo: info}
+	install, reason := shouldInstallUpdate(info, updateForce)
+	if !install {
+		result.SkipReason = reason
+		if jsonOutput {
+			return writeJSON(result)
+		}
+		renderUpdateInfo(info)
 		fmt.Println("gg is already up to date.")
 		return nil
 	}
-	if !info.Comparable && !updateForce {
+
+	result.InstallReason = reason
+	if !jsonOutput {
+		renderUpdateInfo(info)
+	}
+	if !info.Comparable && !updateForce && !jsonOutput {
 		fmt.Println("Current version is not a released semver build; installing latest anyway.")
 	}
 
-	fmt.Printf("\nInstalling: go install %s\n", ggInstallPkg)
-	if err := runGoInstall(ctx, ggInstallPkg); err != nil {
+	if !jsonOutput {
+		fmt.Printf("\nInstalling: go install %s\n", ggInstallPkg)
+	}
+	out := os.Stdout
+	if jsonOutput {
+		out = os.Stderr
+	}
+	if err := runGoInstall(ctx, ggInstallPkg, out, os.Stderr); err != nil {
 		return err
 	}
-	fmt.Println("✓ gg install command completed")
+	result.Installed = true
+	if !jsonOutput {
+		fmt.Println("✓ gg install command completed")
+	}
 
 	target, targetErr := goInstallBinaryPath(ctx)
 	if targetErr == nil {
-		fmt.Printf("installed binary: %s\n", target)
-		warnIfInstalledBinaryNotActive(target)
+		if !jsonOutput {
+			fmt.Printf("installed binary: %s\n", target)
+		}
+		if warning := installedBinaryWarning(target); warning != "" {
+			result.Warnings = append(result.Warnings, warning)
+			if !jsonOutput {
+				fmt.Println("warning: " + warning)
+			}
+		}
 	} else {
-		fmt.Printf("warning: could not resolve Go install target: %v\n", targetErr)
+		warning := fmt.Sprintf("could not resolve Go install target: %v", targetErr)
+		result.Warnings = append(result.Warnings, warning)
+		if !jsonOutput {
+			fmt.Println("warning: " + warning)
+		}
 	}
 
 	if updateSkipSync {
+		if jsonOutput {
+			return writeJSON(result)
+		}
 		return nil
 	}
 
@@ -129,13 +172,37 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	if targetErr == nil {
 		syncBin = target
 	}
-	fmt.Println("\nRefreshing gg-managed project artifacts...")
-	if err := runUpdatedGG(ctx, syncBin, "system", "sync"); err != nil {
+	if !jsonOutput {
+		fmt.Println("\nRefreshing gg-managed project artifacts...")
+	}
+	if err := runUpdatedGG(ctx, syncBin, out, os.Stderr, "system", "sync"); err != nil {
+		warning := fmt.Sprintf("system sync failed: %v; run manually: gg system sync", err)
+		result.Warnings = append(result.Warnings, warning)
+		if jsonOutput {
+			return writeJSON(result)
+		}
 		fmt.Printf("warning: system sync failed: %v\n", err)
 		fmt.Println("         run manually: gg system sync")
 		return nil
 	}
+	result.Synced = true
+	if jsonOutput {
+		return writeJSON(result)
+	}
 	return nil
+}
+
+func shouldInstallUpdate(info updateInfo, force bool) (bool, string) {
+	if force {
+		return true, "forced"
+	}
+	if !info.Comparable {
+		return true, "current version is not comparable to public semver"
+	}
+	if info.Update {
+		return true, "update available"
+	}
+	return false, "up to date"
 }
 
 func checkLatestGG(ctx context.Context, current string) (updateInfo, error) {
@@ -185,20 +252,20 @@ func latestGGModuleVersion(ctx context.Context) (string, error) {
 	return mod.Version, nil
 }
 
-func runGoInstall(ctx context.Context, pkg string) error {
+func runGoInstall(ctx context.Context, pkg string, stdout, stderr io.Writer) error {
 	cmd := updateCommandContext(ctx, "go", "install", pkg)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("go install failed: %w", err)
 	}
 	return nil
 }
 
-func runUpdatedGG(ctx context.Context, bin string, args ...string) error {
+func runUpdatedGG(ctx context.Context, bin string, stdout, stderr io.Writer, args ...string) error {
 	cmd := updateCommandContext(ctx, bin, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s %s failed: %w", bin, strings.Join(args, " "), err)
 	}
@@ -233,7 +300,7 @@ func goEnv(ctx context.Context, key string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func warnIfInstalledBinaryNotActive(target string) {
+func installedBinaryWarning(target string) string {
 	target = filepath.Clean(target)
 	active, err := updateExecutable()
 	if err == nil {
@@ -244,13 +311,13 @@ func warnIfInstalledBinaryNotActive(target string) {
 			target = resolved
 		}
 		if !samePathString(active, target) {
-			fmt.Printf("warning: this process ran from %s; ensure %s is first on PATH\n", active, filepath.Dir(target))
-			return
+			return fmt.Sprintf("this process ran from %s; ensure %s is first on PATH", active, filepath.Dir(target))
 		}
 	}
 	if pathGG, pErr := updateLookPath("gg"); pErr == nil && !samePathString(filepath.Clean(pathGG), target) {
-		fmt.Printf("warning: PATH resolves gg to %s; ensure %s is first on PATH\n", pathGG, filepath.Dir(target))
+		return fmt.Sprintf("PATH resolves gg to %s; ensure %s is first on PATH", pathGG, filepath.Dir(target))
 	}
+	return ""
 }
 
 func samePathString(a, b string) bool {

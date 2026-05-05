@@ -22,7 +22,7 @@ gg update [flags]
       --force       run go install even when the current version appears up to date
   -h, --help        help for update
       --skip-sync   skip post-install managed artifact sync
-      --yes         non-interactive: confirm update without prompts
+      --yes         accepted for automation compatibility; gg update never prompts
 ```
 
 ### Options inherited from parent commands
