@@ -136,6 +136,8 @@ func runSpawnQueueResume(cmd *cobra.Command, _ []string) error {
 		sess.Agent = spawnQueueAgent
 	}
 	sess.Paused = false
+	sess.Done = false
+	sess.CompletedAt = time.Time{}
 	// Transient-skipped tasks (advisory collision) are eligible for retry on resume.
 	if len(sess.SkippedTransient) > 0 {
 		fmt.Printf("→ Returning %d transient-skipped task(s) to queue for retry.\n", len(sess.SkippedTransient))
@@ -313,6 +315,8 @@ func runSpawnQueueCheck(_ *cobra.Command, _ []string) error {
 		pausedNote := ""
 		if sess.Paused {
 			pausedNote = " [PAUSED]"
+		} else if sess.Done {
+			pausedNote = " [COMPLETE]"
 		}
 		fmt.Printf("✓ Queue: agent=%s completed=%d skipped=%d current=%q%s cap=%d\n",
 			sess.Agent, len(sess.Completed), len(sess.Skipped), sess.CurrentTask, pausedNote, maxConcurrent())
@@ -366,7 +370,14 @@ func runSpawnQueueStatus(_ *cobra.Command, _ []string) error {
 		pausedNote = " [PAUSED]"
 	}
 	dur := time.Since(sess.StartedAt).Round(time.Second)
-	fmt.Printf("Queue%s — agent: %s  running: %s  cap: %d\n", pausedNote, sess.Agent, dur, maxConcurrent())
+	state := "running"
+	if sess.Done {
+		state = "complete"
+		if !sess.CompletedAt.IsZero() {
+			dur = sess.CompletedAt.Sub(sess.StartedAt).Round(time.Second)
+		}
+	}
+	fmt.Printf("Queue%s — agent: %s  %s: %s  cap: %d\n", pausedNote, sess.Agent, state, dur, maxConcurrent())
 	if sess.CurrentTask != "" {
 		fmt.Printf("  Current: %s\n", sess.CurrentTask)
 	}

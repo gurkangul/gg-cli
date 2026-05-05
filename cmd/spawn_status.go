@@ -65,11 +65,17 @@ func runSpawnStatus(_ *cobra.Command, _ []string) error {
 			fmt.Printf("  session error: %v\n", sessErr)
 		default:
 			dur := time.Since(sess.StartedAt).Round(time.Second)
-			pausedSuffix := ""
-			if sess.Paused {
-				pausedSuffix = " [PAUSED]"
+			state := "Running"
+			stateSuffix := ""
+			if sess.Done {
+				state = "Complete"
+				if !sess.CompletedAt.IsZero() {
+					dur = sess.CompletedAt.Sub(sess.StartedAt).Round(time.Second)
+				}
+			} else if sess.Paused {
+				stateSuffix = " [PAUSED]"
 			}
-			fmt.Printf("  Agent: %s  Running: %s%s\n", sess.Agent, dur, pausedSuffix)
+			fmt.Printf("  Agent: %s  %s: %s%s\n", sess.Agent, state, dur, stateSuffix)
 			if sess.CurrentTask != "" {
 				fmt.Printf("  Current task: %s\n", sess.CurrentTask)
 			}

@@ -83,6 +83,12 @@ type QueueSession struct {
 	CurrentTask string `json:"current_task,omitempty"`
 	// Paused is set true when the queue is suspended via `gg spawn queue pause`.
 	Paused bool `json:"paused,omitempty"`
+	// Done is set true when the queue runner exits after processing all currently
+	// available work. Keeping the file preserves run stats without rendering the
+	// session as still running.
+	Done bool `json:"done,omitempty"`
+	// CompletedAt is when the queue runner completed.
+	CompletedAt time.Time `json:"completed_at,omitempty"`
 }
 
 // Dir returns the spawn directory for the given runtime dir.

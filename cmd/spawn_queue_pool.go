@@ -256,6 +256,9 @@ func drainQueue(ctx context.Context, cmd *cobra.Command, rt string, sess *spawn.
 	}
 
 	sess.CurrentTask = ""
+	sess.Paused = false
+	sess.Done = true
+	sess.CompletedAt = time.Now().UTC()
 	_ = spawn.WriteQueue(rt, sess)
 	fmt.Printf("\n✓ Queue run complete. Processed: %d  Skipped: %d\n",
 		len(sess.Completed), len(sess.Skipped))

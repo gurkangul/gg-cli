@@ -52,6 +52,8 @@ func queueStatusLine(rtDir string) string {
 	if sess.Paused {
 		return fmt.Sprintf("paused (completed: %d, skipped: %d)", len(sess.Completed), len(sess.Skipped))
 	}
+	if sess.Done {
+		return fmt.Sprintf("complete (completed: %d, skipped: %d)", len(sess.Completed), len(sess.Skipped))
+	}
 	return fmt.Sprintf("running (completed: %d, skipped: %d)", len(sess.Completed), len(sess.Skipped))
 }
-

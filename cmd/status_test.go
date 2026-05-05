@@ -188,6 +188,26 @@ func TestRolesBlock_QueuePaused(t *testing.T) {
 	}
 }
 
+func TestRolesBlock_QueueComplete(t *testing.T) {
+	rtDir := t.TempDir()
+	sess := &spawn.QueueSession{
+		Agent:     "gsd",
+		Completed: []string{"TASK-001"},
+		Done:      true,
+	}
+	if err := spawn.WriteQueue(rtDir, sess); err != nil {
+		t.Fatalf("WriteQueue: %v", err)
+	}
+	dev := &config.DeveloperConfig{Agent: "gsd"}
+	out := renderRolesBlock(dev, rtDir)
+	if !strings.Contains(out, "complete") {
+		t.Errorf("BUG-045: expected complete queue state; got:\n%s", out)
+	}
+	if strings.Contains(out, "running") {
+		t.Errorf("BUG-045: completed queue must not render as running; got:\n%s", out)
+	}
+}
+
 // TestRolesBlock_EmptyRtDir verifies that renderRolesBlock degrades gracefully
 // when rtDir is empty (no runtime dir available), and still shows the Queue line
 // with "not started" but without the spawn hint (no runtime = no dir to show).
