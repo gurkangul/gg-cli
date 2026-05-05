@@ -74,8 +74,8 @@ gg --version
 # gg version 0.1.0
 ```
 
-To get the latest `AGENTS.md`:
+To get the latest CLI and managed project files:
 ```sh
-# From your project root after go install github.com/gurkangul/gg-cli/cmd/gg@latest
-gg init  # re-running init updates AGENTS.md in place
+gg update check
+gg update
 ```

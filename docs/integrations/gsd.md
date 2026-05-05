@@ -51,8 +51,8 @@ The full protocol with all lifecycle rules is in `AGENTS.md`.
 
 Upgrade the CLI and regenerate `AGENTS.md`:
 ```sh
-go install github.com/gurkangul/gg-cli/cmd/gg@latest
-gg init  # updates AGENTS.md in place
+gg update check
+gg update
 ```
 
 GSD context injection automatically picks up the updated `AGENTS.md` on the next session start.

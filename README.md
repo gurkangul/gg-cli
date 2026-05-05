@@ -74,6 +74,20 @@ go install github.com/gurkangul/gg-cli/cmd/gg@latest
 The binary is `gg`. The repo is `gg-cli` for descriptiveness; the
 command stays short.
 
+Update later with:
+
+```sh
+gg update check
+gg update
+```
+
+Session-start update checks are opt-in because they use the Go module
+network path:
+
+```sh
+GG_UPDATE_CHECK=1 gg session-start --agent=codex
+```
+
 ### Build from source
 
 ```sh

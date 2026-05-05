@@ -107,6 +107,10 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// never disrupts the session.
 	emitVersionDelta(loadedCfg)
 
+	// Public update notice: opt-in only because it performs a network-backed
+	// Go module lookup. Silent on errors and when the current binary is fresh.
+	emitUpdateNotice(os.Stdout)
+
 	// Bypass-audit notice: surface GG_ENFORCEMENT=off events from the last
 	// 7 days so the human at the keyboard sees bypass pressure before
 	// anything else. Silent when count is zero.

@@ -73,8 +73,8 @@ When the `gg` protocol changes, update `.cursor/rules/gg.mdc` to match the new `
 <!-- gg-version: 0.1.0 -->
 ```
 
-Upgrade the CLI and regenerate `AGENTS.md`:
+Upgrade the CLI and regenerate managed files:
 ```sh
-go install github.com/gurkangul/gg-cli/cmd/gg@latest
-gg init  # updates AGENTS.md in place
+gg update check
+gg update
 ```

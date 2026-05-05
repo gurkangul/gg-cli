@@ -312,6 +312,7 @@ hook — the runner sets it for you.
 | `GG_COMPACT=1` | Forces compact output (single-line-per-item) on supported commands regardless of terminal width. Accepts `1/true/yes/on`; disable with `0/false/no/off`. |
 | `GG_QUIET=1` | Suppresses informational banners on commands that emit them (scripting / CI contexts). |
 | `GG_SESSION_ID` | Overrides the session ID used for telemetry grouping. Normally derived from `CLAUDE_SESSION_ID` automatically; set this when running outside Claude Code. |
+| `GG_UPDATE_CHECK=1` | Enables the optional `gg session-start` public version check. This performs a Go module network lookup and only prints a notice; it never installs automatically. |
 
 ---
 
@@ -384,6 +385,7 @@ and merges it over `os.Environ()`. This is the correct pattern.
 | `GG_COMPACT` | session | compact renderer |
 | `GG_QUIET` | CI / session | banner printer |
 | `GG_SESSION_ID` | session | telemetry session grouping |
+| `GG_UPDATE_CHECK` | session | optional session-start update notice |
 | `GG_TOOL_NAME` | Claude Code harness | `50-master-guard.sh` |
 | `GG_SPAWN_DIR` | `gg spawn worker` session | `50-master-guard.sh` |
 | `GG_SPAWN_ADVANCE_DIR` | `gg spawn worker` session | `45-queue-advance.sh` |
