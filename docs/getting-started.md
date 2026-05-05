@@ -10,11 +10,10 @@
    go install github.com/gurkangul/gg-cli/cmd/gg@latest
    ```
 
-   For private alpha access:
+   If the first tagged release is not available yet, install from the current
+   main branch instead:
    ```sh
-   gh auth login
-   go env -w GOPRIVATE=github.com/gurkangul/gg-cli
-   go install github.com/gurkangul/gg-cli/cmd/gg@latest
+   go install github.com/gurkangul/gg-cli/cmd/gg@main
    ```
 
 ## Initialize a project

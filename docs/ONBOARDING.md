@@ -4,18 +4,17 @@ This guide takes you from zero to a live gg brain in ~10 minutes.
 
 ## Prerequisites
 
-Public release:
+Install `gg`:
 
 ```sh
 go install github.com/gurkangul/gg-cli/cmd/gg@latest
 ```
 
-Private alpha:
+If the first tagged release is not available yet, install from the current
+main branch instead:
 
 ```sh
-gh auth login
-go env -w GOPRIVATE=github.com/gurkangul/gg-cli
-go install github.com/gurkangul/gg-cli/cmd/gg@latest
+go install github.com/gurkangul/gg-cli/cmd/gg@main
 ```
 
 First project setup:

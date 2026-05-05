@@ -1,6 +1,9 @@
 gg
 .gg/
 .claude/
+.mcp.json
+.DS_Store
+Thumbs.db
 # Common secret files — never commit these
 .env
 .env.*
@@ -11,6 +14,8 @@ secrets.json
 .bg-shell/
 # GSD runtime state (notifications, codebase notes, etc.)
 # Per GSD README, only .gsd/PREFERENCES.md should be checked in
+.gsd
+.gsd/
 .gsd/notifications.jsonl
 .gsd/CODEBASE.md
 .gsd/activity/
@@ -25,11 +30,7 @@ secrets.json
 _bmad/
 _bmad-output/
 
-# ── GSD baseline (auto-generated) ──
-.gsd
 .gsd-id
-.DS_Store
-Thumbs.db
 *.swp
 *.swo
 *~
@@ -48,9 +49,8 @@ venv/
 target/
 vendor/
 *.log
+*.test
+*.out
 coverage/
 .cache/
 tmp/
-
-# ── GSD baseline (auto-generated) ──
-.mcp.json
