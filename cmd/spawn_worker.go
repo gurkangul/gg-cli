@@ -40,6 +40,7 @@ Requires a terminal backend (GG_TERMINAL=cmux is default when cmux is in PATH).`
 var (
 	spawnWorkerAgent  string
 	spawnWorkerTaskID string
+	spawnWorkerRole   string
 	spawnWorkerEnvs   []string
 	spawnWorkerDir    string // split direction: horizontal or vertical
 )
@@ -53,6 +54,7 @@ var (
 func init() {
 	spawnWorkerCmd.Flags().StringVar(&spawnWorkerAgent, "agent", "", "agent command to run in the new pane (default: $GG_SPAWN_AGENT or developer.command)")
 	spawnWorkerCmd.Flags().StringVar(&spawnWorkerTaskID, "task", "", "task ID to assign to this worker (e.g. TASK-042)")
+	spawnWorkerCmd.Flags().StringVar(&spawnWorkerRole, "role", "developer", "role command to launch: developer or reviewer")
 	spawnWorkerCmd.Flags().StringArrayVar(&spawnWorkerEnvs, "env", nil, "KEY=VALUE env vars to set in the worker pane (repeatable)")
 	spawnWorkerCmd.Flags().StringVar(&spawnWorkerDir, "split", "vertical", "pane split direction: horizontal (below) or vertical (right, default)")
 	spawnCmd.AddCommand(spawnWorkerCmd)
@@ -61,6 +63,10 @@ func init() {
 func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 	// Validate task ID if provided.
 	taskID := strings.ToUpper(strings.TrimSpace(spawnWorkerTaskID))
+	role := strings.TrimSpace(strings.ToLower(spawnWorkerRole))
+	if role == "" {
+		role = "developer"
+	}
 	if taskID != "" {
 		if _, err := store.ParseTaskID(taskID); err != nil {
 			return fmt.Errorf("--task: %w", err)
@@ -70,16 +76,19 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 			return err
 		}
 		defer d.Close()
-		if err := preflightSpawnWorkerTask(cmd.Context(), d.store, taskID); err != nil {
+		if err := runInboxGatePreflight(cmd.Context(), d.store, "spawn-worker"); err != nil {
+			return err
+		}
+		if err := preflightSpawnWorkerTask(cmd.Context(), d.store, taskID, role); err != nil {
 			return err
 		}
 	}
 
 	agentCmd := spawnWorkerAgent
 	if agentCmd == "" {
-		agentCmd = spawnAgentDefault()
+		agentCmd = spawnAgentDefaultForRole(role)
 		if agentCmd == "" {
-			return developerCommandUnconfiguredError()
+			return roleCommandUnconfiguredError(role)
 		}
 	}
 
@@ -89,7 +98,7 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Build the env slice to pass to the pane.
-	env := buildWorkerEnv(taskID, spawnWorkerEnvs, agentCmd)
+	env := buildWorkerEnvForRole(taskID, spawnWorkerEnvs, agentCmd, role)
 
 	term, err := terminal.NewFromEnv()
 	if err != nil {
@@ -107,16 +116,20 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open worker pane: %w", err)
 	}
 
-	bootstrapAgentInPane(ctx, term, surfaceID, buildAgentLaunchCommand(agentCmd), taskID, cmd.ErrOrStderr())
+	bootstrap := bootstrapAgentInPane(ctx, term, surfaceID, buildAgentLaunchCommand(agentCmd), taskID, role, cmd.ErrOrStderr())
 
 	// Register the worker pane in panes.json.
 	rt, rtErr := spawnRuntimeDir()
 	if rtErr == nil {
 		w := spawn.WorkerPane{
-			SurfaceID: string(surfaceID),
-			TaskID:    taskID,
-			Agent:     agentCmd,
-			SpawnedAt: time.Now().UTC(),
+			SurfaceID:            string(surfaceID),
+			TaskID:               taskID,
+			Agent:                agentCmd,
+			SpawnedAt:            time.Now().UTC(),
+			State:                bootstrap.workerState(),
+			PromptDeliveryStatus: bootstrap.Status,
+			PromptDeliveryError:  bootstrap.Warning,
+			PromptDeliveryAt:     bootstrap.At,
 		}
 		if regErr := spawn.RegisterPane(rt, w); regErr != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ pane registration failed: %v\n", regErr)
@@ -140,9 +153,16 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 // its own runtime identity + developer role; the spawning session is preserved
 // separately as GG_MASTER_* so completion messages can still route back.
 func buildWorkerEnv(taskID string, extra []string, agentCmd string) []string {
+	return buildWorkerEnvForRole(taskID, extra, agentCmd, "developer")
+}
+
+func buildWorkerEnvForRole(taskID string, extra []string, agentCmd, role string) []string {
+	if role == "" {
+		role = "developer"
+	}
 	var env []string
 	env = append(env, "GG_AGENT="+workerAgentIdentity(agentCmd))
-	env = append(env, "GG_ROLE=developer")
+	env = append(env, "GG_ROLE="+role)
 	if v := os.Getenv("GG_AGENT"); v != "" {
 		env = append(env, "GG_MASTER_AGENT="+v)
 	}
@@ -225,7 +245,10 @@ type spawnTaskReader interface {
 	GetTask(ctx context.Context, taskID string) (*store.Task, error)
 }
 
-func preflightSpawnWorkerTask(ctx context.Context, tasks spawnTaskReader, taskID string) error {
+func preflightSpawnWorkerTask(ctx context.Context, tasks spawnTaskReader, taskID, role string) error {
+	if role == "" {
+		role = "developer"
+	}
 	task, err := tasks.GetTask(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("spawn preflight: %w", err)
@@ -241,8 +264,13 @@ func preflightSpawnWorkerTask(ctx context.Context, tasks spawnTaskReader, taskID
 	case "done":
 		return fmt.Errorf("spawn preflight: %s is already done; refusing to open an implementation worker", taskID)
 	case "ready_for_live":
-		return fmt.Errorf("spawn preflight: %s is ready_for_live; assign a verifier/reviewer instead of opening an implementation worker", taskID)
+		if role != "reviewer" && role != "verifier" {
+			return fmt.Errorf("spawn preflight: %s is ready_for_live; assign a verifier/reviewer instead of opening an implementation worker", taskID)
+		}
 	case "pending", "in_progress":
+		if role == "reviewer" || role == "verifier" {
+			return fmt.Errorf("spawn preflight: %s is %s; route implementation to developer before reviewer", taskID, task.Status)
+		}
 		// allowed after dependency checks below
 	default:
 		return fmt.Errorf("spawn preflight: %s has unsupported status %q", taskID, task.Status)
@@ -273,7 +301,21 @@ func preflightSpawnWorkerTask(ctx context.Context, tasks spawnTaskReader, taskID
 // Send/SendKey failures are logged to errOut and skipped — a human can always finish manually.
 // Both the single-worker (cmd/spawn_worker.go) and queue-pool (cmd/spawn_queue_pool.go) paths
 // route through this helper so they cannot diverge again.
-func bootstrapAgentInPane(ctx context.Context, term terminal.Terminal, surfaceID terminal.SurfaceID, agentCmd, taskID string, errOut io.Writer) {
+type bootstrapResult struct {
+	Status  string
+	Warning string
+	At      time.Time
+}
+
+func (r bootstrapResult) workerState() spawn.WorkerState {
+	if r.Status == "skipped" || r.Status == "failed" {
+		return spawn.WorkerStateWaiting
+	}
+	return spawn.WorkerStateWorking
+}
+
+func bootstrapAgentInPane(ctx context.Context, term terminal.Terminal, surfaceID terminal.SurfaceID, agentCmd, taskID string, role string, errOut io.Writer) bootstrapResult {
+	result := bootstrapResult{At: time.Now().UTC()}
 	if sErr := term.Send(ctx, surfaceID, agentCmd); sErr != nil {
 		fmt.Fprintf(errOut, "⚠ could not launch agent in pane %s: %v\n", surfaceID, sErr)
 	}
@@ -281,35 +323,66 @@ func bootstrapAgentInPane(ctx context.Context, term terminal.Terminal, surfaceID
 		fmt.Fprintf(errOut, "⚠ could not send Enter after agent launch: %v\n", kErr)
 	}
 	if taskID == "" {
-		return
+		return result
 	}
-	if isGSDLikeAgent(agentCmd) && !waitForAgentPromptReady(ctx, term, surfaceID, agentCmd, errOut) {
-		return
+	if isGSDLikeAgent(agentCmd) {
+		ready, warning := waitForAgentPromptReady(ctx, term, surfaceID, agentCmd, errOut)
+		if !ready {
+			result.Status = "skipped"
+			result.Warning = warning
+			return result
+		}
 	}
-	prompt := buildWorkerPromptForAgent(agentCmd, taskID)
+	prompt := buildWorkerPromptForAgent(agentCmd, taskID, role)
 	if sErr := term.Send(ctx, surfaceID, prompt); sErr != nil {
 		fmt.Fprintf(errOut, "⚠ could not send task prompt to pane %s: %v\n", surfaceID, sErr)
+		result.Status = "failed"
+		result.Warning = sErr.Error()
+		return result
 	}
 	if kErr := term.SendKey(ctx, surfaceID, "enter"); kErr != nil {
 		fmt.Fprintf(errOut, "⚠ could not send Enter after prompt: %v\n", kErr)
+		result.Status = "failed"
+		result.Warning = kErr.Error()
+		return result
 	}
+	result.Status = "delivered"
+	return result
 }
 
-func buildWorkerPromptForAgent(agentCmd, taskID string) string {
+func buildWorkerPromptForAgent(agentCmd, taskID, role string) string {
 	if isGGDevWorkerAgent(agentCmd) {
 		return "RUN_TASK " + taskID
+	}
+	if role == "reviewer" || role == "verifier" {
+		return buildReviewerPrompt(taskID, role)
 	}
 	return buildWorkerPrompt(taskID)
 }
 
-func waitForAgentPromptReady(ctx context.Context, term terminal.Terminal, surfaceID terminal.SurfaceID, agentCmd string, errOut io.Writer) bool {
+func buildReviewerPrompt(taskID, role string) string {
+	if role == "" {
+		role = "reviewer"
+	}
+	return fmt.Sprintf(
+		"You are the %s for %s. Before anything else, export your identity: export GG_AGENT=${GG_AGENT:-reviewer} GG_ROLE=%s. "+
+			"Run 'gg task get %s --json', inspect the implementation commit and verification evidence, and compare against every acceptance criterion. "+
+			"If it passes, close with: gg task done %s \"<verified summary>\" --verifier %s. "+
+			"If it fails, run: gg task review %s --reject \"<specific rework>\" and notify the developer via gg tell. "+
+			"Do not implement production code in the reviewer pane.",
+		role, taskID, role, taskID, taskID, role, taskID,
+	)
+}
+
+func waitForAgentPromptReady(ctx context.Context, term terminal.Terminal, surfaceID terminal.SurfaceID, agentCmd string, errOut io.Writer) (bool, string) {
 	if !isGSDLikeAgent(agentCmd) {
 		time.Sleep(spawnAgentPromptDelay)
-		return true
+		return true, ""
 	}
 	if !term.Capabilities().CanReadScreen {
-		fmt.Fprintf(errOut, "⚠ GSD pane %s cannot be read (screen capability unavailable); skipping task prompt delivery\n", surfaceID)
-		return false
+		warning := fmt.Sprintf("GSD pane %s cannot be read (screen capability unavailable); skipping task prompt delivery", surfaceID)
+		fmt.Fprintf(errOut, "⚠ %s\n", warning)
+		return false, warning
 	}
 
 	deadline := time.NewTimer(spawnAgentReadyTimeout)
@@ -320,20 +393,23 @@ func waitForAgentPromptReady(ctx context.Context, term terminal.Terminal, surfac
 	for {
 		content, err := term.ReadScreen(ctx, surfaceID)
 		if err != nil {
-			fmt.Fprintf(errOut, "⚠ could not verify GSD ready state in pane %s: %v; skipping task prompt delivery\n", surfaceID, err)
-			return false
+			warning := fmt.Sprintf("could not verify GSD ready state in pane %s: %v; skipping task prompt delivery", surfaceID, err)
+			fmt.Fprintf(errOut, "⚠ %s\n", warning)
+			return false, warning
 		}
 		if isGSDReadyScreen(content) {
-			return true
+			return true, ""
 		}
 
 		select {
 		case <-ctx.Done():
-			fmt.Fprintf(errOut, "⚠ context canceled while waiting for GSD ready UI in pane %s; skipping task prompt delivery\n", surfaceID)
-			return false
+			warning := fmt.Sprintf("context canceled while waiting for GSD ready UI in pane %s; skipping task prompt delivery", surfaceID)
+			fmt.Fprintf(errOut, "⚠ %s\n", warning)
+			return false, warning
 		case <-deadline.C:
-			fmt.Fprintf(errOut, "⚠ GSD pane %s did not show ready UI within %s; skipping task prompt delivery\n", surfaceID, spawnAgentReadyTimeout)
-			return false
+			warning := fmt.Sprintf("GSD pane %s did not show ready UI within %s; skipping task prompt delivery", surfaceID, spawnAgentReadyTimeout)
+			fmt.Fprintf(errOut, "⚠ %s\n", warning)
+			return false, warning
 		case <-ticker.C:
 		}
 	}

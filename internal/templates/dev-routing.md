@@ -3,9 +3,9 @@
 By default, this session reviews and coordinates; implementation is delegated
 to the configured side-session developer in a separate pane.
 
-### Default developer agent
+### Default developer command
 
-- **Runtime:** configured developer agent selected in `.gg/config.yaml`
+- **Runtime:** configured developer command selected in `.gg/config.yaml`
 - **Spawn:** `gg spawn worker --task TASK-N`
 - **Nudge:** `gg spawn nudge --surface <pane-id> "<prompt>"`
 
@@ -18,6 +18,13 @@ gg spawn worker --task TASK-N
 This bootstraps the configured developer session in a new pane and sends the task
 prompt automatically. The pane ID is registered in
 `~/.gg/projects/<project_id>/spawn/panes.json`.
+
+`gg spawn worker --task TASK-N` is guarded by gg task state before any pane is
+opened. If gg refuses because the task is `blocked`, `done`,
+`ready_for_live`, or has unfinished dependencies, the refusal is authoritative:
+do not invent a live smoke test, SSH target, or alternate task interpretation.
+Run `gg task deps TASK-N`, work the blocker first, or route ready-for-live work
+to a verifier/reviewer.
 
 To send a follow-up prompt to an already-running pane:
 
@@ -43,13 +50,11 @@ When a worker pane exists, the master must continue by supervising that pane:
 - review the worker's commit when it reports ready.
 
 The master does not take over non-trivial implementation just because a
-parallel subagent/thread spawn failed. If no pane exists, first try
-`gg spawn worker --agent gsd --task TASK-N` when GSD is the routed worker
-(otherwise use the configured developer agent). For a manually-opened GSD pane,
-use `gg gsd open`, wait until the GSD REPL is active, then route the task prompt
-with `gg spawn nudge --surface <pane-id>`. If opening/nudging fails, block or
-escalate the task with the exact pane/spawn failure instead of silently
-switching to local implementation.
+parallel subagent/thread spawn failed or because no worker pane currently
+exists. When `developer.command` is configured, the master must first run
+`gg spawn worker --task TASK-N` using that command. If opening/nudging fails,
+block or escalate the task with the exact pane/spawn failure instead of
+silently switching to local implementation.
 
 ### Worker commit protocol (advance sentinel)
 
@@ -83,10 +88,13 @@ to avoid injecting text into the agent conversation.
 
 ### Fallback — no developer configured
 
-If no developer agent is configured and the change is non-trivial, stop and
+If no developer command is configured and the change is non-trivial, stop and
 open/block a setup task for developer routing rather than silently implementing
-as master. Direct implementation in this session is allowed only for explicit
-user requests or the trivial bypass rule below. When implementing directly:
+as master. If a developer command is configured, master direct edits are blocked
+by the master-guard hook; route implementation through `gg spawn worker --task`.
+Direct implementation in this session is allowed only for legacy solo projects
+with no configured developer command, explicit user requests, or the trivial
+bypass rule below. When implementing directly:
 - Read the task spec fully before writing any code.
 - Run `go test ./... -count=1 -race` before closing the task.
 - Record any spec pivots via `gg record` before deviating.

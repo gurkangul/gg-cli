@@ -150,6 +150,28 @@ Impact-Reviewed: cmd/spawn_worker.go — 2 callers, tests green
 Impact-Reviewed: internal/store/client.go — 0 callers
 ```
 
+### `GG_REVIEW_CONVERGENCE` — review-convergence gate (`70-review-convergence.sh`)
+
+Requires a `Review-Convergence:` trailer in the commit body before
+`gg task done` can close the task. The trailer attests that the implementer
+ran the pre-done matrix: behavior matrix, negative path, legacy compatibility,
+stale-string sweep, docs/templates/generated artifacts, live smoke, and
+test/diff evidence.
+
+| Value | Effect |
+|---|---|
+| `on` *(default)* | Exits 7 when trailer is missing |
+| `warn` | Prints the missing-trailer checklist; does not block |
+| `off` | Gate is skipped entirely |
+
+**Bypass (audited):** set `GG_ALLOW_INCOMPLETE_REVIEW="<reason>"`. Recorded
+via `gg record`.
+
+Sample commit trailer:
+```
+Review-Convergence: behavior matrix + negative path + legacy compatibility + stale-string sweep + docs/templates + live smoke + tests verified
+```
+
 ### `GG_ENFORCEMENT` — regression repro gate (`90-bug-repros.sh`) + global kill-switch
 
 `GG_ENFORCEMENT` is used in two overlapping ways:
@@ -369,6 +391,8 @@ and merges it over `os.Environ()`. This is the correct pattern.
 | `GG_GITLEAKS_BIN` | caller / override | `20-secret-scan.sh`, `gg doctor --check-secrets` |
 | `GG_ALLOW_LINT_REGRESSIONS` | caller / one-shot bypass | `60-lint-gate.sh` |
 | `GG_IMPACT_ATTESTATION` | caller / session | `60-impact-attestation.sh` |
+| `GG_REVIEW_CONVERGENCE` | caller / session | `70-review-convergence.sh` |
+| `GG_ALLOW_INCOMPLETE_REVIEW` | caller / one-shot bypass | `70-review-convergence.sh` |
 | `GG_ENFORCEMENT` | caller / session | `90-bug-repros.sh`, CLI gate runner |
 | `GG_BUG_REPRO_BUDGET` | caller / session | `90-bug-repros.sh` |
 | `GG_NO_SMOKE` | caller / session | `05-smoke-e2e.sh` |

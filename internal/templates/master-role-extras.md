@@ -85,6 +85,9 @@ the master owns review, architectural integrity, and spec compliance.
 
 - Write production code (exception: explicit user instruction or trivial ≤5-line fixes,
   documented via `gg record`)
+- Treat an absent worker pane as permission to implement locally when
+  `developer.command` is configured; open the worker with `gg spawn worker --task`
+  or block/escalate the spawn failure.
 - Treat subagent/thread exhaustion as permission to take over implementation when a
   terminal worker pane exists; supervise the pane with `gg spawn nudge` instead.
 - Skip review to save time — this IS the master's job
@@ -115,7 +118,9 @@ Always use `gg spawn nudge` to trigger worker action — never raw `cmux send`.
 
 Pattern per master action:
 - **Spawning initial work:** `gg spawn worker --task TASK-N` bootstraps the agent + sends the task
-  prompt automatically. Nothing else required.
+  prompt automatically. Nothing else required. This command performs task-state
+  preflight first; if it refuses a blocked/done/ready_for_live task or unfinished
+  dependency, obey the refusal and work the blocker/reviewer path instead.
 - **Reject + rework:** DUAL-write — (a) `gg task review TASK-N --reject` for the record,
   (b) `gg spawn nudge --surface <pane> "<rework prompt>"` to trigger the worker.
 - **Ambiguity answer:** same — `gg tell` for record, `gg spawn nudge` to trigger response.
@@ -212,9 +217,10 @@ Then decide:
 - **If queue is empty but pending tasks exist:** pick the next code-implementation task (skip dogfood /
   measurement tasks) and `gg spawn worker --task TASK-N` — one pane per task, lifecycle tied to pane
   lifecycle.
-- **If the user previously routed GSD to the side pane and no pane is listed:** open/recreate the GSD
-  worker pane (`gg spawn worker --agent gsd --task TASK-N`, or `gg gsd open` for a manual pane), then
-  nudge that pane with the exact task prompt. Do not continue implementation in the master chat.
+- **If the user previously routed GSD to the side pane and no pane is listed:** open/recreate the worker
+  pane with `gg spawn worker --task TASK-N` using the configured developer command. Use `gg gsd open`
+  only for an explicitly manual GSD pane, then nudge that pane with the exact task prompt. Do not
+  continue implementation in the master chat.
 
 The master does NOT ask the user which task to pick or what state to resume from — gg-cli has the
 answer. The user's "devam" means "trust the recorded state, continue the loop."

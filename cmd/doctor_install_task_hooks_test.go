@@ -555,3 +555,45 @@ func TestInstallTaskHooks_LintGate_Idempotent(t *testing.T) {
 		t.Errorf("installer overwrote user edits to lint gate")
 	}
 }
+
+func TestInstallTaskHooks_ReviewConvergenceGate_AlwaysInstalled(t *testing.T) {
+	f := newHookInstallFixture(t, false, false)
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+	path := filepath.Join(f.preDir, "70-review-convergence.sh")
+	if !installerShebang(t, path) {
+		t.Errorf("expected review convergence gate at %s", path)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if info.Mode()&0o100 == 0 {
+		t.Errorf("%s should be executable, got mode %v", path, info.Mode())
+	}
+}
+
+func TestInstallTaskHooks_ReviewConvergenceGate_ContentHasKeySignals(t *testing.T) {
+	f := newHookInstallFixture(t, false, false)
+	if err := runDoctorInstallTaskHooks(); err != nil {
+		t.Fatalf("installer: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(f.preDir, "70-review-convergence.sh"))
+	if err != nil {
+		t.Fatalf("read review convergence hook: %v", err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		"Review-Convergence:",
+		"GG_REVIEW_CONVERGENCE",
+		"GG_ALLOW_INCOMPLETE_REVIEW",
+		"behavior matrix",
+		"stale-string sweep",
+		"live smoke",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("review convergence hook missing expected content %q", want)
+		}
+	}
+}

@@ -57,7 +57,7 @@ var (
 )
 
 func init() {
-	spawnQueueStartCmd.Flags().StringVar(&spawnQueueAgent, "agent", "", "agent command for worker panes (default: $GG_SPAWN_AGENT or 'gsd')")
+	spawnQueueStartCmd.Flags().StringVar(&spawnQueueAgent, "agent", "", "agent command for worker panes (default: $GG_SPAWN_AGENT or developer.command)")
 	spawnQueueStartCmd.Flags().IntVar(&spawnQueueMaxTasks, "max-tasks", 0, "stop after processing this many tasks (0 = no limit)")
 	spawnQueueStartCmd.Flags().IntVar(&spawnQueuePollSecs, "poll", 30, "seconds between liveness checks while a worker is running")
 	spawnQueueStartCmd.Flags().BoolVar(&spawnQueueForce, "force", false, "override advisory file-lock collisions (logs override, continues spawn)")
@@ -69,10 +69,22 @@ func runSpawnQueueStart(cmd *cobra.Command, _ []string) error {
 	agentCmd := spawnQueueAgent
 	if agentCmd == "" {
 		agentCmd = spawnAgentDefault()
+		if agentCmd == "" {
+			return developerCommandUnconfiguredError()
+		}
 	}
 
 	rt, err := spawnRuntimeDir()
 	if err != nil {
+		return err
+	}
+
+	d, err := loadDepsReadOnly(false)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	if err := runInboxGatePreflight(cmd.Context(), d.store, "spawn-queue-start"); err != nil {
 		return err
 	}
 
@@ -93,12 +105,6 @@ func runSpawnQueueStart(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("terminal backend: %w", err)
 	}
-
-	d, err := loadDepsReadOnly(false)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
 
 	cap := maxConcurrent()
 	fmt.Printf("→ Queue started (agent: %s, max-concurrent: %d)\n", agentCmd, cap)

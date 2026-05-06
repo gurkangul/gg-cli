@@ -25,7 +25,7 @@ gg spawn queue start [flags]
 ### Options
 
 ```
-      --agent string         agent command for worker panes (default: $GG_SPAWN_AGENT or 'gsd')
+      --agent string         agent command for worker panes (default: $GG_SPAWN_AGENT or developer.command)
       --force                override advisory file-lock collisions (logs override, continues spawn)
   -h, --help                 help for start
       --max-concurrent int   max simultaneous workers (default: GG_QUEUE_MAX or 3)

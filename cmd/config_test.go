@@ -13,7 +13,7 @@ import (
 // ── AC-5a: init writes developer config with default ─────────────────────────
 
 // TestInitDeveloperConfig_GSDAndCmuxPresent verifies that ensureDeveloperConfig
-// writes gsd-sonnet-4.6 / cmux when .mcp.json references gsd-workflow and cmux
+// writes a generic gsd command / cmux when .mcp.json references gsd-workflow and cmux
 // is on PATH (simulated via a fake cmux on PATH).
 func TestInitDeveloperConfig_GSDAndCmuxPresent(t *testing.T) {
 	ggDir := setupGGDir(t)
@@ -47,8 +47,8 @@ func TestInitDeveloperConfig_GSDAndCmuxPresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.Developer.Agent != "gsd-sonnet-4.6" {
-		t.Errorf("Developer.Agent = %q, want gsd-sonnet-4.6", cfg.Developer.Agent)
+	if cfg.Developer.Command != "gsd" {
+		t.Errorf("Developer.Command = %q, want gsd", cfg.Developer.Command)
 	}
 	if cfg.Developer.Transport != "cmux" {
 		t.Errorf("Developer.Transport = %q, want cmux", cfg.Developer.Transport)
@@ -56,7 +56,7 @@ func TestInitDeveloperConfig_GSDAndCmuxPresent(t *testing.T) {
 }
 
 // TestInitDeveloperConfig_NoGSD verifies that ensureDeveloperConfig writes
-// "unconfigured" when GSD is not detected and we are in non-interactive mode.
+// no command when GSD is not detected and we are in non-interactive mode.
 func TestInitDeveloperConfig_NoGSD(t *testing.T) {
 	ggDir := setupGGDir(t)
 
@@ -82,8 +82,8 @@ func TestInitDeveloperConfig_NoGSD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.Developer.Agent != "unconfigured" {
-		t.Errorf("Developer.Agent = %q, want unconfigured", cfg.Developer.Agent)
+	if cfg.Developer.Command != "" {
+		t.Errorf("Developer.Command = %q, want empty", cfg.Developer.Command)
 	}
 }
 
@@ -92,8 +92,8 @@ func TestInitDeveloperConfig_NoGSD(t *testing.T) {
 func TestInitDeveloperConfig_ExistingNotOverwritten(t *testing.T) {
 	ggDir := setupGGDir(t)
 
-	// Pre-set developer.agent in the config.
-	if err := rewriteConfigWithDeveloper(ggDir, "claude-sonnet-4.5", "side-session-prompt"); err != nil {
+	// Pre-set developer.command in the config.
+	if err := rewriteConfigWithDeveloper(ggDir, "codex --model gpt-5.3-codex", "side-session-prompt"); err != nil {
 		t.Fatalf("rewrite config: %v", err)
 	}
 
@@ -105,75 +105,110 @@ func TestInitDeveloperConfig_ExistingNotOverwritten(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.Developer.Agent != "claude-sonnet-4.5" {
-		t.Errorf("Developer.Agent = %q, want claude-sonnet-4.5 (should not be overwritten)", cfg.Developer.Agent)
+	if cfg.Developer.Command != "codex --model gpt-5.3-codex" {
+		t.Errorf("Developer.Command = %q, want codex command (should not be overwritten)", cfg.Developer.Command)
 	}
 }
 
-// ── AC-5b: developer.agent override roundtrip via gg config set ──────────────
+// ── AC-5b: developer.command override roundtrip via gg config set ────────────
 
-// TestConfigSet_DeveloperAgent_Valid verifies that a valid agent ID is written
+// TestConfigSet_DeveloperCommand_Valid verifies that a command is written
 // to .gg/config.yaml and read back correctly.
-func TestConfigSet_DeveloperAgent_Valid(t *testing.T) {
+func TestConfigSet_DeveloperCommand_Valid(t *testing.T) {
 	setupGGDir(t)
 
-	_, _, err := execCmd(t, "config", "set", "developer.agent", "claude-sonnet-4.5")
+	_, _, err := execCmd(t, "config", "set", "developer.command", "gsd --model openai-codex/gpt-5.3-codex")
 	if err != nil {
-		t.Fatalf("gg config set developer.agent: %v", err)
+		t.Fatalf("gg config set developer.command: %v", err)
 	}
 
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("load config after set: %v", err)
 	}
-	if cfg.Developer.Agent != "claude-sonnet-4.5" {
-		t.Errorf("Developer.Agent = %q, want claude-sonnet-4.5", cfg.Developer.Agent)
+	if cfg.Developer.Command != "gsd --model openai-codex/gpt-5.3-codex" {
+		t.Errorf("Developer.Command = %q, want gsd command", cfg.Developer.Command)
 	}
 }
 
-// TestConfigSet_DeveloperAgent_RoundTrip verifies that setting then re-reading
-// the agent preserves the value.
-func TestConfigSet_DeveloperAgent_RoundTrip(t *testing.T) {
+func TestConfigSet_RoleReviewerCommand_Valid(t *testing.T) {
 	setupGGDir(t)
 
-	for _, agent := range config.ValidDeveloperAgents {
-		if _, _, err := execCmd(t, "config", "set", "developer.agent", agent); err != nil {
-			t.Fatalf("config set agent=%q: %v", agent, err)
+	_, _, err := execCmd(t, "config", "set", "roles.reviewer.command", "codex --model gpt-5.3-codex")
+	if err != nil {
+		t.Fatalf("gg config set roles.reviewer.command: %v", err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config after set: %v", err)
+	}
+	if cfg.Roles["reviewer"].Command != "codex --model gpt-5.3-codex" {
+		t.Errorf("reviewer command = %q, want codex command", cfg.Roles["reviewer"].Command)
+	}
+}
+
+// TestConfigSet_DeveloperCommand_RoundTrip verifies that setting then re-reading
+// the command preserves arbitrary agent subprocess values.
+func TestConfigSet_DeveloperCommand_RoundTrip(t *testing.T) {
+	setupGGDir(t)
+
+	for _, command := range []string{"gsd", "codex --model gpt-5.3-codex", "./my-agent-team run developer"} {
+		if _, _, err := execCmd(t, "config", "set", "developer.command", command); err != nil {
+			t.Fatalf("config set command=%q: %v", command, err)
 		}
 		cfg, err := config.Load()
 		if err != nil {
-			t.Fatalf("load after set agent=%q: %v", agent, err)
+			t.Fatalf("load after set command=%q: %v", command, err)
 		}
-		if cfg.Developer.Agent != agent {
-			t.Errorf("round-trip agent: got %q, want %q", cfg.Developer.Agent, agent)
+		if cfg.Developer.Command != command {
+			t.Errorf("round-trip command: got %q, want %q", cfg.Developer.Command, command)
 		}
+	}
+}
+
+func TestConfigSet_LegacyDeveloperAgentUnconfiguredClearsCommand(t *testing.T) {
+	setupGGDir(t)
+
+	if _, _, err := execCmd(t, "config", "set", "developer.agent", "unconfigured"); err != nil {
+		t.Fatalf("config set legacy unconfigured: %v", err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load after legacy unconfigured: %v", err)
+	}
+	if cfg.Developer.Command != "" {
+		t.Errorf("Developer.Command = %q, want empty", cfg.Developer.Command)
+	}
+	if line := developerCommand(&cfg.Developer); line != "" {
+		t.Errorf("developerCommand = %q, want empty", line)
 	}
 }
 
 // ── AC-5c: status renders developer line ─────────────────────────────────────
 
-// TestStatus_DeveloperLine_Configured verifies renderRolesBlock with an agent+transport.
+// TestStatus_DeveloperLine_Configured verifies renderRolesBlock with a command+transport.
 func TestStatus_DeveloperLine_Configured(t *testing.T) {
-	dev := &config.DeveloperConfig{Agent: "gsd-sonnet-4.6", Transport: "cmux"}
+	dev := &config.DeveloperConfig{Command: "gsd --model openai-codex/gpt-5.3-codex", Transport: "cmux"}
 	out := renderRolesBlock(dev, "")
 	if !strings.Contains(out, "Developer") {
 		t.Errorf("expected 'Developer' in Roles block; got:\n%s", out)
 	}
-	if !strings.Contains(out, "gsd-sonnet-4.6") {
-		t.Errorf("expected agent name in Roles block; got:\n%s", out)
+	if !strings.Contains(out, "gsd --model openai-codex/gpt-5.3-codex") {
+		t.Errorf("expected command in Roles block; got:\n%s", out)
 	}
 	if !strings.Contains(out, "cmux") {
 		t.Errorf("expected transport in Roles block; got:\n%s", out)
 	}
 }
 
-// TestStatus_DeveloperLine_AgentOnlyNoTransport verifies that agent without
+// TestStatus_DeveloperLine_AgentOnlyNoTransport verifies that command without
 // transport renders without parentheses.
 func TestStatus_DeveloperLine_AgentOnlyNoTransport(t *testing.T) {
-	dev := &config.DeveloperConfig{Agent: "claude-sonnet-4.5"}
+	dev := &config.DeveloperConfig{Command: "codex --model gpt-5.3-codex"}
 	out := renderRolesBlock(dev, "")
-	if !strings.Contains(out, "claude-sonnet-4.5") {
-		t.Errorf("expected agent name; got:\n%s", out)
+	if !strings.Contains(out, "codex --model gpt-5.3-codex") {
+		t.Errorf("expected command; got:\n%s", out)
 	}
 	if strings.Contains(out, "(") {
 		t.Errorf("expected no parentheses when transport empty; got:\n%s", out)
@@ -198,21 +233,20 @@ func TestStatus_DeveloperLine_UnconfiguredValue(t *testing.T) {
 	}
 }
 
-// ── AC-5d: config validation rejects unknown agent ID ────────────────────────
+// ── AC-5d: config validation rejects empty command ───────────────────────────
 
-// TestConfigSet_DeveloperAgent_Invalid verifies that an unknown agent ID is
+// TestConfigSet_DeveloperCommand_Invalid verifies that an empty command is
 // rejected with a non-zero exit code and descriptive message.
-func TestConfigSet_DeveloperAgent_Invalid(t *testing.T) {
+func TestConfigSet_DeveloperCommand_Invalid(t *testing.T) {
 	setupGGDir(t)
 
-	stdout, stderr, err := execCmd(t, "config", "set", "developer.agent", "totally-fake-agent-xyz")
+	stdout, stderr, err := execCmd(t, "config", "set", "developer.command", " ")
 	if err == nil {
-		t.Fatal("expected error for invalid agent ID, got nil")
+		t.Fatal("expected error for invalid command, got nil")
 	}
 	// Error message is in err.Error(); cobra may also write it to stderr.
 	combined := err.Error() + stdout + stderr
-	if !strings.Contains(combined, "invalid developer.agent") &&
-		!strings.Contains(combined, "totally-fake-agent-xyz") {
+	if !strings.Contains(combined, "invalid developer.command") {
 		t.Errorf("expected rejection message in error/output; err=%v stdout=%s stderr=%s", err, stdout, stderr)
 	}
 }
@@ -236,9 +270,9 @@ func rewriteConfigWithoutDeveloper(ggDir string) error {
 }
 
 // rewriteConfigWithDeveloper writes a config that already has a developer block.
-func rewriteConfigWithDeveloper(ggDir, agent, transport string) error {
+func rewriteConfigWithDeveloper(ggDir, command, transport string) error {
 	body := ggConfig
-	body += "\ndeveloper:\n  agent: " + agent + "\n"
+	body += "\ndeveloper:\n  command: " + command + "\n"
 	if transport != "" {
 		body += "  transport: " + transport + "\n"
 	}

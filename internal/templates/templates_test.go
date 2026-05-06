@@ -53,12 +53,69 @@ func TestTemplates_Shebang(t *testing.T) {
 		{"PreTaskDoneNodeHook", PreTaskDoneNodeHook},
 		{"BugReprosHook", BugReprosHook},
 		{"SmokeE2EHook", SmokeE2EHook},
+		{"MasterGuardPreToolUseHook", MasterGuardPreToolUseHook},
 	}
 	for _, tc := range cases {
 		if !strings.HasPrefix(tc.body, "#!/bin/sh\n") {
 			t.Errorf("%s: template must begin with '#!/bin/sh\\n'; got first line %q",
 				tc.name, strings.SplitN(tc.body, "\n", 2)[0])
 		}
+	}
+}
+
+func TestMasterGuard_BlocksEditWhenDeveloperCommandConfigured(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".gg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := "project_id: test\n" +
+		"developer:\n" +
+		"  command: /Users/example/.gg/bin/ggdev-worker\n" +
+		"  transport: cmux\n"
+	if err := os.WriteFile(filepath.Join(root, ".gg", "config.yaml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hookPath := filepath.Join(root, "50-master-guard.sh")
+	if err := os.WriteFile(hookPath, []byte(MasterGuardPreToolUseHook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("/bin/sh", hookPath)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GG_TOOL_NAME=Edit")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected master guard to block Edit when developer.command is configured; output:\n%s", out)
+	}
+	for _, want := range []string{
+		"developer.command is configured",
+		"/Users/example/.gg/bin/ggdev-worker",
+		"gg spawn worker --task <TASK-ID>",
+	} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("guard output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMasterGuard_AllowsEditWithoutDeveloperCommandAndQueue(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".gg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".gg", "config.yaml"), []byte("project_id: test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hookPath := filepath.Join(root, "50-master-guard.sh")
+	if err := os.WriteFile(hookPath, []byte(MasterGuardPreToolUseHook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("/bin/sh", hookPath)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GG_TOOL_NAME=Edit")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("expected master guard to allow legacy solo project without developer.command; err=%v\n%s", err, out)
 	}
 }
 

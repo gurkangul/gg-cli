@@ -256,6 +256,18 @@ func runDoctorInstallTaskHooks() error {
 		installed += n
 	}
 
+	// 70-review-convergence.sh: blocks when the task commit does not attest
+	// that the implementer ran the pre-done convergence matrix. Target: stop
+	// repeated review passes from finding basic stale-string, legacy, negative
+	// path, and generated-artifact gaps after "done" was claimed.
+	reviewConvergencePath := filepath.Join(preDir, "70-review-convergence.sh")
+	if n, err := installHookIfAbsent(reviewConvergencePath, "PreTaskDoneReviewConvergenceHook", templates.PreTaskDoneReviewConvergenceHook,
+		"review convergence gate — requires Review-Convergence: commit trailer before task close (GG_REVIEW_CONVERGENCE=on|warn|off)"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
 	// 20-secret-scan.sh: runs gitleaks (or narrow-regex fallback) against staged
 	// files before a commit. Exits 7 on findings. Bypassable via GG_BYPASS_RATIONALE.
 	secretScanPath := filepath.Join(preCommitDir, "20-secret-scan.sh")

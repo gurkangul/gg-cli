@@ -34,7 +34,8 @@ planning tool alongside it — two trackers create drift that no agent can
 reconcile automatically.
 
 - GSD is allowed as a developer execution worker (for example via
-  `gg gsd open` or `gg spawn worker --agent gsd`) when gg owns the task,
+  `gg gsd open`, or via `gg spawn worker --task TASK-N` after
+  `developer.command` is configured for GSD) when gg owns the task,
   decision, message, and review lifecycle.
 - Use `gg task create` for every work item. **Never call**
   `mcp__gsd-workflow__gsd_plan_milestone`, `gsd_plan_slice`, or
@@ -116,6 +117,29 @@ gg impact src/auth.go --compact  # what breaks if I change this?
 `gg status` surfaces compact adoption (`Compact  N calls, X KB saved`).
 Skipping `--compact` on scans inflates the agent's context spend and
 shows up in the dogfood metric — use it on every survey-style call.
+
+## REVIEW CONVERGENCE BEFORE DONE
+
+Before saying "done", "fixed", or "ready", run the convergence matrix yourself:
+
+1. Behavior matrix — default, configured, invalid, and edge inputs.
+2. Negative path — unconfigured state, missing env, bad args, store/tool failure.
+3. Legacy compatibility — old config fields, old command names, migration path.
+4. Stale-string sweep — `rg` old terms across source, tests, docs, templates, repros.
+5. Docs/templates/generated artifacts — verify generated output and unrelated churn.
+6. Live smoke — inspect real CLI/app output, not only unit tests.
+7. Test evidence — targeted tests, full relevant suite, and diff/format checks.
+
+Commit the evidence with:
+
+```
+Review-Convergence: behavior matrix + negative path + legacy compatibility + stale-string sweep + docs/templates + live smoke + tests verified
+```
+
+`gg task done` installs a blocking `70-review-convergence.sh` gate that refuses
+task close when this trailer is missing. If the matrix is intentionally
+incomplete, bypass only with `GG_ALLOW_INCOMPLETE_REVIEW="<reason>"`; the bypass
+is audited via `gg record`.
 
 ## DECISION POINT
 

@@ -28,10 +28,10 @@ Typical flow:
   export GG_AGENT="${GG_AGENT:-agent}"
   export GG_ROLE=master
   gg spawn heartbeat          # initial heartbeat
-  gg spawn queue start --agent gsd  # drains pending tasks
+  gg spawn queue start        # drains pending tasks with developer.command
 
-  # Open an interactive GSD pane directly (no queue required)
-  gg gsd open
+  # Open a worker pane directly (no queue required)
+  gg spawn worker --task TASK-NNN
 
   # Worker terminals are opened automatically by ` + "`" + `gg spawn queue` + "`" + `.
   # Workers call ` + "`" + `gg spawn heartbeat` + "`" + ` via the master-guard hook to
@@ -39,12 +39,32 @@ Typical flow:
 }
 
 // spawnAgentDefault is the agent command used when --agent is not specified.
-// Reads GG_SPAWN_AGENT env var, falls back to "gsd".
+// Reads GG_SPAWN_AGENT env var, then developer.command, then legacy config.
 func spawnAgentDefault() string {
+	return spawnAgentDefaultForRole("developer")
+}
+
+func spawnAgentDefaultForRole(role string) string {
 	if v := os.Getenv("GG_SPAWN_AGENT"); v != "" {
 		return v
 	}
-	return "gsd"
+	if cfg, err := config.Load(); err == nil {
+		if cmd := roleCommand(cfg, role); cmd != "" {
+			return cmd
+		}
+	}
+	return ""
+}
+
+func developerCommandUnconfiguredError() error {
+	return roleCommandUnconfiguredError("developer")
+}
+
+func roleCommandUnconfiguredError(role string) error {
+	if role == "" || role == "developer" {
+		return fmt.Errorf("developer command is unconfigured — pass --agent, set GG_SPAWN_AGENT, or run `gg config set developer.command \"<agent command>\"`")
+	}
+	return fmt.Errorf("%s command is unconfigured — pass --agent, set GG_SPAWN_AGENT, or run `gg config set roles.%s.command \"<agent command>\"`", role, role)
 }
 
 // spawnRuntimeDir resolves the runtime dir or returns a user-friendly error.

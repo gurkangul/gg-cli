@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -36,15 +37,15 @@ func detectCmux(_ string) bool {
 }
 
 // ensureDeveloperConfig writes the developer block to .gg/config.yaml when
-// it is not already set. Detects GSD + cmux and sets defaults accordingly;
-// in non-interactive mode defaults to "unconfigured" with a warning.
+// it is not already set. It stores a generic command string instead of
+// hard-coding agent/model semantics into gg.
 func ensureDeveloperConfig(cmd *cobra.Command, ggDir string) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 	// Already configured — do not overwrite user's setting.
-	if cfg.Developer.Agent != "" {
+	if developerCommand(&cfg.Developer) != "" {
 		return nil
 	}
 
@@ -53,51 +54,50 @@ func ensureDeveloperConfig(cmd *cobra.Command, ggDir string) error {
 	cmuxOK := detectCmux(cwd)
 
 	if gsdOK && cmuxOK {
-		cfg.Developer.Agent = "gsd-sonnet-4.6"
+		cfg.Developer.Command = "gsd"
 		cfg.Developer.Transport = "cmux"
 		if err := cfg.Save(); err != nil {
 			return fmt.Errorf("save developer config: %w", err)
 		}
-		fmt.Println("✓ Developer agent: gsd-sonnet-4.6 (cmux)")
+		fmt.Println("✓ Developer command: gsd (cmux)")
 		return nil
 	}
 
-	// Non-interactive: --yes flag or non-TTY stdin defaults to "unconfigured".
+	// Non-interactive: --yes flag or non-TTY stdin defaults to unconfigured.
 	if initYes || !isatty(cmd) {
-		cfg.Developer.Agent = "unconfigured"
 		if err := cfg.Save(); err != nil {
 			return fmt.Errorf("save developer config: %w", err)
 		}
-		fmt.Println("⚠ No GSD detected. developer.agent=unconfigured")
-		fmt.Println("  Override later: gg config set developer.agent gsd-sonnet-4.6")
+		fmt.Println("⚠ No developer command configured")
+		fmt.Println(`  Override later: gg config set developer.command "<agent command>"`)
 		return nil
 	}
 
 	// Interactive prompt.
 	fmt.Println()
-	fmt.Println("No GSD detected. Pick developer agent:")
-	fmt.Println("  [1] Install GSD (see https://github.com/getgsd/gsd-pi)")
-	fmt.Println("  [2] Use Claude Sonnet 4.5 in side session (manual)")
-	fmt.Println("  [3] Skip (developer.agent=unconfigured)")
+	fmt.Println("No developer command detected. Pick developer command:")
+	fmt.Println("  [1] Enter custom command")
+	fmt.Println("  [2] Use manual side session")
+	fmt.Println("  [3] Skip")
 	fmt.Print("Choice [3]: ")
 
-	var choice string
-	_, _ = fmt.Fscan(cmd.InOrStdin(), &choice)
+	reader := bufio.NewReader(cmd.InOrStdin())
+	choice, _ := reader.ReadString('\n')
 	switch strings.TrimSpace(choice) {
 	case "1":
-		cfg.Developer.Agent = "unconfigured"
+		fmt.Print("Developer command: ")
+		command, _ := reader.ReadString('\n')
+		cfg.Developer.Command = strings.TrimSpace(command)
+		cfg.Developer.Transport = "cmux"
 		_ = cfg.Save()
-		fmt.Println("  Install GSD: https://github.com/getgsd/gsd-pi")
-		fmt.Println("  Then re-run: gg config set developer.agent gsd-sonnet-4.6")
+		fmt.Printf("  developer.command=%s\n", cfg.Developer.Command)
 	case "2":
-		cfg.Developer.Agent = "claude-sonnet-4.5"
 		cfg.Developer.Transport = "side-session-prompt"
 		_ = cfg.Save()
-		fmt.Println("  Developer agent set to claude-sonnet-4.5 (side-session-prompt)")
+		fmt.Println("  Developer command left unconfigured (side-session-prompt)")
 	default:
-		cfg.Developer.Agent = "unconfigured"
 		_ = cfg.Save()
-		fmt.Println("  developer.agent=unconfigured (override later: gg config set developer.agent <id>)")
+		fmt.Println(`  developer.command unset (override later: gg config set developer.command "<agent command>")`)
 	}
 	return nil
 }

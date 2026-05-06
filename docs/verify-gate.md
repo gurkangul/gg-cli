@@ -48,6 +48,32 @@ the following environment variables:
 The same env contract is reused by future gates (e.g. `pre-review-approve.d`),
 so scripts stay portable across gate stages.
 
+## Built-in review-convergence gate
+
+`gg doctor --install-task-hooks` installs `70-review-convergence.sh`.
+It blocks `gg task done` unless the task commit contains a
+`Review-Convergence:` trailer showing the implementer ran the pre-done
+convergence matrix:
+
+1. behavior matrix
+2. negative path
+3. legacy compatibility
+4. stale-string sweep
+5. docs/templates/generated artifacts
+6. live smoke
+7. test/diff evidence
+
+Example commit body line:
+
+```
+Review-Convergence: behavior matrix + negative path + legacy compatibility + stale-string sweep + docs/templates + live smoke + tests verified
+```
+
+Modes: `GG_REVIEW_CONVERGENCE=on|warn|off` (`on` by default).
+Intentional incomplete review requires
+`GG_ALLOW_INCOMPLETE_REVIEW="<reason>"`; the hook audits the bypass via
+`gg record`.
+
 ## Rejection signals
 
 Three independent signals fire in parallel on rejection, so naive callers

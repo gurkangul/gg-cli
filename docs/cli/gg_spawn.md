@@ -20,10 +20,10 @@ Typical flow:
   export GG_AGENT="${GG_AGENT:-agent}"
   export GG_ROLE=master
   gg spawn heartbeat          # initial heartbeat
-  gg spawn queue start --agent gsd  # drains pending tasks
+  gg spawn queue start        # drains pending tasks with developer.command
 
-  # Open an interactive GSD pane directly (no queue required)
-  gg gsd open
+  # Open a worker pane directly (no queue required)
+  gg spawn worker --task TASK-NNN
 
   # Worker terminals are opened automatically by `gg spawn queue`.
   # Workers call `gg spawn heartbeat` via the master-guard hook to
@@ -49,4 +49,5 @@ Typical flow:
 * [gg spawn nudge](gg_spawn_nudge.md)	 - Wake an idle worker pane and deliver a prompt
 * [gg spawn queue](gg_spawn_queue.md)	 - Manage the parallel task queue for multi-agent orchestration
 * [gg spawn status](gg_spawn_status.md)	 - Show spawn session status: heartbeat age, active workers, queue progress
+* [gg spawn supervisor](gg_spawn_supervisor.md)	 - Route gg messages to live worker panes
 * [gg spawn worker](gg_spawn_worker.md)	 - Open a new terminal pane and run an agent against a task

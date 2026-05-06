@@ -87,12 +87,12 @@ func init() {
 func runBecomeNoArg(cmd *cobra.Command, _ []string) error {
 	out := cmd.OutOrStdout()
 	cfg, err := config.Load()
-	if err == nil && cfg.Developer.Agent != "" && cfg.Developer.Agent != "unconfigured" {
+	if err == nil && developerCommand(&cfg.Developer) != "" {
 		transport := cfg.Developer.Transport
 		if transport == "" {
 			transport = "unset"
 		}
-		fmt.Fprintf(out, "Current developer: %s (transport: %s)\n", cfg.Developer.Agent, transport)
+		fmt.Fprintf(out, "Current developer: %s (transport: %s)\n", developerCommand(&cfg.Developer), transport)
 	} else {
 		fmt.Fprintln(out, "no role declared (run gg become master to opt in)")
 	}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gurkangul/gg-cli/internal/orchestrator/spawn"
 	"github.com/gurkangul/gg-cli/internal/orchestrator/terminal"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
@@ -40,6 +41,17 @@ func TestSpawnAgentDefault_ConfigCommand(t *testing.T) {
 	want := "gsd --model openai-codex/gpt-5.3-codex"
 	if got := spawnAgentDefault(); got != want {
 		t.Errorf("spawnAgentDefault() = %q, want %q", got, want)
+	}
+}
+
+func TestSpawnAgentDefault_RoleCommand(t *testing.T) {
+	ggDir := setupGGDir(t)
+	cfgWithRoles := ggConfig + "roles:\n  reviewer:\n    command: codex --model gpt-5.3-codex\n    transport: cmux\n"
+	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfgWithRoles), 0o644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+	if got := spawnAgentDefaultForRole("reviewer"); got != "codex --model gpt-5.3-codex" {
+		t.Errorf("spawnAgentDefaultForRole(reviewer) = %q", got)
 	}
 }
 
@@ -242,7 +254,7 @@ func TestBootstrapAgentInPane_LaunchesAgentBeforePrompt(t *testing.T) {
 	}
 	fake.SetScreen(id, []byte("Get Shit Done\nSystem OK"))
 	var buf bytes.Buffer
-	bootstrapAgentInPane(context.Background(), fake, id, "gsd", "TASK-042", &buf)
+	bootstrapAgentInPane(context.Background(), fake, id, "gsd", "TASK-042", "developer", &buf)
 
 	if c := fake.Calls[1]; c.Method != "Send" || c.Arg != "gsd" {
 		t.Errorf("call[1] = %+v, want Send gsd", c)
@@ -264,7 +276,7 @@ func TestBootstrapAgentInPane_NoTaskIDSkipsPrompt(t *testing.T) {
 		t.Fatalf("NewSplit: %v", err)
 	}
 	var buf bytes.Buffer
-	bootstrapAgentInPane(context.Background(), fake, id, "gsd", "", &buf)
+	bootstrapAgentInPane(context.Background(), fake, id, "gsd", "", "developer", &buf)
 
 	if got := len(fake.Calls); got != 3 {
 		t.Fatalf("Calls = %d, want 3 (NewSplit, Send gsd, SendKey enter): %+v", got, fake.Calls)
@@ -293,12 +305,27 @@ func TestSpawnWorker_PromptContainsImpactStep(t *testing.T) {
 	}
 }
 
+func TestBuildReviewerPrompt_RoutesReviewNotImplementation(t *testing.T) {
+	prompt := buildReviewerPrompt("TASK-042", "reviewer")
+	for _, want := range []string{
+		"GG_ROLE=reviewer",
+		"gg task get TASK-042 --json",
+		"gg task done TASK-042",
+		"--verifier reviewer",
+		"Do not implement production code",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("reviewer prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func TestPreflightSpawnWorkerTask_RejectsBlockedTask(t *testing.T) {
 	tasks := fakeSpawnTaskReader{
 		"TASK-042": {ID: "TASK-042", Status: "blocked", BlockReason: "waiting on TASK-041"},
 	}
 
-	err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042")
+	err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042", "developer")
 	if err == nil {
 		t.Fatal("expected blocked task to be rejected")
 	}
@@ -314,12 +341,36 @@ func TestPreflightSpawnWorkerTask_RejectsReadyForLiveTask(t *testing.T) {
 		"TASK-042": {ID: "TASK-042", Status: "ready_for_live"},
 	}
 
-	err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042")
+	err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042", "developer")
 	if err == nil {
 		t.Fatal("expected ready_for_live task to be rejected")
 	}
 	if !strings.Contains(err.Error(), "assign a verifier/reviewer") {
 		t.Fatalf("error should route to verifier/reviewer, got: %v", err)
+	}
+}
+
+func TestPreflightSpawnWorkerTask_AllowsReviewerForReadyForLiveTask(t *testing.T) {
+	tasks := fakeSpawnTaskReader{
+		"TASK-042": {ID: "TASK-042", Status: "ready_for_live"},
+	}
+
+	if err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042", "reviewer"); err != nil {
+		t.Fatalf("preflightSpawnWorkerTask() error = %v, want nil", err)
+	}
+}
+
+func TestPreflightSpawnWorkerTask_RejectsReviewerForPendingTask(t *testing.T) {
+	tasks := fakeSpawnTaskReader{
+		"TASK-042": {ID: "TASK-042", Status: "pending"},
+	}
+
+	err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042", "reviewer")
+	if err == nil {
+		t.Fatal("expected reviewer to be rejected for pending implementation task")
+	}
+	if !strings.Contains(err.Error(), "route implementation to developer") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -330,7 +381,7 @@ func TestPreflightSpawnWorkerTask_RejectsUnfinishedDependencies(t *testing.T) {
 		"TASK-040": {ID: "TASK-040", Status: "done"},
 	}
 
-	err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042")
+	err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042", "developer")
 	if err == nil {
 		t.Fatal("expected unfinished dependency to be rejected")
 	}
@@ -347,7 +398,7 @@ func TestPreflightSpawnWorkerTask_AllowsReadyPendingTask(t *testing.T) {
 		"TASK-041": {ID: "TASK-041", Status: "done"},
 	}
 
-	if err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042"); err != nil {
+	if err := preflightSpawnWorkerTask(context.Background(), tasks, "TASK-042", "developer"); err != nil {
 		t.Fatalf("preflightSpawnWorkerTask() error = %v, want nil", err)
 	}
 }
@@ -409,7 +460,7 @@ func TestSpawnWorker_PromptIsSingleLineForGSD(t *testing.T) {
 }
 
 func TestSpawnWorker_GGDevWorkerUsesShortRunTaskPrompt(t *testing.T) {
-	prompt := buildWorkerPromptForAgent("/Users/example/.gg/bin/ggdev-worker", "TASK-427")
+	prompt := buildWorkerPromptForAgent("/Users/example/.gg/bin/ggdev-worker", "TASK-427", "developer")
 	if prompt != "RUN_TASK TASK-427" {
 		t.Fatalf("buildWorkerPromptForAgent() = %q, want RUN_TASK TASK-427", prompt)
 	}
@@ -476,7 +527,7 @@ func TestBootstrapAgentInPane_GSDWaitsForReadyBeforePrompt(t *testing.T) {
 	var buf bytes.Buffer
 	done := make(chan struct{})
 	go func() {
-		bootstrapAgentInPane(context.Background(), fake, id, "gsd", "TASK-042", &buf)
+		bootstrapAgentInPane(context.Background(), fake, id, "gsd", "TASK-042", "developer", &buf)
 		close(done)
 	}()
 
@@ -525,13 +576,50 @@ func TestBootstrapAgentInPane_GSDTimeoutSkipsPrompt(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	bootstrapAgentInPane(context.Background(), fake, id, "gsd", "TASK-042", &buf)
+	result := bootstrapAgentInPane(context.Background(), fake, id, "gsd", "TASK-042", "developer", &buf)
 
 	if sendTaskPromptSeen(fake.Calls) {
 		t.Fatalf("did not expect task prompt before GSD ready; calls=%+v", fake.Calls)
 	}
 	if !strings.Contains(buf.String(), "skipping task prompt delivery") {
 		t.Fatalf("expected skip warning, got %q", buf.String())
+	}
+	if result.Status != "skipped" || !strings.Contains(result.Warning, "skipping task prompt delivery") {
+		t.Fatalf("expected skipped bootstrap result, got %+v", result)
+	}
+}
+
+func TestSpawnWorkerForTask_RegistersSkippedPromptWarning(t *testing.T) {
+	prevDelay, prevTimeout, prevInterval := spawnAgentPromptDelay, spawnAgentReadyTimeout, spawnAgentReadyInterval
+	spawnAgentPromptDelay = 0
+	spawnAgentReadyTimeout = 20 * time.Millisecond
+	spawnAgentReadyInterval = 5 * time.Millisecond
+	t.Cleanup(func() {
+		spawnAgentPromptDelay, spawnAgentReadyTimeout, spawnAgentReadyInterval = prevDelay, prevTimeout, prevInterval
+	})
+
+	rt := t.TempDir()
+	fake := terminal.NewFake()
+	if _, err := spawnWorkerForTask(context.Background(), fake, rt, "gsd", "TASK-401"); err != nil {
+		t.Fatalf("spawnWorkerForTask: %v", err)
+	}
+
+	panes, err := spawn.ListPanes(rt)
+	if err != nil {
+		t.Fatalf("ListPanes: %v", err)
+	}
+	if len(panes) != 1 {
+		t.Fatalf("panes len = %d, want 1", len(panes))
+	}
+	pane := panes[0]
+	if pane.State != spawn.WorkerStateWaiting {
+		t.Fatalf("pane state = %q, want waiting-on-master", pane.State)
+	}
+	if pane.PromptDeliveryStatus != "skipped" {
+		t.Fatalf("PromptDeliveryStatus = %q, want skipped", pane.PromptDeliveryStatus)
+	}
+	if !strings.Contains(pane.PromptDeliveryError, "skipping task prompt delivery") {
+		t.Fatalf("PromptDeliveryError missing skip warning: %q", pane.PromptDeliveryError)
 	}
 }
 
@@ -551,7 +639,7 @@ func TestBootstrapAgentInPane_NonGSDSkipsScreenPolling(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	bootstrapAgentInPane(context.Background(), fake, id, "codex", "TASK-042", &buf)
+	bootstrapAgentInPane(context.Background(), fake, id, "codex", "TASK-042", "developer", &buf)
 
 	if countReadScreen(fake.Calls) != 0 {
 		t.Fatalf("non-GSD path should not read screen; calls=%+v", fake.Calls)

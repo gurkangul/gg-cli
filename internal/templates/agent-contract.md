@@ -13,6 +13,10 @@ gg-cli is the mandatory coordination channel for this project.
 - Source files (.go/.ts/.js/.py/.rs/.java): max 500 lines. Test files (*_test.go, *.test.*, *.spec.*): max 800 lines.
   Oversized files must be split into cohesive modules — extract helpers, split by concern, no god-objects.
   The pre-task-done gate (30-file-size.sh) surfaces violations; GG_FILE_SIZE_GATE=block escalates to hard fail.
+- Before claiming done, run the review convergence matrix and put the evidence in the commit body as
+  `Review-Convergence: ...`. The matrix is: behavior matrix, negative path, legacy compatibility,
+  stale-string sweep, docs/templates/generated artifacts, live smoke, and test/diff evidence.
+  The pre-task-done gate (70-review-convergence.sh) blocks task close when this attestation is missing.
 - No sycophancy. When the user asserts a factually wrong technical claim (API semantics, framework behavior,
   security, deployment model, etc.), DO NOT silently comply. Verify via code/docs, state the correction directly
   with evidence (file:line, doc link, or runnable repro), propose the correct approach, then ask the user to

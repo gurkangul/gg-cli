@@ -14,21 +14,24 @@ var configCmd = &cobra.Command{
 	Long: `Read and write .gg/config.yaml fields.
 
 Subcommands:
-  set   — write a single field (e.g. developer.agent)`,
+  set   — write a single field (e.g. developer.command)`,
 }
 
 var configSetCmd = &cobra.Command{
 	Use:   "set <key> <value>",
-	Short: "Set a config field (e.g. developer.agent gsd-sonnet-4.6)",
+	Short: "Set a config field (e.g. developer.command 'gsd --model openai-codex/gpt-5.3-codex')",
 	Long: `Set a single config field and persist it to .gg/config.yaml.
 
 Supported keys:
-  developer.agent      — allowlist: gsd-sonnet-4.6, claude-sonnet-4.5, claude-opus-4.7, unconfigured
+  developer.command    — any subprocess command used for worker panes
+  roles.developer.command — explicit developer role command override
+  roles.reviewer.command  — reviewer/verifier role command
   developer.transport  — allowlist: cmux, side-session-prompt
-  developer.spawn_command — any string (custom agent launch command override)
+  developer.agent      — deprecated legacy alias for developer.command
+  developer.spawn_command — deprecated legacy alias for developer.command
 
 Examples:
-  gg config set developer.agent gsd-sonnet-4.6
+  gg config set developer.command "gsd --model openai-codex/gpt-5.3-codex"
   gg config set developer.transport cmux`,
 	Args: cobra.ExactArgs(2),
 	RunE: runConfigSet,
@@ -49,20 +52,46 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 	}
 
 	switch key {
-	case "developer.agent":
-		if err := validateDeveloperAgent(value); err != nil {
+	case "developer.command":
+		if err := validateDeveloperCommand(value); err != nil {
 			return err
 		}
-		cfg.Developer.Agent = value
+		cfg.Developer.Command = value
+	case "roles.developer.command", "roles.reviewer.command":
+		if err := validateDeveloperCommand(value); err != nil {
+			return err
+		}
+		if cfg.Roles == nil {
+			cfg.Roles = map[string]config.RoleCommandConfig{}
+		}
+		role := strings.TrimPrefix(strings.TrimSuffix(key, ".command"), "roles.")
+		rc := cfg.Roles[role]
+		rc.Command = value
+		cfg.Roles[role] = rc
+	case "developer.agent":
+		if value == "unconfigured" {
+			cfg.Developer.Agent = value
+			cfg.Developer.Command = ""
+		} else {
+			if err := validateDeveloperCommand(value); err != nil {
+				return err
+			}
+			cfg.Developer.Agent = value
+			cfg.Developer.Command = value
+		}
 	case "developer.transport":
 		if err := validateDeveloperTransport(value); err != nil {
 			return err
 		}
 		cfg.Developer.Transport = value
 	case "developer.spawn_command":
+		if err := validateDeveloperCommand(value); err != nil {
+			return err
+		}
 		cfg.Developer.SpawnCommand = value
+		cfg.Developer.Command = value
 	default:
-		return fmt.Errorf("unknown config key %q — supported keys: developer.agent, developer.transport, developer.spawn_command", key)
+		return fmt.Errorf("unknown config key %q — supported keys: developer.command, roles.developer.command, roles.reviewer.command, developer.transport, developer.agent, developer.spawn_command", key)
 	}
 
 	if err := cfg.Save(); err != nil {
@@ -72,14 +101,11 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func validateDeveloperAgent(v string) error {
-	for _, allowed := range config.ValidDeveloperAgents {
-		if v == allowed {
-			return nil
-		}
+func validateDeveloperCommand(v string) error {
+	if strings.TrimSpace(v) == "" {
+		return fmt.Errorf("invalid developer.command: command must not be empty")
 	}
-	return fmt.Errorf("invalid developer.agent %q — allowed: %s",
-		v, strings.Join(config.ValidDeveloperAgents, ", "))
+	return nil
 }
 
 func validateDeveloperTransport(v string) error {

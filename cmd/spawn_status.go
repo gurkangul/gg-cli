@@ -94,6 +94,9 @@ func runSpawnStatus(_ *cobra.Command, _ []string) error {
 				age := time.Since(w.SpawnedAt).Round(time.Second)
 				fmt.Printf("  ● %s  task: %s  pane: %s  age: %s\n",
 					w.Agent, w.TaskID, w.SurfaceID, age)
+				if w.PromptDeliveryStatus == "skipped" || w.PromptDeliveryStatus == "failed" {
+					fmt.Printf("    prompt delivery: %s — %s\n", w.PromptDeliveryStatus, w.PromptDeliveryError)
+				}
 			}
 		}
 	})

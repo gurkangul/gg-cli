@@ -116,8 +116,8 @@ export GG_ROLE=master
 # Start persistent heartbeat watch with keepalive
 gg spawn heartbeat --watch --poll 90 --keepalive 200 &
 
-# Start queue (spawns workers automatically)
-gg spawn queue start --agent gsd
+# Start queue (spawns workers automatically using developer.command)
+gg spawn queue start
 ```
 
 Workers write sentinels after commits; the heartbeat loop signals readiness

@@ -22,20 +22,51 @@ func fmtCount(n uint64, err error) string {
 }
 
 // renderRolesBlock formats the Roles section for gg status, showing the
-// developer agent, transport, and queue state. rtDir may be empty (queue line
+// developer command, transport, and queue state. rtDir may be empty (queue line
 // defaults to "not started" when the runtime dir is unavailable).
 func renderRolesBlock(dev *config.DeveloperConfig, rtDir string) string {
 	if dev == nil {
 		return ""
 	}
-	developerLine := dev.Agent
+	developerLine := developerCommand(dev)
 	if developerLine == "" {
 		developerLine = "⚠ unconfigured"
 	} else if dev.Transport != "" {
-		developerLine = dev.Agent + " (" + dev.Transport + ")"
+		developerLine = developerLine + " (" + dev.Transport + ")"
 	}
 	queueLine := queueStatusLine(rtDir)
 	return fmt.Sprintf("Roles\n  Developer  %s\n  Queue      %s\n\n", developerLine, queueLine)
+}
+
+func roleCommand(cfg *config.Config, role string) string {
+	if cfg == nil {
+		return ""
+	}
+	if role == "" || role == "developer" {
+		return developerCommand(&cfg.Developer)
+	}
+	if cfg.Roles != nil {
+		if rc, ok := cfg.Roles[role]; ok && rc.Command != "" && rc.Command != "unconfigured" {
+			return rc.Command
+		}
+	}
+	return ""
+}
+
+func developerCommand(dev *config.DeveloperConfig) string {
+	if dev == nil {
+		return ""
+	}
+	if dev.Command != "" && dev.Command != "unconfigured" {
+		return dev.Command
+	}
+	if dev.SpawnCommand != "" && dev.SpawnCommand != "unconfigured" {
+		return dev.SpawnCommand
+	}
+	if dev.Agent == "gsd-sonnet-4.6" {
+		return "gsd"
+	}
+	return ""
 }
 
 // queueStatusLine returns a one-line summary of the current queue state.

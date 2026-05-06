@@ -26,17 +26,20 @@ const (
 
 // WorkerPane records a live worker pane. Stored as elements of panes.json.
 type WorkerPane struct {
-	SurfaceID           string      `json:"surface_id"`
-	TaskID              string      `json:"task_id"`
-	Agent               string      `json:"agent"`
-	SpawnedAt           time.Time   `json:"spawned_at"`
-	State               WorkerState `json:"state,omitempty"`
-	LastHeartbeat       time.Time   `json:"last_heartbeat,omitempty"`
-	TouchedFiles        []string    `json:"touched_files,omitempty"`
-	LastNudgeAt         time.Time   `json:"last_nudge_at,omitempty"`
-	LastNudgeText       string      `json:"last_nudge_text,omitempty"`
-	LastNudgeScreenHash string      `json:"last_nudge_screen_hash,omitempty"`
-	StalledNotifiedAt   time.Time   `json:"stalled_notified_at,omitempty"`
+	SurfaceID            string      `json:"surface_id"`
+	TaskID               string      `json:"task_id"`
+	Agent                string      `json:"agent"`
+	SpawnedAt            time.Time   `json:"spawned_at"`
+	State                WorkerState `json:"state,omitempty"`
+	LastHeartbeat        time.Time   `json:"last_heartbeat,omitempty"`
+	TouchedFiles         []string    `json:"touched_files,omitempty"`
+	LastNudgeAt          time.Time   `json:"last_nudge_at,omitempty"`
+	LastNudgeText        string      `json:"last_nudge_text,omitempty"`
+	LastNudgeScreenHash  string      `json:"last_nudge_screen_hash,omitempty"`
+	StalledNotifiedAt    time.Time   `json:"stalled_notified_at,omitempty"`
+	PromptDeliveryStatus string      `json:"prompt_delivery_status,omitempty"`
+	PromptDeliveryError  string      `json:"prompt_delivery_error,omitempty"`
+	PromptDeliveryAt     time.Time   `json:"prompt_delivery_at,omitempty"`
 }
 
 func readPanes(runtimeDir string) ([]WorkerPane, error) {
