@@ -32,7 +32,7 @@ func newCapture(out string) *captureRunner {
 }
 
 // TestCmux_NewSplit_HorizontalDefault verifies that horizontal maps to a
-// below split direction while creating an independent pane in the workspace.
+// below split direction while splitting the current pane.
 func TestCmux_NewSplit_HorizontalDefault(t *testing.T) {
 	r := newCapture("OK surface:1 workspace:1\n")
 	c := newCmuxWithRunner(r.run)
@@ -49,15 +49,12 @@ func TestCmux_NewSplit_HorizontalDefault(t *testing.T) {
 	if len(r.calls) != 1 {
 		t.Fatalf("expected 1 call got %d", len(r.calls))
 	}
-	if len(r.calls[0]) < 7 ||
+	if len(r.calls[0]) != 4 ||
 		r.calls[0][0] != "--id-format" ||
 		r.calls[0][1] != "both" ||
-		r.calls[0][2] != "new-pane" ||
-		r.calls[0][3] != "--type" ||
-		r.calls[0][4] != "terminal" ||
-		r.calls[0][5] != "--direction" ||
-		r.calls[0][6] != "down" {
-		t.Fatalf("expected [--id-format both new-pane --type terminal --direction down ...], got: %v", r.calls[0])
+		r.calls[0][2] != "new-split" ||
+		r.calls[0][3] != "down" {
+		t.Fatalf("expected [--id-format both new-split down], got: %v", r.calls[0])
 	}
 }
 
@@ -70,49 +67,31 @@ func TestCmux_NewSplit_Vertical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// cmux new-pane takes --direction left|right|up|down.
+	// cmux new-split takes left|right|up|down as a positional argument.
 	// SplitVertical maps to "right".
-	if len(r.calls[0]) < 7 ||
-		r.calls[0][2] != "new-pane" ||
-		r.calls[0][5] != "--direction" ||
-		r.calls[0][6] != "right" {
-		t.Fatalf("expected [--id-format both new-pane --type terminal --direction right ...], got: %v", r.calls[0])
+	if len(r.calls[0]) != 4 ||
+		r.calls[0][2] != "new-split" ||
+		r.calls[0][3] != "right" {
+		t.Fatalf("expected [--id-format both new-split right], got: %v", r.calls[0])
 	}
 }
 
-func TestCmux_NewSplit_Percent(t *testing.T) {
+func TestCmux_NewSplit_DoesNotSendUnsupportedPaneOptions(t *testing.T) {
 	r := newCapture("OK surface:3 workspace:1\n")
 	c := newCmuxWithRunner(r.run)
 	ctx := context.Background()
 
-	_, err := c.NewSplit(ctx, SplitOpts{Percent: 40})
+	_, err := c.NewSplit(ctx, SplitOpts{
+		Percent: 40,
+		Env:     []string{"FOO=bar", "BAZ=qux"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := false
 	for _, a := range r.calls[0] {
-		if a == "--percent=40" {
-			found = true
+		if strings.HasPrefix(a, "--percent") || strings.HasPrefix(a, "--env") {
+			t.Fatalf("cmux new-split does not support pane options, got: %v", r.calls[0])
 		}
-	}
-	if !found {
-		t.Fatalf("--percent=40 missing from args: %v", r.calls[0])
-	}
-}
-
-func TestCmux_NewSplit_Env(t *testing.T) {
-	r := newCapture("OK surface:4 workspace:1\n")
-	c := newCmuxWithRunner(r.run)
-	ctx := context.Background()
-
-	_, err := c.NewSplit(ctx, SplitOpts{Env: []string{"FOO=bar", "BAZ=qux"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	args := r.calls[0]
-	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "--env=FOO=bar") || !strings.Contains(joined, "--env=BAZ=qux") {
-		t.Fatalf("env args missing: %v", args)
 	}
 }
 

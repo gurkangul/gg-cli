@@ -29,29 +29,19 @@ func newCmuxWithRunner(r func(ctx context.Context, args ...string) ([]byte, erro
 }
 
 func (c *cmuxTerminal) NewSplit(ctx context.Context, opts SplitOpts) (SurfaceID, error) {
-	// cmux new-pane creates an independent terminal pane in the caller's
-	// workspace. Using new-split here couples worker launch to the caller's
-	// current surface, which can make task workers look like they were invoked
-	// inside the same agent session instead of as a dedicated pane.
 	// Map SplitDir: vertical → "right" (side-by-side), horizontal → "down" (above/below).
 	dir := "right"
 	if opts.Dir == SplitHorizontal {
 		dir = "down"
 	}
-	args := []string{"--id-format", "both", "new-pane", "--type", "terminal", "--direction", dir}
-	if opts.Percent > 0 {
-		args = append(args, fmt.Sprintf("--percent=%d", opts.Percent))
-	}
-	for _, e := range opts.Env {
-		args = append(args, "--env="+e)
-	}
-	// Note: cmux new-pane does not accept a trailing command — opts.Cmd is
+	args := []string{"--id-format", "both", "new-split", dir}
+	// Note: cmux new-split does not accept a trailing command — opts.Cmd is
 	// delivered via Send() after the pane opens (see cmd/spawn_worker.go).
 	out, err := c.runner(ctx, args...)
 	if err != nil {
 		return "", err
 	}
-	// cmux new-pane output shape: "OK surface:N (...) pane:N (...) workspace:M (...)\n".
+	// cmux new-split output shape: "OK surface:N (...) pane:N (...) workspace:M (...)\n".
 	// Store workspace/surface when cmux exposes both UUIDs so downstream calls
 	// can address panes from a different master workspace.
 	id := parseSurfaceID(string(out))
@@ -61,7 +51,7 @@ func (c *cmuxTerminal) NewSplit(ctx context.Context, opts SplitOpts) (SurfaceID,
 	return id, nil
 }
 
-// parseSurfaceID extracts a cmux surface ref from new-pane output.
+// parseSurfaceID extracts a cmux surface ref from new-split output.
 // When --id-format both includes UUIDs for both workspace and surface, return
 // "workspaceUUID/surfaceUUID"; cmux needs --workspace for cross-workspace
 // send/read-screen calls. Older output falls back to the surface token.
