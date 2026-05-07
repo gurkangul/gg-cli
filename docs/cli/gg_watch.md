@@ -21,6 +21,7 @@ Examples:
   gg watch --format ndjson             # machine-readable NDJSON output
   gg watch --no-inbox                  # telemetry events only
   gg watch --no-telemetry              # inbox messages only
+  gg watch --index                     # foreground index watcher (alias for gg index --watch)
 
 ```
 gg watch [flags]
@@ -32,6 +33,7 @@ gg watch [flags]
       --event string    filter telemetry events by verb (e.g. tell, task)
       --format string   output format: pretty or ndjson (default "pretty")
   -h, --help            help for watch
+      --index           foreground index watcher alias for gg index --watch
       --no-inbox        skip inbox messages, show telemetry events only
       --no-telemetry    skip telemetry events, show inbox messages only
       --role string     filter inbox messages by recipient role

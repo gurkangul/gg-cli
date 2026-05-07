@@ -26,6 +26,7 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg decide](gg_decide.md)	 - Record a decision or rejection (deprecated: use gg record)
 * [gg doctor](gg_doctor.md)	 - Diagnose and repair gg configuration
 * [gg export](gg_export.md)	 - Export all project data to a portable bundle
+* [gg graph](gg_graph.md)	 - Work with the local code graph
 * [gg gsd](gg_gsd.md)	 - GSD integration utilities
 * [gg impact](gg_impact.md)	 - Show downstream impact of changing a file, or blast radius of a bug or task
 * [gg import](gg_import.md)	 - Import a project bundle exported by 'gg export'

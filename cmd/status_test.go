@@ -119,7 +119,7 @@ func TestStatus_SessionsWarning_MultipleOverThreshold(t *testing.T) {
 // queue.json exists (AC-5b). Also verifies Developer line includes transport.
 func TestRolesBlock_QueueNotStarted(t *testing.T) {
 	rtDir := t.TempDir()
-	dev := &config.DeveloperConfig{Agent: "gsd", Transport: "cmux"}
+	dev := &config.DeveloperConfig{Command: "gsd", Transport: "cmux"}
 	out := renderRolesBlock(dev, rtDir)
 	if !strings.Contains(out, "Queue") {
 		t.Errorf("AC-5b: expected 'Queue' line in Roles block; got:\n%s", out)
@@ -149,7 +149,7 @@ func TestRolesBlock_QueueRunning(t *testing.T) {
 	if err := spawn.WriteQueue(rtDir, sess); err != nil {
 		t.Fatalf("WriteQueue: %v", err)
 	}
-	dev := &config.DeveloperConfig{Agent: "gsd"}
+	dev := &config.DeveloperConfig{Command: "gsd"}
 	out := renderRolesBlock(dev, rtDir)
 	if !strings.Contains(out, "running") {
 		t.Errorf("AC-5b: expected 'running' when queue session active; got:\n%s", out)
@@ -175,7 +175,7 @@ func TestRolesBlock_QueuePaused(t *testing.T) {
 	if err := spawn.WriteQueue(rtDir, sess); err != nil {
 		t.Fatalf("WriteQueue: %v", err)
 	}
-	dev := &config.DeveloperConfig{Agent: "gsd"}
+	dev := &config.DeveloperConfig{Command: "gsd"}
 	out := renderRolesBlock(dev, rtDir)
 	if !strings.Contains(out, "paused") {
 		t.Errorf("AC-5b: expected 'paused' when queue paused; got:\n%s", out)
@@ -198,7 +198,7 @@ func TestRolesBlock_QueueComplete(t *testing.T) {
 	if err := spawn.WriteQueue(rtDir, sess); err != nil {
 		t.Fatalf("WriteQueue: %v", err)
 	}
-	dev := &config.DeveloperConfig{Agent: "gsd"}
+	dev := &config.DeveloperConfig{Command: "gsd"}
 	out := renderRolesBlock(dev, rtDir)
 	if !strings.Contains(out, "complete") {
 		t.Errorf("BUG-045: expected complete queue state; got:\n%s", out)
@@ -212,7 +212,7 @@ func TestRolesBlock_QueueComplete(t *testing.T) {
 // when rtDir is empty (no runtime dir available), and still shows the Queue line
 // with "not started" but without the spawn hint (no runtime = no dir to show).
 func TestRolesBlock_EmptyRtDir(t *testing.T) {
-	dev := &config.DeveloperConfig{Agent: "gsd"}
+	dev := &config.DeveloperConfig{Command: "gsd"}
 	out := renderRolesBlock(dev, "")
 	if !strings.Contains(out, "Queue") {
 		t.Errorf("AC-5b: expected Queue line even with empty rtDir; got:\n%s", out)
@@ -223,13 +223,13 @@ func TestRolesBlock_EmptyRtDir(t *testing.T) {
 }
 
 // TestRolesBlock_UnconfiguredDeveloper verifies that renderRolesBlock shows
-// the "⚠ unconfigured" placeholder when no developer agent is set.
+// the "⚠ unconfigured" placeholder when no developer command is set.
 func TestRolesBlock_UnconfiguredDeveloper(t *testing.T) {
 	rtDir := t.TempDir()
 	dev := &config.DeveloperConfig{}
 	out := renderRolesBlock(dev, rtDir)
 	if !strings.Contains(out, "unconfigured") {
-		t.Errorf("AC-5b: expected 'unconfigured' when developer agent is empty; got:\n%s", out)
+		t.Errorf("AC-5b: expected 'unconfigured' when developer command is empty; got:\n%s", out)
 	}
 }
 

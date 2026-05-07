@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gurkangul/gg-cli/internal/templates"
 )
 
 // TestCaptureLintBaseline_NoGolangciLint verifies that the command exits cleanly
@@ -114,6 +116,14 @@ func TestLintGateHook_AutoShrink(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("lint gate hook missing auto-shrink signal %q", want)
+		}
+	}
+}
+
+func TestArtifactContent_CoversEveryArtifactSHA(t *testing.T) {
+	for key := range templates.ArtifactSHAs() {
+		if _, ok := artifactContent(key); !ok {
+			t.Errorf("artifactContent missing key %q", key)
 		}
 	}
 }

@@ -7,7 +7,7 @@ Record a worker acceptance-criteria paraphrase before coding
 Record the worker's acceptance-criteria paraphrase before implementation.
 
 The ACK is stored as a task-linked decision, the task moves to in_progress, and
-the paraphrase is sent to claude-code so master can reply ACK-OK or ACK-FIX.
+the paraphrase is sent to the active master target(s) so master can reply ACK-OK or ACK-FIX.
 
 ```
 gg task ack TASK-ID "AC-1: ...; AC-2: ..." [flags]

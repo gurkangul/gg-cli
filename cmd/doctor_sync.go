@@ -148,10 +148,16 @@ func artifactContent(key string) (string, bool) {
 		return templates.PreTaskDoneACAttestationHook, true
 	case "hooks/pre-task-done.d/60-lint-gate.sh":
 		return templates.PreTaskDoneLintGateHook, true
+	case "hooks/pre-task-done.d/60-impact-attestation.sh":
+		return templates.PreTaskDoneImpactAttestationHook, true
+	case "hooks/pre-task-done.d/70-review-convergence.sh":
+		return templates.PreTaskDoneReviewConvergenceHook, true
 	case "hooks/pre-task-done.d/50-worker-liveness-check.sh":
 		return templates.WorkerLivenessCheckHook, true
 	case "hooks/pre-tool-use.d/50-master-guard.sh":
 		return templates.MasterGuardPreToolUseHook, true
+	case "hooks/pre-commit.d/20-secret-scan.sh":
+		return templates.PreCommitSecretScanHook, true
 	case "hooks/task-done.d/45-queue-advance.sh":
 		return templates.QueueAdvanceHook, true
 	case "hooks/task-done.d/46-worker-heartbeat.sh":
@@ -195,9 +201,9 @@ func runDoctorSyncBaseline() error {
 
 // lintBaseline is the JSON shape written to .gg/lint-baseline.json.
 type lintBaseline struct {
-	Version     int    `json:"version"`
-	CapturedAt  string `json:"captured_at"`
-	IssueCount  int    `json:"issue_count"`
+	Version    int    `json:"version"`
+	CapturedAt string `json:"captured_at"`
+	IssueCount int    `json:"issue_count"`
 }
 
 // runDoctorCaptureLintBaseline runs golangci-lint, counts the current issues,

@@ -18,9 +18,12 @@ gg index [--changed] [--lang go|python|typescript] [flags]
 ### Options
 
 ```
-      --changed       incremental: re-index only files changed since last index
-  -h, --help          help for index
-      --lang string   language to index: go, python, typescript (default "go")
+      --changed                   incremental: re-index only files changed since last index
+  -h, --help                      help for index
+      --lang string               language to index: go, python, typescript (default "go")
+      --watch                     foreground watch mode: debounce source changes and run incremental index updates
+      --watch-debounce duration   foreground watch debounce before indexing (default 2s)
+      --watch-poll duration       foreground watch poll interval (default 1s)
 ```
 
 ### Options inherited from parent commands
@@ -32,4 +35,5 @@ gg index [--changed] [--lang go|python|typescript] [flags]
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
+* [gg index status](gg_index_status.md)	 - Show code graph freshness and quality
 

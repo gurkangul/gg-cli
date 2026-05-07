@@ -283,7 +283,13 @@ func deliverSupervisorMessage(ctx context.Context, cmd *cobra.Command, runtimeDi
 	}
 	if pane == nil {
 		if openMissing && strings.TrimSpace(m.TaskID) != "" {
-			sid, spawnErr := spawnWorkerForTask(ctx, term, runtimeDir, spawnAgentDefault(), m.TaskID)
+			agentCmd := spawnAgentDefault()
+			if agentCmd == "" {
+				status.Error = developerCommandUnconfiguredError().Error()
+				fmt.Fprintf(cmd.ErrOrStderr(), "⚠ missing pane for %s (%s): %v\n", m.TaskID, m.ID, developerCommandUnconfiguredError())
+				return status
+			}
+			sid, spawnErr := spawnWorkerForTask(ctx, term, runtimeDir, agentCmd, m.TaskID)
 			if spawnErr != nil {
 				status.Error = spawnErr.Error()
 				fmt.Fprintf(cmd.ErrOrStderr(), "⚠ missing pane for %s (%s): auto-open failed: %v\n", m.TaskID, m.ID, spawnErr)

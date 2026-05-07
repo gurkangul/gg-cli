@@ -16,6 +16,10 @@ gg-cli is the mandatory coordination channel for this project.
 - Source files (.go/.ts/.js/.py/.rs/.java): max 500 lines. Test files (*_test.go, *.test.*, *.spec.*): max 800 lines.
   Oversized files must be split into cohesive modules — extract helpers, split by concern, no god-objects.
   The pre-task-done gate (30-file-size.sh) surfaces violations; GG_FILE_SIZE_GATE=block escalates to hard fail.
+- Before claiming done, run the review convergence matrix and put the evidence in the commit body as
+  `Review-Convergence: ...`. The matrix is: behavior matrix, negative path, legacy compatibility,
+  stale-string sweep, docs/templates/generated artifacts, live smoke, and test/diff evidence.
+  The pre-task-done gate (70-review-convergence.sh) blocks task close when this attestation is missing.
 - No sycophancy. When the user asserts a factually wrong technical claim (API semantics, framework behavior,
   security, deployment model, etc.), DO NOT silently comply. Verify via code/docs, state the correction directly
   with evidence (file:line, doc link, or runnable repro), propose the correct approach, then ask the user to
@@ -112,6 +116,9 @@ the master owns review, architectural integrity, and spec compliance.
 
 - Write production code (exception: explicit user instruction or trivial ≤5-line fixes,
   documented via `gg record`)
+- Treat an absent worker pane as permission to implement locally when
+  `developer.command` is configured; open the worker with `gg spawn worker --task`
+  or block/escalate the spawn failure.
 - Treat subagent/thread exhaustion as permission to take over implementation when a
   terminal worker pane exists; supervise the pane with `gg spawn nudge` instead.
 - Skip review to save time — this IS the master's job
@@ -142,7 +149,9 @@ Always use `gg spawn nudge` to trigger worker action — never raw `cmux send`.
 
 Pattern per master action:
 - **Spawning initial work:** `gg spawn worker --task TASK-N` bootstraps the agent + sends the task
-  prompt automatically. Nothing else required.
+  prompt automatically. Nothing else required. This command performs task-state
+  preflight first; if it refuses a blocked/done/ready_for_live task or unfinished
+  dependency, obey the refusal and work the blocker/reviewer path instead.
 - **Reject + rework:** DUAL-write — (a) `gg task review TASK-N --reject` for the record,
   (b) `gg spawn nudge --surface <pane> "<rework prompt>"` to trigger the worker.
 - **Ambiguity answer:** same — `gg tell` for record, `gg spawn nudge` to trigger response.
@@ -239,9 +248,10 @@ Then decide:
 - **If queue is empty but pending tasks exist:** pick the next code-implementation task (skip dogfood /
   measurement tasks) and `gg spawn worker --task TASK-N` — one pane per task, lifecycle tied to pane
   lifecycle.
-- **If the user previously routed GSD to the side pane and no pane is listed:** open/recreate the GSD
-  worker pane (`gg spawn worker --agent gsd --task TASK-N`, or `gg gsd open` for a manual pane), then
-  nudge that pane with the exact task prompt. Do not continue implementation in the master chat.
+- **If the user previously routed GSD to the side pane and no pane is listed:** open/recreate the worker
+  pane with `gg spawn worker --task TASK-N` using the configured developer command. Use `gg gsd open`
+  only for an explicitly manual GSD pane, then nudge that pane with the exact task prompt. Do not
+  continue implementation in the master chat.
 
 The master does NOT ask the user which task to pick or what state to resume from — gg-cli has the
 answer. The user's "devam" means "trust the recorded state, continue the loop."
@@ -283,9 +293,9 @@ without a queryable artifact.
 By default, this session reviews and coordinates; implementation is delegated
 to the configured side-session developer in a separate pane.
 
-### Default developer agent
+### Default developer command
 
-- **Runtime:** configured developer agent selected in `.gg/config.yaml`
+- **Runtime:** configured developer command selected in `.gg/config.yaml`
 - **Spawn:** `gg spawn worker --task TASK-N`
 - **Nudge:** `gg spawn nudge --surface <pane-id> "<prompt>"`
 
@@ -323,13 +333,11 @@ When a worker pane exists, the master must continue by supervising that pane:
 - review the worker's commit when it reports ready.
 
 The master does not take over non-trivial implementation just because a
-parallel subagent/thread spawn failed. If no pane exists, first try
-`gg spawn worker --agent gsd --task TASK-N` when GSD is the routed worker
-(otherwise use the configured developer agent). For a manually-opened GSD pane,
-use `gg gsd open`, wait until the GSD REPL is active, then route the task prompt
-with `gg spawn nudge --surface <pane-id>`. If opening/nudging fails, block or
-escalate the task with the exact pane/spawn failure instead of silently
-switching to local implementation.
+parallel subagent/thread spawn failed or because no worker pane currently
+exists. When `developer.command` is configured, the master must first run
+`gg spawn worker --task TASK-N` using that command. If opening/nudging fails,
+block or escalate the task with the exact pane/spawn failure instead of
+silently switching to local implementation.
 
 ### Worker commit protocol (advance sentinel)
 
@@ -363,10 +371,13 @@ to avoid injecting text into the agent conversation.
 
 ### Fallback — no developer configured
 
-If no developer agent is configured and the change is non-trivial, stop and
+If no developer command is configured and the change is non-trivial, stop and
 open/block a setup task for developer routing rather than silently implementing
-as master. Direct implementation in this session is allowed only for explicit
-user requests or the trivial bypass rule below. When implementing directly:
+as master. If a developer command is configured, master direct edits are blocked
+by the master-guard hook; route implementation through `gg spawn worker --task`.
+Direct implementation in this session is allowed only for legacy solo projects
+with no configured developer command, explicit user requests, or the trivial
+bypass rule below. When implementing directly:
 - Read the task spec fully before writing any code.
 - Run `go test ./... -count=1 -race` before closing the task.
 - Record any spec pivots via `gg record` before deviating.

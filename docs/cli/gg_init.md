@@ -13,7 +13,7 @@ gg init [flags]
       --no-index              skip the post-setup index prompt (non-interactive no)
       --skip-enforcement      skip installing agent hooks and task-done gate scripts
       --with-index gg index   also run gg index after setup (non-interactive yes)
-      --yes                   non-interactive: skip prompts, default unconfigured for developer.agent
+      --yes                   non-interactive: skip prompts, leave developer.command unconfigured
 ```
 
 ### Options inherited from parent commands

@@ -23,6 +23,7 @@ gg context [topic] [flags]
       --for-task string    task-scoped rehydration: fetch the task, its dependencies, and related decisions/rejections
       --full               print full deliberation transcript for each discussion
   -h, --help               help for context
+      --include-linked     also search read-only linked projects from .gg/config.yaml
       --include-resolved   include resolved/dismissed discussions and done/blocked tasks
       --limit uint         max results per collection (default 5)
 ```
@@ -36,4 +37,5 @@ gg context [topic] [flags]
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
+* [gg context artifacts](gg_context_artifacts.md)	 - Manage project-local context artifacts
 

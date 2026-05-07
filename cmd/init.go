@@ -63,7 +63,7 @@ func init() {
 	initCmd.Flags().BoolVar(&initNoIndex, "no-index", false,
 		"skip the post-setup index prompt (non-interactive no)")
 	initCmd.Flags().BoolVar(&initYes, "yes", false,
-		"non-interactive: skip prompts, default unconfigured for developer.agent")
+		"non-interactive: skip prompts, leave developer.command unconfigured")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -350,5 +350,4 @@ func guardProjectLocation(cwd string) error {
 		absCwd = parent
 	}
 }
-
 

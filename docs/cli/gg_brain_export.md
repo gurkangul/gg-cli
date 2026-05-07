@@ -18,9 +18,11 @@ gg brain export [flags]
 ### Options
 
 ```
-      --dry-run   print what would be written without writing
-  -h, --help      help for export
-      --strict    exit 1 if any secret pattern is found, write nothing
+      --dry-run           print what would be written without writing
+  -h, --help              help for export
+      --if-stale string   only export when snapshot is older than DURATION (e.g. 24h); exit 0 when fresh
+      --strict            exit 1 if any secret pattern is found, write nothing
+      --verbose           show skip reason when --if-stale skips the export
 ```
 
 ### Options inherited from parent commands

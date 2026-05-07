@@ -122,11 +122,11 @@ func TestBecome_NoArg(t *testing.T) {
 	}
 }
 
-// TestBecome_NoArg_WithDeveloperAgent verifies that when developer.agent is set
-// in config, `gg become` (no subcommand) prints "Current developer: <agent> (transport: <transport>)".
+// TestBecome_NoArg_WithDeveloperAgent verifies that when developer.command is set
+// in config, `gg become` (no subcommand) prints "Current developer: <command> (transport: <transport>)".
 func TestBecome_NoArg_WithDeveloperAgent(t *testing.T) {
 	ggDir := setupGGDir(t)
-	cfgWithAgent := ggConfig + "developer:\n  agent: gsd-sonnet-4.6\n  transport: cmux\n"
+	cfgWithAgent := ggConfig + "developer:\n  command: gsd --model openai-codex/gpt-5.3-codex\n  transport: cmux\n"
 	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfgWithAgent), 0o644); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}
@@ -136,16 +136,16 @@ func TestBecome_NoArg_WithDeveloperAgent(t *testing.T) {
 		t.Fatalf("gg become exited non-zero: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
 	}
 	combined := stdout + stderr
-	if !strings.Contains(combined, "Current developer: gsd-sonnet-4.6 (transport: cmux)") {
-		t.Errorf("expected 'Current developer: gsd-sonnet-4.6 (transport: cmux)' in output, got:\n%s", combined)
+	if !strings.Contains(combined, "Current developer: gsd --model openai-codex/gpt-5.3-codex (transport: cmux)") {
+		t.Errorf("expected developer command in output, got:\n%s", combined)
 	}
 }
 
-// TestBecome_NoArg_WithDeveloperAgent_NoTransport verifies that when developer.agent
+// TestBecome_NoArg_WithDeveloperAgent_NoTransport verifies that when developer.command
 // is set but transport is absent, the fallback "unset" is printed.
 func TestBecome_NoArg_WithDeveloperAgent_NoTransport(t *testing.T) {
 	ggDir := setupGGDir(t)
-	cfgWithAgent := ggConfig + "developer:\n  agent: gsd-sonnet-4.6\n"
+	cfgWithAgent := ggConfig + "developer:\n  command: codex --model gpt-5.3-codex\n"
 	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfgWithAgent), 0o644); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}
@@ -155,8 +155,8 @@ func TestBecome_NoArg_WithDeveloperAgent_NoTransport(t *testing.T) {
 		t.Fatalf("gg become exited non-zero: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
 	}
 	combined := stdout + stderr
-	if !strings.Contains(combined, "Current developer: gsd-sonnet-4.6 (transport: unset)") {
-		t.Errorf("expected 'Current developer: gsd-sonnet-4.6 (transport: unset)' in output, got:\n%s", combined)
+	if !strings.Contains(combined, "Current developer: codex --model gpt-5.3-codex (transport: unset)") {
+		t.Errorf("expected developer command with unset transport in output, got:\n%s", combined)
 	}
 }
 
@@ -197,7 +197,7 @@ func TestBecomeMaster_PrintsMasterPrompt(t *testing.T) {
 	}
 }
 
-// TestBecome_NoArg_NoDeveloperAgent verifies that when developer.agent is absent
+// TestBecome_NoArg_NoDeveloperAgent verifies that when developer.command is absent
 // or "unconfigured", `gg become` prints the "no role declared" fallback message.
 func TestBecome_NoArg_NoDeveloperAgent(t *testing.T) {
 	setupGGDir(t)

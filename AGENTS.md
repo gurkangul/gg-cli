@@ -12,7 +12,8 @@ the same decisions, tasks, rejections, discussions, notes, and code graph
 through gg — no agent starts from a blank slate.
 
 > **Note on GSD:** GSD may be used as a developer execution worker (for
-> example via `gg gsd open` or `gg spawn worker --agent gsd`) while gg remains
+> example via `gg gsd open`, or via `gg spawn worker --task TASK-N` after
+> `developer.command` is configured for GSD) while gg remains
 > the canonical tracker. What is forbidden is using GSD's own planner/tracker
 > state as the source of truth: do not create milestones/tasks with
 > `gsd_plan_*` or treat `.gsd/gsd.db` as canonical. When this repo's user says
@@ -85,7 +86,7 @@ machines", "data is isolated" — is invalid until proven by automation
 output or a human-readable transcript. The only question is: *how was
 this verified?* No answer = claim is treated as false.
 
-The seven enforceable rules derived from that meta-rule:
+The eight enforceable rules derived from that meta-rule:
 
 1. **Done = reviewer-verified.** The agent that writes the code cannot
    also mark its task `done`. A separate reviewer measures acceptance
@@ -125,6 +126,16 @@ The seven enforceable rules derived from that meta-rule:
    triggered, (c) did the expected assertions execute, (d) does the
    exit code reflect real failures. TestBrainRoundTrip sat as SKIP
    for weeks while people assumed it was green.
+
+8. **Review convergence before done.** The implementer must run the same
+   convergence matrix before claiming done that a later "review et" pass
+   would run: behavior matrix, negative path, legacy compatibility,
+   stale-string sweep, docs/templates/generated artifacts, live smoke, and
+   test/diff evidence. Put the result in the commit body as
+   `Review-Convergence: ...`. The `70-review-convergence.sh`
+   pre-task-done gate blocks task close when this attestation is missing.
+   Bypass only with `GG_ALLOW_INCOMPLETE_REVIEW="<reason>"`, which is
+   audited via `gg record`.
 
 These rules are individually recorded via `gg record` (tags:
 `process`, `discipline`) so they appear in `gg search --compact

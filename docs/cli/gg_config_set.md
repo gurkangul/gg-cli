@@ -1,18 +1,19 @@
 ## gg config set
 
-Set a config field (e.g. developer.agent gsd-sonnet-4.6)
+Set a config field (e.g. developer.command 'gsd --model openai-codex/gpt-5.3-codex')
 
 ### Synopsis
 
 Set a single config field and persist it to .gg/config.yaml.
 
 Supported keys:
-  developer.agent      — allowlist: gsd-sonnet-4.6, claude-sonnet-4.5, claude-opus-4.7, unconfigured
+  developer.command    — any subprocess command used for worker panes
   developer.transport  — allowlist: cmux, side-session-prompt
-  developer.spawn_command — any string (custom agent launch command override)
+  developer.agent      — deprecated legacy alias for developer.command
+  developer.spawn_command — deprecated legacy alias for developer.command
 
 Examples:
-  gg config set developer.agent gsd-sonnet-4.6
+  gg config set developer.command "gsd --model openai-codex/gpt-5.3-codex"
   gg config set developer.transport cmux
 
 ```

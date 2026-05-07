@@ -2,10 +2,6 @@
 
 Check whether a newer public gg release is available
 
-### Synopsis
-
-Check whether a newer public gg release is available
-
 ```
 gg update check [flags]
 ```

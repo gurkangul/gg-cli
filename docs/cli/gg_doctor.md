@@ -44,6 +44,8 @@ gg doctor [flags]
       --install-secret-scanner   download and install the pinned gitleaks binary into ~/.gg/bin/gitleaks (checksum-verified)
       --install-task-hooks       install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)
       --reconcile                scan the outbox for incomplete dual-store writes and report what needs repair
+      --refresh-hooks            overwrite drifted gg-managed hook templates after backing up each stale copy
+      --refresh-hooks-force      with --refresh-hooks: also overwrite user-customized hooks that lack gg-template markers
       --staged                   with --check-secrets: run staged/working-tree scan only (gitleaks detect --no-git)
       --sync-artifacts           compare .gg/installed.json against the current CLI templates and show a drift table
       --sync-baseline            rescan project and refresh .gg/file-size-baseline.json with current line counts

@@ -176,7 +176,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Roles — show developer agent config and queue state so operators
+		// Roles — show developer command config and queue state so operators
 		// can see the routing setup at a glance without opening .gg/config.yaml.
 		if cfg, cfgErr := config.Load(); cfgErr == nil {
 			var rtDir string
