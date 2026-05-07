@@ -188,9 +188,20 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 	if err != nil {
 		return fmt.Errorf("compute changed files: %w", err)
 	}
+	headSHA, err := changed.HeadSHA(ctx, root)
+	if err != nil {
+		return fmt.Errorf("get HEAD sha: %w", err)
+	}
 
 	if len(changedFiles) == 0 {
 		fmt.Println("no changed files — index is up to date")
+		if s.LastIndexedSHA != headSHA {
+			if err := state.Write(ggDir, headSHA); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
+			} else {
+				fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
+			}
+		}
 		return nil
 	}
 
@@ -221,11 +232,6 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 	// The indexer doesn't support per-file mode, so we always index the whole
 	// project and re-parse only the changed files from the resulting .scip output.
 	// This is intentionally simple (see CHANGED_CONTRACT.md §6 — day-2: partial runs).
-	headSHA, err := changed.HeadSHA(ctx, root)
-	if err != nil {
-		return fmt.Errorf("get HEAD sha: %w", err)
-	}
-
 	// Record intent before Memgraph writes.
 	outboxID, outboxErr := outbox.Write(ggDir, "changed-index", indexOutboxPayload{
 		Kind: "changed",
