@@ -78,8 +78,22 @@ Exit codes:
 	RunE: runGSDGuard,
 }
 
+var devRoleGuardCmd = &cobra.Command{
+	Use:    "dev-role-guard",
+	Hidden: true, // internal — called only by the Claude Code PreToolUse hook
+	Short:  "Block same-pane developer-role task pickup when a worker is configured",
+	Long: `Claude Code PreToolUse hook guard. Reads the Bash tool-call JSON from stdin
+and blocks commands that try to turn the current pane into GG_ROLE=developer
+for implementation lifecycle work when developer.command is configured.
+
+Spawned worker panes are allowed: gg spawn worker injects GG_TASK_ID into the
+worker environment, making that pane the legitimate developer surface.`,
+	RunE: runDevRoleGuard,
+}
+
 func init() {
 	rootCmd.AddCommand(gsdGuardCmd)
+	rootCmd.AddCommand(devRoleGuardCmd)
 }
 
 // forbiddenGSDTools is the set of MCP tool names that create GSD milestone
@@ -130,6 +144,90 @@ func runGSDGuard(_ *cobra.Command, _ []string) error {
 		}
 	}
 	return nil
+}
+
+func runDevRoleGuard(_ *cobra.Command, _ []string) error {
+	if _, err := config.FindRoot(); err != nil {
+		return nil // not a gg project, passthrough
+	}
+	if !enforcement.Enabled() {
+		if rej := emitGuardSkipEvent("dev-role-guard", os.Getenv("GG_TASK_ID")); rej != nil {
+			return rej
+		}
+		return nil
+	}
+	if os.Getenv("GG_TASK_ID") != "" {
+		return nil // this is a spawned worker/task pane, not the primary orchestrator pane
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return nil
+	}
+	if strings.TrimSpace(cfg.Developer.Command) == "" || strings.EqualFold(strings.TrimSpace(cfg.Developer.Command), "unconfigured") {
+		return nil
+	}
+
+	raw, _ := io.ReadAll(os.Stdin)
+	toolName, command := parsePreToolUseBash(raw)
+	if !strings.EqualFold(toolName, "Bash") || !isSamePaneDeveloperCommand(command) {
+		return nil
+	}
+
+	return &ExitError{Code: 1, Message: fmt.Sprintf(
+		"BLOCKED by gg developer-role guard: developer.command is configured, so the primary Claude pane must coordinate as master/orchestrator.\n"+
+			"Do not run same-pane developer pickup/implementation commands such as GG_ROLE=developer with gg task create/start/done/ready-for-live or --from developer broadcasts.\n\n"+
+			"Correct routing:\n\n"+
+			"  export GG_ROLE=master\n"+
+			"  gg spawn worker --task TASK-N\n\n"+
+			"Configured developer command: %s\n",
+		cfg.Developer.Command)}
+}
+
+func parsePreToolUseBash(raw []byte) (toolName, command string) {
+	var payload struct {
+		ToolName  string         `json:"tool_name"`
+		Command   string         `json:"command"`
+		ToolInput map[string]any `json:"tool_input"`
+	}
+	_ = json.Unmarshal(raw, &payload)
+	command = payload.Command
+	if command == "" && payload.ToolInput != nil {
+		if v, _ := payload.ToolInput["command"].(string); v != "" {
+			command = v
+		}
+	}
+	return payload.ToolName, command
+}
+
+func isSamePaneDeveloperCommand(command string) bool {
+	lower := strings.ToLower(command)
+	if !strings.Contains(lower, "gg ") {
+		return false
+	}
+	developerPersona := strings.Contains(lower, "gg_role=developer") ||
+		strings.Contains(lower, "gg_role=\"developer\"") ||
+		strings.Contains(lower, "gg_role='developer'") ||
+		strings.Contains(lower, "--from developer")
+	if !developerPersona {
+		return false
+	}
+	if strings.Contains(lower, "gg tell") {
+		return strings.Contains(lower, "gg tell all") ||
+			strings.Contains(lower, "picked up") ||
+			strings.Contains(lower, " done") ||
+			strings.Contains(lower, " complete")
+	}
+	for _, forbidden := range []string{
+		"gg task create",
+		"gg task start",
+		"gg task done",
+		"gg task ready-for-live",
+	} {
+		if strings.Contains(lower, forbidden) {
+			return true
+		}
+	}
+	return false
 }
 
 // emitGuardSkipEvent validates the bypass rationale (TASK-317/318) and, if valid,

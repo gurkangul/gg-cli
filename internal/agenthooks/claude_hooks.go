@@ -34,6 +34,7 @@ const (
 	claudeEventStop             = "Stop"
 	claudeMatcherStartup        = "startup"
 	claudeMatcherGSDPlan        = "mcp__gsd-workflow__gsd_plan_milestone|mcp__gsd-workflow__gsd_plan_slice|mcp__gsd-workflow__gsd_plan_task|gsd_plan_milestone|gsd_plan_slice|gsd_plan_task"
+	claudeMatcherBash           = "Bash"
 	claudeMatcherWriteTools     = "Edit|Write|MultiEdit"
 	claudeCommand               = "gg session-start --agent=claude-code"
 	claudeCommandMarker         = "gg session-start"
@@ -41,9 +42,11 @@ const (
 	claudeInboxCommandMarker    = "--since-cursor"
 	// claudeInboxStaleMarker matches the old hook command so stale installs can
 	// be detected and rewritten to the current format on next `gg doctor`.
-	claudeInboxStaleMarker      = "gg inbox"
-	claudeGSDGuardCommand       = "gg gsd-guard"
-	claudeGSDGuardCommandMarker = "gg gsd-guard"
+	claudeInboxStaleMarker          = "gg inbox"
+	claudeGSDGuardCommand           = "gg gsd-guard"
+	claudeGSDGuardCommandMarker     = "gg gsd-guard"
+	claudeDevRoleGuardCommand       = "gg dev-role-guard"
+	claudeDevRoleGuardCommandMarker = "gg dev-role-guard"
 	// warn-mode: || true so a verify failure never blocks the write, only warns.
 	claudeVerifyCommand       = `[ "${GG_NO_VERIFY:-0}" = '1' ] || gg verify --file "$CLAUDE_TOOL_INPUT_FILE_PATH" 2>&1 || true`
 	claudeVerifyCommandMarker = "gg verify --file"

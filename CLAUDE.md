@@ -293,6 +293,12 @@ without a queryable artifact.
 By default, this session reviews and coordinates; implementation is delegated
 to the configured side-session developer in a separate pane.
 
+In a Claude Code primary session, treat the pane as `master`/orchestrator when
+`developer.command` is configured. Do not export `GG_ROLE=developer`, do not
+announce pickup with `--from developer`, and do not create/start/close
+implementation work from the same pane. Open the configured worker with
+`gg spawn worker --task TASK-N` and supervise that pane instead.
+
 ### Default developer command
 
 - **Runtime:** configured developer command selected in `.gg/config.yaml`
@@ -308,6 +314,13 @@ gg spawn worker --task TASK-N
 This bootstraps the configured developer session in a new pane and sends the task
 prompt automatically. The pane ID is registered in
 `~/.gg/projects/<project_id>/spawn/panes.json`.
+
+`gg spawn worker --task TASK-N` is guarded by gg task state before any pane is
+opened. If gg refuses because the task is `blocked`, `done`,
+`ready_for_live`, or has unfinished dependencies, the refusal is authoritative:
+do not invent a live smoke test, SSH target, or alternate task interpretation.
+Run `gg task deps TASK-N`, work the blocker first, or route ready-for-live work
+to a verifier/reviewer.
 
 To send a follow-up prompt to an already-running pane:
 
@@ -374,7 +387,9 @@ to avoid injecting text into the agent conversation.
 If no developer command is configured and the change is non-trivial, stop and
 open/block a setup task for developer routing rather than silently implementing
 as master. If a developer command is configured, master direct edits are blocked
-by the master-guard hook; route implementation through `gg spawn worker --task`.
+by the master-guard hook, and same-pane `GG_ROLE=developer` pickup commands are
+blocked by the Claude dev-role guard; route implementation through
+`gg spawn worker --task`.
 Direct implementation in this session is allowed only for legacy solo projects
 with no configured developer command, explicit user requests, or the trivial
 bypass rule below. When implementing directly:
