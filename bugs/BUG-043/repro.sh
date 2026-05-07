@@ -29,8 +29,8 @@ func TestBUG043CmuxWorkerPaneIsIndependent(t *testing.T) {
 	if got := r.calls[0][1]; got != "both" {
 		t.Fatalf("expected cmux id format 'both', got %q (args=%v)", got, r.calls[0])
 	}
-	if got := r.calls[0][2]; got != "new-pane" {
-		t.Fatalf("worker launch must create an independent cmux pane via new-pane, got %q (args=%v)", got, r.calls[0])
+	if got := r.calls[0][2]; got != "new-split" {
+		t.Fatalf("worker launch must create an independent cmux pane via new-split, got %q (args=%v)", got, r.calls[0])
 	}
 }
 

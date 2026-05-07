@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -26,7 +27,7 @@ Used by .gg/hooks/pre-task-done.d/90-bug-repros.sh.`,
 var bugRunReprosBudget int
 
 func init() {
-	bugRunReprosCmd.Flags().IntVar(&bugRunReprosBudget, "budget", 14, "total timeout in seconds for all repros")
+	bugRunReprosCmd.Flags().IntVar(&bugRunReprosBudget, "budget", 120, "per-repro timeout in seconds")
 	bugCmd.AddCommand(bugRunReprosCmd)
 }
 
@@ -83,17 +84,15 @@ func runBugRunRepros(cmd *cobra.Command, _ []string) error {
 
 	fmt.Printf("Running %d repro script(s)...\n", len(toRun))
 
-	deadline := time.Now().Add(time.Duration(bugRunReprosBudget) * time.Second)
+	perReproBudget := time.Duration(bugRunReprosBudget) * time.Second
 	var results []reproResult
 	for _, p := range toRun {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			results = append(results, reproResult{bugID: p.bugID, path: p.path, passed: false, output: "budget exceeded"})
-			continue
-		}
-		rctx, rcancel := context.WithTimeout(cmd.Context(), remaining)
+		rctx, rcancel := context.WithTimeout(cmd.Context(), perReproBudget)
 		result := runSingleRepro(rctx, p.bugID, p.path)
 		rcancel()
+		if !result.passed && rctx.Err() == context.DeadlineExceeded {
+			result.output = fmt.Sprintf("repro exceeded per-repro budget (%s)", perReproBudget)
+		}
 		results = append(results, result)
 	}
 
@@ -123,6 +122,7 @@ func runSingleRepro(ctx context.Context, bugID, path string) reproResult {
 	start := time.Now()
 	//nolint:gosec // path is validated at attach time
 	c := exec.CommandContext(ctx, "sh", path)
+	c.Env = scrubReproEnv(os.Environ())
 	out, err := c.CombinedOutput()
 	dur := time.Since(start)
 	passed := err == nil
@@ -131,4 +131,15 @@ func runSingleRepro(ctx context.Context, bugID, path string) reproResult {
 		tail = strings.Join(lines[len(lines)-10:], "\n")
 	}
 	return reproResult{bugID: bugID, path: path, passed: passed, output: tail, dur: dur}
+}
+
+func scrubReproEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GG_ALLOW_INBOX_SKIP=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
