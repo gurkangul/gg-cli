@@ -35,7 +35,7 @@ gg spawn worker [flags]
 ### Options
 
 ```
-      --agent string      agent command to run in the new pane (default: $GG_SPAWN_AGENT or developer.command)
+      --agent string      agent command to run in the new pane (default: $GG_SPAWN_AGENT or role command)
       --env stringArray   KEY=VALUE env vars to set in the worker pane (repeatable)
   -h, --help              help for worker
       --role string       role command to launch: developer or reviewer (default "developer")
