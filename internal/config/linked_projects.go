@@ -62,6 +62,7 @@ func LoadFromGGDir(ggDir string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
+	cfg.ApplyDefaults()
 	applyMemgraphEnvOverrides(&cfg.Memgraph)
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config at %s: %w", path, err)

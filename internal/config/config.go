@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -36,6 +37,15 @@ type MemgraphConfig struct {
 	URI      string `yaml:"uri"`      // Bolt URI, e.g. bolt://localhost:7687
 	Username string `yaml:"username"` // empty string = no auth (Memgraph default)
 	Password string `yaml:"password"` // empty string = no auth
+}
+
+type BackupConfig struct {
+	// Enabled toggles session-start auto backup. Default true.
+	Enabled *bool `yaml:"enabled,omitempty"`
+	// Interval is passed to `gg brain export --if-stale=<duration>`. Default 24h.
+	Interval string `yaml:"interval"`
+	// Timeout limits each backup subprocess duration. Default 30s.
+	Timeout string `yaml:"timeout"`
 }
 
 // HooksConfig controls post-action hook execution.
@@ -222,6 +232,7 @@ type Config struct {
 	Qdrant    QdrantConfig                 `yaml:"qdrant"`
 	Embedding EmbeddingConfig              `yaml:"embedding"`
 	Memgraph  MemgraphConfig               `yaml:"memgraph"`
+	Backup    BackupConfig                 `yaml:"backup"`
 	Hooks     HooksConfig                  `yaml:"hooks"`
 	Telemetry TelemetryConfig              `yaml:"telemetry"`
 	Doctor    DoctorConfig                 `yaml:"doctor"`
@@ -237,6 +248,7 @@ type Config struct {
 }
 
 func DefaultConfig() *Config {
+	backupEnabled := true
 	return &Config{
 		Qdrant: QdrantConfig{
 			Host: "localhost",
@@ -251,6 +263,24 @@ func DefaultConfig() *Config {
 			Username: "",
 			Password: "",
 		},
+		Backup: BackupConfig{
+			Enabled:  &backupEnabled,
+			Interval: "24h",
+			Timeout:  "30s",
+		},
+	}
+}
+
+func (b BackupConfig) AutoEnabled() bool {
+	return b.Enabled == nil || *b.Enabled
+}
+
+func (c *Config) ApplyDefaults() {
+	if strings.TrimSpace(c.Backup.Interval) == "" {
+		c.Backup.Interval = "24h"
+	}
+	if strings.TrimSpace(c.Backup.Timeout) == "" {
+		c.Backup.Timeout = "30s"
 	}
 }
 
@@ -424,6 +454,18 @@ func (c *Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Embedding.Model) == "" {
 		return fmt.Errorf("embedding.model is required")
+	}
+	if strings.TrimSpace(c.Backup.Interval) == "" {
+		return fmt.Errorf("backup.interval is required")
+	}
+	if _, err := time.ParseDuration(strings.TrimSpace(c.Backup.Interval)); err != nil {
+		return fmt.Errorf("backup.interval must be a valid duration (e.g. 24h, 30m), got %q: %w", c.Backup.Interval, err)
+	}
+	if strings.TrimSpace(c.Backup.Timeout) == "" {
+		return fmt.Errorf("backup.timeout is required")
+	}
+	if _, err := time.ParseDuration(strings.TrimSpace(c.Backup.Timeout)); err != nil {
+		return fmt.Errorf("backup.timeout must be a valid duration (e.g. 30s, 2m), got %q: %w", c.Backup.Timeout, err)
 	}
 	return nil
 }

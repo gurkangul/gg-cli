@@ -282,6 +282,22 @@ memgraph:
   uri: bolt://localhost:7687
   username: ""
   password: ""                  # leave empty; use MEMGRAPH_PASSWORD instead (see below)
+backup:
+  enabled: true                  # session-start auto backup toggle
+  interval: 24h                  # staleness threshold for `gg brain export --if-stale`
+  timeout: 30s                   # per-backup subprocess timeout
+```
+
+`gg session-start` reads `backup.interval` and `backup.timeout` from config.
+`GG_AUTO_BACKUP=off` still disables auto-backup, and `GG_AUTO_BACKUP_INTERVAL`
+still overrides the configured interval when explicitly set.
+
+Change a project's cadence with:
+
+```sh
+gg config set backup.interval 6h
+gg config set backup.timeout 45s
+gg config set backup.enabled false
 ```
 
 ### Security — Credentials

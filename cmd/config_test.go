@@ -148,6 +148,43 @@ func TestConfigSet_RoleReviewerCommand_Valid(t *testing.T) {
 	}
 }
 
+func TestConfigSet_BackupFields_Valid(t *testing.T) {
+	setupGGDir(t)
+
+	if _, _, err := execCmd(t, "config", "set", "backup.enabled", "false"); err != nil {
+		t.Fatalf("gg config set backup.enabled: %v", err)
+	}
+	if _, _, err := execCmd(t, "config", "set", "backup.interval", "6h"); err != nil {
+		t.Fatalf("gg config set backup.interval: %v", err)
+	}
+	if _, _, err := execCmd(t, "config", "set", "backup.timeout", "45s"); err != nil {
+		t.Fatalf("gg config set backup.timeout: %v", err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config after set: %v", err)
+	}
+	if cfg.Backup.AutoEnabled() {
+		t.Fatal("Backup.AutoEnabled() = true, want false")
+	}
+	if cfg.Backup.Interval != "6h" {
+		t.Fatalf("Backup.Interval = %q, want 6h", cfg.Backup.Interval)
+	}
+	if cfg.Backup.Timeout != "45s" {
+		t.Fatalf("Backup.Timeout = %q, want 45s", cfg.Backup.Timeout)
+	}
+}
+
+func TestConfigSet_BackupInterval_Invalid(t *testing.T) {
+	setupGGDir(t)
+
+	_, _, err := execCmd(t, "config", "set", "backup.interval", "tomorrow")
+	if err == nil {
+		t.Fatal("expected invalid backup.interval to fail")
+	}
+}
+
 // TestConfigSet_DeveloperCommand_RoundTrip verifies that setting then re-reading
 // the command preserves arbitrary agent subprocess values.
 func TestConfigSet_DeveloperCommand_RoundTrip(t *testing.T) {

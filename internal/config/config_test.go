@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -63,5 +64,58 @@ func TestRuntimeDir_IsolatesByProjectID(t *testing.T) {
 
 	if dir1 == dir2 {
 		t.Error("different project IDs produced the same runtime dir")
+	}
+}
+
+func TestValidate_BackupIntervalInvalid(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ProjectID = "proj"
+	cfg.Backup.Interval = "invalid"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "backup.interval") {
+		t.Fatalf("expected backup.interval validation error, got: %v", err)
+	}
+}
+
+func TestValidate_BackupTimeoutInvalid(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ProjectID = "proj"
+	cfg.Backup.Timeout = "invalid"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "backup.timeout") {
+		t.Fatalf("expected backup.timeout validation error, got: %v", err)
+	}
+}
+
+func TestLoadFromGGDir_AppliesBackupDefaults(t *testing.T) {
+	dir := t.TempDir()
+	ggDir := filepath.Join(dir, ".gg")
+	if err := os.MkdirAll(ggDir, 0o755); err != nil {
+		t.Fatalf("mkdir .gg: %v", err)
+	}
+	cfg := `project_id: proj
+qdrant:
+  host: localhost
+  port: 6334
+embedding:
+  host: http://localhost:11434
+  model: nomic-embed-text
+memgraph:
+  uri: bolt://localhost:7687
+`
+	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	loaded, err := LoadFromGGDir(ggDir)
+	if err != nil {
+		t.Fatalf("LoadFromGGDir: %v", err)
+	}
+	if !loaded.Backup.AutoEnabled() {
+		t.Fatal("missing backup.enabled should default to enabled")
+	}
+	if loaded.Backup.Interval != "24h" {
+		t.Fatalf("Backup.Interval = %q, want 24h", loaded.Backup.Interval)
+	}
+	if loaded.Backup.Timeout != "30s" {
+		t.Fatalf("Backup.Timeout = %q, want 30s", loaded.Backup.Timeout)
 	}
 }

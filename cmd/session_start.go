@@ -320,17 +320,14 @@ func resolveSessionAgent() string {
 // emitBrainAutoBackup fires 'gg brain export --if-stale=INTERVAL' in a background
 // goroutine and returns immediately — session-start exit code and latency are
 // never affected. Respects GG_AUTO_BACKUP=off to disable, and
-// GG_AUTO_BACKUP_INTERVAL to override the default 24h staleness threshold.
+// GG_AUTO_BACKUP_INTERVAL to override configured/default staleness threshold.
 // The success one-liner ('✓ brain auto-snapshotted (N records)') is forwarded to
 // stdout; all other output (warnings, errors, Qdrant/Memgraph noise) is routed to
 // stderr with a [brain-backup] prefix.
 func emitBrainAutoBackup(stdout, stderr io.Writer) {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("GG_AUTO_BACKUP")), "off") {
+	settings, ok := resolveBrainAutoBackupSettings(stderr)
+	if !ok {
 		return
-	}
-	interval := strings.TrimSpace(os.Getenv("GG_AUTO_BACKUP_INTERVAL"))
-	if interval == "" {
-		interval = "24h"
 	}
 
 	self, err := os.Executable()
@@ -340,18 +337,17 @@ func emitBrainAutoBackup(stdout, stderr io.Writer) {
 	}
 
 	go func() {
-		const backupTimeout = 30 * time.Second
-		ctx, cancel := context.WithTimeout(context.Background(), backupTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), settings.timeout)
 		defer cancel()
 
 		var outBuf, errBuf strings.Builder
-		cmd := exec.CommandContext(ctx, self, "brain", "export", "--if-stale="+interval) //nolint:gosec
+		cmd := exec.CommandContext(ctx, self, "brain", "export", "--if-stale="+settings.interval) //nolint:gosec
 		cmd.Stdout = &outBuf
 		cmd.Stderr = &errBuf
 		runErr := cmd.Run()
 
 		if ctx.Err() != nil {
-			fmt.Fprintf(stderr, "[brain-backup] timeout after 30s — skipping\n")
+			fmt.Fprintf(stderr, "[brain-backup] timeout after %s — skipping\n", settings.timeout.Round(time.Second))
 			return
 		}
 
@@ -374,4 +370,41 @@ func emitBrainAutoBackup(stdout, stderr io.Writer) {
 			fmt.Fprintln(stdout, msg)
 		}
 	}()
+}
+
+type brainAutoBackupSettings struct {
+	interval string
+	timeout  time.Duration
+}
+
+func resolveBrainAutoBackupSettings(stderr io.Writer) (brainAutoBackupSettings, bool) {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GG_AUTO_BACKUP")), "off") {
+		return brainAutoBackupSettings{}, false
+	}
+
+	interval := "24h"
+	timeout := 30 * time.Second
+	if cfg, err := config.Load(); err == nil {
+		if !cfg.Backup.AutoEnabled() {
+			return brainAutoBackupSettings{}, false
+		}
+		if strings.TrimSpace(cfg.Backup.Interval) != "" {
+			interval = strings.TrimSpace(cfg.Backup.Interval)
+		}
+		if strings.TrimSpace(cfg.Backup.Timeout) != "" {
+			parsedTimeout, parseErr := time.ParseDuration(strings.TrimSpace(cfg.Backup.Timeout))
+			if parseErr != nil {
+				fmt.Fprintf(stderr, "[brain-backup] invalid backup.timeout in .gg/config.yaml: %v\n", parseErr)
+				return brainAutoBackupSettings{}, false
+			}
+			timeout = parsedTimeout
+		}
+	} else {
+		fmt.Fprintf(stderr, "[brain-backup] config load failed: %v\n", err)
+		return brainAutoBackupSettings{}, false
+	}
+	if envInterval := strings.TrimSpace(os.Getenv("GG_AUTO_BACKUP_INTERVAL")); envInterval != "" {
+		interval = envInterval
+	}
+	return brainAutoBackupSettings{interval: interval, timeout: timeout}, true
 }
