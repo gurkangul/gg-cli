@@ -148,6 +148,48 @@ func TestConfigSet_RoleReviewerCommand_Valid(t *testing.T) {
 	}
 }
 
+func TestConfigSet_RoleMasterCommand_Valid(t *testing.T) {
+	setupGGDir(t)
+
+	_, _, err := execCmd(t, "config", "set", "roles.master.command", "codex --model gpt-5.5")
+	if err != nil {
+		t.Fatalf("gg config set roles.master.command: %v", err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config after set: %v", err)
+	}
+	if cfg.Roles["master"].Command != "codex --model gpt-5.5" {
+		t.Errorf("master command = %q, want codex command", cfg.Roles["master"].Command)
+	}
+}
+
+func TestConfigSet_RuntimeProfileFields_Valid(t *testing.T) {
+	setupGGDir(t)
+
+	sets := [][]string{
+		{"runtime_profiles.gsd-dev.command", "gsd --model openai-codex/gpt-5.3-codex"},
+		{"runtime_profiles.gsd-dev.role", "developer"},
+		{"runtime_profiles.gsd-dev.priority", "10"},
+		{"runtime_profiles.gsd-dev.health_command", "ggdev-worker health"},
+	}
+	for _, s := range sets {
+		if _, _, err := execCmd(t, "config", "set", s[0], s[1]); err != nil {
+			t.Fatalf("gg config set %s: %v", s[0], err)
+		}
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config after set: %v", err)
+	}
+	profile := cfg.RuntimeProfiles["gsd-dev"]
+	if profile.Command != "gsd --model openai-codex/gpt-5.3-codex" || profile.Role != "developer" || profile.Priority != 10 || profile.HealthCommand != "ggdev-worker health" {
+		t.Fatalf("profile mismatch: %#v", profile)
+	}
+}
+
 func TestConfigSet_BackupFields_Valid(t *testing.T) {
 	setupGGDir(t)
 

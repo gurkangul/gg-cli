@@ -112,6 +112,36 @@ Then a separate verifier closes:
 gg task done TASK-123 "verified summary" --verifier reviewer
 ```
 
+## 6. Role and runtime routing
+
+When a project has multiple runtimes, record the human's assignment in
+`.gg/config.yaml` instead of relying on memory:
+
+```sh
+gg config set roles.master.command "codex --model gpt-5.5"
+gg config set developer.command "gsd --model openai-codex/gpt-5.3-codex"
+gg config set roles.reviewer.command "codex --model gpt-5.3-codex"
+```
+
+For quota or runtime fallback, add named profiles. Lower priority wins; a
+`health_command` must return exit 0 when the runtime can take work.
+
+```sh
+gg config set runtime_profiles.gsd-dev.role developer
+gg config set runtime_profiles.gsd-dev.priority 10
+gg config set runtime_profiles.gsd-dev.command "gsd --model openai-codex/gpt-5.3-codex"
+gg config set runtime_profiles.codex-dev.role developer
+gg config set runtime_profiles.codex-dev.priority 20
+gg config set runtime_profiles.codex-dev.command "codex --model gpt-5.3-codex"
+```
+
+`gg spawn worker --role reviewer --task TASK-123` resolves the reviewer
+runtime from `runtime_profiles` first, then falls back to
+`roles.reviewer.command`. `gg status` prints the active role/profile routing.
+`gg system sync` propagates managed protocol artifacts, but it does not
+overwrite per-project role/profile assignments; run the `gg config set`
+commands in each project that needs different agents.
+
 ## Skill bundle
 
 For agents that support skill directories, copy the bundled skill template:

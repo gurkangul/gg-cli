@@ -183,7 +183,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			if rt, rtErr := cfg.RuntimeDir(); rtErr == nil {
 				rtDir = rt
 			}
-			fmt.Print(renderRolesBlock(&cfg.Developer, rtDir))
+			fmt.Print(renderRolesBlockFromConfig(cfg, rtDir))
 			if ggDir, ggErr := config.GGDir(); ggErr == nil {
 				if root, rootErr := config.FindRoot(); rootErr == nil {
 					fmt.Println(renderCodeGraphStatusCompact(codeGraphStatusWithTimeout(root, ggDir, cfg)))

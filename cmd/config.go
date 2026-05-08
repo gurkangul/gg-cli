@@ -29,8 +29,12 @@ Supported keys:
   backup.interval     — staleness threshold for brain export (e.g. 24h, 6h)
   backup.timeout      — per-backup subprocess timeout (e.g. 30s, 2m)
   developer.command    — any subprocess command used for worker panes
-  roles.developer.command — explicit developer role command override
-  roles.reviewer.command  — reviewer/verifier role command
+  roles.<role>.command   — role command override (master, developer, reviewer, ...)
+  roles.<role>.transport — role transport metadata
+  runtime_profiles.<name>.command        — named runtime command
+  runtime_profiles.<name>.role           — role served by the profile
+  runtime_profiles.<name>.priority       — lower number wins
+  runtime_profiles.<name>.health_command — command exit 0 means healthy
   developer.transport  — allowlist: cmux, side-session-prompt
   developer.agent      — deprecated legacy alias for developer.command
   developer.spawn_command — deprecated legacy alias for developer.command
@@ -38,6 +42,8 @@ Supported keys:
 Examples:
   gg config set backup.interval 6h
   gg config set developer.command "gsd --model openai-codex/gpt-5.3-codex"
+  gg config set roles.reviewer.command "codex --model gpt-5.3-codex"
+  gg config set runtime_profiles.gsd-dev.command "gsd --model openai-codex/gpt-5.3-codex"
   gg config set developer.transport cmux`,
 	Args: cobra.ExactArgs(2),
 	RunE: runConfigSet,
@@ -57,40 +63,93 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	switch key {
-	case "backup.enabled":
+	switch {
+	case key == "backup.enabled":
 		enabled, parseErr := strconv.ParseBool(value)
 		if parseErr != nil {
 			return fmt.Errorf("invalid backup.enabled %q — use true or false", value)
 		}
 		cfg.Backup.Enabled = &enabled
-	case "backup.interval":
+	case key == "backup.interval":
 		if err := validateDurationConfigValue("backup.interval", value); err != nil {
 			return err
 		}
 		cfg.Backup.Interval = value
-	case "backup.timeout":
+	case key == "backup.timeout":
 		if err := validateDurationConfigValue("backup.timeout", value); err != nil {
 			return err
 		}
 		cfg.Backup.Timeout = value
-	case "developer.command":
+	case key == "developer.command":
 		if err := validateDeveloperCommand(value); err != nil {
 			return err
 		}
 		cfg.Developer.Command = value
-	case "roles.developer.command", "roles.reviewer.command":
-		if err := validateDeveloperCommand(value); err != nil {
-			return err
+	case strings.HasPrefix(key, "roles."):
+		role, field, parseErr := parseRoleKey(key)
+		if parseErr != nil {
+			return parseErr
 		}
 		if cfg.Roles == nil {
 			cfg.Roles = map[string]config.RoleCommandConfig{}
 		}
-		role := strings.TrimPrefix(strings.TrimSuffix(key, ".command"), "roles.")
 		rc := cfg.Roles[role]
-		rc.Command = value
+		switch field {
+		case "command":
+			if err := validateDeveloperCommand(value); err != nil {
+				return err
+			}
+			rc.Command = value
+		case "transport":
+			if err := validateDeveloperTransport(value); err != nil {
+				return err
+			}
+			rc.Transport = value
+		default:
+			return fmt.Errorf("unknown role field %q — supported: command, transport", field)
+		}
 		cfg.Roles[role] = rc
-	case "developer.agent":
+	case strings.HasPrefix(key, "runtime_profiles."):
+		name, field, parseErr := parseRuntimeProfileKey(key)
+		if parseErr != nil {
+			return parseErr
+		}
+		if cfg.RuntimeProfiles == nil {
+			cfg.RuntimeProfiles = map[string]config.RuntimeProfileConfig{}
+		}
+		profile := cfg.RuntimeProfiles[name]
+		switch field {
+		case "command":
+			if err := validateDeveloperCommand(value); err != nil {
+				return err
+			}
+			profile.Command = value
+		case "role":
+			if strings.TrimSpace(value) == "" {
+				return fmt.Errorf("invalid %s: role must not be empty", key)
+			}
+			profile.Role = strings.ToLower(strings.TrimSpace(value))
+		case "priority":
+			n, parseErr := strconv.Atoi(value)
+			if parseErr != nil {
+				return fmt.Errorf("invalid %s %q — use an integer priority", key, value)
+			}
+			profile.Priority = n
+		case "health_command":
+			if strings.TrimSpace(value) == "" {
+				return fmt.Errorf("invalid %s: health command must not be empty", key)
+			}
+			profile.HealthCommand = value
+		case "transport":
+			if err := validateDeveloperTransport(value); err != nil {
+				return err
+			}
+			profile.Transport = value
+		default:
+			return fmt.Errorf("unknown runtime profile field %q — supported: command, role, priority, health_command, transport", field)
+		}
+		cfg.RuntimeProfiles[name] = profile
+	case key == "developer.agent":
 		if value == "unconfigured" {
 			cfg.Developer.Agent = value
 			cfg.Developer.Command = ""
@@ -101,19 +160,19 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 			cfg.Developer.Agent = value
 			cfg.Developer.Command = value
 		}
-	case "developer.transport":
+	case key == "developer.transport":
 		if err := validateDeveloperTransport(value); err != nil {
 			return err
 		}
 		cfg.Developer.Transport = value
-	case "developer.spawn_command":
+	case key == "developer.spawn_command":
 		if err := validateDeveloperCommand(value); err != nil {
 			return err
 		}
 		cfg.Developer.SpawnCommand = value
 		cfg.Developer.Command = value
 	default:
-		return fmt.Errorf("unknown config key %q — supported keys: backup.enabled, backup.interval, backup.timeout, developer.command, roles.developer.command, roles.reviewer.command, developer.transport, developer.agent, developer.spawn_command", key)
+		return fmt.Errorf("unknown config key %q — supported keys: backup.enabled, backup.interval, backup.timeout, developer.command, roles.<role>.<field>, runtime_profiles.<name>.<field>, developer.transport, developer.agent, developer.spawn_command", key)
 	}
 
 	if err := cfg.Save(); err != nil {
@@ -121,6 +180,24 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 	}
 	fmt.Printf("✓ %s = %s\n", key, value)
 	return nil
+}
+
+func parseRoleKey(key string) (role, field string, err error) {
+	rest := strings.TrimPrefix(key, "roles.")
+	parts := strings.Split(rest, ".")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", fmt.Errorf("invalid role key %q — use roles.<role>.<field>", key)
+	}
+	return parts[0], parts[1], nil
+}
+
+func parseRuntimeProfileKey(key string) (name, field string, err error) {
+	rest := strings.TrimPrefix(key, "runtime_profiles.")
+	parts := strings.Split(rest, ".")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", fmt.Errorf("invalid runtime profile key %q — use runtime_profiles.<name>.<field>", key)
+	}
+	return parts[0], parts[1], nil
 }
 
 func validateDeveloperCommand(v string) error {

@@ -84,13 +84,14 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	agentCmd := spawnWorkerAgent
-	if agentCmd == "" {
-		agentCmd = spawnAgentDefaultForRole(role)
-		if agentCmd == "" {
-			return roleCommandUnconfiguredError(role)
+	resolved, err := resolveSpawnAgentForRole(role, spawnWorkerAgent)
+	if err != nil {
+		for _, reason := range resolved.Reasons {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  - %s\n", reason)
 		}
+		return err
 	}
+	agentCmd := resolved.Command
 
 	splitDir := terminal.SplitHorizontal
 	if strings.ToLower(spawnWorkerDir) == "vertical" {
@@ -137,10 +138,12 @@ func runSpawnWorker(cmd *cobra.Command, _ []string) error {
 	}
 
 	return printJSON(map[string]any{
-		"surface_id": string(surfaceID),
-		"task_id":    taskID,
-		"agent":      agentCmd,
+		"surface_id":   string(surfaceID),
+		"task_id":      taskID,
+		"agent":        agentCmd,
+		"agent_source": resolved.Source,
 	}, func() {
+		printSpawnResolution("→ Agent: ", resolved)
 		if taskID != "" {
 			fmt.Printf("✓ Worker pane %s opened for %s (agent: %s)\n", surfaceID, taskID, agentCmd)
 		} else {

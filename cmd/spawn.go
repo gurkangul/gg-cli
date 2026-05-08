@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -45,15 +44,11 @@ func spawnAgentDefault() string {
 }
 
 func spawnAgentDefaultForRole(role string) string {
-	if v := os.Getenv("GG_SPAWN_AGENT"); v != "" {
-		return v
+	res, err := resolveSpawnAgentForRole(role, "")
+	if err != nil {
+		return ""
 	}
-	if cfg, err := config.Load(); err == nil {
-		if cmd := roleCommand(cfg, role); cmd != "" {
-			return cmd
-		}
-	}
-	return ""
+	return res.Command
 }
 
 func developerCommandUnconfiguredError() error {

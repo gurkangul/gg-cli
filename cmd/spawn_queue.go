@@ -66,13 +66,14 @@ func init() {
 }
 
 func runSpawnQueueStart(cmd *cobra.Command, _ []string) error {
-	agentCmd := spawnQueueAgent
-	if agentCmd == "" {
-		agentCmd = spawnAgentDefault()
-		if agentCmd == "" {
-			return developerCommandUnconfiguredError()
+	resolved, err := resolveSpawnAgentForRole("developer", spawnQueueAgent)
+	if err != nil {
+		for _, reason := range resolved.Reasons {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  - %s\n", reason)
 		}
+		return err
 	}
+	agentCmd := resolved.Command
 
 	rt, err := spawnRuntimeDir()
 	if err != nil {
@@ -107,6 +108,7 @@ func runSpawnQueueStart(cmd *cobra.Command, _ []string) error {
 	}
 
 	cap := maxConcurrent()
+	printSpawnResolution("→ Agent: ", resolved)
 	fmt.Printf("→ Queue started (agent: %s, max-concurrent: %d)\n", agentCmd, cap)
 	return drainQueue(cmd.Context(), cmd, rt, sess, term, d.store, masterAgent, agentCmd)
 }

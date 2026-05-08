@@ -212,6 +212,17 @@ type RoleCommandConfig struct {
 	Transport string `yaml:"transport,omitempty"`
 }
 
+// RuntimeProfileConfig declares a named agent runtime that can serve one role.
+// Profiles are global to the project and let gg fall back across runtimes when
+// a preferred CLI is unavailable or over quota.
+type RuntimeProfileConfig struct {
+	Command       string `yaml:"command,omitempty"`
+	Role          string `yaml:"role,omitempty"`
+	Priority      int    `yaml:"priority,omitempty"`
+	HealthCommand string `yaml:"health_command,omitempty"`
+	Transport     string `yaml:"transport,omitempty"`
+}
+
 // TelemetryConfig controls local-only usage telemetry.
 type TelemetryConfig struct {
 	// Enabled is a tri-state: nil (absent in YAML) → default ON, *true →
@@ -228,17 +239,18 @@ type Config struct {
 	// ProjectID is a unique per-project UUID used to namespace Qdrant
 	// collections. Multiple projects share the same Qdrant instance but see
 	// only their own decisions/tasks/messages/rejections.
-	ProjectID string                       `yaml:"project_id"`
-	Qdrant    QdrantConfig                 `yaml:"qdrant"`
-	Embedding EmbeddingConfig              `yaml:"embedding"`
-	Memgraph  MemgraphConfig               `yaml:"memgraph"`
-	Backup    BackupConfig                 `yaml:"backup"`
-	Hooks     HooksConfig                  `yaml:"hooks"`
-	Telemetry TelemetryConfig              `yaml:"telemetry"`
-	Doctor    DoctorConfig                 `yaml:"doctor"`
-	Tracker   TrackerConfig                `yaml:"tracker"`
-	Developer DeveloperConfig              `yaml:"developer,omitempty"`
-	Roles     map[string]RoleCommandConfig `yaml:"roles,omitempty"`
+	ProjectID       string                          `yaml:"project_id"`
+	Qdrant          QdrantConfig                    `yaml:"qdrant"`
+	Embedding       EmbeddingConfig                 `yaml:"embedding"`
+	Memgraph        MemgraphConfig                  `yaml:"memgraph"`
+	Backup          BackupConfig                    `yaml:"backup"`
+	Hooks           HooksConfig                     `yaml:"hooks"`
+	Telemetry       TelemetryConfig                 `yaml:"telemetry"`
+	Doctor          DoctorConfig                    `yaml:"doctor"`
+	Tracker         TrackerConfig                   `yaml:"tracker"`
+	Developer       DeveloperConfig                 `yaml:"developer,omitempty"`
+	Roles           map[string]RoleCommandConfig    `yaml:"roles,omitempty"`
+	RuntimeProfiles map[string]RuntimeProfileConfig `yaml:"runtime_profiles,omitempty"`
 	// LinkedProjects lists read-only project IDs or paths that search/context
 	// may consult only when the caller passes --include-linked.
 	LinkedProjects []LinkedProjectConfig `yaml:"linked_projects,omitempty"`

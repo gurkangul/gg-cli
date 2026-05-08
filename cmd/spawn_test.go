@@ -55,6 +55,70 @@ func TestSpawnAgentDefault_RoleCommand(t *testing.T) {
 	}
 }
 
+func TestResolveSpawnAgent_RuntimeProfilesPriorityAndHealth(t *testing.T) {
+	ggDir := setupGGDir(t)
+	cfgWithProfiles := ggConfig + `runtime_profiles:
+  gsd-limited:
+    role: developer
+    priority: 1
+    command: gsd --model openai-codex/gpt-5.3-codex
+    health_command: "exit 1"
+  codex-dev:
+    role: developer
+    priority: 2
+    command: codex --model gpt-5.3-codex
+    health_command: "exit 0"
+`
+	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfgWithProfiles), 0o644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+
+	got, err := resolveSpawnAgentForRole("developer", "")
+	if err != nil {
+		t.Fatalf("resolveSpawnAgentForRole: %v", err)
+	}
+	if got.Command != "codex --model gpt-5.3-codex" {
+		t.Fatalf("resolved command = %q", got.Command)
+	}
+	if got.Source != "runtime_profiles.codex-dev" {
+		t.Fatalf("source = %q, want runtime_profiles.codex-dev", got.Source)
+	}
+	if strings.Join(got.Reasons, "\n") == "" || !strings.Contains(strings.Join(got.Reasons, "\n"), "gsd-limited") {
+		t.Fatalf("expected fallback reason for unhealthy profile, got %#v", got.Reasons)
+	}
+}
+
+func TestResolveSpawnAgent_RuntimeProfileFallsBackToLegacyRole(t *testing.T) {
+	ggDir := setupGGDir(t)
+	cfgWithProfiles := ggConfig + `roles:
+  reviewer:
+    command: codex --model gpt-5.3-codex
+runtime_profiles:
+  reviewer-primary:
+    role: reviewer
+    priority: 1
+    command: gsd --model openai-codex/gpt-5.3-codex
+    health_command: "exit 1"
+`
+	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfgWithProfiles), 0o644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+
+	got, err := resolveSpawnAgentForRole("reviewer", "")
+	if err != nil {
+		t.Fatalf("resolveSpawnAgentForRole: %v", err)
+	}
+	if got.Command != "codex --model gpt-5.3-codex" {
+		t.Fatalf("resolved command = %q", got.Command)
+	}
+	if got.Source != "roles.reviewer.command" {
+		t.Fatalf("source = %q, want roles.reviewer.command", got.Source)
+	}
+	if !strings.Contains(strings.Join(got.Reasons, "\n"), "falling back to legacy roles.reviewer.command") {
+		t.Fatalf("expected legacy fallback reason, got %#v", got.Reasons)
+	}
+}
+
 func TestSpawnAgentDefault_LegacyGSDAgentMapsToCommand(t *testing.T) {
 	ggDir := setupGGDir(t)
 	cfgWithLegacyAgent := ggConfig + "developer:\n  agent: gsd-sonnet-4.6\n  transport: cmux\n"
