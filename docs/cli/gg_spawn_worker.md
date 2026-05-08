@@ -15,6 +15,14 @@ When --task is provided, gg checks task state before opening a pane. Blocked,
 done, ready_for_live, and dependency-blocked tasks are refused so agents do not
 start the wrong lifecycle step.
 
+Reviewer workers (`--role reviewer` or `--role verifier`) receive a skeptical
+review prompt. They inspect task acceptance criteria, implementation evidence,
+right-problem fit, overengineering risk, verified vs. unverified assumptions,
+deployment-path completeness, breaking-change risk, simpler alternatives, and
+a confidence rating. Low-confidence reviews flag human review or specific
+rework through the normal `gg task review` / `gg task done` lifecycle; gg does
+not add a separate LLM-output gate for this.
+
 The spawned pane is registered in the runtime spawn directory so
 'gg spawn status' can list active workers.
 
@@ -44,4 +52,3 @@ gg spawn worker [flags]
 ### SEE ALSO
 
 * [gg spawn](gg_spawn.md)	 - Multi-agent orchestration: spawn worker panes, run queue, track liveness
-

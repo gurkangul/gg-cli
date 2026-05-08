@@ -367,8 +367,12 @@ func buildReviewerPrompt(taskID, role string) string {
 	return fmt.Sprintf(
 		"You are the %s for %s. Before anything else, export your identity: export GG_AGENT=${GG_AGENT:-reviewer} GG_ROLE=%s. "+
 			"Run 'gg task get %s --json', inspect the implementation commit and verification evidence, and compare against every acceptance criterion. "+
+			"Review as a skeptical senior architect who did not author the plan: first ask whether the work solves the right problem, then check overengineering against the gg philosophy of solving the reliable 90%% with 100%% accuracy and flagging the remaining 10%% for human review. "+
+			"Scale review depth to task risk; do not manufacture blockers for trivial changes. "+
+			"Your notes must call out verified and unverified assumptions, missing deployment-path changes, breaking-change risks, simpler alternatives, and Confidence: N/10. "+
+			"If confidence is below 8 or an unresolved 10%% case remains, mark Verdict: HUMAN_REVIEW or reject with specific rework instead of inventing a hard gate. "+
 			"If it passes, close with: gg task done %s \"<verified summary>\" --verifier %s. "+
-			"If it fails, run: gg task review %s --reject \"<specific rework>\" and notify the developer via gg tell. "+
+			"If it fails, run: gg task review %s --reject --notes \"<specific rework>\" and notify the developer via gg tell. "+
 			"Do not implement production code in the reviewer pane.",
 		role, taskID, role, taskID, taskID, role, taskID,
 	)

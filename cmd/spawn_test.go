@@ -310,8 +310,18 @@ func TestBuildReviewerPrompt_RoutesReviewNotImplementation(t *testing.T) {
 	for _, want := range []string{
 		"GG_ROLE=reviewer",
 		"gg task get TASK-042 --json",
+		"skeptical senior architect",
+		"solves the right problem",
+		"reliable 90%",
+		"verified and unverified assumptions",
+		"missing deployment-path changes",
+		"breaking-change risks",
+		"simpler alternatives",
+		"Confidence: N/10",
+		"Verdict: HUMAN_REVIEW",
 		"gg task done TASK-042",
 		"--verifier reviewer",
+		"gg task review TASK-042 --reject --notes",
 		"Do not implement production code",
 	} {
 		if !strings.Contains(prompt, want) {
