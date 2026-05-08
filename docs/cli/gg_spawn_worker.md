@@ -20,8 +20,11 @@ review prompt. They inspect task acceptance criteria, implementation evidence,
 right-problem fit, overengineering risk, verified vs. unverified assumptions,
 deployment-path completeness, breaking-change risk, simpler alternatives, and
 a confidence rating. Low-confidence reviews flag human review or specific
-rework through the normal `gg task review` / `gg task done` lifecycle; gg does
-not add a separate LLM-output gate for this.
+rework through the normal review lifecycle. Passing reviewer workers approve
+with `gg task review --approve --notes`; the master/verifier session then runs
+the long-running `gg task done ... --verifier <role>` close so task-close hooks
+do not time out inside a reviewer agent command. gg does not add a separate
+LLM-output gate for this.
 
 The spawned pane is registered in the runtime spawn directory so
 'gg spawn status' can list active workers.

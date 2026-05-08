@@ -319,8 +319,11 @@ func TestBuildReviewerPrompt_RoutesReviewNotImplementation(t *testing.T) {
 		"simpler alternatives",
 		"Confidence: N/10",
 		"Verdict: HUMAN_REVIEW",
+		"gg task review TASK-042 --approve --notes",
 		"gg task done TASK-042",
 		"--verifier reviewer",
+		"Do not run gg task done in the reviewer pane",
+		"master owns the long-running close",
 		"gg task review TASK-042 --reject --notes",
 		"Do not implement production code",
 	} {

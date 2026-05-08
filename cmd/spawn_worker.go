@@ -371,10 +371,11 @@ func buildReviewerPrompt(taskID, role string) string {
 			"Scale review depth to task risk; do not manufacture blockers for trivial changes. "+
 			"Your notes must call out verified and unverified assumptions, missing deployment-path changes, breaking-change risks, simpler alternatives, and Confidence: N/10. "+
 			"If confidence is below 8 or an unresolved 10%% case remains, mark Verdict: HUMAN_REVIEW or reject with specific rework instead of inventing a hard gate. "+
-			"If it passes, close with: gg task done %s \"<verified summary>\" --verifier %s. "+
+			"If it passes, run: gg task review %s --approve --notes \"<what you verified>\" and notify master to close with gg task done %s \"<verified summary>\" --verifier %s. "+
+			"Do not run gg task done in the reviewer pane; task-close hooks can exceed agent command timeouts and master owns the long-running close. "+
 			"If it fails, run: gg task review %s --reject --notes \"<specific rework>\" and notify the developer via gg tell. "+
 			"Do not implement production code in the reviewer pane.",
-		role, taskID, role, taskID, taskID, role, taskID,
+		role, taskID, role, taskID, taskID, taskID, role, taskID,
 	)
 }
 
