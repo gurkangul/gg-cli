@@ -104,15 +104,25 @@ func TestCodex_Install_ReplacesDriftedBlock(t *testing.T) {
 	}
 }
 
-func TestCodex_ManagedBody_AllowsGSDExecutionWorker(t *testing.T) {
+func TestCodex_ManagedBody_AllowsManualGSDOnly(t *testing.T) {
 	body := codexManagedBody()
 	for _, want := range []string{
 		"GSD itself is **not banned**",
-		"developer execution worker",
-		"only on GSD-owned planning/tracker state becoming canonical",
+		"local scratchpad or manual helper",
+		"tabs, panes, queues, nudges, heartbeats, and worker routing",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("codex managed body missing %q", want)
+		}
+	}
+	for _, removed := range []string{
+		"developer execution worker",
+		"gg spawn",
+		"gg gsd open",
+		"developer.command",
+	} {
+		if strings.Contains(body, removed) {
+			t.Fatalf("codex managed body still contains removed orchestration text %q", removed)
 		}
 	}
 }

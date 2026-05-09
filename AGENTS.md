@@ -507,29 +507,23 @@ Before acting in this project:
 3. Record every decision/task/rejection with gg — no exceptions.
 4. Broadcast substantive work via `gg tell all --from <role>`.
 
-### GSD ↔ gg mirror (if this project uses GSD)
+### GSD usage (if this project uses GSD)
 
 GSD is a planning workflow with its own SQLite state in `.gsd/gsd.db`.
 Other agents (Claude Code, Cursor, Aider) **cannot read GSD state** — they
-only see what's in gg. Without a gg mirror, GSD work is invisible to the
-rest of the team.
+only see what's in gg. Treat GSD as a local scratchpad or manual helper, not
+as the team tracker.
 
-GSD itself is **not banned**. It is allowed as a developer execution worker
-when the work is created, coordinated, reviewed, and closed in gg. The ban is
-only on GSD-owned planning/tracker state becoming canonical.
+GSD itself is **not banned**. What is removed is gg-owned orchestration of GSD
+tabs, panes, queues, nudges, heartbeats, and worker routing. If you run GSD,
+run it manually and copy durable outcomes into gg.
 
 Rules when GSD is in use:
 
-- **Every GSD task (T-level, not milestone or slice) MUST have a gg task
-  mirror.** One GSD task = one `gg task create`. Slice/milestone summaries
-  are not substitutes — per-task mirroring is the contract.
-- Mirror at pickup (`gsd_execute` → `gg task create` first), not at
-  completion. Invisible work in flight is the drift class this rule
-  prevents.
-- Reference the GSD ID in the gg title: `"[GSD:M001-S02-T05] implement foo"`
-  so anyone in gg can trace back if needed.
-- Close the gg mirror with `gg task done` when the GSD task completes.
-  Never self-close as implementer — reviewer authority applies here too.
+- Use `gg task create` for work items that matter to the project.
+- Use `gg record` for decisions and `gg tell` for cross-agent messages.
+- Summarize useful GSD output back into gg; do not rely on `.gsd/gsd.db` for
+  shared memory.
 - If you must pick between the two stores, **gg is canonical**. GSD state
   is a planning scratchpad; gg is the shared brain every agent reads.
 

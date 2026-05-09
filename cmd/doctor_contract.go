@@ -21,6 +21,14 @@ func runDoctorCheckContract(fix, forceReset bool) error {
 	checks := agenthooks.CheckContract(projectRoot)
 
 	if fix {
+		cleanupLines, cleanupErrs := agenthooks.RemoveObsoleteBlocks(projectRoot)
+		for _, l := range cleanupLines {
+			fmt.Println(l)
+		}
+		if len(cleanupErrs) > 0 {
+			return cleanupErrs[0]
+		}
+
 		lines, fixErr := agenthooks.FixContract(projectRoot, forceReset)
 		for _, l := range lines {
 			fmt.Println(l)

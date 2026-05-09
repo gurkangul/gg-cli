@@ -29,6 +29,13 @@ type SyncResult struct {
 func SyncManagedBlocks(projectRoot string) SyncResult {
 	var sr SyncResult
 
+	cleanupLines, cleanupErrs := RemoveObsoleteBlocks(projectRoot)
+	if len(cleanupLines) > 0 {
+		sr.Repaired = true
+		sr.Lines = append(sr.Lines, cleanupLines...)
+	}
+	sr.Errors = append(sr.Errors, cleanupErrs...)
+
 	// Pass 1: all installer-owned blocks (contract + agent-specific managed blocks).
 	// InstallDetected runs Detect() so only present agents are touched.
 	results := InstallDetected(projectRoot, Options{})
