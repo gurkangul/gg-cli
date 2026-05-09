@@ -5,31 +5,16 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 	_ "modernc.org/sqlite" // registers "sqlite" driver
-
-	"github.com/gurkangul/gg-cli/internal/config"
-	"github.com/gurkangul/gg-cli/internal/orchestrator/terminal"
 )
 
 var gsdCmd = &cobra.Command{
 	Use:   "gsd",
 	Short: "GSD integration utilities",
-}
-
-var gsdOpenCmd = &cobra.Command{
-	Use:   "open",
-	Short: "Open interactive GSD in a new terminal pane",
-	Long: `Open interactive GSD in a new terminal pane rooted at the current gg project.
-
-This is the stable pane-launch path for GSD. It starts the interactive TUI;
-headless commands such as 'gsd headless query' only report state and do not
-open a tab or pane.`,
-	RunE: runGSDOpen,
 }
 
 var gsdAuditCmd = &cobra.Command{
@@ -47,14 +32,8 @@ Exit codes:
 }
 
 var gsdAuditProject string
-var gsdOpenAgent string
-var gsdOpenSplit string
 
 func init() {
-	gsdOpenCmd.Flags().StringVar(&gsdOpenAgent, "agent", "", "command to run in the pane (default: $GG_SPAWN_AGENT or 'gsd')")
-	gsdOpenCmd.Flags().StringVar(&gsdOpenSplit, "split", "vertical", "pane split direction: horizontal (below) or vertical (right, default)")
-	gsdCmd.AddCommand(gsdOpenCmd)
-
 	gsdAuditCmd.Flags().StringVar(&gsdAuditProject, "project", ".", "path to project root (default: current directory)")
 	gsdCmd.AddCommand(gsdAuditCmd)
 	rootCmd.AddCommand(gsdCmd)
@@ -71,89 +50,6 @@ type gsdAuditTask struct {
 // expectedTitlePrefix returns the canonical [GSD:...] prefix for a GSD task.
 func (t gsdAuditTask) expectedTitlePrefix() string {
 	return fmt.Sprintf("[GSD:%s-%s-%s]", t.MilestoneID, t.SliceID, t.TaskID)
-}
-
-func runGSDOpen(cmd *cobra.Command, _ []string) error {
-	projectRoot, err := config.FindRoot()
-	if err != nil {
-		return err
-	}
-
-	agentCmd := gsdOpenAgent
-	if agentCmd == "" {
-		if v := os.Getenv("GG_SPAWN_AGENT"); v != "" {
-			agentCmd = v
-		} else {
-			agentCmd = "gsd"
-		}
-	}
-	if err := validateGSDOpenAgent(agentCmd); err != nil {
-		return err
-	}
-
-	splitDir := terminal.SplitHorizontal
-	if strings.ToLower(gsdOpenSplit) == "vertical" {
-		splitDir = terminal.SplitVertical
-	}
-
-	term, err := terminal.NewFromEnv()
-	if err != nil {
-		return fmt.Errorf("terminal backend: %w", err)
-	}
-
-	env := buildWorkerEnv("", nil, agentCmd)
-	surfaceID, err := term.NewSplit(cmd.Context(), terminal.SplitOpts{
-		Dir: splitDir,
-		Env: env,
-	})
-	if err != nil {
-		return fmt.Errorf("open GSD pane: %w", err)
-	}
-
-	launch := buildGSDOpenLaunchCommand(projectRoot, agentCmd)
-	if err := term.Send(cmd.Context(), surfaceID, launch); err != nil {
-		return fmt.Errorf("launch GSD in pane %s: %w", surfaceID, err)
-	}
-	if err := term.SendKey(cmd.Context(), surfaceID, "enter"); err != nil {
-		return fmt.Errorf("send Enter after GSD launch: %w", err)
-	}
-
-	return printJSON(map[string]any{
-		"surface_id": string(surfaceID),
-		"agent":      agentCmd,
-		"project":    projectRoot,
-	}, func() {
-		fmt.Printf("✓ GSD pane %s opened (agent: %s, project: %s)\n", surfaceID, agentCmd, projectRoot)
-	})
-}
-
-func validateGSDOpenAgent(agentCmd string) error {
-	fields := strings.Fields(agentCmd)
-	if len(fields) == 0 {
-		return fmt.Errorf("empty GSD agent command")
-	}
-	if _, err := exec.LookPath(fields[0]); err != nil {
-		return fmt.Errorf("GSD command %q not found on PATH — install GSD or pass --agent", fields[0])
-	}
-	return nil
-}
-
-func buildGSDOpenLaunchCommand(projectRoot, agentCmd string) string {
-	parts := []string{"cd " + shellQuote(projectRoot)}
-	if v := os.Getenv("GG_AGENT"); v != "" {
-		parts = append(parts, "export GG_AGENT="+shellQuote(v))
-	}
-	if v := os.Getenv("GG_ROLE"); v != "" {
-		parts = append(parts, "export GG_ROLE="+shellQuote(v))
-	}
-	return strings.Join(parts, " && ") + " && exec " + agentCmd
-}
-
-func shellQuote(s string) string {
-	if s == "" {
-		return "''"
-	}
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func runGSDaudit(cmd *cobra.Command, _ []string) error {

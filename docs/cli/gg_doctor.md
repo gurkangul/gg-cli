@@ -26,8 +26,6 @@ gg doctor [flags]
       --capture-lint-baseline    run golangci-lint and write .gg/lint-baseline.json; the 60-lint-gate.sh pre-done hook uses this to block new warnings
       --check-binary             verify the installed gg binary is not older than the HEAD commit of the local gg-cli source
       --check-contract           compare the managed contract block in each agent's entry-point file against the current template (exit 1 on drift)
-      --check-dev-routing        compare the managed dev-routing block in CLAUDE.md against the current template (exit 1 on drift); combine with --fix to repair
-      --check-master-role        compare the managed master-role block in CLAUDE.md against the current template (exit 1 on drift); combine with --fix to repair
       --check-secrets            scan the repo for secrets using gitleaks (staged + history); falls back to narrow-regex scan when gitleaks is absent
       --diagnose-sandbox         probe localhost TCP to detect sandbox restrictions; reports 'TCP localhost permitted' or 'TCP localhost BLOCKED'
       --dry-run                  with --install-agent-hooks: report what would change without writing anything
@@ -62,3 +60,4 @@ gg doctor [flags]
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
+

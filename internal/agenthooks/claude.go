@@ -59,18 +59,16 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	inboxPresent := claudeHasUserPromptHook(data, claudeInboxCommandMarker)
 	inboxStale := !inboxPresent && claudeHasUserPromptHook(data, claudeInboxStaleMarker)
 	gsdGuardPresent := claudeHasPreToolUseHook(data, claudeGSDGuardCommandMarker)
-	devRoleGuardPresent := claudeHasPreToolUseHook(data, claudeDevRoleGuardCommandMarker)
 	verifyPresent := claudeHasPostToolUseHook(data, claudeVerifyCommandMarker)
 	auditTrackPresent := claudeHasPostToolUseHook(data, claudeAuditTrackCommandMarker)
 	auditReportPresent := claudeHasStopHook(data, claudeAuditReportCommandMarker)
 	envPresent := claudeHasEnv(data, claudeEnvAgentKey, claudeEnvAgentValue)
 
-	if sessionStartPresent && inboxPresent && gsdGuardPresent && devRoleGuardPresent && verifyPresent && auditTrackPresent && auditReportPresent && envPresent {
+	if sessionStartPresent && inboxPresent && gsdGuardPresent && verifyPresent && auditTrackPresent && auditReportPresent && envPresent {
 		res.Action = ActionUpToDate
 		res.Notes = append(res.Notes, "SessionStart hook already present")
 		res.Notes = append(res.Notes, "UserPromptSubmit hook already present")
 		res.Notes = append(res.Notes, "PreToolUse gsd-guard hook already present")
-		res.Notes = append(res.Notes, "PreToolUse dev-role guard hook already present")
 		res.Notes = append(res.Notes, "PostToolUse verify hook already present")
 		res.Notes = append(res.Notes, "PostToolUse audit-track hook already present")
 		res.Notes = append(res.Notes, "Stop audit-report hook already present")
@@ -98,9 +96,6 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	}
 	if !gsdGuardPresent {
 		claudeAddPreToolUseHook(data, claudeMatcherGSDPlan, claudeGSDGuardCommand)
-	}
-	if !devRoleGuardPresent {
-		claudeAddPreToolUseHook(data, claudeMatcherBash, claudeDevRoleGuardCommand)
 	}
 	if !verifyPresent {
 		claudeAddPostToolUseHook(data, claudeMatcherWriteTools, claudeVerifyCommand)
@@ -137,9 +132,6 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 		if !gsdGuardPresent {
 			res.Notes = append(res.Notes, "would add PreToolUse gsd-guard hook: "+claudeGSDGuardCommand)
 		}
-		if !devRoleGuardPresent {
-			res.Notes = append(res.Notes, "would add PreToolUse dev-role guard hook: "+claudeDevRoleGuardCommand)
-		}
 		if !verifyPresent {
 			res.Notes = append(res.Notes, "would add PostToolUse verify hook: "+claudeVerifyCommand)
 		}
@@ -174,9 +166,6 @@ func (c *claudeInstaller) Install(projectRoot string, opts Options) (Result, err
 	}
 	if !gsdGuardPresent {
 		res.Notes = append(res.Notes, "PreToolUse gsd-guard hook: "+claudeGSDGuardCommand)
-	}
-	if !devRoleGuardPresent {
-		res.Notes = append(res.Notes, "PreToolUse dev-role guard hook: "+claudeDevRoleGuardCommand)
 	}
 	if !verifyPresent {
 		res.Notes = append(res.Notes, "PostToolUse verify hook: "+claudeVerifyCommand)

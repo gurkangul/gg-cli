@@ -62,7 +62,7 @@ func TestAgentLifecycleGate_AgentBrandAloneDoesNotBlockReadyForLive(t *testing.T
 	}
 }
 
-func TestAgentLifecycleGate_MasterRoleAllowedRegardlessOfAgent(t *testing.T) {
+func TestAgentLifecycleGate_ReviewerRoleAllowedRegardlessOfAgent(t *testing.T) {
 	t.Setenv("GG_AGENT", "codex")
 	t.Setenv("GG_ROLE", "master")
 	if rej := checkAgentLifecycleGate("done"); rej != nil {

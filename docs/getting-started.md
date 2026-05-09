@@ -72,13 +72,6 @@ export GG_ROLE=developer   # or architect, reviewer, etc.
 gg session-start --agent=codex
 ```
 
-For master/worker flows:
-
-```sh
-gg become master
-GG_ROLE=master gg spawn heartbeat --watch --poll 90 &
-```
-
 ## Index your codebase (optional)
 
 For impact analysis (`gg impact <file>`) and code context, index your code:

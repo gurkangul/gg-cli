@@ -15,7 +15,6 @@ import (
 	"github.com/gurkangul/gg-cli/internal/agenthooks"
 	"github.com/gurkangul/gg-cli/internal/changelog"
 	"github.com/gurkangul/gg-cli/internal/config"
-	"github.com/gurkangul/gg-cli/internal/orchestrator/spawn"
 	"github.com/gurkangul/gg-cli/internal/projectstate"
 	"github.com/gurkangul/gg-cli/internal/session"
 )
@@ -90,17 +89,12 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Auto-resync managed blocks: repairs contract, master-role, dev-routing,
-	// and agent-specific blocks (codex/bmad/gsd) when their detection signal is
-	// present. Best-effort — failures are reported but never fatal.
+	// Auto-resync managed blocks: repairs contract and agent-specific blocks
+	// (codex/bmad/gsd) when their detection signal is present. Best-effort —
+	// failures are reported but never fatal.
 	if br.ProjectRoot != "" {
 		emitResync(br.ProjectRoot, sessionStartBench, sessionStartStderr)
 	}
-
-	// Master heartbeat notice: do not auto-start a background watcher from
-	// session-start (that can leak duplicate jobs), but make stale supervision
-	// visible whenever a master session opens with registered worker panes.
-	emitMasterHeartbeatNotice(loadedCfg, agent, sessionStartStderr)
 
 	// Version-delta notice: compare last_seen_cli_version to current version.
 	// Best-effort — failures are silently swallowed so a missing state file
@@ -152,46 +146,6 @@ func emitResync(projectRoot string, bench bool, w io.Writer) {
 	if bench {
 		fmt.Fprintf(w, "bench: managed-block resync %v\n", syncElapsed.Round(time.Millisecond))
 	}
-}
-
-func emitMasterHeartbeatNotice(cfg *config.Config, agent string, w io.Writer) {
-	if cfg == nil || !isMasterSessionAgent(agent) {
-		return
-	}
-	runtimeDir, err := cfg.RuntimeDir()
-	if err != nil {
-		return
-	}
-	writeMasterHeartbeatNotice(w, runtimeDir)
-}
-
-func isMasterSessionAgent(agent string) bool {
-	role := strings.ToLower(strings.TrimSpace(os.Getenv("GG_MASTER_ROLE")))
-	if role == "" {
-		role = strings.ToLower(strings.TrimSpace(os.Getenv("GG_ROLE")))
-	}
-	if role == "master" || role == "orchestrator" || role == "verifier" {
-		return true
-	}
-	a := strings.ToLower(strings.TrimSpace(agent))
-	return a == "master" || strings.Contains(a, "master") || strings.Contains(a, "orchestrator")
-}
-
-func writeMasterHeartbeatNotice(w io.Writer, runtimeDir string) {
-	panes, err := spawn.ListPanes(runtimeDir)
-	if err != nil || len(panes) == 0 {
-		return
-	}
-	alive, reason := spawn.IsMasterAlive(runtimeDir)
-	if alive {
-		return
-	}
-
-	fmt.Fprintln(w, "─── MASTER HEARTBEAT STALE ───")
-	fmt.Fprintf(w, "  ✗ active worker panes: %d; master heartbeat: %s\n", len(panes), reason)
-	fmt.Fprintln(w, "  run: GG_ROLE=master gg spawn heartbeat --watch --poll 90 &")
-	fmt.Fprintln(w, "  then: gg spawn status")
-	fmt.Fprintln(w)
 }
 
 // emitVersionDelta surfaces a version upgrade notice when the CLI has been

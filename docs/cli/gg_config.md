@@ -7,7 +7,7 @@ Inspect or modify project configuration
 Read and write .gg/config.yaml fields.
 
 Subcommands:
-  set   — write a single field (e.g. developer.command)
+  set   — write a single field
 
 ### Options
 
@@ -24,5 +24,5 @@ Subcommands:
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
-* [gg config set](gg_config_set.md)	 - Set a config field (e.g. developer.command 'gsd --model openai-codex/gpt-5.3-codex')
+* [gg config set](gg_config_set.md)	 - Set a config field
 

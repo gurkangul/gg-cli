@@ -44,8 +44,6 @@ var (
 	doctorContractForceReset   bool
 	doctorSyncBaseline         bool
 	doctorCaptureLintBaseline  bool
-	doctorCheckMasterRole      bool
-	doctorCheckDevRouting      bool
 	doctorCheckBinary          bool
 	doctorFixBinary            bool
 	doctorInstallSecretScanner bool
@@ -98,10 +96,6 @@ func init() {
 		"rescan project and refresh .gg/file-size-baseline.json with current line counts")
 	doctorCmd.Flags().BoolVar(&doctorCaptureLintBaseline, "capture-lint-baseline", false,
 		"run golangci-lint and write .gg/lint-baseline.json; the 60-lint-gate.sh pre-done hook uses this to block new warnings")
-	doctorCmd.Flags().BoolVar(&doctorCheckMasterRole, "check-master-role", false,
-		"compare the managed master-role block in CLAUDE.md against the current template (exit 1 on drift); combine with --fix to repair")
-	doctorCmd.Flags().BoolVar(&doctorCheckDevRouting, "check-dev-routing", false,
-		"compare the managed dev-routing block in CLAUDE.md against the current template (exit 1 on drift); combine with --fix to repair")
 	doctorCmd.Flags().BoolVar(&doctorCheckBinary, "check-binary", false,
 		"verify the installed gg binary is not older than the HEAD commit of the local gg-cli source")
 	doctorCmd.Flags().BoolVar(&doctorFixBinary, "fix-binary", false,
@@ -207,12 +201,6 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	}
 	if doctorCheckContract {
 		return runDoctorCheckContract(doctorContractFix, doctorContractForceReset)
-	}
-	if doctorCheckMasterRole {
-		return runDoctorCheckMasterRole(doctorContractFix, doctorContractForceReset)
-	}
-	if doctorCheckDevRouting {
-		return runDoctorCheckDevRouting(doctorContractFix, doctorContractForceReset)
 	}
 	if doctorSyncBaseline {
 		return runDoctorSyncBaseline()

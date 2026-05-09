@@ -146,7 +146,7 @@ thresholds it prints an advisory and exits 0.
 
 Sample commit trailer:
 ```
-Impact-Reviewed: cmd/spawn_worker.go — 2 callers, tests green
+Impact-Reviewed: cmd/task_status.go — 2 callers, tests green
 Impact-Reviewed: internal/store/client.go — 0 callers
 ```
 
@@ -212,17 +212,6 @@ The gate is already a no-op when there is no `Makefile` or no `test-smoke`
 target, so `GG_NO_SMOKE=1` is only needed as an intentional per-session
 opt-out.
 
-### `GG_NO_MASTER_GUARD` — worker liveness check
-
-| Value | Effect |
-|---|---|
-| `0` *(default)* | Worker verifies master heartbeat before closing a task |
-| `1` | Liveness check is skipped |
-
-Used in the `worker-liveness-check.sh` hook installed by `gg spawn worker`.
-
----
-
 ## Bypass variables
 
 These interact with the global enforcement gate and are validated by the CLI,
@@ -281,22 +270,6 @@ category, not in `pre-task-done.d/` or `task-done.d/`.
 | Variable | Value | Example |
 |---|---|---|
 | `GG_TOOL_NAME` | The tool being invoked by the agent | `Edit`, `Write`, `MultiEdit` |
-
----
-
-## Spawn and queue advance variables
-
-These are optional path hints injected by the queue runner or spawn subsystem.
-When present they short-circuit a `gg spawn status` subprocess call inside the
-hook, making the hook cheaper at high invocation rate.
-
-| Variable | Value | Where set |
-|---|---|---|
-| `GG_SPAWN_DIR` | Absolute path to the spawn state directory (contains `queue.json`) | `gg spawn worker` session env |
-| `GG_SPAWN_ADVANCE_DIR` | Absolute path to the advance-sentinel directory polled by the queue runner | `gg spawn worker` session env |
-
-Both variables are optional. When absent, the scripts fall back to `gg spawn
-status --json` or `gg config get runtime_dir` discovery.
 
 ---
 
@@ -396,7 +369,6 @@ and merges it over `os.Environ()`. This is the correct pattern.
 | `GG_ENFORCEMENT` | caller / session | `90-bug-repros.sh`, CLI gate runner |
 | `GG_BUG_REPRO_BUDGET` | caller / session | `90-bug-repros.sh` |
 | `GG_NO_SMOKE` | caller / session | `05-smoke-e2e.sh` |
-| `GG_NO_MASTER_GUARD` | worker session | `worker-liveness-check.sh` |
 | `GG_BYPASS_RATIONALE` | caller / bypass | CLI gate runner |
 | `GG_BYPASS_RATIONALE_RECORD` | caller / bypass | CLI gate runner |
 | `GG_ALLOW_INBOX_SKIP` | caller / bypass | inbox gate |
@@ -410,6 +382,3 @@ and merges it over `os.Environ()`. This is the correct pattern.
 | `GG_QUIET` | CI / session | banner printer |
 | `GG_SESSION_ID` | session | telemetry session grouping |
 | `GG_UPDATE_CHECK` | session | optional session-start update notice |
-| `GG_TOOL_NAME` | Claude Code harness | `50-master-guard.sh` |
-| `GG_SPAWN_DIR` | `gg spawn worker` session | `50-master-guard.sh` |
-| `GG_SPAWN_ADVANCE_DIR` | `gg spawn worker` session | `45-queue-advance.sh` |

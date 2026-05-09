@@ -15,7 +15,7 @@ gg bug run-repros [flags]
 ### Options
 
 ```
-      --budget int   total timeout in seconds for all repros (default 14)
+      --budget int   per-repro timeout in seconds (default 120)
   -h, --help         help for run-repros
 ```
 

@@ -33,10 +33,9 @@ under 1MB binary", "must work offline"]
 planning tool alongside it — two trackers create drift that no agent can
 reconcile automatically.
 
-- GSD is allowed as a developer execution worker (for example via
-  `gg gsd open`, or via `gg spawn worker --task TASK-N` after
-  `developer.command` is configured for GSD) when gg owns the task,
-  decision, message, and review lifecycle.
+- GSD may run manually in its own terminal when useful, but gg owns the task,
+  decision, message, and review lifecycle. Mirror meaningful GSD outcomes back
+  into gg.
 - Use `gg task create` for every work item. **Never call**
   `mcp__gsd-workflow__gsd_plan_milestone`, `gsd_plan_slice`, or
   `gsd_plan_task` — these write to a separate `.gsd/gsd.db` that other

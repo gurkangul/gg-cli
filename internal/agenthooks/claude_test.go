@@ -114,10 +114,6 @@ func TestClaude_Install_FreshCreate(t *testing.T) {
 	if !strings.Contains(string(raw), "gg session-start --agent=claude-code") {
 		t.Errorf("settings.json missing hook command: %s", raw)
 	}
-	if !strings.Contains(string(raw), "gg dev-role-guard") {
-		t.Errorf("settings.json missing dev-role guard hook: %s", raw)
-	}
-
 	// Must be valid JSON that round-trips.
 	var data map[string]any
 	if err := json.Unmarshal(raw, &data); err != nil {

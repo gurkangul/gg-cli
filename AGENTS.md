@@ -11,14 +11,12 @@ shared brain. Every agent (Claude Code, Codex, Cursor, Aider, …) reads
 the same decisions, tasks, rejections, discussions, notes, and code graph
 through gg — no agent starts from a blank slate.
 
-> **Note on GSD:** GSD may be used as a developer execution worker (for
-> example via `gg gsd open`, or via `gg spawn worker --task TASK-N` after
-> `developer.command` is configured for GSD) while gg remains
-> the canonical tracker. What is forbidden is using GSD's own planner/tracker
-> state as the source of truth: do not create milestones/tasks with
-> `gsd_plan_*` or treat `.gsd/gsd.db` as canonical. When this repo's user says
-> "route it to GSD", run GSD as the implementation worker under gg task,
-> decision, and broadcast control.
+> **Note on GSD:** GSD may be run manually by the human or by an agent in its
+> own terminal, but gg remains the canonical tracker. What is forbidden is using
+> GSD's own planner/tracker state as the source of truth: do not create
+> milestones/tasks with `gsd_plan_*` or treat `.gsd/gsd.db` as canonical.
+> Mirror any meaningful GSD outcome into gg with `gg task`, `gg record`,
+> `gg bug`, or `gg tell`.
 
 **Who it's for:** Developers running 2+ AI agents in parallel terminals who
 keep hitting the same three pains:

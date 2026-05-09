@@ -4,18 +4,18 @@
 
 # Task list lines (○ = pending, ✓ = done, ⚙ = in-progress, ⚠ = blocked)
 ○ TASK-285 [low] Compact: token tahmini disclaimer + tokenizer kalibrasyon
-○ TASK-291 [medium] Terminal adapter integration tests (cmux + tmux) via GG_INTEGRATION gate
-○ TASK-292 [medium] gg master resume command — structured session-handoff dump
-○ TASK-293 [medium] gg system sync: propagate gg:master-role block to all registered projects
+○ TASK-291 [medium] Terminal adapter integration tests via GG_INTEGRATION gate
+○ TASK-292 [medium] gg resume context command — structured session-handoff dump
+○ TASK-293 [medium] gg system sync: propagate contract block to all registered projects
 ○ TASK-120 [high] Dogfood gg-cli in a real project for 2 weeks
 ○ TASK-276 [high] fix parallel mutex + cross-process flock on locks store
-✓ TASK-283 [medium] cmux send --surface flag + agent bootstrap sequence
+✓ TASK-283 [medium] agent bootstrap sequence
 ⚙ TASK-289 [medium] TASK-289 scope expansion: flag-pattern fix + agent-bootstrap sequence
 
 # Decision compact lines
 D  2026-04-24  master resume protocol — 7-command pipeline for session-handoff
 D  2026-04-24  TASK-285 commit a30c6b3, tests green (27 pkgs)
-D  2026-04-24  Master-role v1 policy extended: cmux trigger + pane lifecycle invariant
+D  2026-04-24  Contract v1 policy extended: session bootstrap invariant
 D  2026-04-17  LLM cümle-seviyesi davranış enforcement — LLM non-deterministic
 
 # Rejection lines

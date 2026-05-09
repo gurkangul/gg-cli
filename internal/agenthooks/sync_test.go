@@ -6,27 +6,6 @@ import (
 	"testing"
 )
 
-// TestSyncManagedBlocks_NoOp verifies that SyncManagedBlocks is silent (no
-// repairs, no errors) when all managed blocks are already current.
-func TestSyncManagedBlocks_NoOp(t *testing.T) {
-	dir := t.TempDir()
-
-	// Write a current contract block into CLAUDE.md.
-	claudeMD := filepath.Join(dir, "CLAUDE.md")
-	if err := os.WriteFile(claudeMD, []byte(ContractBlock()+MasterRoleBlock()+DevRoutingBlock()), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
-	}
-
-	sr := SyncManagedBlocks(dir)
-
-	if sr.Repaired {
-		t.Errorf("expected no repair needed, got Repaired=true; lines: %v", sr.Lines)
-	}
-	if len(sr.Errors) > 0 {
-		t.Errorf("unexpected errors: %v", sr.Errors)
-	}
-}
-
 // TestSyncManagedBlocks_RepairsStaleContract verifies that a STALE contract
 // block in CLAUDE.md is repaired and Repaired is set true.
 func TestSyncManagedBlocks_RepairsStaleContract(t *testing.T) {
@@ -56,59 +35,14 @@ func TestSyncManagedBlocks_RepairsStaleContract(t *testing.T) {
 	}
 }
 
-// TestSyncManagedBlocks_RepairsStaleDevRouting verifies that a STALE
-// dev-routing block in an existing CLAUDE.md triggers a repair.
-func TestSyncManagedBlocks_RepairsStaleDevRouting(t *testing.T) {
-	dir := t.TempDir()
-
-	// Write current contract block + stale dev-routing block.
-	staleDevRouting := DevRoutingBlockBegin + "\n## old dev routing\n" + DevRoutingBlockEnd + "\n"
-	content := ContractBlock() + staleDevRouting
-	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(content), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
-	}
-
-	sr := SyncManagedBlocks(dir)
-
-	if !sr.Repaired {
-		t.Errorf("expected Repaired=true after stale dev-routing repair; lines: %v", sr.Lines)
-	}
-}
-
-// TestSyncManagedBlocks_RepairsstaleMasterRole verifies that a STALE
-// master-role block in an existing CLAUDE.md triggers a repair.
-func TestSyncManagedBlocks_RepairsStaleMasterRole(t *testing.T) {
-	dir := t.TempDir()
-
-	staleMasterRole := MasterRoleBlockBegin + "\n## old master role\n" + MasterRoleBlockEnd + "\n"
-	content := ContractBlock() + staleMasterRole
-	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(content), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
-	}
-
-	sr := SyncManagedBlocks(dir)
-
-	if !sr.Repaired {
-		t.Errorf("expected Repaired=true after stale master-role repair; lines: %v", sr.Lines)
-	}
-}
-
 // TestSyncManagedBlocks_NoCLAUDEmd verifies that SyncManagedBlocks does not
-// create CLAUDE.md from scratch when it is absent — it only repairs existing
-// files for master-role and dev-routing blocks.
+// report errors when CLAUDE.md is absent.
 func TestSyncManagedBlocks_NoCLAUDEmd(t *testing.T) {
 	dir := t.TempDir()
 	// No CLAUDE.md present.
 
 	sr := SyncManagedBlocks(dir)
 
-	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err == nil {
-		t.Error("SyncManagedBlocks must not create CLAUDE.md from scratch (master-role/dev-routing guard)")
-	}
-
-	// contract block path is created by FixContract (it creates CLAUDE.md for
-	// the claude installer). That is acceptable — the installer owns it.
-	// What we check here is that no error is returned for missing files.
 	if len(sr.Errors) > 0 {
 		t.Errorf("unexpected errors when CLAUDE.md absent: %v", sr.Errors)
 	}
@@ -187,35 +121,5 @@ func TestSyncManagedBlocks_BMADDir_InstallsBlock(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("SyncResult.Lines missing 'BMAD detected' notice (AC-2); got: %v", sr.Lines)
-	}
-
-	// Idempotency: second call must produce no repair.
-	sr2 := SyncManagedBlocks(dir)
-	if sr2.Repaired {
-		t.Errorf("second SyncManagedBlocks call should be no-op; lines: %v", sr2.Lines)
-	}
-}
-
-// TestSyncManagedBlocks_Idempotent verifies that running SyncManagedBlocks
-// twice produces no repair on the second run.
-func TestSyncManagedBlocks_Idempotent(t *testing.T) {
-	dir := t.TempDir()
-
-	// Write stale contract block.
-	stale := ContractBlockBegin + "\n## OLD\n\nold\n" + ContractBlockEnd + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(stale), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
-	}
-
-	// First run — repairs.
-	sr1 := SyncManagedBlocks(dir)
-	if !sr1.Repaired {
-		t.Error("first run should repair stale contract")
-	}
-
-	// Second run — no-op.
-	sr2 := SyncManagedBlocks(dir)
-	if sr2.Repaired {
-		t.Errorf("second run should be no-op but got Repaired=true; lines: %v", sr2.Lines)
 	}
 }

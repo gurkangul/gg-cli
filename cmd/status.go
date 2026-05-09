@@ -176,14 +176,9 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Roles — show developer command config and queue state so operators
-		// can see the routing setup at a glance without opening .gg/config.yaml.
+		// Code graph freshness belongs near the top so agents see stale impact
+		// data before choosing a task.
 		if cfg, cfgErr := config.Load(); cfgErr == nil {
-			var rtDir string
-			if rt, rtErr := cfg.RuntimeDir(); rtErr == nil {
-				rtDir = rt
-			}
-			fmt.Print(renderRolesBlockFromConfig(cfg, rtDir))
 			if ggDir, ggErr := config.GGDir(); ggErr == nil {
 				if root, rootErr := config.FindRoot(); rootErr == nil {
 					fmt.Println(renderCodeGraphStatusCompact(codeGraphStatusWithTimeout(root, ggDir, cfg)))

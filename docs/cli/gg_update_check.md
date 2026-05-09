@@ -21,3 +21,4 @@ gg update check [flags]
 ### SEE ALSO
 
 * [gg update](gg_update.md)	 - Update gg to the latest public release
+

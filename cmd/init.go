@@ -16,11 +16,6 @@ import (
 
 // ggGitignoreContent is the canonical .gg/.gitignore written by 'gg init'.
 // Runtime state is excluded; brain/ is intentionally tracked (portable snapshot).
-// initQueueLine is the queue-hint line printed by runInit after the dev-routing
-// block. Exported as a package-level const so tests can assert against the real
-// string rather than a locally-defined copy (which would be tautological).
-const initQueueLine = "  Queue: not started (run gg spawn queue start for parallel multi-task pickup)"
-
 const ggGitignoreContent = "# gg-cli runtime state — not committed\n" +
 	"cache/\n" +
 	"runtime/\n" +
@@ -63,7 +58,7 @@ func init() {
 	initCmd.Flags().BoolVar(&initNoIndex, "no-index", false,
 		"skip the post-setup index prompt (non-interactive no)")
 	initCmd.Flags().BoolVar(&initYes, "yes", false,
-		"non-interactive: skip prompts, leave developer.command unconfigured")
+		"non-interactive: skip prompts")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -149,13 +144,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Write developer config block based on detected tooling.
-	// Only runs when the config was freshly created (not a re-init of an
-	// existing project that may already have a developer block set by the user).
-	if err := ensureDeveloperConfig(cmd, ggDir); err != nil {
-		fmt.Printf("⚠ developer config: %v\n", err)
-	}
-
 	// Create per-project runtime directory (~/.gg/projects/<projectID>/) so
 	// telemetry and cache have a home that is never committed to the repo.
 	if initCfg, loadErr := config.Load(); loadErr == nil {
@@ -236,13 +224,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 		fmt.Println("Agent Hooks:")
 		agenthooks.RenderReport(os.Stdout, installResults)
-
-		// Install dev-routing managed block in CLAUDE.md so agents know to
-		// delegate implementation work to the developer side-session by default.
-		// Brownfield-safe: if CLAUDE.md already exists without the marker, we
-		// print a hint rather than silently appending to user-curated content.
-		fmt.Println()
-		printRolesSection(cwd)
 
 		// Install task-done gate scripts (.gg/hooks/pre-task-done.d/) so the
 		// pre-task-done hook fires on 'gg task done' from the very first session.
@@ -350,4 +331,3 @@ func guardProjectLocation(cwd string) error {
 		absCwd = parent
 	}
 }
-

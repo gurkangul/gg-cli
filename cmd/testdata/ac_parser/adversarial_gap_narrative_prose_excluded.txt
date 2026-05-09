@@ -4,8 +4,8 @@ queue-pool in parallel. Gap 3 was the cross-process flock issue from the
 prior session. We also noticed Gap 4 appear in the context replay.
 
 WHAT
-Fix the spawn worker bootstrap to update both the queue path and the pool.
+Fix the parser bootstrap to update both the fast path and the fallback path.
 
 ACCEPTANCE
-- spawn worker updates queue-pool in parallel with queue path
+- parser updates fallback path in parallel with fast path
 - regression test covers the BUG-022 repro

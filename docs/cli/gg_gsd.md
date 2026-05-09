@@ -18,5 +18,4 @@ GSD integration utilities
 
 * [gg](gg.md)	 - Shared brain for AI agents
 * [gg gsd audit](gg_gsd_audit.md)	 - Audit GSD ↔ gg task mirrors — report missing per-T-task gg mirrors
-* [gg gsd open](gg_gsd_open.md)	 - Open interactive GSD in a new terminal pane
 

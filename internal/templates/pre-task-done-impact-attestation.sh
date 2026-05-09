@@ -16,7 +16,7 @@
 # Bypass: GG_BYPASS_RATIONALE=<reason> — audited via gg record
 #
 # Sample trailer format (add to commit body):
-#   Impact-Reviewed: cmd/spawn_worker.go — 2 callers, tests green; internal/store/client.go — 0 callers
+#   Impact-Reviewed: cmd/task_status.go — 2 callers, tests green; internal/store/client.go — 0 callers
 #
 # Env vars available:
 #   GG_TASK_ID       — e.g. TASK-042

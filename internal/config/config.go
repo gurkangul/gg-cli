@@ -189,40 +189,6 @@ type TrackerConfig struct {
 	Canonical string `yaml:"canonical"`
 }
 
-// DeveloperConfig names the default developer command and how to reach it.
-// Written by 'gg init' based on detected tooling and overridable via
-// 'gg config set developer.command <command>'.
-type DeveloperConfig struct {
-	// Command is the generic subprocess command used for developer panes.
-	// Examples: "gsd --model openai-codex/gpt-5.3-codex", "codex --model gpt-5.3-codex".
-	Command string `yaml:"command,omitempty"`
-	// Agent is the legacy developer agent identifier. Deprecated: use Command.
-	// Runtime launch only maps the historical "gsd-sonnet-4.6" default to
-	// "gsd"; other old model identifiers are not executable commands.
-	Agent string `yaml:"agent,omitempty"`
-	// Transport names the IPC mechanism. Allowlist: cmux, side-session-prompt.
-	Transport string `yaml:"transport,omitempty"`
-	// SpawnCommand is the legacy command override. Deprecated: use Command.
-	SpawnCommand string `yaml:"spawn_command,omitempty"`
-}
-
-// RoleCommandConfig names a subprocess command for a team role.
-type RoleCommandConfig struct {
-	Command   string `yaml:"command,omitempty"`
-	Transport string `yaml:"transport,omitempty"`
-}
-
-// RuntimeProfileConfig declares a named agent runtime that can serve one role.
-// Profiles are global to the project and let gg fall back across runtimes when
-// a preferred CLI is unavailable or over quota.
-type RuntimeProfileConfig struct {
-	Command       string `yaml:"command,omitempty"`
-	Role          string `yaml:"role,omitempty"`
-	Priority      int    `yaml:"priority,omitempty"`
-	HealthCommand string `yaml:"health_command,omitempty"`
-	Transport     string `yaml:"transport,omitempty"`
-}
-
 // TelemetryConfig controls local-only usage telemetry.
 type TelemetryConfig struct {
 	// Enabled is a tri-state: nil (absent in YAML) → default ON, *true →
@@ -239,18 +205,15 @@ type Config struct {
 	// ProjectID is a unique per-project UUID used to namespace Qdrant
 	// collections. Multiple projects share the same Qdrant instance but see
 	// only their own decisions/tasks/messages/rejections.
-	ProjectID       string                          `yaml:"project_id"`
-	Qdrant          QdrantConfig                    `yaml:"qdrant"`
-	Embedding       EmbeddingConfig                 `yaml:"embedding"`
-	Memgraph        MemgraphConfig                  `yaml:"memgraph"`
-	Backup          BackupConfig                    `yaml:"backup"`
-	Hooks           HooksConfig                     `yaml:"hooks"`
-	Telemetry       TelemetryConfig                 `yaml:"telemetry"`
-	Doctor          DoctorConfig                    `yaml:"doctor"`
-	Tracker         TrackerConfig                   `yaml:"tracker"`
-	Developer       DeveloperConfig                 `yaml:"developer,omitempty"`
-	Roles           map[string]RoleCommandConfig    `yaml:"roles,omitempty"`
-	RuntimeProfiles map[string]RuntimeProfileConfig `yaml:"runtime_profiles,omitempty"`
+	ProjectID string          `yaml:"project_id"`
+	Qdrant    QdrantConfig    `yaml:"qdrant"`
+	Embedding EmbeddingConfig `yaml:"embedding"`
+	Memgraph  MemgraphConfig  `yaml:"memgraph"`
+	Backup    BackupConfig    `yaml:"backup"`
+	Hooks     HooksConfig     `yaml:"hooks"`
+	Telemetry TelemetryConfig `yaml:"telemetry"`
+	Doctor    DoctorConfig    `yaml:"doctor"`
+	Tracker   TrackerConfig   `yaml:"tracker"`
 	// LinkedProjects lists read-only project IDs or paths that search/context
 	// may consult only when the caller passes --include-linked.
 	LinkedProjects []LinkedProjectConfig `yaml:"linked_projects,omitempty"`
@@ -440,8 +403,16 @@ func (c *Config) Save() error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 	path := filepath.Join(ggDir, ConfigFile)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("write config: %w", err)
+	tmp := path + ".tmp"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("write temp config: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename config tmp to %s: %w", path, err)
 	}
 	return nil
 }

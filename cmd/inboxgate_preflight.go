@@ -55,60 +55,6 @@ func runInboxGatePreflight(ctx context.Context, client *store.Client, commandNam
 	return nil
 }
 
-func runInboxGatePreflightForTaskAck(ctx context.Context, client *store.Client, taskID string) error {
-	role := resolveActorRole()
-	result, err := enforcement.CheckInboxGate(ctx, client, role)
-	if err != nil {
-		return nil
-	}
-	if result.Bypassed {
-		logInboxBypass("task ack", result.BypassReason, role)
-		return nil
-	}
-	if !result.Blocked {
-		return nil
-	}
-
-	blocking, handledIDs := splitTaskAckInboxBlockers(result.Messages, taskID)
-	if len(handledIDs) > 0 {
-		if err := client.MarkMessagesRead(ctx, handledIDs); err != nil {
-			return fmt.Errorf("mark matching task assignment handled: %w", err)
-		}
-	}
-	if len(blocking) == 0 {
-		return nil
-	}
-	result.Messages = blocking
-	result.Count = len(blocking)
-	return fmt.Errorf("%s", enforcement.FormatBlockMessage(role, result))
-}
-
-func splitTaskAckInboxBlockers(messages []store.Message, taskID string) ([]store.Message, []string) {
-	taskID = strings.TrimSpace(taskID)
-	var blocking []store.Message
-	var handledIDs []string
-	for _, m := range messages {
-		if messageMatchesTaskAck(m, taskID) {
-			if id := strings.TrimSpace(m.ID); id != "" {
-				handledIDs = append(handledIDs, id)
-			}
-			continue
-		}
-		blocking = append(blocking, m)
-	}
-	return blocking, handledIDs
-}
-
-func messageMatchesTaskAck(m store.Message, taskID string) bool {
-	if taskID == "" {
-		return false
-	}
-	if strings.EqualFold(strings.TrimSpace(m.TaskID), taskID) {
-		return true
-	}
-	return strings.Contains(strings.ToUpper(m.Content), strings.ToUpper(taskID))
-}
-
 // logInboxBypass records a GG_ALLOW_INBOX_SKIP bypass event in the project
 // runtime state. Best-effort — errors are silently swallowed.
 func logInboxBypass(gate, reason, actor string) {

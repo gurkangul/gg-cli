@@ -71,15 +71,15 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 	}
 
 	return printJSON(map[string]any{
-		"total":                        sum.Total,
-		"agent_calls":                  sum.AgentCalls,
-		"human_calls":                  sum.HumanCalls,
-		"verb_counts":                  sum.VerbCounts,
-		"hydration_calls":              sum.HydrationCalls,
-		"hydration_verb_counts":        sum.HydrationVerbCounts,
-		"net_savings_bytes":            sum.NetSavingsBytes,
-		"missing_handler_calls":        sum.MissingHandlerCalls,
-		"missing_handler_verb_counts":  sum.MissingHandlerVerbCounts,
+		"total":                       sum.Total,
+		"agent_calls":                 sum.AgentCalls,
+		"human_calls":                 sum.HumanCalls,
+		"verb_counts":                 sum.VerbCounts,
+		"hydration_calls":             sum.HydrationCalls,
+		"hydration_verb_counts":       sum.HydrationVerbCounts,
+		"net_savings_bytes":           sum.NetSavingsBytes,
+		"missing_handler_calls":       sum.MissingHandlerCalls,
+		"missing_handler_verb_counts": sum.MissingHandlerVerbCounts,
 	}, func() {
 		if sum.Total == 0 {
 			fmt.Println("No telemetry recorded in the last 7 days.")

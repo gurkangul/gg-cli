@@ -116,8 +116,8 @@ func TestRecord_EnabledViaConfig(t *testing.T) {
 
 func TestRecord_EmptyInputsNoOp(t *testing.T) {
 	dir := t.TempDir()
-	Record("", "status", "")    // empty ggDir
-	Record(dir, "", "")         // empty verb
+	Record("", "status", "") // empty ggDir
+	Record(dir, "", "")      // empty verb
 	Record("", "", "")
 
 	_, err := os.ReadFile(filePath(dir))

@@ -68,8 +68,8 @@ type Entry struct {
 	// caller fetches the full record after the agent saw compact output.
 	// BytesHydrated is the full-render byte size of the fetched record.
 	// Omitted on non-hydration entries so the JSONL stays clean.
-	Hydration      bool `json:"hydration,omitempty"`
-	BytesHydrated  int  `json:"bytes_hydrated,omitempty"`
+	Hydration     bool `json:"hydration,omitempty"`
+	BytesHydrated int  `json:"bytes_hydrated,omitempty"`
 	// Dupe-check fields (TASK-268). Set by RecordDupeCheck when `gg bug
 	// report` runs its advisory near-duplicate search. Omitted on all other
 	// entries so the JSONL stays clean.
@@ -92,10 +92,6 @@ type Entry struct {
 	// made. Verb identifies which command lacked a compact render path.
 	// Omitted on all other entries so the JSONL stays clean.
 	MissingHandler bool `json:"missing_handler,omitempty"`
-	// ActiveWorkers is the number of simultaneously active worker panes at the
-	// time of the event. Set by the parallel queue runner (TASK-276). Omitted
-	// on non-orchestration entries so the JSONL stays clean.
-	ActiveWorkers int `json:"active_workers,omitempty"`
 	// SessionID tags the entry with the current agent session identifier.
 	// Populated from CLAUDE_SESSION_ID (Claude Code harness) or GG_SESSION_ID
 	// (generic agent override), whichever is set first. Empty on human-CLI
@@ -257,17 +253,6 @@ func RecordHydration(runtimeDir, verb, fromFlag string, bytesHydrated int) {
 	})
 }
 
-// RecordActiveWorkers appends a telemetry entry capturing the current parallel
-// worker count. Called by the queue runner on each dispatch cycle (TASK-276).
-func RecordActiveWorkers(runtimeDir, fromFlag string, count int) {
-	recordEntry(runtimeDir, Entry{
-		Verb:          "queue-dispatch",
-		Origin:        classify(fromFlag),
-		Timestamp:     time.Now().UTC().Format(time.RFC3339),
-		ActiveWorkers: count,
-	})
-}
-
 func classify(fromFlag string) string {
 	switch {
 	case strings.TrimSpace(os.Getenv("GG_ROLE")) != "":
@@ -308,4 +293,3 @@ func recordEntry(runtimeDir string, e Entry) {
 	defer func() { _ = f.Close() }()
 	_, _ = f.Write(append(data, '\n'))
 }
-

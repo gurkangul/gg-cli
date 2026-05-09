@@ -256,15 +256,15 @@ func isSuperset(localBody, templateBody string) bool {
 //  2. Orphan legacy begin markers (no matching end) that remain after step 1.
 //
 // canonicalBegin is the current-version begin marker (e.g.
-// "<!-- gg:master-role:begin v3 -->"). blockEnd is the version-agnostic end
-// marker (e.g. "<!-- gg:master-role:end -->"). The canonicalBegin is never
+// "<!-- gg:contract:begin v3 -->"). blockEnd is the version-agnostic end
+// marker (e.g. "<!-- gg:contract:end -->"). The canonicalBegin is never
 // stripped — only older version markers are removed.
 func stripLegacyVersionMarkers(content, canonicalBegin, blockEnd string) string {
 	// Derive the block kind from the canonical begin marker so we can build a
 	// pattern that matches any version.  Example:
-	//   canonicalBegin = "<!-- gg:master-role:begin v3 -->"
-	//   → kind = "master-role"
-	//   → legacyBeginRe matches "<!-- gg:master-role:begin vN -->" for any N
+	//   canonicalBegin = "<!-- gg:contract:begin v3 -->"
+	//   → kind = "contract"
+	//   → legacyBeginRe matches "<!-- gg:contract:begin vN -->" for any N
 	kind := extractBlockKind(canonicalBegin)
 	if kind == "" {
 		return content

@@ -283,7 +283,7 @@ ACCEPTANCE
 	j := taskJSONWith(detail)
 	commitMsg := `fix: resolve Gap A via word-boundary regex
 
-AC-1: Gap A word-boundary fix applied in cmux.go`
+AC-1: Gap A word-boundary fix applied in parser.go`
 
 	out, code := runACAttestationHook(t, j, commitMsg, nil)
 	if code != 7 {
@@ -304,7 +304,7 @@ ACCEPTANCE
 	j := taskJSONWith(detail)
 	commitMsg := `fix: resolve both gaps
 
-AC-1: Gap A fixed via word-boundary regex in cmux.go
+AC-1: Gap A fixed via word-boundary regex in parser.go
 AC-2: Gap B fixed via syscall.Flock in terminal/flock.go
 AC-3: both gaps resolved`
 
@@ -794,4 +794,3 @@ cat ` + jsonFile + `
 		t.Errorf("gg record call missing reason %q\nrecord log:\n%s", bypassReason, logContent)
 	}
 }
-

@@ -74,7 +74,7 @@ func gsdBridgeBlock() string {
 	sb.WriteString("- `gg status` at slice start — see what other agents recorded.\n")
 	sb.WriteString("- If GSD planning created N tasks and gg shows fewer than N, mirrors are\n")
 	sb.WriteString("  missing — fix before proceeding. A partial mirror is worse than none.\n")
-	sb.WriteString("- Set `GG_AGENT` to the runtime's own identity (for a pure GSD pane,\n")
+	sb.WriteString("- Set `GG_AGENT` to the runtime's own identity (for a manual GSD terminal,\n")
 	sb.WriteString("  usually `gsd`) so telemetry can distinguish agent-initiated calls.\n")
 	sb.WriteString(gsdMarkerEnd)
 	sb.WriteString("\n")
