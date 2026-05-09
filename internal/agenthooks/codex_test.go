@@ -115,12 +115,15 @@ func TestCodex_ManagedBody_AllowsManualGSDOnly(t *testing.T) {
 			t.Fatalf("codex managed body missing %q", want)
 		}
 	}
-	for _, removed := range []string{
-		"developer execution worker",
-		"gg spawn",
-		"gg gsd open",
-		"developer.command",
-	} {
+	removed := []string{
+		"developer execution " + "worker",
+		"gg " + "spawn",
+		"gg gsd " + "open",
+		"developer" + ".command",
+		"Every GSD " + "task (T-level, not milestone or slice) MUST have a gg task",
+		"Mirror at " + "pickup",
+	}
+	for _, removed := range removed {
 		if strings.Contains(body, removed) {
 			t.Fatalf("codex managed body still contains removed orchestration text %q", removed)
 		}

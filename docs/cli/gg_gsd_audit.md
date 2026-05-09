@@ -1,16 +1,15 @@
 ## gg gsd audit
 
-Audit GSD ↔ gg task mirrors — report missing per-T-task gg mirrors
+Audit GSD scratchpad items against gg durable work
 
 ### Synopsis
 
 Scans .gsd/gsd.db for T-level tasks and compares them against gg tasks
-tagged "gsd". Each GSD task should have exactly one gg task mirror whose
-title contains [GSD:<milestone_id>-<slice_id>-<task_id>].
+tagged "gsd". GSD is allowed as a local scratchpad/helper; this audit is
+advisory and highlights GSD tasks that may need a durable gg task.
 
 Exit codes:
-  0  all GSD tasks are mirrored in gg
-  1  drift found (missing mirrors)
+  0  audit completed
 
 
 ```

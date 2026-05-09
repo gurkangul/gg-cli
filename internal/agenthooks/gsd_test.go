@@ -109,10 +109,8 @@ func TestGSD_Install_DryRun(t *testing.T) {
 	}
 }
 
-// TestGSD_BridgeBlock_ContainsAuthorityPreamble verifies AC-4: the GSD bridge
-// block declares gg-cli is canonical so GSD agents know gg wins on conflicts.
-// Checks all spec-required clauses: AUTHORITY opener, canonical claim, and
-// the "gg mandatory contract" statement.
+// TestGSD_BridgeBlock_ContainsAuthorityPreamble verifies the GSD bridge block
+// declares gg-cli as canonical while keeping GSD as a manual scratchpad/helper.
 func TestGSD_BridgeBlock_ContainsAuthorityPreamble(t *testing.T) {
 	body := gsdBridgeBlock()
 	checks := []struct {
@@ -122,12 +120,25 @@ func TestGSD_BridgeBlock_ContainsAuthorityPreamble(t *testing.T) {
 		{"AUTHORITY:", "AUTHORITY: preamble opener"},
 		{"gg-cli is canonical", "gg-cli is canonical clause"},
 		{"gg mandatory contract", "gg mandatory contract clause"},
-		{"GSD is allowed as the developer execution environment", "GSD execution allowed clause"},
-		{"GSD-owned planning/tracker state replace gg", "planner-state ban scope"},
+		{"MANUAL GSD SCRATCHPAD", "manual scratchpad heading"},
+		{"local scratchpad/helper", "scratchpad scope"},
+		{"copy durable outcomes back into gg", "durable outcome copy guidance"},
+		{"`gg gsd audit` is advisory", "advisory audit guidance"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(body, c.substr) {
 			t.Errorf("gsdBridgeBlock missing %s (AC-4): want substring %q", c.label, c.substr)
+		}
+	}
+	removed := []string{
+		"MANDATORY PER-TASK " + "MIRROR",
+		"Every GSD " + "task (T-level) MUST have exactly one gg task " + "mirror",
+		"developer execution " + "environment",
+		"gsd_complete" + "_task",
+	}
+	for _, removed := range removed {
+		if strings.Contains(body, removed) {
+			t.Fatalf("gsdBridgeBlock still contains strict mirror text %q", removed)
 		}
 	}
 }

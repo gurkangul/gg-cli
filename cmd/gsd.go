@@ -19,14 +19,13 @@ var gsdCmd = &cobra.Command{
 
 var gsdAuditCmd = &cobra.Command{
 	Use:   "audit",
-	Short: "Audit GSD ↔ gg task mirrors — report missing per-T-task gg mirrors",
+	Short: "Audit GSD scratchpad items against gg durable work",
 	Long: `Scans .gsd/gsd.db for T-level tasks and compares them against gg tasks
-tagged "gsd". Each GSD task should have exactly one gg task mirror whose
-title contains [GSD:<milestone_id>-<slice_id>-<task_id>].
+tagged "gsd". GSD is allowed as a local scratchpad/helper; this audit is
+advisory and highlights GSD tasks that may need a durable gg task.
 
 Exit codes:
-  0  all GSD tasks are mirrored in gg
-  1  drift found (missing mirrors)
+  0  audit completed
 `,
 	RunE: runGSDaudit,
 }
@@ -82,7 +81,8 @@ func runGSDaudit(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	// Load all gg tasks tagged "gsd" — the mirror convention.
+	// Load all gg tasks tagged "gsd" — durable work copied from GSD should use
+	// this tag so the advisory audit can correlate it.
 	allTasks, err := d.store.ListTasks(ctx, "")
 	if err != nil {
 		return fmt.Errorf("list gg tasks: %w", err)
@@ -103,35 +103,35 @@ func runGSDaudit(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	var missing []string
-	var mirrored []string
+	var potential []string
+	var recorded []string
 
 	for _, gt := range gsdTasks {
 		prefix := gt.expectedTitlePrefix()
 		if ggID, ok := ggTitlePrefixes[prefix]; ok {
-			mirrored = append(mirrored, fmt.Sprintf("%s → %s", prefix, ggID))
+			recorded = append(recorded, fmt.Sprintf("%s → %s", prefix, ggID))
 		} else {
-			missing = append(missing, fmt.Sprintf("%s-%s-%s (%s)", gt.MilestoneID, gt.SliceID, gt.TaskID, gt.Title))
+			potential = append(potential, fmt.Sprintf("%s-%s-%s (%s)", gt.MilestoneID, gt.SliceID, gt.TaskID, gt.Title))
 		}
 	}
 
-	fmt.Printf("GSD audit: %d tasks, %d mirrored, %d missing\n\n", len(gsdTasks), len(mirrored), len(missing))
+	fmt.Printf("GSD audit: %d tasks, %d recorded in gg, %d scratchpad-only\n\n", len(gsdTasks), len(recorded), len(potential))
 
-	if len(mirrored) > 0 {
-		fmt.Println("Mirrored:")
-		for _, m := range mirrored {
+	if len(recorded) > 0 {
+		fmt.Println("Recorded in gg:")
+		for _, m := range recorded {
 			fmt.Printf("  ✓ %s\n", m)
 		}
 		fmt.Println()
 	}
 
-	if len(missing) > 0 {
-		fmt.Println("Missing mirrors:")
-		for _, m := range missing {
-			fmt.Printf("  ✗ %s\n", m)
+	if len(potential) > 0 {
+		fmt.Println("Scratchpad-only GSD tasks:")
+		for _, m := range potential {
+			fmt.Printf("  • %s\n", m)
 		}
 		fmt.Println()
-		fmt.Printf("To create a missing mirror:\n")
+		fmt.Printf("If one of these became durable project work, record it in gg:\n")
 		if len(gsdTasks) > 0 {
 			gt := gsdTasks[0]
 			for _, t := range gsdTasks {
@@ -144,10 +144,10 @@ func runGSDaudit(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("  gg task create \"%s short title\" \\\n", gt.expectedTitlePrefix())
 			fmt.Printf("    --detail \"<scope>\" --priority medium --tags \"gsd,slice-%s\"\n", sliceNum)
 		}
-		return &ExitError{Code: ExitGeneral, Message: fmt.Sprintf("drift: %d GSD task(s) have no gg mirror", len(missing))}
+		return nil
 	}
 
-	fmt.Println("✓ All GSD tasks are mirrored in gg.")
+	fmt.Println("✓ No scratchpad-only GSD tasks found.")
 	return nil
 }
 

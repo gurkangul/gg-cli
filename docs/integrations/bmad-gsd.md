@@ -8,9 +8,9 @@ This document explains how `gg-cli`, BMAD (skill-based agents), and GSD (MCP wor
 |---|---|
 | **gg-cli** | Cross-agent memory layer — decisions, tasks, messages, rejections. All agents read and write through `gg`. |
 | **BMAD** | Skill-based agent personas (Mary, John, Winston, Amelia, Paige, Sally) for collaborative reasoning, design reviews, and PRD/architecture work. Runs inside Claude Code sessions. |
-| **GSD** | Structured execution lifecycle — milestones, slices, and tasks with DB-backed state. Runs as a separate MCP server. |
+| **GSD** | Optional local scratchpad/helper for structured execution notes. Its DB-backed state is not canonical. |
 
-gg-cli is the *persistence layer* for both. BMAD and GSD both feed their decisions and progress into gg so that the full project memory is available to any agent in any terminal.
+gg-cli is the durable persistence layer. BMAD outputs and durable GSD outcomes are copied into gg so that the full project memory is available to any agent in any terminal.
 
 ## Detection Signals
 
@@ -52,13 +52,21 @@ The injected block:
 
 ### What the GSD Installer Does
 
-Appends a `<!-- gg-bridge / /gg-bridge -->` block to `.gsd/KNOWLEDGE.md`. GSD agents read `KNOWLEDGE.md` at the start of every task unit, so the cross-posting rule is visible without modifying GSD internals.
+Appends a `<!-- gg-bridge / /gg-bridge -->` block to `.gsd/KNOWLEDGE.md`. GSD agents read `KNOWLEDGE.md` at the start of every task unit, so the gg-as-canonical rule is visible without modifying GSD internals.
 
-The injected block provides ready-to-run `gg` commands for decisions, task delegation, and milestone broadcasts.
+The injected block provides ready-to-run `gg` commands for decisions, durable tasks, and progress broadcasts.
 
-## Mirror GSD State Into gg
+## Copy Durable GSD Outcomes Into gg
 
-After a GSD milestone or slice completes, mirror its state into gg so other agents can find it:
+GSD scratchpad items may stay local. When a GSD note becomes durable project work, copy it into gg:
+
+```sh
+gg task create "<short title>" --detail "<scope>" --priority medium --tags "gsd"
+gg record "<decision>" --reason "<why>" --tags "gsd"
+gg tell "all" "<one-line outcome>" --from gsd --audience agents
+```
+
+Bulk import remains available for older GSD projects where you intentionally want to copy existing GSD state into gg:
 
 ```sh
 # Mirror current project (cwd must contain .gsd/gsd.db)
@@ -102,7 +110,7 @@ Do this BEFORE asking the user "should I save these?" — capture decisions auto
 | Situation | Use |
 |---|---|
 | Cross-domain design discussion (PM + architect + analyst) | BMAD party-mode |
-| Multi-week structured roadmap execution | GSD milestones/slices |
+| Multi-week structured roadmap execution | gg tasks as canonical; GSD may be a manual scratchpad/helper |
 | Single decision, note, or ad-hoc task | `gg` directly |
 | All of the above — persistence | `gg` as the shared store |
 
@@ -112,9 +120,9 @@ Do this BEFORE asking the user "should I save these?" — capture decisions auto
 1. Claude Code starts → gg status (reads shared memory)
 2. User asks for architecture review → BMAD party-mode (Mary + Winston)
 3. Claude Code extracts decisions → gg record / gg task create
-4. GSD picks up a task → implements milestone slice
-5. GSD agent cross-posts progress → gg tell "all" "S03 done" --from gsd
-6. gg import --from-gsd (optional: sync GSD milestones into gg for full visibility)
+4. GSD is used manually for local execution notes, if useful
+5. Durable GSD outcomes are copied into gg → gg task create / gg record / gg tell
+6. gg import --from-gsd (optional: bulk copy existing GSD state into gg)
 7. Any agent searches → gg search "topic" --compact
 ```
 

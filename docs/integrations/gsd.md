@@ -1,6 +1,6 @@
 # gg Integration: GSD (pi / gsd-pi)
 
-This document explains how to inject `gg` agent rules into GSD (the `pi` coding agent harness) so that the GSD agent automatically calls `gg` during sessions.
+This document explains how to inject `gg` agent rules into GSD (the `pi` coding agent harness) so GSD can be used for structured execution while gg remains the shared project brain.
 
 ## Rules file
 
@@ -26,7 +26,7 @@ Key rules:
 2. Before proposing any approach, run `gg search "<topic>"`.
 3. Record decisions: `gg record "text" --reason "why" --tags "..."`
 4. Record rejections: `gg record --stance=reject "approach" --reason "why not"`
-5. Create tasks: `gg task create "title" --priority high`
+5. Create gg tasks only for durable project work: `gg task create "title" --priority high --tags "gsd"`
 6. Set `GG_ROLE` in the environment for message attribution.
 
 The full protocol with all lifecycle rules is in `AGENTS.md`.
@@ -34,8 +34,9 @@ The full protocol with all lifecycle rules is in `AGENTS.md`.
 
 ## GSD-specific notes
 
-- GSD's auto-mode runs tasks in isolated context windows. Each task context should include `gg status` at entry and `gg task done` at exit.
-- GSD's `.gsd/KNOWLEDGE.md` and `gg` are complementary: `KNOWLEDGE.md` stores codebase-specific patterns; `gg` stores cross-session decisions, tasks, and inter-agent messages. Both should be maintained.
+- GSD may run manually in its own terminal when useful, but gg owns durable tasks, decisions, messages, and review state.
+- GSD's `.gsd/KNOWLEDGE.md` and `gg` are complementary: `KNOWLEDGE.md` can store local scratchpad guidance; `gg` stores cross-session decisions, tasks, and inter-agent messages.
+- `gg gsd audit` is advisory. It can surface GSD tasks that may need durable gg records, but scratchpad-only GSD tasks are not failures.
 - When using GSD party mode (multi-agent rounds), the orchestrator must extract subagent decisions and persist them via `gg record` / `gg task create` before the round closes.
 
 ## Verification

@@ -17,5 +17,5 @@ GSD integration utilities
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
-* [gg gsd audit](gg_gsd_audit.md)	 - Audit GSD ↔ gg task mirrors — report missing per-T-task gg mirrors
+* [gg gsd audit](gg_gsd_audit.md)	 - Audit GSD scratchpad items against gg durable work
 
