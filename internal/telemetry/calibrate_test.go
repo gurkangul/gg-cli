@@ -89,7 +89,7 @@ func TestCalibrateCorpus(t *testing.T) {
 		samples := []string{
 			"○ TASK-285 [low] Compact: token tahmini disclaimer",
 			"○ TASK-276 [high] fix parallel mutex + cross-process flock",
-			"D  2026-04-24  master resume protocol — 7-command pipeline",
+			"D  2026-04-24  session handoff protocol — 7-command pipeline",
 			"✓ done  39dd7ab  fix(parallel): drain-loop reason",
 			"Compact  426 calls, 1.2 MB / ~327K tok saved (avg 65% reduction)",
 		}

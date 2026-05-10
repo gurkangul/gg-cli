@@ -6,7 +6,7 @@ Tail inbox messages and event stream
 
 Stream new inbox messages and telemetry events to stdout.
 
-Designed as a hook source for external pipes: tmux status bars, desktop
+Designed as a hook source for external pipes: terminal status bars, desktop
 notification scripts, or other agents polling for activity.
 
 Does not require a long-running server — reads the existing NDJSON telemetry

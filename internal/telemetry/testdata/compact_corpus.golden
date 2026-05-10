@@ -13,7 +13,7 @@
 ⚙ TASK-289 [medium] TASK-289 scope expansion: flag-pattern fix + agent-bootstrap sequence
 
 # Decision compact lines
-D  2026-04-24  master resume protocol — 7-command pipeline for session-handoff
+D  2026-04-24  session handoff protocol — 7-command pipeline
 D  2026-04-24  TASK-285 commit a30c6b3, tests green (27 pkgs)
 D  2026-04-24  Contract v1 policy extended: session bootstrap invariant
 D  2026-04-17  LLM cümle-seviyesi davranış enforcement — LLM non-deterministic

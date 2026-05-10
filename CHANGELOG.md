@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **`gg watch` — real-time inbox and event stream**
 
-- `gg watch` tails the project's telemetry JSONL and polls the inbox simultaneously, emitting new entries as they arrive. Designed for tmux status bars, desktop notification scripts, and agent-side monitoring loops.
+- `gg watch` tails the project's telemetry JSONL and polls the inbox simultaneously, emitting new entries as they arrive. Designed for terminal status bars, desktop notification scripts, and agent-side monitoring loops.
 - Flags: `--role` (filter by recipient), `--event` (filter by telemetry event type), `--tag`, `--since` (ISO timestamp or relative duration), `--format ndjson|pretty`, `--no-inbox`, `--no-telemetry`.
 - stdout-pipeable: any tool that reads a line-delimited stream works without extra wiring.
 
