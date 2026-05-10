@@ -34,6 +34,10 @@ import (
 // is silently skipped.
 var traceDateFile = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}\.jsonl$`)
 
+// removeFile is a function variable so tests can inject failures and verify
+// that ClearOlderThan accumulates deletion errors instead of aborting early.
+var removeFile = os.Remove
+
 // Span is a single operation record written to the trace file.
 type Span struct {
 	Op         string  `json:"op"`
@@ -223,7 +227,7 @@ func ClearOlderThan(ggDir string, cutoff time.Time) (int, error) {
 		// Safe to slice: regex guarantees at least 11 chars before ".jsonl".
 		date := e.Name()[:len(e.Name())-len(".jsonl")]
 		if date < cutoffDate {
-			if err := os.Remove(filepath.Join(traceDir, e.Name())); err != nil {
+			if err := removeFile(filepath.Join(traceDir, e.Name())); err != nil {
 				// Accumulate removal errors so a single failure does not prevent
 				// cleaning up the rest of the matching files.
 				errs = append(errs, err)

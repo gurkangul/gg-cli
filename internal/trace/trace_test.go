@@ -1,6 +1,7 @@
 package trace
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -72,10 +73,10 @@ func TestClearOlderThan_DeletesOldDateFiles(t *testing.T) {
 // comparison would mark them as "older" than the cutoff.
 func TestClearOlderThan_SkipsNonDateFiles(t *testing.T) {
 	files := []string{
-		"backup.jsonl",      // name < any date string → must NOT be deleted
-		".jsonl",            // empty prefix → must NOT be deleted
-		"2026-04-01.jsonl",  // real date, older → deleted
-		"not-a-date.jsonl",  // non-date → skip
+		"backup.jsonl",     // name < any date string → must NOT be deleted
+		".jsonl",           // empty prefix → must NOT be deleted
+		"2026-04-01.jsonl", // real date, older → deleted
+		"not-a-date.jsonl", // non-date → skip
 	}
 	ggDir := setupTraceDir(t, files)
 
@@ -107,27 +108,38 @@ func TestClearOlderThan_AccumulatesErrors(t *testing.T) {
 	}
 	ggDir := setupTraceDir(t, files)
 
-	// Make one file unremovable by removing write permission from the traces dir
-	// after creating the file, so os.Remove returns permission denied.
-	tracesDir := filepath.Join(ggDir, "traces")
-	// chmod the specific file to read-only and also lock the dir — simpler: just
-	// make the dir read-only so Remove fails for all three files. Then verify
-	// that (a) all three fail and (b) ClearOlderThan returns a combined error,
-	// not panic.
-	if err := os.Chmod(tracesDir, 0o555); err != nil {
-		t.Fatalf("chmod traces dir: %v", err)
+	forcedFailure := map[string]error{
+		"2026-04-02.jsonl": errors.New("injected test failure"),
 	}
-	t.Cleanup(func() { _ = os.Chmod(tracesDir, 0o755) })
+	originalRemove := removeFile
+	removeFile = func(path string) error {
+		if fail, ok := forcedFailure[filepath.Base(path)]; ok {
+			return fail
+		}
+		return originalRemove(path)
+	}
+	t.Cleanup(func() {
+		removeFile = originalRemove
+	})
 
 	cutoff := time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC)
 	deleted, err := ClearOlderThan(ggDir, cutoff)
-	// All removes failed — deleted should be 0.
-	if deleted != 0 {
-		t.Errorf("deleted = %d, want 0 (all removes failed)", deleted)
+	// One remove failed, so deleted should be 2 and error should be non-nil.
+	if deleted != 2 {
+		t.Errorf("deleted = %d, want 2 (one failed remove + two succeeded)", deleted)
 	}
-	// Error must be non-nil: all three removes should have failed.
 	if err == nil {
 		t.Error("expected error from failed removes, got nil")
+	}
+
+	remaining := existingFiles(t, ggDir)
+	if !remaining["2026-04-02.jsonl"] {
+		t.Error("expected failed file to remain")
+	}
+	for _, deletedFile := range []string{"2026-04-01.jsonl", "2026-04-03.jsonl"} {
+		if remaining[deletedFile] {
+			t.Errorf("expected %s to be deleted", deletedFile)
+		}
 	}
 }
 

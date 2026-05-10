@@ -122,7 +122,11 @@ func buildImpactStub(lines map[string][]string) string {
 	var sb strings.Builder
 	sb.WriteString("#!/bin/sh\n")
 	sb.WriteString("# Fake gg stub for impact-attestation tests\n")
-	sb.WriteString("TARGET=\"${@: -1}\"\n") // last arg is the file path
+	sb.WriteString("TARGET=\"\"\n")
+	sb.WriteString("while [ \"$#\" -gt 0 ]; do\n")
+	sb.WriteString("  TARGET=\"$1\"\n")
+	sb.WriteString("  shift\n")
+	sb.WriteString("done\n")
 	for key, ls := range lines {
 		fmt.Fprintf(&sb, "case \"$TARGET\" in *%s*)\n", key)
 		for _, l := range ls {
