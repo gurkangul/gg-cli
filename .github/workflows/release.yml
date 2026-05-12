@@ -40,10 +40,8 @@ jobs:
             goos="$1"
             goarch="$2"
             ext=""
-            archive_ext="tar.gz"
             if [ "$goos" = "windows" ]; then
               ext=".exe"
-              archive_ext="zip"
             fi
 
             work="dist/gg_${version}_${goos}_${goarch}"
@@ -54,11 +52,7 @@ jobs:
                 -o "$work/gg${ext}" ./cmd/gg
             cp README.md LICENSE CHANGELOG.md "$work/"
 
-            if [ "$archive_ext" = "zip" ]; then
-              (cd dist && zip -qr "gg_${version}_${goos}_${goarch}.zip" "gg_${version}_${goos}_${goarch}")
-            else
-              tar -C dist -czf "dist/gg_${version}_${goos}_${goarch}.tar.gz" "gg_${version}_${goos}_${goarch}"
-            fi
+            tar -C dist -czf "dist/gg_${version}_${goos}_${goarch}.tar.gz" "gg_${version}_${goos}_${goarch}"
             rm -rf "$work"
           }
 
@@ -77,7 +71,6 @@ jobs:
           generate_release_notes: true
           files: |
             dist/*.tar.gz
-            dist/*.zip
             dist/checksums.txt
           body: |
             ## Install
