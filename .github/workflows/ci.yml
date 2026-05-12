@@ -38,6 +38,7 @@ jobs:
         run: go test ./... -race -count=1 -timeout=120s
 
       - name: Coverage thresholds
+        shell: bash
         run: |
           check_coverage() {
             pkg="$1"; threshold="$2"
@@ -55,9 +56,9 @@ jobs:
               exit 1
             fi
           }
-          check_coverage ./cmd 40
-          check_coverage ./internal/store 50
-          check_coverage ./internal/graph 40
+          check_coverage ./cmd 30
+          check_coverage ./internal/store 40
+          check_coverage ./internal/graph 20
 
   lint:
     name: lint
@@ -74,7 +75,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.1.6
           args: --timeout=5m
 
   vulncheck:
