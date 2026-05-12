@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-05-12
+
+### Fixed
+
+- `gg session-start` now waits for the bounded brain auto-backup export before exiting, so project brain snapshots are reliably refreshed for other agents and projects instead of being abandoned by a fire-and-forget goroutine.
+
 ## [0.3.4] - 2026-05-12
 
 ### Added
