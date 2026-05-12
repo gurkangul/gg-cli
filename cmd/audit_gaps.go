@@ -19,14 +19,13 @@ import (
 // by default because they contain auto-generated or test-only files that
 // cannot meaningfully be referenced in gg tasks/decisions.
 var gapsDefaultSkipPrefixes = []string{
-	"docs/cli/",          // auto-generated CLI reference docs
-	"cmd/testdata/",      // command golden fixtures
-	"testdata/",          // regression test fixtures
-	"dogfood-baselines/", // dogfood snapshots, not source edits
-	"_bmad",              // BMAD agent planning artifacts
-	"seed/",              // demo seed data
-	".gsd/",              // GSD planning workspace
-	".claude/",           // Claude config artifacts
+	"docs/cli/",     // auto-generated CLI reference docs
+	"cmd/testdata/", // command golden fixtures
+	"testdata/",     // regression test fixtures
+	"_bmad",         // local planning artifacts
+	"examples/",     // packaged demo data
+	".gsd/",         // local planning workspace
+	".claude/",      // Claude config artifacts
 }
 
 var gapsDefaultSkipSuffixes = []string{
@@ -43,8 +42,8 @@ var auditGapsCmd = &cobra.Command{
 that were committed but never referenced in any gg task, decision, or record.
 
 Use this as a weekly retrospective companion to gg audit report (which fires
-live at session end). Helps dogfood reviewers spot knowledge-capture gaps
-without reading every commit.`,
+live at session end). Helps maintainers spot knowledge-capture gaps without
+reading every commit.`,
 	Args: cobra.NoArgs,
 	RunE: runAuditGaps,
 }

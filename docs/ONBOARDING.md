@@ -82,7 +82,9 @@ If you want to explore with pre-existing data, import the demo project snapshot:
 
 ```sh
 # From the gg-cli repo root:
-gg brain import seed/demo_project --yes --skip-embed-check
+mkdir -p .gg/brain
+cp -R examples/demo-project/. .gg/brain/
+gg brain import --skip-embed-check
 ```
 
 This loads 8 decisions, 7 tasks, and 3 messages from a fictional "todo-api" project.

@@ -8,8 +8,8 @@ Walk git log for the look-back window (default 7d) and report files
 that were committed but never referenced in any gg task, decision, or record.
 
 Use this as a weekly retrospective companion to gg audit report (which fires
-live at session end). Helps dogfood reviewers spot knowledge-capture gaps
-without reading every commit.
+live at session end). Helps maintainers spot knowledge-capture gaps without
+reading every commit.
 
 ```
 gg audit gaps [flags]

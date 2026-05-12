@@ -25,10 +25,11 @@ secrets.json
 .gsd/STATE.md
 .gsd/auto.lock
 
-# BMAD framework files — per-user install artifacts (run `bmad install` to recreate)
+# Agent/editor/runtime artifacts — per-user install artifacts
 .agents/
 _bmad/
 _bmad-output/
+.cursor/
 
 .gsd-id
 *.swp

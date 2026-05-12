@@ -38,7 +38,7 @@ func TestParseSinceFlag(t *testing.T) {
 }
 
 func TestFilterGapsFiles(t *testing.T) {
-	prefixes := []string{"docs/cli/", "cmd/testdata/", "testdata/", "dogfood-baselines/", "_bmad"}
+	prefixes := []string{"docs/cli/", "cmd/testdata/", "testdata/", "examples/", "_bmad"}
 	suffixes := []string{".golden", ".expected.json", ".test", ".out"}
 	files := []string{
 		"cmd/audit.go",
@@ -46,7 +46,7 @@ func TestFilterGapsFiles(t *testing.T) {
 		"cmd/testdata/compact/search_compact.golden",
 		"cmd/testdata/ac_parser/happy_simple_ac_lines.expected.json",
 		"testdata/regression/bug-001.sh",
-		"dogfood-baselines/20260420-gg-cli.txt",
+		"examples/demo-project/tasks.jsonl",
 		"telemetry.test",
 		"terminal_cov.out",
 		"internal/store/tasks.go",

@@ -22,10 +22,6 @@ paths = [
   '''\.gitleaks\.toml''',
   # Security policy documents example keys in allowlist tables.
   '''docs/security\.md''',
-  # Dogfood baselines are historical gg status text snapshots, not code.
-  '''dogfood-baselines''',
-  # Bug repro scripts plant fake credentials to reproduce scanner bugs.
-  '''bugs/''',
   # gg runtime directory — installed.json, telemetry, and cache files are
   # not code and may contain incidental matches from scan reports.
   '''\.gg/''',
