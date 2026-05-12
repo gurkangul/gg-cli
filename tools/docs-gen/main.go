@@ -21,6 +21,15 @@ import (
 )
 
 func main() {
+	// Cobra help includes flag defaults. Clear agent/runtime env that can change
+	// those defaults so generated docs are deterministic in human and agent shells.
+	for _, key := range []string{"GG_AGENT", "GG_ROLE", "GG_FROM"} {
+		if err := os.Unsetenv(key); err != nil {
+			fmt.Fprintf(os.Stderr, "error: unset %s: %v\n", key, err)
+			os.Exit(1)
+		}
+	}
+
 	// Resolve the repo root relative to this file so the tool works
 	// regardless of where it is invoked from.
 	_, thisFile, _, ok := runtime.Caller(0)

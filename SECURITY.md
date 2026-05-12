@@ -4,8 +4,13 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | Yes       |
+| 0.2.x   | Yes       |
+| 0.1.x   | Security fixes only during alpha |
 | < 0.1.0 | No        |
+
+gg is still alpha software. Supported alpha lines receive best-effort security
+fixes; upgrade to the latest tagged release before reporting a vulnerability
+unless the report is specifically about an older supported line.
 
 ## Reporting a vulnerability
 

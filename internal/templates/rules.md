@@ -35,21 +35,19 @@ decision's reason, or working on a task and needing its detail.
 
 `gg status` shows `Compact  N calls, X KB saved`.
 
-## OPEN DISCUSSIONS
+## OPEN QUESTIONS
 
-When a topic is raised but no conclusion emerges, open a discussion so it
-doesn't vanish between sessions:
+When a topic is raised but no conclusion emerges, preserve the context without
+inventing a decision:
 ```
-gg discuss open "the question" --detail "context"
-```
-
-Resolve or dismiss open discussions before session end:
-```
-gg discuss resolve DISC-001 --via decision --summary "..."
-gg discuss dismiss DISC-001 --reason "..."
+gg record "Open question: <question>" --reason "context and what is unknown" --tags "question"
 ```
 
-`gg status` lists open discussions — next agent must close them.
+If the open question creates follow-up work, create a task instead of leaving it
+implicit:
+```
+gg task create "Resolve <question>" --detail "context" --priority medium --requester user --tags "question"
+```
 
 ## DECISION POINT
 
@@ -61,7 +59,7 @@ When the user reaches a decision (explicit or implicit):
 
 Detect and record:
 ```
-gg decide "short decision" --reason "why" --tags "tag1,tag2"
+gg record "short decision" --reason "why" --tags "tag1,tag2"
 ```
 Tell the user: "Recorded that decision."
 
@@ -69,7 +67,7 @@ Tell the user: "Recorded that decision."
 
 When a unit of work becomes clear:
 ```
-gg task create "title" --detail "description" --priority high --tags "tag1,tag2"
+gg task create "title" --detail "description" --priority high --requester user --tags "tag1,tag2"
 ```
 Tell the user: "Opened task TASK-XXX."
 
@@ -77,14 +75,13 @@ Tell the user: "Opened task TASK-XXX."
 
 User says "continue"/"devam et"/"keep going" → pick next work autonomously:
 
-1. `gg status` — see open tasks/discussions/inbox
-2. **Close any open DISC-NNN first** (resolve or dismiss) — blocks new work
-3. Skip tasks already claimed in recent inbox broadcasts
-4. Pick highest-priority unclaimed pending task
-5. Claim: `gg tell "all" "TASK-XXX picked up" --from <role>`
-6. `gg task get TASK-XXX --with-context`
-7. Write code, test, commit
-8. `gg task done TASK-XXX "summary"` + broadcast: `gg tell "all" "TASK-XXX done: ..."`
+1. `gg status` — see open tasks/inbox/recent decisions
+2. Skip tasks already claimed in recent inbox broadcasts
+3. Pick highest-priority unclaimed pending task
+4. Claim: `gg tell "all" "TASK-XXX picked up" --from <role>`
+5. `gg task get TASK-XXX`
+6. Write code, test, commit
+7. `gg task done TASK-XXX "summary"` + broadcast: `gg tell "all" "TASK-XXX done: ..."`
 
 User says "do TASK-XXX" specifically → skip selection, go to step 6.
 
@@ -118,7 +115,7 @@ gg task block TASK-XXX "reason"
 
 When an approach is considered but not chosen:
 ```
-gg reject "approach" --reason "why not"
+gg record "approach" --decision-status rejected --reason "why not"
 ```
 
 ## NEVER

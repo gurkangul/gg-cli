@@ -14,8 +14,8 @@ Every brain-write verb now writes to a local JSONL file **first**, before attemp
 
 ```
 .gg/brain/
-  decisions.jsonl   # gg record --stance accept
-  rejections.jsonl  # gg record --stance reject
+  decisions.jsonl   # gg record
+  rejections.jsonl  # gg record --decision-status=rejected
   tasks.jsonl       # gg task create
   bugs.jsonl        # gg bug report
 ```

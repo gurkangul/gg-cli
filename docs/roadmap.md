@@ -76,9 +76,9 @@ gg status            # open tasks, pending messages, recent decisions
 ### Decisions
 
 ```bash
-gg decide "use JWT" --reason "stateless, mobile-friendly" --tags "auth,backend"
+gg record "use JWT" --reason "stateless, mobile-friendly" --tags "auth,backend"
 gg search "authentication"          # semantic search
-gg reject "session-based auth" --reason "stateful, doesn't scale" --task "TASK-001"
+gg record "session-based auth" --decision-status rejected --reason "stateful, doesn't scale" --task "TASK-001"
 ```
 
 ### Tasks
@@ -195,7 +195,7 @@ gg check  # warn on unrecorded decisions or open tasks
 - [x] `gg init` — create .gg/, docker-compose up, config.yaml
 - [x] Qdrant connection + collection setup
 - [x] Embedding generation (local via Ollama / nomic-embed-text)
-- [x] `gg decide` / `gg search` / `gg reject`
+- [x] `gg record` / `gg search`
 - [x] `gg task create/list/get/done/block`
 - [x] `gg tell` / `gg inbox`
 - [x] `gg status`
@@ -243,8 +243,8 @@ Agent: (gg search "auth" → no results)
 
 You: "Let's go with JWT"
 
-Agent: (gg decide "JWT-based auth" --reason "stateless, mobile-friendly" --tags "auth")
-       (gg reject "session-based auth" --reason "stateful, complicates scaling")
+Agent: (gg record "JWT-based auth" --reason "stateless, mobile-friendly" --tags "auth")
+       (gg record "session-based auth" --decision-status rejected --reason "stateful, complicates scaling")
        "Recorded. Opening a task for the auth endpoint."
        (gg task create "JWT auth endpoint" --detail "login, register, refresh token.
         JWT 1h expire, refresh 7 days." --priority high --tags "auth,api")

@@ -7,7 +7,7 @@ gg (CLI, Go)
 │
 ├── Qdrant (vector store)          localhost:6334
 │   ├── <project>-decisions        gg record / gg search
-│   ├── <project>-rejections       gg record --stance=reject
+│   ├── <project>-rejections       gg record --decision-status=rejected
 │   ├── <project>-tasks            gg task
 │   ├── <project>-bugs             gg bug
 │   ├── <project>-discussions      (legacy; CLI verbs removed in v0.3)
@@ -94,6 +94,3 @@ gg record           gg task create       gg search
 ```
 
 No central coordinator. No daemon. Each agent is a subprocess that reads/writes the shared store via the `gg` CLI.
-
-For the alpha supervision decision, see
-[`docs/adr-foreground-supervisor.md`](adr-foreground-supervisor.md).

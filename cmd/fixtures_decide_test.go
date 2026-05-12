@@ -62,6 +62,23 @@ func TestRecord_StoreDown(t *testing.T) {
 	}
 }
 
+func TestRecord_DecisionStatusRejectedWritesRejection(t *testing.T) {
+	ggDir := setupGGDir(t)
+	_, _, err := execCmd(t, "record", "do not use Redis sessions", "--decision-status", "rejected", "--reason", "ops burden")
+	if err != nil {
+		t.Fatalf("expected exit 0 on offline rejected record, got: %v", err)
+	}
+
+	jsonlPath := filepath.Join(ggDir, "brain", "rejections.jsonl")
+	data, readErr := os.ReadFile(jsonlPath)
+	if readErr != nil {
+		t.Fatalf("brain/rejections.jsonl not written: %v", readErr)
+	}
+	if len(data) == 0 {
+		t.Error("brain/rejections.jsonl is empty")
+	}
+}
+
 func TestRequireNonEmpty(t *testing.T) {
 	if _, err := requireNonEmpty("title", ""); err == nil {
 		t.Error("expected error for empty string")

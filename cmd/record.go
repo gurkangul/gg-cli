@@ -34,14 +34,14 @@ See also: gg task (track work), gg search (find context), gg status (overview)`,
 }
 
 var (
-	recordReason     string
-	recordTags                string
-	recordTask                string
-	recordStance              string
-	recordDecisionStatus      string
+	recordReason               string
+	recordTags                 string
+	recordTask                 string
+	recordStance               string
+	recordDecisionStatus       string
 	recordRejectedAlternatives string
-	recordImplements          string // TASK-X that implements this decision → (Decision)-[:DECIDES]->(Task)
-	recordRejects             string // DEC-UUID that this decision supersedes → (Decision)-[:REJECTS]->(Decision)
+	recordImplements           string // TASK-X that implements this decision → (Decision)-[:DECIDES]->(Task)
+	recordRejects              string // DEC-UUID that this decision supersedes → (Decision)-[:REJECTS]->(Decision)
 )
 
 func init() {
@@ -67,6 +67,16 @@ func runRecord(cmd *cobra.Command, args []string) error {
 	stance := strings.ToLower(strings.TrimSpace(recordStance))
 	if stance != "accept" && stance != "reject" {
 		return fmt.Errorf("--stance must be \"accept\" or \"reject\", got %q", recordStance)
+	}
+	decStatus := strings.TrimSpace(recordDecisionStatus)
+	if decStatus == "" {
+		decStatus = "active"
+	}
+	if !store.ValidDecisionStatuses[decStatus] {
+		return fmt.Errorf("--decision-status must be active, superseded, or rejected — got %q", decStatus)
+	}
+	if decStatus == "rejected" {
+		stance = "reject"
 	}
 
 	reason := strings.TrimSpace(recordReason)
@@ -147,14 +157,6 @@ func runRecord(cmd *cobra.Command, args []string) error {
 				fmt.Printf("  Tags: %s\n", strings.Join(r.Tags, ", "))
 			}
 		})
-	}
-
-	decStatus := strings.TrimSpace(recordDecisionStatus)
-	if decStatus == "" {
-		decStatus = "active"
-	}
-	if !store.ValidDecisionStatuses[decStatus] {
-		return fmt.Errorf("--decision-status must be active, superseded, or rejected — got %q", decStatus)
 	}
 
 	dec := store.Decision{

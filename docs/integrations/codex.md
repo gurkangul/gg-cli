@@ -23,7 +23,7 @@ as a shared knowledge base session and follow these rules:
 1. **Session start** — run `gg status` and summarize open tasks and decisions.
 2. **Before proposing an approach** — run `gg search "<topic>"`.
 3. **On decision** — run `gg record "text" --reason "..." --tags "..."`.
-4. **On rejected approach** — run `gg record --stance=reject "approach" --reason "..."`.
+4. **On rejected approach** — run `gg record "approach" --decision-status=rejected --reason "..."`.
 5. **On new work** — run `gg task create "title" --priority high`.
 6. Set `GG_ROLE=codex` so messages are attributed correctly.
 

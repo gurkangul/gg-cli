@@ -27,7 +27,7 @@ jobs:
         run: go mod verify
 
       - name: Run tests
-        run: go test ./... -race -count=1
+        run: go test ./... -race -count=1 -timeout=120s
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6

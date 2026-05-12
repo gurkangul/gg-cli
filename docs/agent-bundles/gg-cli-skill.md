@@ -63,7 +63,7 @@ gg record "decision text" --reason "why" --tags "topic,TASK-123"
 Record rejected approaches:
 
 ```sh
-gg record "approach text" --stance=reject --reason "why not" --tags "topic,TASK-123"
+gg record "approach text" --decision-status=rejected --reason "why not" --tags "topic,TASK-123"
 ```
 
 ## Review handoff

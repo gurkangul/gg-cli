@@ -14,10 +14,10 @@ Full reference for all `gg` commands. Run `gg <command> --help` for live usage.
 
 ```sh
 gg record "use JWT" --reason "stateless" --tags "auth"           # accepted decision
-gg record --stance=reject "sessions" --reason "stateful"         # rejected approach
+gg record "sessions" --decision-status rejected --reason "stateful" # rejected approach
 ```
 
-> **Deprecated aliases:** `gg decide` → `gg record`; `gg reject` → `gg record --stance=reject`
+> **Deprecated aliases:** `gg decide` → `gg record`; `gg reject` → `gg record --decision-status=rejected`
 
 ## Tasks
 

@@ -120,6 +120,7 @@ func init() {
 // indexerSpec describes how to install a SCIP binary.
 type indexerSpec struct {
 	Binary  string   // name passed to runner.ResolveIndexer
+	Lang    string   // language whose manifests make this indexer required
 	Install []string // command + args for native package manager
 	Note    string   // displayed after a failed install
 }
@@ -128,16 +129,19 @@ type indexerSpec struct {
 var indexers = []indexerSpec{
 	{
 		Binary:  "scip-go",
+		Lang:    "go",
 		Install: []string{"go", "install", "github.com/sourcegraph/scip-go/cmd/scip-go@latest"},
 		Note:    "requires Go 1.21+",
 	},
 	{
 		Binary:  "scip-typescript",
+		Lang:    "typescript",
 		Install: []string{"npm", "install", "-g", "@sourcegraph/scip-typescript"},
 		Note:    "requires Node.js 18+",
 	},
 	{
 		Binary:  "scip-python",
+		Lang:    "python",
 		Install: []string{"npm", "install", "-g", "@sourcegraph/scip-python"},
 		Note:    "requires Node.js 18+",
 	},

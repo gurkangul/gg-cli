@@ -98,7 +98,7 @@ You, as the orchestrator, are responsible for extracting gg-relevant actions
 from their output and executing the gg calls yourself as soon as the round
 completes. Concretely:
 
-- A subagent says "we should reject X because Y" → gg record "X" --stance=reject --reason "Y"
+- A subagent says "we should reject X because Y" → gg record "X" --decision-status=rejected --reason "Y"
 - A subagent proposes action items / a punch list → gg task create for each
 - A subagent reaches a conclusion the user accepts → gg record "conclusion" --reason "..."
 

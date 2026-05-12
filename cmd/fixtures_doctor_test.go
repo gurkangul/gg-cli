@@ -160,6 +160,56 @@ func TestDoctor_WithOutboxEntries(t *testing.T) {
 	}
 }
 
+func TestIndexerRequiredForProject_LanguageManifests(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/app\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	goRequired, err := indexerRequiredForProject(root, nil, indexerSpec{Binary: "scip-go", Lang: "go"})
+	if err != nil {
+		t.Fatalf("go required: %v", err)
+	}
+	if !goRequired {
+		t.Fatal("go indexer should be required when go.mod exists")
+	}
+
+	tsRequired, err := indexerRequiredForProject(root, nil, indexerSpec{Binary: "scip-typescript", Lang: "typescript"})
+	if err != nil {
+		t.Fatalf("typescript required: %v", err)
+	}
+	if tsRequired {
+		t.Fatal("typescript indexer should be optional when no package.json exists")
+	}
+}
+
+func TestDoctor_GoOnlyProjectDoesNotFailMissingOptionalIndexers(t *testing.T) {
+	report := &doctorReport{}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/app\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	for _, spec := range []indexerSpec{
+		{Binary: "scip-typescript", Lang: "typescript"},
+		{Binary: "scip-python", Lang: "python"},
+	} {
+		required, err := indexerRequiredForProject(root, nil, spec)
+		if err != nil {
+			t.Fatalf("%s required: %v", spec.Binary, err)
+		}
+		if required {
+			report.fail(spec.Binary, "unexpected required optional indexer")
+		} else {
+			report.warn(spec.Binary, "not found — optional")
+		}
+	}
+
+	if report.problems != 0 {
+		t.Fatalf("optional missing indexers should not count as doctor problems, got %d", report.problems)
+	}
+}
+
 func TestDoctor_AgentsSchema_NoSchemaField(t *testing.T) {
 	ggDir := setupGGDir(t)
 	root := filepath.Dir(ggDir)

@@ -6,7 +6,7 @@ Inspect span data recorded by `GG_TRACE=1`.
 
 ```bash
 GG_TRACE=1 gg search "authentication"
-GG_TRACE=1 gg decide "use JWT"
+GG_TRACE=1 gg record "use JWT"
 ```
 
 Spans are appended to `.gg/traces/YYYY-MM-DD.jsonl` as JSON lines:

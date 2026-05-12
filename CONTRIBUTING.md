@@ -8,12 +8,16 @@ Thanks for your interest in contributing.
 
 - [Go 1.26.2+](https://golang.org/dl/)
 - Docker (for Qdrant and Memgraph)
-- [Ollama](https://ollama.ai) — `ollama pull nomic-embed-text`
+- [Ollama](https://ollama.ai) when using custom/manual service setup
 
 **Start services:**
 
+For normal development, run `gg init` in a test project first. It writes
+`~/.gg/docker-compose.yaml`, starts Qdrant/Memgraph/Ollama through Docker, and
+pulls the embedding model for the managed stack.
+
 ```sh
-# From the repo root — starts Qdrant + Memgraph
+# From the repo root, after gg init has created ~/.gg/docker-compose.yaml
 docker compose -f ~/.gg/docker-compose.yaml up -d
 ```
 
@@ -67,13 +71,13 @@ identity lands in commit trails via `--from` and in decision records.
 Unit tests (no services required):
 
 ```sh
-go test ./... -race -count=1
+go test ./... -race -count=1 -timeout=120s
 ```
 
 Integration tests (requires Qdrant + Memgraph running):
 
 ```sh
-go test -tags integration ./... -race -count=1
+go test -tags integration ./... -race -count=1 -timeout=120s
 ```
 
 Lint:
@@ -133,7 +137,7 @@ test(graph): add cross-project isolation integration test
 
 1. Fork and create a branch from `main`.
 2. Make changes and add or update tests where appropriate.
-3. Run `go test ./... -race` and `golangci-lint run` — both must pass.
+3. Run `go test ./... -race -count=1 -timeout=120s` and `golangci-lint run` — both must pass.
 4. Open a PR using the [pull request template](.github/PULL_REQUEST_TEMPLATE.md).
 5. A maintainer will review. Feedback goes in PR comments.
 

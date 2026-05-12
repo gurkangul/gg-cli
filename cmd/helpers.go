@@ -39,10 +39,10 @@ func storeDownErr() error {
 }
 
 type deps struct {
-	store       *store.Client
-	embedder    *embedding.Generator
-	qdrantDown  bool // true when Qdrant is unreachable (connection refused / DNS failure)
-	qdrantSlow  bool // true when Qdrant health check timed out — reachable but slow
+	store      *store.Client
+	embedder   *embedding.Generator
+	qdrantDown bool // true when Qdrant is unreachable (connection refused / DNS failure)
+	qdrantSlow bool // true when Qdrant health check timed out — reachable but slow
 }
 
 func loadDeps(needEmbedding bool) (d *deps, err error) {
@@ -235,10 +235,10 @@ func resolveAuthor(cmd *cobra.Command) string {
 	return strings.TrimSpace(os.Getenv("GG_ROLE"))
 }
 
-// addFromFlag attaches a --from flag to the command with a default from GG_ROLE.
+// addFromFlag attaches a --from flag. Runtime env is resolved in resolveAuthor
+// so help/docs output remains deterministic across agent shells.
 func addFromFlag(cmd *cobra.Command) {
-	defaultRole := strings.TrimSpace(os.Getenv("GG_ROLE"))
-	cmd.Flags().String("from", defaultRole, "author/role recording this (defaults to $GG_ROLE)")
+	cmd.Flags().String("from", "", "author/role recording this (defaults to $GG_ROLE)")
 }
 
 // printProjectBanner prints a single-line "Recording to project: <name> (<uuid8>)"

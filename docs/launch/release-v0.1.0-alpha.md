@@ -19,8 +19,8 @@ Three pains it solves for developers running 2+ agents in parallel:
 - **Shared memory** — `gg record`, `gg search`, `gg context` across all agents
 - **Task protocol** — `gg task create/get/done/block/list` with priority ordering
 - **Multi-agent messaging** — `gg tell <agent> <message>`, `gg inbox`
-- **Rejection tracking** — `gg record --stance=reject` prevents re-proposals
-- **Discussion threads** — `gg discuss open/note/resolve/dismiss`
+- **Rejection tracking** — `gg record --decision-status=rejected` prevents re-proposals
+- **Task + decision tracking** — `gg task` for action items, `gg record` for decisions and open questions
 - **Code impact analysis** — `gg impact <symbol>` via Memgraph + SCIP indexing
 - **Semantic search** — Qdrant + Ollama local embeddings (no data leaves machine)
 - **Multi-project isolation** — shared infra at `~/.gg/`, per-project UUID namespace

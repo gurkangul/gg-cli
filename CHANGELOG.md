@@ -128,7 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `gg init` — bootstrap project: creates `gg.yaml`, `docker-compose.yaml`, `AGENTS.md`, and `RULES.md` in the project root
 - `gg status` — session overview: pending tasks, unread messages, open discussions, and recent decisions
 - `gg search <query>` — semantic vector search across decisions, rejections, tasks, notes, and bugs
-- `gg record "text"` — canonical verb for recording decisions (`--stance=accept`, default) and rejected approaches (`--stance=reject`); supports `--reason`, `--tags`, `--task`, `--from`
+- `gg record "text"` — canonical verb for recording decisions and rejected approaches (`--decision-status=rejected`); supports `--reason`, `--tags`, `--task`, `--from`
 - `gg task create/list/get/done/block` — full task lifecycle with priority, tags, detail, and file-locked ID allocation
 - `gg tell <role> <message>` / `gg inbox` — agent-to-agent messaging with sender attribution and read tracking
 - `gg note "text"` — ambient context notes, semantically searchable, no lifecycle overhead
@@ -193,8 +193,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
-- `gg decide` — use `gg record` (or `gg record --stance=accept`) instead; will be removed in a future major release
-- `gg reject` — use `gg record --stance=reject` instead; will be removed in a future major release
+- `gg decide` — use `gg record` instead; will be removed in a future major release
+- `gg reject` — use `gg record --decision-status=rejected` instead; will be removed in a future major release
 
 ### Fixed
 
@@ -207,5 +207,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
-[0.1.0]: https://github.com/gurkangul/gg/releases/tag/v0.1.0
-[Unreleased]: https://github.com/gurkangul/gg/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/gurkangul/gg-cli/releases/tag/v0.1.0
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.1.0...HEAD

@@ -69,7 +69,7 @@ comment "Any agent records a decision — all others see it immediately"
 run "gg record 'use PostgreSQL for primary storage' --reason 'ACID guarantees, battle-tested' --tags 'architecture,database'"
 
 comment "Rejected approaches are stored — no agent re-proposes them"
-run "gg record 'MongoDB for primary storage' --stance=reject --reason 'schema flexibility not needed' --tags 'architecture,database'"
+run "gg record 'MongoDB for primary storage' --decision-status=rejected --reason 'schema flexibility not needed' --tags 'architecture,database'"
 
 header "── searching shared memory ─────────────────────────────────────"
 

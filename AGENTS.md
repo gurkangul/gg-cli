@@ -455,7 +455,7 @@ gg task block TASK-XXX "reason"
 
 When an approach is considered but not chosen — always record it:
 ```
-gg record "approach" --stance=reject --reason "why not"
+gg record "approach" --decision-status rejected --reason "why not"
 ```
 This prevents other agents from re-proposing the same rejected path.
 
@@ -479,7 +479,7 @@ You, as the orchestrator, are responsible for **extracting gg-relevant actions
 from their output and executing the `gg` calls yourself** as soon as the round
 completes. Concretely:
 
-- A subagent says "we should reject X because Y" → you run `gg record "X" --stance=reject --reason "Y"`
+- A subagent says "we should reject X because Y" → you run `gg record "X" --decision-status rejected --reason "Y"`
 - A subagent proposes action items / a punch list → you run `gg task create` for each
 - A subagent reaches a conclusion the user accepts → you run `gg record "conclusion" --reason "why"`
 
@@ -579,7 +579,7 @@ orchestrating agent you MUST:
 - After each BMAD round: extract any decisions, task proposals, or
   rejected approaches and persist them with gg immediately.
 - Do NOT wait for the user to ask — capture before moving on.
-- If a BMAD agent says 'reject X' → `gg record "X" --stance=reject --reason "why"`
+- If a BMAD agent says 'reject X' → `gg record "X" --decision-status rejected --reason "why"`
 - If a BMAD agent proposes a task → `gg task create "title" ...`
 - If a BMAD agent reaches a conclusion the user accepts → `gg record "conclusion" --reason "..."``
 

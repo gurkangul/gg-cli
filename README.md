@@ -36,7 +36,7 @@ CLI/subprocess tool; no MCP server or hosted service is required.
 | Cursor | Install `gg`, run `gg init`, then `gg doctor --install-agent-hooks`; Cursor reads generated `.cursor/rules/gg.mdc`. |
 | Manual shell | `export GG_AGENT=manual GG_ROLE=developer`, then run `gg status` and `gg inbox --role "$GG_ROLE" --since-cursor` at session start. |
 
-See [docs/agent-native-install.md](docs/agent-native-install.md) for the
+See [docs/getting-started.md](docs/getting-started.md) for the
 session-start, task, reviewer, and search/context/impact/inbox workflow.
 
 ---
@@ -150,8 +150,8 @@ gg index --lang go
 
 | Command | Description |
 |---|---|
-| `gg decide "text" --reason "why" --tags "t1,t2"` | Record a decision |
-| `gg reject "text" --reason "why" --tags "t1,t2"` | Record a rejected approach |
+| `gg record "text" --reason "why" --tags "t1,t2"` | Record a decision |
+| `gg record "text" --decision-status rejected --reason "why" --tags "t1,t2"` | Record a rejected approach |
 
 ### Tasks
 
@@ -350,7 +350,7 @@ Agent A (architect)          Agent B (developer)          Agent C (reviewer)
 gg status                    gg status                    gg status
 ↓                            ↓                            ↓
 sees open tasks,             picks up TASK-017,           sees decision about auth,
-unread messages              gg decide "JWT chosen"       gg search "JWT" → finds it
+unread messages              gg record "JWT chosen"       gg search "JWT" → finds it
 ```
 
 All agents write to the same Qdrant + Memgraph backend. A decision made by one is immediately visible to the others.

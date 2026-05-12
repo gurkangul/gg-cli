@@ -87,6 +87,6 @@ fi
 
 ## See also
 
-- [`gg check`](check.md) — pre-push gate that combines impact + linting
+- [`gg check`](../commands.md#check) — pre-push gate that combines impact + linting
 - [`gg context`](../commands.md#context) — full context bundle for a topic
 - [`gg index`](../commands.md#index) — build the code graph

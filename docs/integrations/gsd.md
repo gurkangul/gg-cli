@@ -25,7 +25,7 @@ Key rules:
 1. Run `gg status` at the start of every session.
 2. Before proposing any approach, run `gg search "<topic>"`.
 3. Record decisions: `gg record "text" --reason "why" --tags "..."`
-4. Record rejections: `gg record --stance=reject "approach" --reason "why not"`
+4. Record rejections: `gg record "approach" --decision-status=rejected --reason "why not"`
 5. Create gg tasks only for durable project work: `gg task create "title" --priority high --tags "gsd"`
 6. Set `GG_ROLE` in the environment for message attribution.
 

@@ -40,7 +40,7 @@ reconcile automatically.
   `mcp__gsd-workflow__gsd_plan_milestone`, `gsd_plan_slice`, or
   `gsd_plan_task` — these write to a separate `.gsd/gsd.db` that other
   agents cannot read, creating invisible state.
-- Use `gg record` for decisions and `gg reject` for rejected approaches.
+- Use `gg record` for decisions and `gg record --decision-status rejected` for rejected approaches.
 - Use `gg tell` for cross-agent messages.
 - Rationale: GSD milestone hierarchy writes state to `.gsd/gsd.db`. gg
   reads none of that. The two stores diverge silently and stay diverged.
@@ -150,7 +150,7 @@ When the user reaches a decision (explicit or implicit):
 
 As soon as you detect it:
 ```
-gg decide "short decision text" --reason "why" --tags "tag1,tag2"
+gg record "short decision text" --reason "why" --tags "tag1,tag2"
 ```
 Tell the user: "Recorded that decision."
 
@@ -158,7 +158,7 @@ Tell the user: "Recorded that decision."
 
 When a unit of work is clearly needed:
 ```
-gg task create "title" --detail "description" --priority high --tags "tag1,tag2"
+gg task create "title" --detail "description" --priority high --requester user --tags "tag1,tag2"
 ```
 Tell the user: "Opened task TASK-XXX."
 
@@ -269,7 +269,7 @@ gg task block TASK-XXX "reason"
 
 When an approach is considered but not chosen — always record it:
 ```
-gg reject "approach" --reason "why not"
+gg record "approach" --decision-status rejected --reason "why not"
 ```
 This prevents other agents from re-proposing the same rejected path.
 
@@ -283,9 +283,9 @@ You, as the orchestrator, are responsible for **extracting gg-relevant actions
 from their output and executing the `gg` calls yourself** as soon as the round
 completes. Concretely:
 
-- A subagent says "we should reject X because Y" → you run `gg reject "X" --reason "Y"`
+- A subagent says "we should reject X because Y" → you run `gg record "X" --decision-status rejected --reason "Y"`
 - A subagent proposes action items / a punch list → you run `gg task create` for each
-- A subagent reaches a conclusion the user accepts → you run `gg decide`
+- A subagent reaches a conclusion the user accepts → you run `gg record`
 
 Do this BEFORE asking the user "should I save these?" — the AGENTS.md rule is
 to capture decisions automatically. Asking first violates the contract.

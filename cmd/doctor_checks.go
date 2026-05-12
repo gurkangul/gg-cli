@@ -300,6 +300,7 @@ func schemaMajor(schema string) int {
 // checkIndexers verifies each SCIP binary. With --install-indexers, missing
 // ones are installed via their native package manager.
 func checkIndexers(cmd *cobra.Command, report *doctorReport) {
+	projectRoot, rootErr := config.FindRoot()
 	for _, spec := range indexers {
 		path, err := runner.ResolveIndexer(spec.Binary)
 		if err == nil {
@@ -313,8 +314,22 @@ func checkIndexers(cmd *cobra.Command, report *doctorReport) {
 			continue
 		}
 
+		required, requireErr := indexerRequiredForProject(projectRoot, rootErr, spec)
+		if requireErr != nil {
+			report.warn(spec.Binary, fmt.Sprintf("could not determine language manifests: %v", requireErr))
+			required = true
+		}
+
 		if !doctorInstallIndexers {
+			if !required {
+				report.warn(spec.Binary, fmt.Sprintf("not found — optional; no %s manifest detected", spec.Lang))
+				continue
+			}
 			report.fail(spec.Binary, fmt.Sprintf("not found — install: %s", missing.Hint))
+			continue
+		}
+		if !required {
+			report.warn(spec.Binary, fmt.Sprintf("not found — optional; no %s manifest detected", spec.Lang))
 			continue
 		}
 
@@ -335,6 +350,17 @@ func checkIndexers(cmd *cobra.Command, report *doctorReport) {
 			}
 		}
 	}
+}
+
+func indexerRequiredForProject(projectRoot string, rootErr error, spec indexerSpec) (bool, error) {
+	if rootErr != nil {
+		return false, rootErr
+	}
+	moduleDirs, err := discoverModuleDirs(projectRoot, runner.Lang(spec.Lang))
+	if err != nil {
+		return false, err
+	}
+	return len(moduleDirs) > 0, nil
 }
 
 // runDoctorWipeBrain drops all Qdrant collections and Memgraph nodes for

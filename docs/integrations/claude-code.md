@@ -34,7 +34,7 @@ All decisions, tasks, messages, and rejected approaches are recorded via `gg`.
 
 4. **Rejected approach** — when an approach is considered but not chosen:
    ```sh
-   gg record --stance=reject "approach" --reason "why not"
+   gg record "approach" --decision-status=rejected --reason "why not"
    ```
 
 5. **Task** — when a unit of work is clearly needed:

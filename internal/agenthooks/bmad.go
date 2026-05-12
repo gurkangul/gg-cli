@@ -42,7 +42,7 @@ func bmadManagedBody() string {
 	sb.WriteString("- After each BMAD round: extract any decisions, task proposals, or\n")
 	sb.WriteString("  rejected approaches and persist them with gg immediately.\n")
 	sb.WriteString("- Do NOT wait for the user to ask — capture before moving on.\n")
-	sb.WriteString("- If a BMAD agent says 'reject X' → `gg record \"X\" --stance=reject --reason \"why\"`\n")
+	sb.WriteString("- If a BMAD agent says 'reject X' → `gg record \"X\" --decision-status=rejected --reason \"why\"`\n")
 	sb.WriteString("- If a BMAD agent proposes a task → `gg task create \"title\" ...`\n")
 	sb.WriteString("- If a BMAD agent reaches a conclusion the user accepts → `gg record \"conclusion\" --reason \"...\"``\n")
 	sb.WriteString("\n")
