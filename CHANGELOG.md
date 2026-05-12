@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.3] - 2026-05-12
+## [0.3.4] - 2026-05-12
 
 ### Added
 
@@ -209,7 +209,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
-[0.3.3]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.3
+[0.3.4]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.4
 [0.2.0]: https://github.com/gurkangul/gg-cli/releases/tag/v0.2.0
 [0.1.0]: https://github.com/gurkangul/gg-cli/releases/tag/v0.1.0
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.4...HEAD
