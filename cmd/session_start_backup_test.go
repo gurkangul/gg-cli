@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -167,5 +168,55 @@ backup:
 
 	if !strings.Contains(errBuf.String(), "backup.timeout must be a valid duration") {
 		t.Fatalf("expected invalid backup timeout warning, got: %q", errBuf.String())
+	}
+}
+
+func TestEmitBrainAutoBackup_WaitsForExportBeforeReturning(t *testing.T) {
+	setupGGDir(t)
+	cfgPath := filepath.Join(".gg", "config.yaml")
+	cfg := `project_id: test-project-fixture
+qdrant:
+  host: localhost
+  port: 6334
+embedding:
+  host: http://localhost:11434
+  model: nomic-embed-text
+memgraph:
+  uri: bolt://localhost:7687
+  username: ""
+  password: ""
+backup:
+  enabled: true
+  interval: 24h
+  timeout: 30s
+`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("GG_AUTO_BACKUP", "")
+	t.Setenv("GG_AUTO_BACKUP_INTERVAL", "")
+
+	oldRun := runBrainAutoBackupExport
+	t.Cleanup(func() { runBrainAutoBackupExport = oldRun })
+	called := false
+	runBrainAutoBackupExport = func(_ context.Context, _ string, interval string) (string, string, error) {
+		called = true
+		if interval != "24h" {
+			t.Fatalf("interval = %q, want 24h", interval)
+		}
+		return "✓ brain auto-snapshotted (1 records)\n", "", nil
+	}
+
+	var out, errBuf bytes.Buffer
+	emitBrainAutoBackup(&out, &errBuf)
+
+	if !called {
+		t.Fatal("expected backup export to run before emitBrainAutoBackup returns")
+	}
+	if got := strings.TrimSpace(out.String()); got != "✓ brain auto-snapshotted (1 records)" {
+		t.Fatalf("stdout = %q", got)
+	}
+	if errBuf.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", errBuf.String())
 	}
 }

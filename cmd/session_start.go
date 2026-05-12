@@ -26,6 +26,14 @@ var sessionStartBench bool
 // Tests override this to capture output without redirecting os.Stderr.
 var sessionStartStderr io.Writer = os.Stderr
 
+var runBrainAutoBackupExport = func(ctx context.Context, self, interval string) (string, string, error) {
+	var outBuf, errBuf strings.Builder
+	cmd := exec.CommandContext(ctx, self, "brain", "export", "--if-stale="+interval) //nolint:gosec
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	return outBuf.String(), errBuf.String(), cmd.Run()
+}
+
 var sessionStartCmd = &cobra.Command{
 	Use:   "session-start",
 	Short: "Print session bootstrap briefing (called by agent SessionStart hooks)",
@@ -271,9 +279,8 @@ func resolveSessionAgent() string {
 	return strings.TrimSpace(os.Getenv("GG_AGENT"))
 }
 
-// emitBrainAutoBackup fires 'gg brain export --if-stale=INTERVAL' in a background
-// goroutine and returns immediately — session-start exit code and latency are
-// never affected. Respects GG_AUTO_BACKUP=off to disable, and
+// emitBrainAutoBackup runs 'gg brain export --if-stale=INTERVAL' as a bounded,
+// non-fatal session-start step. Respects GG_AUTO_BACKUP=off to disable, and
 // GG_AUTO_BACKUP_INTERVAL to override configured/default staleness threshold.
 // The success one-liner ('✓ brain auto-snapshotted (N records)') is forwarded to
 // stdout; all other output (warnings, errors, Qdrant/Memgraph noise) is routed to
@@ -290,40 +297,33 @@ func emitBrainAutoBackup(stdout, stderr io.Writer) {
 		return
 	}
 
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), settings.timeout)
-		defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), settings.timeout)
+	defer cancel()
 
-		var outBuf, errBuf strings.Builder
-		cmd := exec.CommandContext(ctx, self, "brain", "export", "--if-stale="+settings.interval) //nolint:gosec
-		cmd.Stdout = &outBuf
-		cmd.Stderr = &errBuf
-		runErr := cmd.Run()
+	out, errOut, runErr := runBrainAutoBackupExport(ctx, self, settings.interval)
+	if ctx.Err() != nil {
+		fmt.Fprintf(stderr, "[brain-backup] timeout after %s — skipping\n", settings.timeout.Round(time.Second))
+		return
+	}
 
-		if ctx.Err() != nil {
-			fmt.Fprintf(stderr, "[brain-backup] timeout after %s — skipping\n", settings.timeout.Round(time.Second))
-			return
-		}
-
-		// Route child stderr lines to parent stderr with [brain-backup] prefix.
-		if s := strings.TrimSpace(errBuf.String()); s != "" {
-			for _, line := range strings.Split(s, "\n") {
-				if line != "" {
-					fmt.Fprintf(stderr, "[brain-backup] %s\n", line)
-				}
+	// Route child stderr lines to parent stderr with [brain-backup] prefix.
+	if s := strings.TrimSpace(errOut); s != "" {
+		for _, line := range strings.Split(s, "\n") {
+			if line != "" {
+				fmt.Fprintf(stderr, "[brain-backup] %s\n", line)
 			}
 		}
+	}
 
-		if runErr != nil {
-			fmt.Fprintf(stderr, "[brain-backup] export failed: %v\n", runErr)
-			return
-		}
+	if runErr != nil {
+		fmt.Fprintf(stderr, "[brain-backup] export failed: %v\n", runErr)
+		return
+	}
 
-		// Forward only the success one-liner to parent stdout.
-		if msg := strings.TrimSpace(outBuf.String()); msg != "" {
-			fmt.Fprintln(stdout, msg)
-		}
-	}()
+	// Forward only the success one-liner to parent stdout.
+	if msg := strings.TrimSpace(out); msg != "" {
+		fmt.Fprintln(stdout, msg)
+	}
 }
 
 type brainAutoBackupSettings struct {
