@@ -47,7 +47,12 @@ session-start, task, reviewer, and search/context/impact/inbox workflow.
 
 ## Prerequisites
 
-**Required:** [Docker](https://docs.docker.com/get-docker/) with Compose v2.
+**Required:**
+
+- [Go](https://go.dev/doc/install) matching the version in [`go.mod`](go.mod)
+  for `go install` / source builds.
+- [Docker](https://docs.docker.com/get-docker/) with Compose v2.
+
 `gg init` runs the three services below as containers via a shared
 `~/.gg/docker-compose.yaml` — no manual install needed for Qdrant /
 Memgraph / Ollama.
@@ -69,6 +74,12 @@ into the Ollama container automatically on first run.
 
 ```sh
 go install github.com/gurkangul/gg-cli/cmd/gg@latest
+```
+
+For unreleased development builds, install from the current main branch:
+
+```sh
+go install github.com/gurkangul/gg-cli/cmd/gg@main
 ```
 
 The binary is `gg`. The repo is `gg-cli` for descriptiveness; the
@@ -300,11 +311,11 @@ gg config set backup.timeout 45s
 gg config set backup.enabled false
 ```
 
-### Security — Credentials
+### Security — credentials and committed metadata
 
 **Never write a Memgraph password into `.gg/config.yaml`.**
-The file is easy to accidentally commit. Use environment variables instead — they
-override the corresponding config fields at runtime:
+Use environment variables instead — they override the corresponding config
+fields at runtime:
 
 | Env var | Overrides |
 |---|---|
@@ -318,12 +329,11 @@ export MEMGRAPH_PASSWORD="your-password"
 gg status   # password is picked up automatically
 ```
 
-Add `.gg/config.yaml` to your project's `.gitignore` as an extra precaution
-(the project UUID inside is not secret, but belt-and-suspenders never hurts):
-
-```
-.gg/config.yaml
-```
+`.gg/config.yaml` is project metadata: it contains the project UUID and local
+service endpoints so multiple agents share the same project namespace. It is OK
+to commit when it contains no credentials. Runtime state and exported brain data
+belong under `.gg/brain/`, `.gg/outbox/`, or `~/.gg/projects/<project_id>/` and
+should not be treated as public source files.
 
 ---
 
@@ -353,7 +363,9 @@ sees open tasks,             picks up TASK-017,           sees decision about au
 unread messages              gg record "JWT chosen"       gg search "JWT" → finds it
 ```
 
-All agents write to the same Qdrant + Memgraph backend. A decision made by one is immediately visible to the others.
+All agents write to the same project brain: JSONL is the durable local source,
+Qdrant is the semantic-search index, and Memgraph is the optional code graph. A
+decision made by one agent is immediately visible to the others.
 
 ---
 
@@ -369,6 +381,7 @@ flowchart LR
 
     subgraph gg["gg CLI (subprocess)"]
         CMD[cobra commands]
+        BR[brain JSONL\nsource of truth]
         OB[outbox\ncrash guard]
     end
 
@@ -379,7 +392,8 @@ flowchart LR
     end
 
     A1 & A2 & A3 -->|gg record / search / context| CMD
-    CMD -->|decisions · tasks · notes · rejections| QD
+    CMD -->|append brain records| BR
+    BR -->|derived semantic index| QD
     CMD --> OL
     OL -->|768-dim vectors| QD
     CMD -->|index writes| OB
@@ -412,15 +426,12 @@ projects can share the same local backend without data leakage.
 **No daemon, subprocess interface only.** Agents call `gg` directly from the
 shell. Docker provides the local stores; gg itself stays a normal CLI.
 
-**Two-store architecture: Qdrant + Memgraph.**
-Semantic memory and code impact queries need different storage models. Qdrant
-handles fuzzy search over decisions and tasks; Memgraph handles structural
-code relationships.
-
-**JSONL-primary brain writes with Qdrant as derived index.**
-Writes land in local JSONL first, then sync to Qdrant. If the vector store is
-temporarily unavailable, gg can still keep a durable local record and reconcile
-later.
+**JSONL source with Qdrant + Memgraph indexes.**
+Brain writes land in local JSONL first. Qdrant is a derived semantic-search
+index over decisions, tasks, notes, rejections, bugs, and messages. If the
+vector store is temporarily unavailable, gg can still keep a durable local
+record and reconcile later. Memgraph is the optional structural code graph for
+impact queries.
 
 ---
 

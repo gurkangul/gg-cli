@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-12
+
 ### Added
 
 **Compact system overhaul — agent auto-compact + 4 new surfaces**
@@ -207,5 +209,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
+[0.3.0]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.0
+[0.2.0]: https://github.com/gurkangul/gg-cli/releases/tag/v0.2.0
 [0.1.0]: https://github.com/gurkangul/gg-cli/releases/tag/v0.1.0
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.0...HEAD
