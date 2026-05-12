@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  release:
     name: Release
     runs-on: ubuntu-latest
     steps:
@@ -29,11 +29,63 @@ jobs:
       - name: Run tests
         run: go test ./... -race -count=1 -timeout=120s
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+      - name: Build release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+
+          build_one() {
+            goos="$1"
+            goarch="$2"
+            ext=""
+            archive_ext="tar.gz"
+            if [ "$goos" = "windows" ]; then
+              ext=".exe"
+              archive_ext="zip"
+            fi
+
+            work="dist/gg_${version}_${goos}_${goarch}"
+            mkdir -p "$work"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build \
+                -ldflags "-s -w -X github.com/gurkangul/gg-cli/cmd.version=v${version}" \
+                -o "$work/gg${ext}" ./cmd/gg
+            cp README.md LICENSE CHANGELOG.md "$work/"
+
+            if [ "$archive_ext" = "zip" ]; then
+              (cd dist && zip -qr "gg_${version}_${goos}_${goarch}.zip" "gg_${version}_${goos}_${goarch}")
+            else
+              tar -C dist -czf "dist/gg_${version}_${goos}_${goarch}.tar.gz" "gg_${version}_${goos}_${goarch}"
+            fi
+            rm -rf "$work"
+          }
+
+          build_one linux amd64
+          build_one linux arm64
+          build_one darwin amd64
+          build_one darwin arm64
+          build_one windows amd64
+
+          (cd dist && sha256sum gg_${version}_* > checksums.txt)
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
         with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+          body: |
+            ## Install
+
+            ```sh
+            go install github.com/gurkangul/gg-cli/cmd/gg@${{ github.ref_name }}
+            ```
+
+            Or download the binary for your platform from the assets below.
+
+            **Full Changelog**: https://github.com/gurkangul/gg-cli/blob/main/CHANGELOG.md
