@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-05-13
+
+### Added
+
+- Compact output now marks hidden record bodies inline (`[reason]`, `[tags]`, `[detail]`, `[resolved]`) so agents can see when a full hydrate is needed without expanding the compact row.
+- Agent compact output now ends with `! compact: reasons/details omitted; hydrate before action` to reinforce that compact is an index, not the source record.
+- `gg status` now warns when hydration/re-fetch rates are low enough that compact may be used as source-of-truth.
+
 ## [0.3.5] - 2026-05-12
 
 ### Fixed
@@ -215,7 +223,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
+[0.3.6]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.6
+[0.3.5]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.5
 [0.3.4]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.4
 [0.2.0]: https://github.com/gurkangul/gg-cli/releases/tag/v0.2.0
 [0.1.0]: https://github.com/gurkangul/gg-cli/releases/tag/v0.1.0
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.6...HEAD
