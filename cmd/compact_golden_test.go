@@ -53,15 +53,15 @@ var expectedRendererVersions = map[string]int{
 // Update ONLY the verb you changed — leaving others untouched signals
 // that their golden files are still valid.
 var expectedRendererV_each = map[string]int{
-	"search":     2,
-	"context":    2,
-	"impact":     1,
-	"inbox":      1,
-	"taskList":   1,
-	"taskGet":    1,
-	"bugList":    1,
-	"decideGaps": 1,
-	"repeatWork": 1,
+	"search":     3,
+	"context":    3,
+	"impact":     2,
+	"inbox":      2,
+	"taskList":   2,
+	"taskGet":    2,
+	"bugList":    2,
+	"decideGaps": 2,
+	"repeatWork": 2,
 }
 
 func TestCompactRendererV_Pinned(t *testing.T) {

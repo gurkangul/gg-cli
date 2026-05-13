@@ -28,15 +28,15 @@ import (
 // All verbs start at 1 — this is v1 of per-verb tracking (the prior global
 // compactRendererV=2 was verb-agnostic and is superseded by this table).
 const (
-	compactRendererV_search     = 2
-	compactRendererV_context    = 2
-	compactRendererV_impact     = 1
-	compactRendererV_inbox      = 1
-	compactRendererV_taskList   = 1 // "list" verb (task list)
-	compactRendererV_taskGet    = 1 // "task" verb (task get)
-	compactRendererV_bugList    = 1 // "list" verb (bug list)
-	compactRendererV_decideGaps = 1
-	compactRendererV_repeatWork = 1
+	compactRendererV_search     = 3
+	compactRendererV_context    = 3
+	compactRendererV_impact     = 2
+	compactRendererV_inbox      = 2
+	compactRendererV_taskList   = 2 // "list" verb (task list)
+	compactRendererV_taskGet    = 2 // "task" verb (task get)
+	compactRendererV_bugList    = 2 // "list" verb (bug list)
+	compactRendererV_decideGaps = 2
+	compactRendererV_repeatWork = 2
 )
 
 // isCompactActive returns true when the caller wants compact rendering.
@@ -109,8 +109,11 @@ func compactDecisionLine(d store.Decision) string {
 	if d.TaskID != "" {
 		suffix = " →" + d.TaskID
 	}
-	return fmt.Sprintf("D  %s  %s%s",
-		shortDate(d.CreatedAt), compactTrim(d.Text, compactLineWidth), suffix)
+	return fmt.Sprintf("D  %s  %s%s%s",
+		shortDate(d.CreatedAt), compactTrim(d.Text, compactLineWidth), compactHiddenMarker(
+			hiddenField{label: "reason", present: d.Reason != ""},
+			hiddenField{label: "tags", present: len(d.Tags) > 0},
+		), suffix)
 }
 
 // compactRejectionLine renders a rejection as:
@@ -121,16 +124,22 @@ func compactRejectionLine(r store.Rejection) string {
 	if r.TaskID != "" {
 		suffix = " →" + r.TaskID
 	}
-	return fmt.Sprintf("R  %s  %s%s",
-		shortDate(r.CreatedAt), compactTrim(r.Approach, compactLineWidth), suffix)
+	return fmt.Sprintf("R  %s  %s%s%s",
+		shortDate(r.CreatedAt), compactTrim(r.Approach, compactLineWidth), compactHiddenMarker(
+			hiddenField{label: "reason", present: r.Reason != ""},
+			hiddenField{label: "tags", present: len(r.Tags) > 0},
+		), suffix)
 }
 
 // compactTaskLine renders a task summary as:
 //
 //	T {icon} TASK-NNN  title[…] (priority)
 func compactTaskLine(t store.Task) string {
-	return fmt.Sprintf("T %s %s  %s (%s)",
-		taskStatusIcon(t.Status), t.ID, compactTrim(t.Title, compactLineWidth), t.Priority)
+	return fmt.Sprintf("T %s %s  %s%s (%s)",
+		taskStatusIcon(t.Status), t.ID, compactTrim(t.Title, compactLineWidth), compactHiddenMarker(
+			hiddenField{label: "detail", present: t.Detail != ""},
+			hiddenField{label: "tags", present: len(t.Tags) > 0},
+		), t.Priority)
 }
 
 // compactNoteLine renders a note as:
@@ -153,8 +162,36 @@ func compactDiscussionLine(d store.Discussion) string {
 	if n := len(d.Turns); n > 0 {
 		suffix = fmt.Sprintf(" (%d turns)", n)
 	}
-	return fmt.Sprintf("? %s %s  %s%s",
-		discStatusMark(d.Status), d.ID, compactTrim(d.Topic, compactLineWidth), suffix)
+	return fmt.Sprintf("? %s %s  %s%s%s",
+		discStatusMark(d.Status), d.ID, compactTrim(d.Topic, compactLineWidth), compactHiddenMarker(
+			hiddenField{label: "detail", present: d.Detail != ""},
+			hiddenField{label: "resolved", present: d.ResolvedNote != ""},
+		), suffix)
+}
+
+type hiddenField struct {
+	label   string
+	present bool
+}
+
+func compactHiddenMarker(fields ...hiddenField) string {
+	var labels []string
+	for _, f := range fields {
+		if f.present {
+			labels = append(labels, f.label)
+		}
+	}
+	if len(labels) == 0 {
+		return ""
+	}
+	return " [" + strings.Join(labels, ",") + "]"
+}
+
+func compactOmissionFooter() string {
+	if strings.TrimSpace(os.Getenv("GG_AGENT")) == "" && strings.TrimSpace(os.Getenv("GG_ROLE")) == "" {
+		return ""
+	}
+	return "! compact: reasons/details omitted; hydrate before action\n"
 }
 
 // compactBugLine renders a bug as:

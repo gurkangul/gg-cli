@@ -142,9 +142,11 @@ func TestCompactDecisionLine(t *testing.T) {
 		Text:      "use JWT for stateless auth",
 		CreatedAt: "2026-04-10T12:00:00Z",
 		TaskID:    "TASK-001",
+		Reason:    "stateless scales across agents",
+		Tags:      []string{"auth"},
 	}
 	got := compactDecisionLine(d)
-	want := "D  2026-04-10  use JWT for stateless auth →TASK-001"
+	want := "D  2026-04-10  use JWT for stateless auth [reason,tags] →TASK-001"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -159,11 +161,37 @@ func TestCompactDecisionLine_NoTask(t *testing.T) {
 }
 
 func TestCompactTaskLine(t *testing.T) {
-	tk := store.Task{ID: "TASK-042", Title: "rotate secrets", Status: "in_progress", Priority: "high"}
+	tk := store.Task{ID: "TASK-042", Title: "rotate secrets", Status: "in_progress", Priority: "high", Detail: "rotate all prod secrets", Tags: []string{"security"}}
 	got := compactTaskLine(tk)
-	want := "T → TASK-042  rotate secrets (high)"
+	want := "T → TASK-042  rotate secrets [detail,tags] (high)"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestCompactRejectionLine_HiddenFieldMarkers(t *testing.T) {
+	r := store.Rejection{
+		Approach:  "poll every command output",
+		Reason:    "too noisy",
+		Tags:      []string{"telemetry"},
+		CreatedAt: "2026-04-10T12:00:00Z",
+	}
+	got := compactRejectionLine(r)
+	want := "R  2026-04-10  poll every command output [reason,tags]"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestCompactOmissionFooter_AgentOnly(t *testing.T) {
+	t.Setenv("GG_AGENT", "codex")
+	t.Setenv("GG_ROLE", "")
+	if got := compactOmissionFooter(); got != "! compact: reasons/details omitted; hydrate before action\n" {
+		t.Fatalf("agent footer = %q", got)
+	}
+	t.Setenv("GG_AGENT", "")
+	if got := compactOmissionFooter(); got != "" {
+		t.Fatalf("human footer = %q, want empty", got)
 	}
 }
 
@@ -247,13 +275,13 @@ func TestRenderTaskImpactCompact(t *testing.T) {
 	var buf bytes.Buffer
 	renderTaskImpactCompact(&buf, r)
 	out := buf.String()
-
 	for _, want := range []string{
 		"impact: TASK-100",
 		"→ TASK-101",
+		"→ TASK-102",
 		"~ TASK-099",
-		"D  2026-04-10  use X →TASK-100",
-		"T ✓ TASK-050  prerequisite (medium)",
+		"D  2026-04-10  use X [reason] →TASK-100",
+		"T ✓ TASK-050  prerequisite [detail] (medium)",
 		"B  BUG-001 [low/fixed]  minor glitch",
 	} {
 		if !strings.Contains(out, want) {

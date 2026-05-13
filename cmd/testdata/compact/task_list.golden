@@ -1,3 +1,3 @@
-T → TASK-042  implement JWT refresh endpoint (high)
-T ○ TASK-007  add JWT revocation cache (medium)
+T → TASK-042  implement JWT refresh endpoint [detail] (high)
+T ○ TASK-007  add JWT revocation cache [detail] (medium)
 T ✓ TASK-003  write auth integration test (low)

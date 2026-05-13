@@ -106,7 +106,10 @@ func renderStatusMD(projectID string, tasks []store.Task, decisions []store.Deci
 	// ── Active tasks ──────────────────────────────────────────────────────────
 	b.WriteString("## Active Tasks\n\n")
 
-	type pri struct{ name string; tasks []store.Task }
+	type pri struct {
+		name  string
+		tasks []store.Task
+	}
 	byPriority := []pri{{"high", nil}, {"medium", nil}, {"low", nil}, {"", nil}}
 	pMap := map[string]*[]store.Task{"high": &byPriority[0].tasks, "medium": &byPriority[1].tasks, "low": &byPriority[2].tasks}
 
@@ -246,10 +249,7 @@ func renderNorthStarBlock(rtDir string) {
 				netTok = -netTok
 			}
 			refetchPct := float64(tsum.HydrationCalls) / float64(tsum.CompactCalls) * 100
-			refetchWarn := ""
-			if refetchPct > 50 {
-				refetchWarn = " ⚠ drop-list muhtemelen agresif"
-			}
+			refetchWarn := hydrationRiskSuffix(tsum.HydrationCalls, tsum.CompactCalls)
 			fmt.Printf("  Hydration %d re-fetches (%.0f%%), %s back; net %s%s / ~%s%s tok (est. calibrated: %d bytes/tok)%s\n",
 				tsum.HydrationCalls, refetchPct,
 				humanFileSize(int64(tsum.HydrationBytesTotal)),
@@ -283,6 +283,23 @@ func renderNorthStarBlock(rtDir string) {
 			tsum.DupeChoiceCancel, tsum.DupeChoiceForce, tsum.DupeChoiceAutoForce)
 	}
 	fmt.Println()
+}
+
+func hydrationRiskSuffix(hydrationCalls, compactCalls int) string {
+	if compactCalls <= 0 || hydrationCalls <= 0 {
+		return ""
+	}
+	refetchPct := float64(hydrationCalls) / float64(compactCalls) * 100
+	switch {
+	case refetchPct > 50:
+		return " ⚠ drop-list muhtemelen agresif"
+	case refetchPct < 10:
+		return " ⚠ low; compact may be used as source-of-truth"
+	case refetchPct < 20:
+		return " ⚠ moderate; hydrate before action"
+	default:
+		return ""
+	}
 }
 
 // renderSessionsBlock formats the Sessions summary line and, when

@@ -1,5 +1,5 @@
 search — 2D 1R 0T 0B 0N
 
-D  2026-04-10  use JWT for stateless auth →TASK-001
-D  2026-04-08  rotate signing keys every 90 days
-R  2026-04-09  session cookies with Redis store →TASK-010
+D  2026-04-10  use JWT for stateless auth [reason,tags] →TASK-001
+D  2026-04-08  rotate signing keys every 90 days [reason]
+R  2026-04-09  session cookies with Redis store [reason] →TASK-010

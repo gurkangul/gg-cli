@@ -4,10 +4,10 @@ impact: internal/store/store.go — 2 deps 2 sym 1D 2T 1R 1B
 → cmd/search.go
 S Decision
 S Task
-D  2026-04-10  use JWT for stateless auth →TASK-001
-T → TASK-042  implement JWT refresh endpoint (high)
-T ○ TASK-007  add JWT revocation cache (medium)
-R  2026-04-09  session cookies with Redis store →TASK-010
+D  2026-04-10  use JWT for stateless auth [reason,tags] →TASK-001
+T → TASK-042  implement JWT refresh endpoint [detail] (high)
+T ○ TASK-007  add JWT revocation cache [detail] (medium)
+R  2026-04-09  session cookies with Redis store [reason] →TASK-010
 B  BUG-007  token refresh race condition
 
 ! graph unavailable

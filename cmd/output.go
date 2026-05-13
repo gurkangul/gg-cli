@@ -17,14 +17,14 @@ var jsonOutput bool
 
 // Exit code constants — callers can check the exit code to distinguish error classes.
 //
-//   0   success
-//   1   general error
-//   2   resource not found
-//   3   config / init error (run `gg init`)
-//   4   service unreachable (Qdrant / Ollama / Memgraph)
-//   6   store down — writes blocked, reads served from cache
-//   7   verify gate failed — a pre-task-done hook blocked the state transition
-//   130 interrupted (Ctrl+C)
+//	0   success
+//	1   general error
+//	2   resource not found
+//	3   config / init error (run `gg init`)
+//	4   service unreachable (Qdrant / Ollama / Memgraph)
+//	6   store down — writes blocked, reads served from cache
+//	7   verify gate failed — a pre-task-done hook blocked the state transition
+//	130 interrupted (Ctrl+C)
 const (
 	ExitOK           = 0
 	ExitGeneral      = 1
@@ -134,6 +134,10 @@ func emitCompact(cmd *cobra.Command, verb string, renderDefault, renderCompact f
 
 	var out bytes.Buffer
 	renderCompact(&out)
+	if footer := compactOmissionFooter(); footer != "" {
+		out.WriteByte('\n')
+		out.WriteString(footer)
+	}
 	_, _ = os.Stdout.Write(out.Bytes())
 
 	cfg, err := config.Load()

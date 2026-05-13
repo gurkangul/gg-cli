@@ -4,8 +4,8 @@ impact: TASK-042 — 2 deps 2 sib 1D 2T 1B 1R
 → TASK-102
 ~ TASK-040
 ~ TASK-041
-D  2026-04-10  use JWT for stateless auth →TASK-001
-T ○ TASK-007  add JWT revocation cache (medium)
+D  2026-04-10  use JWT for stateless auth [reason,tags] →TASK-001
+T ○ TASK-007  add JWT revocation cache [detail] (medium)
 T ✓ TASK-003  write auth integration test (low)
 B  BUG-007 [high/open]  token refresh race condition
-R  2026-04-09  session cookies with Redis store →TASK-010
+R  2026-04-09  session cookies with Redis store [reason] →TASK-010

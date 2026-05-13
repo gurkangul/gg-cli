@@ -505,10 +505,10 @@ func TestRenderContextCompact_Structure(t *testing.T) {
 
 	// Body contents present.
 	for _, want := range []string{
-		"D  2026-04-10  use JWT for auth →TASK-001",
-		"R  2026-04-09  session-based auth",
-		"T ○ TASK-042  JWT refresh endpoint (high)",
-		"? ? DISC-008  rotate secrets (2 turns)",
+		"D  2026-04-10  use JWT for auth [reason] →TASK-001",
+		"R  2026-04-09  session-based auth [reason]",
+		"T ○ TASK-042  JWT refresh endpoint [detail] (high)",
+		"? ? DISC-008  rotate secrets [detail] (2 turns)",
 		"N  2026-04-08  (TASK-042)  saw X in logs",
 	} {
 		if !strings.Contains(out, want) {
@@ -564,10 +564,10 @@ func TestRenderSearchCompact_Structure(t *testing.T) {
 	if !strings.Contains(out, "search — 1D 1R") {
 		t.Errorf("missing header:\n%s", out)
 	}
-	if !strings.Contains(out, "D  2026-04-10  use JWT →TASK-001") {
+	if !strings.Contains(out, "D  2026-04-10  use JWT [reason] →TASK-001") {
 		t.Errorf("missing decision line:\n%s", out)
 	}
-	if !strings.Contains(out, "R  2026-04-09  sessions") {
+	if !strings.Contains(out, "R  2026-04-09  sessions [reason]") {
 		t.Errorf("missing rejection line:\n%s", out)
 	}
 	for _, forbidden := range []string{"stateless", "scaling"} {
@@ -672,9 +672,9 @@ func TestRenderImpactCompact_Structure(t *testing.T) {
 	for _, want := range []string{
 		"→ /abs/path/src/api.go",
 		"S HandleLogin",
-		"D  2026-04-10  use bcrypt →TASK-007",
-		"T ○ TASK-042  rotate secrets (high)",
-		"R  2026-04-09  MD5",
+		"D  2026-04-10  use bcrypt [reason] →TASK-007",
+		"T ○ TASK-042  rotate secrets [detail] (high)",
+		"R  2026-04-09  MD5 [reason]",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing line %q:\n%s", want, out)
