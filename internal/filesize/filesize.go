@@ -24,6 +24,20 @@ var excludedPrefixes = []string{
 	"_bmad",
 	"_bmad-output",
 	"docs/cli/",
+	"dist/",
+	"build/",
+	".output/",
+	".next/",
+	".vercel/",
+	".svelte-kit/",
+	".astro/",
+	".turbo/",
+	".nuxt/",
+	".cache/",
+	"out/",
+	"data/",
+	"home/",
+	"go/pkg/mod/",
 }
 
 // excludedSuffixes lists filename suffixes that are never gated.
@@ -35,6 +49,33 @@ var excludedSuffixes = []string{
 // sourcedExtensions are the file extensions subject to the size gate.
 var sourcedExtensions = []string{
 	".go", ".ts", ".tsx", ".js", ".jsx", ".py", ".rs", ".java",
+}
+
+var excludedDirNames = map[string]struct{}{
+	".git":         {},
+	".gg":          {},
+	".gsd":         {},
+	"vendor":       {},
+	"node_modules": {},
+	"testdata":     {},
+	"dist":         {},
+	"build":        {},
+	"_bmad-output": {},
+	".output":      {},
+	".next":        {},
+	".vercel":      {},
+	".svelte-kit":  {},
+	".astro":       {},
+	".turbo":       {},
+	".nuxt":        {},
+	".cache":       {},
+	"out":          {},
+}
+
+var excludedDirPrefixes = []string{
+	"data/",
+	"home/",
+	"go/pkg/mod/",
 }
 
 // Baseline records line counts for grandfathered files.
@@ -54,6 +95,7 @@ type Violation struct {
 
 // ShouldExclude reports whether path should be skipped by the size gate.
 func ShouldExclude(path string) bool {
+	path = filepath.ToSlash(path)
 	for _, p := range excludedPrefixes {
 		if strings.HasPrefix(path, p) {
 			return true
@@ -72,6 +114,28 @@ func ShouldExclude(path string) bool {
 		}
 	}
 	return true // not a gated extension
+}
+
+func shouldSkipDir(root, path string, d os.DirEntry) bool {
+	base := d.Name()
+	if _, ok := excludedDirNames[base]; ok {
+		return true
+	}
+	if strings.HasPrefix(base, "_bmad") {
+		return true
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	for _, p := range excludedDirPrefixes {
+		p = strings.TrimSuffix(p, "/")
+		if rel == p || strings.HasPrefix(rel, p+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // IsTestFile reports whether the file path looks like a test file.
@@ -158,13 +222,7 @@ func ScanDir(root string) (map[string]int, error) {
 			return nil // skip unreadable entries
 		}
 		if d.IsDir() {
-			base := d.Name()
-			switch base {
-			case "vendor", "node_modules", "testdata", ".git", ".gg", ".gsd",
-				"dist", "build", "_bmad-output":
-				return filepath.SkipDir
-			}
-			if strings.HasPrefix(base, "_bmad") {
+			if shouldSkipDir(root, path, d) {
 				return filepath.SkipDir
 			}
 			return nil

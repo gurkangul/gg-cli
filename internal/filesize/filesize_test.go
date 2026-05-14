@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -37,6 +38,14 @@ func TestShouldExclude(t *testing.T) {
 		"_bmad/agent.md",
 		"_bmad-output/x.go",
 		"docs/cli/task.md",
+		"data/home/go/pkg/mod/example.com/dep/file.go",
+		"home/go/pkg/mod/example.com/dep/file.go",
+		"go/pkg/mod/example.com/dep/file.go",
+		".cache/build/file.js",
+		".next/server/file.js",
+		"dist/bundle.js",
+		"build/output.js",
+		"out/server/file.js",
 		"proto/gen.pb.go",
 		"model_generated.go",
 		"README.md",
@@ -58,6 +67,50 @@ func TestShouldExclude(t *testing.T) {
 	for _, p := range included {
 		if ShouldExclude(p) {
 			t.Errorf("ShouldExclude(%q) = true; want false", p)
+		}
+	}
+}
+
+func TestScanDirSkipsRuntimeAndDependencyTrees(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"cmd/main.go":                     "package main\n",
+		"internal/cache/cache.go":         strings.Repeat("// source\n", 3),
+		"data/home/go/pkg/mod/dep/dep.go": strings.Repeat("// dep\n", 3),
+		"home/go/pkg/mod/dep/dep.go":      strings.Repeat("// dep\n", 3),
+		"go/pkg/mod/dep/dep.go":           strings.Repeat("// dep\n", 3),
+		".cache/generated.js":             strings.Repeat("// cache\n", 3),
+		"node_modules/pkg/index.js":       strings.Repeat("// dep\n", 3),
+	}
+	for rel, body := range files {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+
+	got, err := ScanDir(dir)
+	if err != nil {
+		t.Fatalf("ScanDir: %v", err)
+	}
+	if _, ok := got["cmd/main.go"]; !ok {
+		t.Fatal("expected cmd/main.go to be scanned")
+	}
+	if _, ok := got["internal/cache/cache.go"]; !ok {
+		t.Fatal("internal/cache must stay auditable source, not be treated as runtime cache")
+	}
+	for _, rel := range []string{
+		"data/home/go/pkg/mod/dep/dep.go",
+		"home/go/pkg/mod/dep/dep.go",
+		"go/pkg/mod/dep/dep.go",
+		".cache/generated.js",
+		"node_modules/pkg/index.js",
+	} {
+		if _, ok := got[rel]; ok {
+			t.Fatalf("%s should have been skipped", rel)
 		}
 	}
 }
@@ -120,12 +173,12 @@ func TestCheckViolations(t *testing.T) {
 	}
 
 	files := map[string]int{
-		"cmd/small.go": 200,        // under limit — no violation
-		"cmd/over.go":  510,        // new file > 500 — violation
-		"cmd/big.go":   650,        // in baseline (600), grew > limit → violation
-		"cmd/shrink.go": 490,       // would be grandfathered if baseline said 600
-		"a_test.go":    820,        // test file > 800 — violation
-		"b_test.go":    750,        // test file ≤ 800 — OK
+		"cmd/small.go":  200, // under limit — no violation
+		"cmd/over.go":   510, // new file > 500 — violation
+		"cmd/big.go":    650, // in baseline (600), grew > limit → violation
+		"cmd/shrink.go": 490, // would be grandfathered if baseline said 600
+		"a_test.go":     820, // test file > 800 — violation
+		"b_test.go":     750, // test file ≤ 800 — OK
 	}
 
 	// Add shrink to baseline so it is grandfathered.
