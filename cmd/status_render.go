@@ -239,23 +239,21 @@ func renderNorthStarBlock(rtDir string) {
 		fmt.Printf("Compact     %d calls, %s / ~%s tok (est. calibrated: %d bytes/tok) saved (avg %.0f%% reduction)\n",
 			tsum.CompactCalls, humanFileSize(int64(saved)),
 			humanTokenCount(tsum.CompactTokensSaved), telemetry.CorpusCalibration.Rounded, pctSaved)
-		if tsum.HydrationCalls > 0 {
-			netBytes := tsum.NetSavingsBytes
-			netTok := tsum.NetTokensSaved
-			netSign := ""
-			if netBytes < 0 {
-				netSign = "-"
-				netBytes = -netBytes
-				netTok = -netTok
-			}
-			refetchPct := float64(tsum.HydrationCalls) / float64(tsum.CompactCalls) * 100
-			refetchWarn := hydrationRiskSuffix(tsum.HydrationCalls, tsum.CompactCalls)
-			fmt.Printf("  Hydration %d re-fetches (%.0f%%), %s back; net %s%s / ~%s%s tok (est. calibrated: %d bytes/tok)%s\n",
-				tsum.HydrationCalls, refetchPct,
-				humanFileSize(int64(tsum.HydrationBytesTotal)),
-				netSign, humanFileSize(int64(netBytes)),
-				netSign, humanTokenCount(netTok), telemetry.CorpusCalibration.Rounded, refetchWarn)
+		netBytes := tsum.NetSavingsBytes
+		netTok := tsum.NetTokensSaved
+		netSign := ""
+		if netBytes < 0 {
+			netSign = "-"
+			netBytes = -netBytes
+			netTok = -netTok
 		}
+		refetchPct := float64(tsum.HydrationCalls) / float64(tsum.CompactCalls) * 100
+		refetchWarn := hydrationRiskSuffix(tsum.HydrationCalls, tsum.CompactCalls)
+		fmt.Printf("  Hydration %d re-fetches (%.0f%%), %s back; net %s%s / ~%s%s tok (est. calibrated: %d bytes/tok)%s\n",
+			tsum.HydrationCalls, refetchPct,
+			humanFileSize(int64(tsum.HydrationBytesTotal)),
+			netSign, humanFileSize(int64(netBytes)),
+			netSign, humanTokenCount(netTok), telemetry.CorpusCalibration.Rounded, refetchWarn)
 		if tsum.GlyphByteOverhead > 0 {
 			glyphPerCall := tsum.GlyphByteOverhead / tsum.CompactCalls
 			glyphTokPerCall := float64(glyphPerCall) / float64(telemetry.BytesPerToken)
@@ -286,7 +284,7 @@ func renderNorthStarBlock(rtDir string) {
 }
 
 func hydrationRiskSuffix(hydrationCalls, compactCalls int) string {
-	if compactCalls <= 0 || hydrationCalls <= 0 {
+	if compactCalls <= 0 {
 		return ""
 	}
 	refetchPct := float64(hydrationCalls) / float64(compactCalls) * 100

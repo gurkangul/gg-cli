@@ -2,6 +2,14 @@ package cmd
 
 import "testing"
 
+func TestHydrationRiskSuffix_ZeroHydrationWarnsSourceOfTruthRisk(t *testing.T) {
+	got := hydrationRiskSuffix(0, 7)
+	want := " ⚠ low; compact may be used as source-of-truth"
+	if got != want {
+		t.Fatalf("hydrationRiskSuffix = %q, want %q", got, want)
+	}
+}
+
 func TestHydrationRiskSuffix_LowRateWarnsSourceOfTruthRisk(t *testing.T) {
 	got := hydrationRiskSuffix(5, 83)
 	want := " ⚠ low; compact may be used as source-of-truth"
