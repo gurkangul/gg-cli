@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-05-15
+
+### Fixed
+
+- `gg status` now renders compact hydration risk even when compact calls have zero full re-fetches, so zero-hydration agent sessions show the source-of-truth warning instead of hiding the Hydration line.
+- File-size scans now skip dependency/framework/runtime trees such as Hermes mounts and generated caches while preserving source paths like `internal/cache`, keeping `gg status` responsive in mounted agent workspaces.
+
 ## [0.3.6] - 2026-05-13
 
 ### Added
