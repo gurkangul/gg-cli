@@ -47,6 +47,8 @@ var expectedRendererVersions = map[string]int{
 	"bugList":    compactRendererV_bugList,
 	"decideGaps": compactRendererV_decideGaps,
 	"repeatWork": compactRendererV_repeatWork,
+	"auditGaps":  compactRendererV_auditGaps,
+	"dogfood":    compactRendererV_dogfood,
 }
 
 // expectedRendererV_each holds the known-good version for each verb.
@@ -62,6 +64,8 @@ var expectedRendererV_each = map[string]int{
 	"bugList":    2,
 	"decideGaps": 2,
 	"repeatWork": 2,
+	"auditGaps":  1,
+	"dogfood":    1,
 }
 
 func TestCompactRendererV_Pinned(t *testing.T) {

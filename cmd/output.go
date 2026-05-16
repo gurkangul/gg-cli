@@ -153,4 +153,5 @@ func emitCompact(cmd *cobra.Command, verb string, renderDefault, renderCompact f
 		fromFlag = f.Value.String()
 	}
 	telemetry.RecordCompact(runtimeDir, verb, fromFlag, out.Len(), baseline.Len(), rendererV, out.String())
+	compactTelemetryEmitted = true
 }

@@ -101,7 +101,11 @@ func runMetricsDogfood(cmd *cobra.Command, _ []string) error {
 
 	w := cmd.OutOrStdout()
 	if isCompactActive(cmd) {
-		renderDogfoodCompact(w, m)
+		emitCompact(cmd, "dogfood",
+			func(out io.Writer) { renderDogfoodDefault(out, m) },
+			func(out io.Writer) { renderDogfoodCompact(out, m) },
+			compactRendererV_dogfood,
+		)
 		return nil
 	}
 	renderDogfoodDefault(w, m)

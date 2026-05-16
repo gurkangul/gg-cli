@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -219,19 +220,31 @@ func runAuditGaps(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	if auditGapsCompact {
-		for _, f := range gaps {
-			fmt.Fprintln(w, f)
-		}
+	if isCompactActive(cmd) {
+		emitCompact(cmd, "gaps",
+			func(out io.Writer) { renderAuditGapsDefault(out, gaps, len(files), auditGapsSince) },
+			func(out io.Writer) { renderAuditGapsCompact(out, gaps) },
+			compactRendererV_auditGaps,
+		)
 		return nil
 	}
 
+	renderAuditGapsDefault(w, gaps, len(files), auditGapsSince)
+	return nil
+}
+
+func renderAuditGapsCompact(w io.Writer, gaps []string) {
+	for _, f := range gaps {
+		fmt.Fprintln(w, f)
+	}
+}
+
+func renderAuditGapsDefault(w io.Writer, gaps []string, totalFiles int, since string) {
 	fmt.Fprintf(w, "gaps: %d of %d changed files have no gg record/decision/task coverage (last %s)\n\n",
-		len(gaps), len(files), auditGapsSince)
+		len(gaps), totalFiles, since)
 	for _, f := range gaps {
 		fmt.Fprintf(w, "  • %s\n", f)
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Run `gg record` or `gg decide` after editing files to capture rationale.")
-	return nil
 }

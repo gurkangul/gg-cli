@@ -135,6 +135,35 @@ func TestIsCompactActive_AgentWithoutCompactFlagRegistered(t *testing.T) {
 	}
 }
 
+func TestShouldRootRecordTelemetry_CompactActiveSkipsDefaultRecord(t *testing.T) {
+	t.Setenv("GG_COMPACT", "")
+	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_AGENT", "codex")
+	cmd := newTestCmd()
+	if shouldRootRecordTelemetry(cmd) {
+		t.Error("agent auto-compact should skip root default telemetry; emitCompact records byte-count telemetry")
+	}
+}
+
+func TestShouldRootRecordTelemetry_ExplicitCompactFalseRecordsDefault(t *testing.T) {
+	t.Setenv("GG_COMPACT", "")
+	t.Setenv("GG_AGENT", "codex")
+	cmd := newTestCmd()
+	_ = cmd.Flags().Set("compact", "false")
+	if !shouldRootRecordTelemetry(cmd) {
+		t.Error("explicit --compact=false should record normal root telemetry")
+	}
+}
+
+func TestShouldRootRecordTelemetry_NoCompactPathRecordsDefault(t *testing.T) {
+	t.Setenv("GG_COMPACT", "")
+	t.Setenv("GG_AGENT", "codex")
+	cmd := &cobra.Command{Use: "no-compact-flag"}
+	if !shouldRootRecordTelemetry(cmd) {
+		t.Error("commands without a compact render path should still record root telemetry")
+	}
+}
+
 // ── Shared line builders ─────────────────────────────────────────────────────
 
 func TestCompactDecisionLine(t *testing.T) {

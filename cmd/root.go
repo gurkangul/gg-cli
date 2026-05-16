@@ -68,32 +68,57 @@ var rootCmd = &cobra.Command{
 	SilenceErrors: true,
 }
 
+var (
+	rootCompactTelemetrySkipped bool
+	compactTelemetryEmitted     bool
+)
+
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output results as JSON")
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
+		rootCompactTelemetrySkipped = false
+		compactTelemetryEmitted = false
 		// Record telemetry on every command invocation. Compact-aware commands
 		// self-record post-render with byte counts — skip here to avoid double
 		// counting when --compact is active.
-		if f := cmd.Flags().Lookup("compact"); f != nil && f.Changed {
+		if !shouldRootRecordTelemetry(cmd) {
+			rootCompactTelemetrySkipped = true
 			return
 		}
-		// Best-effort: silently skip if config can't be loaded.
-		if cfg, err := config.Load(); err == nil {
-			// Only override the default-ON behaviour when the user explicitly
-			// set telemetry.enabled in .gg/config.yaml (see BUG-018). Field
-			// absence must not be read as "false".
-			if cfg.Telemetry.Enabled != nil {
-				telemetry.SetEnabled(*cfg.Telemetry.Enabled)
+		recordRootTelemetry(cmd)
+	}
+	rootCmd.PersistentPostRun = func(cmd *cobra.Command, _ []string) {
+		if rootCompactTelemetrySkipped && !compactTelemetryEmitted {
+			recordRootTelemetry(cmd)
+		}
+	}
+}
+
+func shouldRootRecordTelemetry(cmd *cobra.Command) bool {
+	f := cmd.Flags().Lookup("compact")
+	if f == nil {
+		return true
+	}
+	return !isCompactActive(cmd)
+}
+
+func recordRootTelemetry(cmd *cobra.Command) {
+	// Best-effort: silently skip if config can't be loaded.
+	if cfg, err := config.Load(); err == nil {
+		// Only override the default-ON behaviour when the user explicitly
+		// set telemetry.enabled in .gg/config.yaml (see BUG-018). Field
+		// absence must not be read as "false".
+		if cfg.Telemetry.Enabled != nil {
+			telemetry.SetEnabled(*cfg.Telemetry.Enabled)
+		}
+		if runtimeDir, err := cfg.RuntimeDir(); err == nil {
+			// Pass --from flag value if the command defines one — telemetry
+			// uses it as a "this is an agent" signal alongside GG_ROLE/GG_AGENT.
+			fromFlag := ""
+			if f := cmd.Flags().Lookup("from"); f != nil {
+				fromFlag = f.Value.String()
 			}
-			if runtimeDir, err := cfg.RuntimeDir(); err == nil {
-				// Pass --from flag value if the command defines one — telemetry
-				// uses it as a "this is an agent" signal alongside GG_ROLE/GG_AGENT.
-				fromFlag := ""
-				if f := cmd.Flags().Lookup("from"); f != nil {
-					fromFlag = f.Value.String()
-				}
-				telemetry.Record(runtimeDir, cmd.Name(), fromFlag)
-			}
+			telemetry.Record(runtimeDir, cmd.Name(), fromFlag)
 		}
 	}
 }

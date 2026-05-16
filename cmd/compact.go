@@ -37,6 +37,8 @@ const (
 	compactRendererV_bugList    = 2 // "list" verb (bug list)
 	compactRendererV_decideGaps = 2
 	compactRendererV_repeatWork = 2
+	compactRendererV_auditGaps  = 1
+	compactRendererV_dogfood    = 1
 )
 
 // isCompactActive returns true when the caller wants compact rendering.
