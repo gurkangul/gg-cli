@@ -579,7 +579,7 @@ orchestrating agent you MUST:
 - After each BMAD round: extract any decisions, task proposals, or
   rejected approaches and persist them with gg immediately.
 - Do NOT wait for the user to ask — capture before moving on.
-- If a BMAD agent says 'reject X' → `gg record "X" --decision-status rejected --reason "why"`
+- If a BMAD agent says 'reject X' → `gg record "X" --decision-status=rejected --reason "why"`
 - If a BMAD agent proposes a task → `gg task create "title" ...`
 - If a BMAD agent reaches a conclusion the user accepts → `gg record "conclusion" --reason "..."``
 
