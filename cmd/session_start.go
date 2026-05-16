@@ -186,8 +186,10 @@ func writeVersionDelta(w io.Writer, runtimeDir, curr string) {
 	// the existing struct — the previous version wrote a fresh State{} and
 	// silently dropped BypassLog every session-start.
 	defer func() {
-		state.LastSeenCLIVersion = curr
-		_ = projectstate.Write(runtimeDir, state)
+		_ = projectstate.Update(runtimeDir, func(s *projectstate.State) error {
+			s.LastSeenCLIVersion = curr
+			return nil
+		})
 	}()
 
 	if prev == "" || prev == curr {

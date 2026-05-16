@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-05-16
+
+### Added
+
+- `gg task done` now enforces a compact-hydration gate for tagged agent sessions: agents must run a recent full `gg task get TASK-ID` before closing the task, preventing compact list/search rows from being treated as source-of-truth.
+- Full task hydration proofs are stored in project runtime state with locked updates so concurrent Hermes agents cannot clobber another session's proof, bypass audit entries, or session-start version state.
+
 ## [0.3.7] - 2026-05-15
 
 ### Fixed

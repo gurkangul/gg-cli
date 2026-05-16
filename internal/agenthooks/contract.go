@@ -61,6 +61,9 @@ func CheckContract(projectRoot string) []ContractCheckResult {
 	seen := make(map[string]bool)
 
 	for _, inst := range registry {
+		if inst.Tier() == TierSoft && !inst.Detect(projectRoot) {
+			continue
+		}
 		path := inst.ContractPath(projectRoot)
 		// Deduplicate paths — codex and bmad both target AGENTS.md.
 		if seen[path] {

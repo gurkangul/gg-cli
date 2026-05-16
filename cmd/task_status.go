@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -37,6 +38,11 @@ command also requires --verifier <role> and rejects when the verifier is the
 same actor that performed the ready-for-live transition. Prevents the
 premature-closure / same-actor-verification pattern surfaced by the
 dogfood audit 2026-04-19.
+
+COMPACT HYDRATION GATE: tagged agent sessions (GG_AGENT or GG_ROLE set) must run
+'gg task get TASK-ID' shortly before 'gg task done'. Compact list/search rows are
+scan/index views only; the targeted full task read writes a local hydration proof
+so agents cannot close work from omitted detail.
 
 See also: gg task review (request peer review), gg record (capture design decisions made during the work)`,
 	Args: cobra.ExactArgs(2),
@@ -121,6 +127,22 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer d.Close()
+
+	if _, cfg, cfgErr := hookCfg.load(cmd.ErrOrStderr()); cfgErr == nil && cfg != nil {
+		runtimeDir, rtErr := cfg.RuntimeDir()
+		if rtErr != nil {
+			return &ExitError{Code: ExitVerifyFailed, Message: fmt.Sprintf("compact hydration gate could not find runtime dir: %v", rtErr)}
+		}
+		if !enforcement.Enabled() {
+			if isAgentTaggedSession() {
+				if rej := emitGuardSkipEvent("compact-hydration-task-done", taskID); rej != nil {
+					return rej
+				}
+			}
+		} else if rej := checkTaskDoneHydrationGate(runtimeDir, taskID, time.Now().UTC()); rej != nil {
+			return rej
+		}
+	}
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()

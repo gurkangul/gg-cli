@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/projectstate"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
@@ -278,6 +279,23 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 		relCtx = fetchRelatedContext(d, t)
 	}
 
+	// task get normally shows the full Detail block — it is a targeted lookup,
+	// not a list scan. Agent auto-compact (GG_AGENT/GG_ROLE env) must not
+	// suppress the spec that workers need. --compact and --short are still
+	// respected when explicitly provided (BUG-027/TASK-341).
+	shortExplicit := taskGetShort || (cmd != nil && func() bool {
+		for _, name := range []string{"compact", "short"} {
+			f := cmd.Flags().Lookup(name)
+			if f != nil && f.Changed && f.Value.String() == "true" {
+				return true
+			}
+		}
+		return false
+	}())
+	if !shortExplicit {
+		recordTaskFullHydration(t.ID)
+	}
+
 	return printJSON(t, func() {
 		// Render the with-context block into a buffer up front so both the
 		// compact and default paths can include it in their byte measurements
@@ -288,19 +306,6 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 			renderRelatedContext(&ctxBlock, relCtx)
 		}
 
-		// task get always shows the full Detail block — it is a targeted lookup,
-		// not a list scan. Agent auto-compact (GG_AGENT/GG_ROLE env) must not
-		// suppress the spec that workers need. --compact and --short are still
-		// respected when explicitly provided (BUG-027/TASK-341).
-		shortExplicit := taskGetShort || (cmd != nil && func() bool {
-			for _, name := range []string{"compact", "short"} {
-				f := cmd.Flags().Lookup(name)
-				if f != nil && f.Changed && f.Value.String() == "true" {
-					return true
-				}
-			}
-			return false
-		}())
 		if shortExplicit {
 			emitCompact(cmd, "task",
 				func(w io.Writer) {
@@ -413,6 +418,22 @@ func renderTaskGetCompact(w io.Writer, t *store.Task) {
 	}
 	fmt.Fprintf(w, "%s %s [%s] %s%s\n",
 		statusIcon(t.Status), t.ID, t.Priority, compactTrim(t.Title, compactLineWidth), suffix)
+}
+
+func recordTaskFullHydration(taskID string) {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not record task hydration proof: %v\n", err)
+		return
+	}
+	runtimeDir, err := cfg.RuntimeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not record task hydration proof: %v\n", err)
+		return
+	}
+	if err := projectstate.RecordHydration(runtimeDir, "task", taskID); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not record task hydration proof: %v\n", err)
+	}
 }
 
 // renderRelatedContext writes the === Related Context === block to w.

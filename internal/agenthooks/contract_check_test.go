@@ -50,9 +50,11 @@ func TestCheckContract_Missing(t *testing.T) {
 
 	var found *ContractCheckResult
 	for i := range results {
+		if results[i].AgentName == "gsd" {
+			t.Fatalf("soft GSD contract should be skipped when .gsd/gsd.db is absent: %+v", results[i])
+		}
 		if results[i].AgentName == "claude" {
 			found = &results[i]
-			break
 		}
 	}
 	if found == nil {

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -26,8 +27,19 @@ type State struct {
 	// Callers that need a bounded view should filter by time via
 	// ListBypassesSince rather than truncating the slice.
 	BypassLog []BypassEntry `json:"bypass_log,omitempty"`
+	// RecentHydrations records targeted full-record reads that are safe to use as
+	// a prerequisite for state-changing commands. Compact output is an index view;
+	// these entries prove an agent fetched the full source record before acting.
+	RecentHydrations []HydrationEntry `json:"recent_hydrations,omitempty"`
 	// UpdatedAt is the RFC3339 timestamp of the last write.
 	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+// HydrationEntry records one full-record fetch for an entity such as TASK-123.
+type HydrationEntry struct {
+	TS         string `json:"ts"`
+	EntityType string `json:"entity_type"`
+	EntityID   string `json:"entity_id"`
 }
 
 // BypassEntry records a single enforcement-bypass event. Produced every time
@@ -79,8 +91,13 @@ func Read(runtimeDir string) (State, error) {
 }
 
 // Write atomically persists the State to <runtimeDir>/state.json.
-// UpdatedAt is always set to now.
+// UpdatedAt is always set to now. Multi-step read/modify/write callers should
+// prefer Update so concurrent writers cannot clobber unrelated state fields.
 func Write(runtimeDir string, s State) error {
+	return writeUnlocked(runtimeDir, s)
+}
+
+func writeUnlocked(runtimeDir string, s State) error {
 	s.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -98,6 +115,53 @@ func Write(runtimeDir string, s State) error {
 	return nil
 }
 
+// Update serializes read-modify-write updates to state.json with a cooperative
+// per-project file lock. This keeps high-frequency runtime writers (hydration
+// proofs, bypass audit, session-start version deltas) from clobbering each
+// other's fields in multi-agent Hermes sessions.
+func Update(runtimeDir string, fn func(*State) error) error {
+	return update(runtimeDir, false, fn)
+}
+
+func update(runtimeDir string, recoverReadError bool, fn func(*State) error) error {
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		return fmt.Errorf("mkdir %s: %w", runtimeDir, err)
+	}
+	unlock, err := lock(runtimeDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	s, err := Read(runtimeDir)
+	if err != nil {
+		if !recoverReadError {
+			return err
+		}
+		s = State{}
+	}
+	if err := fn(&s); err != nil {
+		return err
+	}
+	return writeUnlocked(runtimeDir, s)
+}
+
+func lock(runtimeDir string) (func(), error) {
+	path := filepath.Join(runtimeDir, fileName+".lock")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open lock %s: %w", path, err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("lock %s: %w", path, err)
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+	}, nil
+}
+
 // AppendBypass reads state.json, appends a BypassEntry with the current
 // timestamp, and writes it back. Best-effort: runtimeDir missing or a
 // concurrent writer clobbering our update surfaces as the returned error.
@@ -109,25 +173,18 @@ func Write(runtimeDir string, s State) error {
 // the gg record UUID that provides an auditable FK into the brain.
 // Pass empty strings for legacy callers or when the field is not applicable.
 func AppendBypass(runtimeDir, gate, taskID, actor, rationale, rationaleTaskID, rationaleRecordID string) error {
-	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
-		return fmt.Errorf("mkdir %s: %w", runtimeDir, err)
-	}
-	s, err := Read(runtimeDir)
-	if err != nil {
-		// Don't refuse to log on a parse error — start a fresh state rather
-		// than losing every subsequent bypass record to a single bad write.
-		s = State{}
-	}
-	s.BypassLog = append(s.BypassLog, BypassEntry{
-		TS:                time.Now().UTC().Format(time.RFC3339),
-		Gate:              gate,
-		TaskID:            taskID,
-		Actor:             actor,
-		Rationale:         rationale,
-		RationaleTaskID:   rationaleTaskID,
-		RationaleRecordID: rationaleRecordID,
+	return update(runtimeDir, true, func(s *State) error {
+		s.BypassLog = append(s.BypassLog, BypassEntry{
+			TS:                time.Now().UTC().Format(time.RFC3339),
+			Gate:              gate,
+			TaskID:            taskID,
+			Actor:             actor,
+			Rationale:         rationale,
+			RationaleTaskID:   rationaleTaskID,
+			RationaleRecordID: rationaleRecordID,
+		})
+		return nil
 	})
-	return Write(runtimeDir, s)
 }
 
 // ListBypassesSince returns every BypassEntry whose TS is after `since`.
@@ -150,4 +207,51 @@ func ListBypassesSince(runtimeDir string, since time.Time) ([]BypassEntry, error
 		}
 	}
 	return out, nil
+}
+
+// RecordHydration records that entityType/entityID was fetched in full. It is
+// intentionally separate from telemetry's aggregate byte counters: task-close
+// gates need a per-entity proof, not a project-wide hydration percentage.
+func RecordHydration(runtimeDir, entityType, entityID string) error {
+	return update(runtimeDir, true, func(s *State) error {
+		now := time.Now().UTC()
+		cutoff := now.Add(-24 * time.Hour)
+		kept := s.RecentHydrations[:0]
+		for _, h := range s.RecentHydrations {
+			ts, tsErr := time.Parse(time.RFC3339, h.TS)
+			if tsErr == nil && ts.After(cutoff) {
+				kept = append(kept, h)
+			}
+		}
+		s.RecentHydrations = append(kept, HydrationEntry{
+			TS:         now.Format(time.RFC3339),
+			EntityType: entityType,
+			EntityID:   entityID,
+		})
+		return nil
+	})
+}
+
+// HasRecentHydration reports whether entityType/entityID was fetched in full
+// within the supplied duration. Malformed timestamps are ignored rather than
+// treated as valid proof.
+func HasRecentHydration(runtimeDir, entityType, entityID string, within time.Duration, now time.Time) (bool, HydrationEntry, error) {
+	s, err := Read(runtimeDir)
+	if err != nil {
+		return false, HydrationEntry{}, err
+	}
+	cutoff := now.UTC().Add(-within)
+	for _, h := range s.RecentHydrations {
+		if h.EntityType != entityType || h.EntityID != entityID {
+			continue
+		}
+		ts, tsErr := time.Parse(time.RFC3339, h.TS)
+		if tsErr != nil {
+			continue
+		}
+		if !ts.Before(cutoff) {
+			return true, h, nil
+		}
+	}
+	return false, HydrationEntry{}, nil
 }
