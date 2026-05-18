@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.14] - 2026-05-18
+
+### Added
+
+- `gg system brain status` reports cross-project project ID, backend, brain snapshot drift/freshness, and CodeGraph health separately from `gg system sync` contract propagation.
+
+### Fixed
+
+- `gg task done` no longer panics when a valid compact-hydration proof returns a typed-nil gate result.
+
 ## [0.3.13] - 2026-05-18
 
 ### Fixed
@@ -264,7 +274,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.13...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.14...HEAD
+[0.3.14]: https://github.com/gurkangul/gg-cli/compare/v0.3.13...v0.3.14
 [0.3.13]: https://github.com/gurkangul/gg-cli/compare/v0.3.12...v0.3.13
 [0.3.12]: https://github.com/gurkangul/gg-cli/compare/v0.3.11...v0.3.12
 [0.3.11]: https://github.com/gurkangul/gg-cli/compare/v0.3.10...v0.3.11
