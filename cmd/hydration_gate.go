@@ -77,5 +77,8 @@ func enforceTaskHydrationGate(w io.Writer, cache *hookConfig, taskID, action, by
 		}
 		return nil
 	}
-	return checkTaskHydrationGate(runtimeDir, taskID, action, time.Now().UTC())
+	if rej := checkTaskHydrationGate(runtimeDir, taskID, action, time.Now().UTC()); rej != nil {
+		return rej
+	}
+	return nil
 }
