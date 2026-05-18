@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 )
 
@@ -144,22 +143,6 @@ func update(runtimeDir string, recoverReadError bool, fn func(*State) error) err
 		return err
 	}
 	return writeUnlocked(runtimeDir, s)
-}
-
-func lock(runtimeDir string) (func(), error) {
-	path := filepath.Join(runtimeDir, fileName+".lock")
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("open lock %s: %w", path, err)
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("lock %s: %w", path, err)
-	}
-	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-		_ = f.Close()
-	}, nil
 }
 
 // AppendBypass reads state.json, appends a BypassEntry with the current

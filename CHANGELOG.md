@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.13] - 2026-05-18
+
+### Fixed
+
+- Release builds now cross-compile Windows binaries by moving project runtime state locking behind platform-specific files.
+
 ## [0.3.12] - 2026-05-18
 
 ### Fixed
@@ -258,7 +264,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.12...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.13...HEAD
+[0.3.13]: https://github.com/gurkangul/gg-cli/compare/v0.3.12...v0.3.13
 [0.3.12]: https://github.com/gurkangul/gg-cli/compare/v0.3.11...v0.3.12
 [0.3.11]: https://github.com/gurkangul/gg-cli/compare/v0.3.10...v0.3.11
 [0.3.10]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.10
