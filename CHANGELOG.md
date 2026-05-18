@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-05-18
+
+### Fixed
+
+- Release workflow now publishes GoReleaser-built binary archives and checksums to GitHub Releases instead of creating metadata-only releases.
+
 ## [0.3.11] - 2026-05-18
 
 ### Added
@@ -252,7 +258,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.11...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.12...HEAD
+[0.3.12]: https://github.com/gurkangul/gg-cli/compare/v0.3.11...v0.3.12
 [0.3.11]: https://github.com/gurkangul/gg-cli/compare/v0.3.10...v0.3.11
 [0.3.10]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.10
 [0.3.7]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.7
