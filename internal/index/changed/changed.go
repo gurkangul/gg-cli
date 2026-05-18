@@ -2,37 +2,41 @@
 // in an incremental `gg index --changed` run.
 //
 // Strategy (CHANGED_CONTRACT.md §1):
-//   - Changed files = `git diff --name-only <last_sha> HEAD` (committed delta)
-//   - Plus any untracked files the user hasn't committed yet (future: day-2)
+//   - Changed files = `git diff --name-only <last_sha>` (committed + staged +
+//     unstaged tracked working-tree delta)
+//   - Plus untracked source files from `git ls-files --others --exclude-standard`
 //   - First-run (no state): caller should fall back to full index
 package changed
 
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
-// Files runs `git diff --name-only <baseSHA> HEAD` in projectRoot and
-// returns the absolute paths of files that changed. Only files matching
-// the given extension suffixes (e.g. ".go", ".ts") are included.
+// Files runs `git diff --name-only <baseSHA>` plus
+// `git ls-files --others --exclude-standard` in projectRoot and returns the
+// absolute paths of files that differ from the last indexed tree. Only files
+// matching the given extension suffixes (e.g. ".go", ".ts") are included.
 // An empty extensions list returns all changed files.
 func Files(ctx context.Context, projectRoot, baseSHA string, extensions []string) ([]string, error) {
 	if baseSHA == "" {
 		return nil, fmt.Errorf("baseSHA must not be empty")
 	}
 
-	// git diff --name-only <baseSHA> HEAD
-	cmd := exec.CommandContext(ctx, "git", "-C", projectRoot, "diff", "--name-only", baseSHA, "HEAD")
-	var out bytes.Buffer
-	var errOut bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errOut
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("git diff: %w — %s", err, strings.TrimSpace(errOut.String()))
+	committedAndTracked, err := gitLines(ctx, projectRoot, "diff", "--name-only", baseSHA)
+	if err != nil {
+		return nil, fmt.Errorf("git diff: %w", err)
+	}
+	untracked, err := gitLines(ctx, projectRoot, "ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files: %w", err)
 	}
 
 	extSet := make(map[string]bool, len(extensions))
@@ -40,8 +44,9 @@ func Files(ctx context.Context, projectRoot, baseSHA string, extensions []string
 		extSet[ext] = true
 	}
 
+	seen := make(map[string]bool, len(committedAndTracked)+len(untracked))
 	var files []string
-	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+	for _, line := range append(committedAndTracked, untracked...) {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -49,9 +54,66 @@ func Files(ctx context.Context, projectRoot, baseSHA string, extensions []string
 		if len(extSet) > 0 && !extSet[filepath.Ext(line)] {
 			continue
 		}
-		files = append(files, filepath.Join(projectRoot, filepath.FromSlash(line)))
+		path := filepath.Join(projectRoot, filepath.FromSlash(line))
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
+		files = append(files, path)
 	}
 	return files, nil
+}
+
+// WorkingTreeFingerprint returns a deterministic fingerprint for the current
+// tracked/untracked source delta against baseSHA. Clean trees return "".
+func WorkingTreeFingerprint(ctx context.Context, projectRoot, baseSHA string, extensions []string) (string, error) {
+	files, err := Files(ctx, projectRoot, baseSHA, extensions)
+	if err != nil {
+		return "", err
+	}
+	if len(files) == 0 {
+		return "", nil
+	}
+	sort.Strings(files)
+	h := sha256.New()
+	for _, path := range files {
+		rel, err := filepath.Rel(projectRoot, path)
+		if err != nil {
+			return "", fmt.Errorf("rel %s: %w", path, err)
+		}
+		rel = filepath.ToSlash(rel)
+		_, _ = h.Write([]byte(rel))
+		_, _ = h.Write([]byte{0})
+		data, readErr := os.ReadFile(path)
+		if os.IsNotExist(readErr) {
+			_, _ = h.Write([]byte("<deleted>"))
+		} else if readErr != nil {
+			return "", fmt.Errorf("read %s: %w", path, readErr)
+		} else {
+			_, _ = h.Write(data)
+		}
+		_, _ = h.Write([]byte{0})
+	}
+	return fmt.Sprintf("sha256:%x", h.Sum(nil)), nil
+}
+
+func gitLines(ctx context.Context, projectRoot string, args ...string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", projectRoot}, args...)...)
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errOut
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("%w — %s", err, strings.TrimSpace(errOut.String()))
+	}
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines, nil
 }
 
 // HeadSHA returns the SHA of the current HEAD commit in projectRoot.

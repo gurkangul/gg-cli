@@ -81,6 +81,14 @@ func CheckMeta(ggDir, modelName string, dim int) error {
 			ErrModelMismatch, meta.ModelName, meta.Dim, modelName,
 		)
 	}
+	if meta.Dim != 0 && meta.Dim != dim {
+		return fmt.Errorf(
+			"%w: Qdrant collections were created with model %q at dim %d, "+
+				"but the configured model %q now returns dim %d — "+
+				"run `gg reembed` to drop and rebuild all collections with the new dimension",
+			ErrModelMismatch, meta.ModelName, meta.Dim, modelName, dim,
+		)
+	}
 	return nil
 }
 

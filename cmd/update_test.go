@@ -38,6 +38,44 @@ func TestCompareSemver(t *testing.T) {
 	}
 }
 
+func TestCheckLatestGG_UsesDirectWhenProxyStale(t *testing.T) {
+	installFakeGoProxyDirect(t, "v0.3.9", "v0.3.10")
+
+	info, err := checkLatestGG(context.Background(), "v0.3.9")
+	if err != nil {
+		t.Fatalf("checkLatestGG: %v", err)
+	}
+	if info.Latest != "v0.3.10" || !info.Update {
+		t.Fatalf("latest/update = %s/%v, want v0.3.10/true", info.Latest, info.Update)
+	}
+	if info.LatestSource != "go-list-direct" {
+		t.Fatalf("LatestSource = %q, want go-list-direct", info.LatestSource)
+	}
+	if len(info.Warnings) == 0 || !strings.Contains(info.Warnings[0], "proxy reported v0.3.9") {
+		t.Fatalf("expected proxy-stale warning, got %#v", info.Warnings)
+	}
+}
+
+func TestInstalledBinaryWarningDetectsPATHSkew(t *testing.T) {
+	oldExecutable := updateExecutable
+	oldLookPath := updateLookPath
+	t.Cleanup(func() {
+		updateExecutable = oldExecutable
+		updateLookPath = oldLookPath
+	})
+
+	dir := t.TempDir()
+	active := filepath.Join(dir, "old", "gg")
+	target := filepath.Join(dir, "new", "gg")
+	updateExecutable = func() (string, error) { return active, nil }
+	updateLookPath = func(string) (string, error) { return active, nil }
+
+	warning := installedBinaryWarning(target)
+	if !strings.Contains(warning, active) || !strings.Contains(warning, filepath.Dir(target)) {
+		t.Fatalf("expected active/path skew warning, got %q", warning)
+	}
+}
+
 func TestEnvTruthy(t *testing.T) {
 	for _, v := range []string{"1", "true", "TRUE", "yes", "on", "y"} {
 		if !envTruthy(v) {
@@ -178,6 +216,27 @@ func installFakeGo(t *testing.T, version string) {
 		"fi\n" +
 		"if [ \"$1 $2\" = \"env GOPATH\" ]; then\n" +
 		"  printf '" + goPathRoot + "\\n'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"echo unexpected go args: \"$@\" >&2\n" +
+		"exit 1\n"
+	if err := os.WriteFile(goPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake go: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func installFakeGoProxyDirect(t *testing.T, proxyVersion, directVersion string) {
+	t.Helper()
+	dir := t.TempDir()
+	goPath := filepath.Join(dir, "go")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1 $2 $3\" = \"list -m -json\" ]; then\n" +
+		"  if [ \"$GOPROXY\" = \"direct\" ]; then\n" +
+		"    printf '{\"Path\":\"github.com/gurkangul/gg-cli\",\"Version\":\"" + directVersion + "\"}\\n'\n" +
+		"  else\n" +
+		"    printf '{\"Path\":\"github.com/gurkangul/gg-cli\",\"Version\":\"" + proxyVersion + "\"}\\n'\n" +
+		"  fi\n" +
 		"  exit 0\n" +
 		"fi\n" +
 		"echo unexpected go args: \"$@\" >&2\n" +

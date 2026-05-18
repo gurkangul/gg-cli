@@ -122,6 +122,10 @@ func runTaskReadyForLive(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
+	if err := enforceTaskHydrationGate(cmd.ErrOrStderr(), nil, taskID, "task ready-for-live", "compact-hydration-task-ready-for-live"); err != nil {
+		return err
+	}
+
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 

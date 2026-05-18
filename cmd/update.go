@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -66,11 +65,13 @@ func init() {
 }
 
 type updateInfo struct {
-	Current     string `json:"current"`
-	Latest      string `json:"latest"`
-	Update      bool   `json:"update_available"`
-	Comparable  bool   `json:"comparable"`
-	InstallHint string `json:"install_hint,omitempty"`
+	Current      string   `json:"current"`
+	Latest       string   `json:"latest"`
+	Update       bool     `json:"update_available"`
+	Comparable   bool     `json:"comparable"`
+	InstallHint  string   `json:"install_hint,omitempty"`
+	LatestSource string   `json:"latest_source,omitempty"`
+	Warnings     []string `json:"warnings,omitempty"`
 }
 
 type updateResult struct {
@@ -107,7 +108,7 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	result := updateResult{updateInfo: info}
+	result := updateResult{updateInfo: info, Warnings: append([]string(nil), info.Warnings...)}
 	install, reason := shouldInstallUpdate(info, updateForce)
 	if !install {
 		result.SkipReason = reason
@@ -146,6 +147,20 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	if targetErr == nil {
 		if !jsonOutput {
 			fmt.Printf("installed binary: %s\n", target)
+		}
+		expected := info.Latest
+		if v, vErr := binaryVersion(ctx, target); vErr != nil {
+			warning := fmt.Sprintf("could not verify installed binary version at %s: %v", target, vErr)
+			result.Warnings = append(result.Warnings, warning)
+			if !jsonOutput {
+				fmt.Println("warning: " + warning)
+			}
+		} else if cmp, ok := compareSemver(v, expected); !ok || cmp < 0 {
+			warning := fmt.Sprintf("installed binary at %s reports %s, expected at least %s", target, v, expected)
+			result.Warnings = append(result.Warnings, warning)
+			if !jsonOutput {
+				fmt.Println("warning: " + warning)
+			}
 		}
 		if warning := installedBinaryWarning(target); warning != "" {
 			result.Warnings = append(result.Warnings, warning)
@@ -206,14 +221,16 @@ func shouldInstallUpdate(info updateInfo, force bool) (bool, string) {
 }
 
 func checkLatestGG(ctx context.Context, current string) (updateInfo, error) {
-	latest, err := latestGGModuleVersion(ctx)
+	latest, source, warnings, err := latestGGModuleVersion(ctx)
 	if err != nil {
 		return updateInfo{}, err
 	}
 	info := updateInfo{
-		Current:     strings.TrimSpace(current),
-		Latest:      latest,
-		InstallHint: "gg update",
+		Current:      strings.TrimSpace(current),
+		Latest:       latest,
+		InstallHint:  "gg update",
+		LatestSource: source,
+		Warnings:     warnings,
 	}
 	if info.Current == "" {
 		info.Current = "unknown"
@@ -224,8 +241,34 @@ func checkLatestGG(ctx context.Context, current string) (updateInfo, error) {
 	return info, nil
 }
 
-func latestGGModuleVersion(ctx context.Context) (string, error) {
+func latestGGModuleVersion(ctx context.Context) (string, string, []string, error) {
+	proxyVersion, proxyErr := latestGGModuleVersionVia(ctx, false)
+	directVersion, directErr := latestGGModuleVersionVia(ctx, true)
+
+	switch {
+	case proxyErr != nil && directErr != nil:
+		return "", "", nil, fmt.Errorf("check latest gg version: proxy: %v; direct: %v", proxyErr, directErr)
+	case proxyErr != nil:
+		return directVersion, "go-list-direct", []string{fmt.Sprintf("Go proxy latest lookup failed; used GOPROXY=direct: %v", proxyErr)}, nil
+	case directErr != nil:
+		return proxyVersion, "go-list-proxy", []string{fmt.Sprintf("GOPROXY=direct latest lookup failed; Go proxy may be stale: %v", directErr)}, nil
+	}
+
+	cmp, ok := compareSemver(proxyVersion, directVersion)
+	if ok && cmp < 0 {
+		return directVersion, "go-list-direct", []string{fmt.Sprintf("Go proxy reported %s but GOPROXY=direct reported %s; using direct to avoid proxy cache lag", proxyVersion, directVersion)}, nil
+	}
+	if ok && cmp > 0 {
+		return proxyVersion, "go-list-proxy", []string{fmt.Sprintf("GOPROXY=direct reported older version %s; using Go proxy result %s", directVersion, proxyVersion)}, nil
+	}
+	return proxyVersion, "go-list-proxy", nil, nil
+}
+
+func latestGGModuleVersionVia(ctx context.Context, direct bool) (string, error) {
 	cmd := updateCommandContext(ctx, "go", "list", "-m", "-json", ggModulePath+"@latest")
+	if direct {
+		cmd.Env = append(os.Environ(), "GOPROXY=direct")
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -238,9 +281,9 @@ func latestGGModuleVersion(ctx context.Context) (string, error) {
 				strings.Contains(detail, "private repository") {
 				detail += "\nrepository must be public, or your Go/Git credentials must allow reading it"
 			}
-			return "", fmt.Errorf("check latest gg version: %w: %s", err, detail)
+			return "", fmt.Errorf("%w: %s", err, detail)
 		}
-		return "", fmt.Errorf("check latest gg version: %w", err)
+		return "", fmt.Errorf("%w", err)
 	}
 	var mod goListModule
 	if err := json.Unmarshal(out, &mod); err != nil {
@@ -270,6 +313,15 @@ func runUpdatedGG(ctx context.Context, bin string, stdout, stderr io.Writer, arg
 		return fmt.Errorf("%s %s failed: %w", bin, strings.Join(args, " "), err)
 	}
 	return nil
+}
+
+func binaryVersion(ctx context.Context, bin string) (string, error) {
+	cmd := updateCommandContext(ctx, bin, "--version")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func goInstallBinaryPath(ctx context.Context) (string, error) {
@@ -341,6 +393,14 @@ func renderUpdateInfo(info updateInfo) {
 	fmt.Println("──────────────────────────────────────────────────")
 	fmt.Printf("current: %s\n", info.Current)
 	fmt.Printf("latest:  %s\n", info.Latest)
+	if info.LatestSource != "" {
+		fmt.Printf("source:  %s\n", info.LatestSource)
+	}
+	if len(info.Warnings) > 0 {
+		for _, warning := range info.Warnings {
+			fmt.Printf("warning: %s\n", warning)
+		}
+	}
 	switch {
 	case !info.Comparable:
 		fmt.Println("status:  current version is not comparable to public semver")
@@ -350,67 +410,6 @@ func renderUpdateInfo(info updateInfo) {
 	default:
 		fmt.Println("status:  up to date")
 	}
-}
-
-func compareSemver(a, b string) (int, bool) {
-	av, apre, ok := parseSemverCore(a)
-	if !ok {
-		return 0, false
-	}
-	bv, bpre, ok := parseSemverCore(b)
-	if !ok {
-		return 0, false
-	}
-	for i := 0; i < 3; i++ {
-		switch {
-		case av[i] < bv[i]:
-			return -1, true
-		case av[i] > bv[i]:
-			return 1, true
-		}
-	}
-	switch {
-	case apre == bpre:
-		return 0, true
-	case apre == "":
-		return 1, true
-	case bpre == "":
-		return -1, true
-	case apre < bpre:
-		return -1, true
-	default:
-		return 1, true
-	}
-}
-
-func parseSemverCore(s string) ([3]int, string, bool) {
-	var out [3]int
-	s = strings.TrimSpace(s)
-	s = strings.TrimPrefix(s, "gg version ")
-	if !strings.HasPrefix(s, "v") {
-		return out, "", false
-	}
-	s = strings.TrimPrefix(s, "v")
-	if plus := strings.IndexByte(s, '+'); plus >= 0 {
-		s = s[:plus]
-	}
-	pre := ""
-	if dash := strings.IndexByte(s, '-'); dash >= 0 {
-		pre = s[dash+1:]
-		s = s[:dash]
-	}
-	parts := strings.Split(s, ".")
-	if len(parts) != 3 {
-		return out, "", false
-	}
-	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 {
-			return out, "", false
-		}
-		out[i] = n
-	}
-	return out, pre, true
 }
 
 func emitUpdateNotice(w io.Writer) {
@@ -426,20 +425,4 @@ func emitUpdateNotice(w io.Writer) {
 	fmt.Fprintf(w, "─── GG UPDATE AVAILABLE: %s → %s ───\n", info.Current, info.Latest)
 	fmt.Fprintln(w, "  run: gg update")
 	fmt.Fprintln(w)
-}
-
-func envTruthy(v string) bool {
-	v = strings.TrimSpace(strings.ToLower(v))
-	if v == "" {
-		return false
-	}
-	if b, err := strconv.ParseBool(v); err == nil {
-		return b
-	}
-	switch v {
-	case "yes", "y", "on":
-		return true
-	default:
-		return false
-	}
 }

@@ -43,37 +43,39 @@ func init() {
 func runConfigSet(_ *cobra.Command, args []string) error {
 	key := strings.TrimSpace(args[0])
 	value := strings.TrimSpace(args[1])
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
-	switch {
-	case key == "backup.enabled":
-		enabled, parseErr := strconv.ParseBool(value)
-		if parseErr != nil {
-			return fmt.Errorf("invalid backup.enabled %q — use true or false", value)
-		}
-		cfg.Backup.Enabled = &enabled
-	case key == "backup.interval":
-		if err := validateDurationConfigValue("backup.interval", value); err != nil {
+	return config.WithWriteLock(func() error {
+		cfg, err := config.Load()
+		if err != nil {
 			return err
 		}
-		cfg.Backup.Interval = value
-	case key == "backup.timeout":
-		if err := validateDurationConfigValue("backup.timeout", value); err != nil {
-			return err
-		}
-		cfg.Backup.Timeout = value
-	default:
-		return fmt.Errorf("unknown config key %q — supported keys: backup.enabled, backup.interval, backup.timeout", key)
-	}
 
-	if err := cfg.Save(); err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
-	fmt.Printf("✓ %s = %s\n", key, value)
-	return nil
+		switch {
+		case key == "backup.enabled":
+			enabled, parseErr := strconv.ParseBool(value)
+			if parseErr != nil {
+				return fmt.Errorf("invalid backup.enabled %q — use true or false", value)
+			}
+			cfg.Backup.Enabled = &enabled
+		case key == "backup.interval":
+			if err := validateDurationConfigValue("backup.interval", value); err != nil {
+				return err
+			}
+			cfg.Backup.Interval = value
+		case key == "backup.timeout":
+			if err := validateDurationConfigValue("backup.timeout", value); err != nil {
+				return err
+			}
+			cfg.Backup.Timeout = value
+		default:
+			return fmt.Errorf("unknown config key %q — supported keys: backup.enabled, backup.interval, backup.timeout", key)
+		}
+
+		if err := cfg.Save(); err != nil {
+			return fmt.Errorf("save config: %w", err)
+		}
+		fmt.Printf("✓ %s = %s\n", key, value)
+		return nil
+	})
 }
 
 func validateDurationConfigValue(key, value string) error {

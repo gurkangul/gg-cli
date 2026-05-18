@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -128,20 +127,8 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 
-	if _, cfg, cfgErr := hookCfg.load(cmd.ErrOrStderr()); cfgErr == nil && cfg != nil {
-		runtimeDir, rtErr := cfg.RuntimeDir()
-		if rtErr != nil {
-			return &ExitError{Code: ExitVerifyFailed, Message: fmt.Sprintf("compact hydration gate could not find runtime dir: %v", rtErr)}
-		}
-		if !enforcement.Enabled() {
-			if isAgentTaggedSession() {
-				if rej := emitGuardSkipEvent("compact-hydration-task-done", taskID); rej != nil {
-					return rej
-				}
-			}
-		} else if rej := checkTaskDoneHydrationGate(runtimeDir, taskID, time.Now().UTC()); rej != nil {
-			return rej
-		}
+	if err := enforceTaskHydrationGate(cmd.ErrOrStderr(), hookCfg, taskID, "task done", "compact-hydration-task-done"); err != nil {
+		return err
 	}
 
 	ctx, cancel := withTimeout(cmd.Context())
@@ -194,12 +181,15 @@ func runTaskBlock(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
 	d, err := loadDeps(false)
 	if err != nil {
 		return err
 	}
 	defer d.Close()
+
+	if err := enforceTaskHydrationGate(cmd.ErrOrStderr(), nil, taskID, "task block", "compact-hydration-task-block"); err != nil {
+		return err
+	}
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()

@@ -26,6 +26,11 @@ same actor that performed the ready-for-live transition. Prevents the
 premature-closure / same-actor-verification pattern surfaced by the
 dogfood audit 2026-04-19.
 
+COMPACT HYDRATION GATE: tagged agent sessions (GG_AGENT or GG_ROLE set) must run
+'gg task get TASK-ID' shortly before 'gg task done'. Compact list/search rows are
+scan/index views only; the targeted full task read writes a local hydration proof
+so agents cannot close work from omitted detail.
+
 See also: gg task review (request peer review), gg record (capture design decisions made during the work)
 
 ```

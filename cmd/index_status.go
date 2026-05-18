@@ -13,6 +13,7 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/index/changed"
+	"github.com/gurkangul/gg-cli/internal/index/runner"
 	"github.com/gurkangul/gg-cli/internal/index/state"
 	"github.com/gurkangul/gg-cli/internal/outbox"
 )
@@ -28,18 +29,19 @@ func init() {
 }
 
 type codeGraphStatus struct {
-	Status            string      `json:"status"`
-	Detail            string      `json:"detail,omitempty"`
-	LastIndexedSHA    string      `json:"last_indexed_sha,omitempty"`
-	HeadSHA           string      `json:"head_sha,omitempty"`
-	IndexedAt         string      `json:"indexed_at,omitempty"`
-	MemgraphAvailable bool        `json:"memgraph_available"`
-	MemgraphDetail    string      `json:"memgraph_detail,omitempty"`
-	GraphEmpty        bool        `json:"graph_empty"`
-	Stats             graph.Stats `json:"stats"`
-	PendingOutbox     int         `json:"pending_outbox"`
-	NoWatcherStarted  bool        `json:"no_watcher_started"`
-	Watcher           string      `json:"watcher,omitempty"`
+	Status                 string      `json:"status"`
+	Detail                 string      `json:"detail,omitempty"`
+	LastIndexedSHA         string      `json:"last_indexed_sha,omitempty"`
+	HeadSHA                string      `json:"head_sha,omitempty"`
+	IndexedAt              string      `json:"indexed_at,omitempty"`
+	WorkingTreeFingerprint string      `json:"working_tree_fingerprint,omitempty"`
+	MemgraphAvailable      bool        `json:"memgraph_available"`
+	MemgraphDetail         string      `json:"memgraph_detail,omitempty"`
+	GraphEmpty             bool        `json:"graph_empty"`
+	Stats                  graph.Stats `json:"stats"`
+	PendingOutbox          int         `json:"pending_outbox"`
+	NoWatcherStarted       bool        `json:"no_watcher_started"`
+	Watcher                string      `json:"watcher,omitempty"`
 }
 
 func runIndexStatus(cmd *cobra.Command, _ []string) error {
@@ -81,6 +83,7 @@ func collectCodeGraphStatus(ctx context.Context, root, ggDir string, cfg *config
 	if s, err := state.Read(ggDir); err == nil {
 		status.LastIndexedSHA = s.LastIndexedSHA
 		status.IndexedAt = s.IndexedAt
+		status.WorkingTreeFingerprint = s.WorkingTreeFingerprint
 	} else if errors.Is(err, state.ErrNoState) {
 		status.Status = "missing"
 		status.Detail = "index-state.json missing - run gg index --lang <lang>"
@@ -101,8 +104,27 @@ func (s *codeGraphStatus) fillGitFreshness(ctx context.Context, root string) {
 		return
 	}
 	if s.LastIndexedSHA == s.HeadSHA {
+		fingerprint, err := changed.WorkingTreeFingerprint(ctx, root, s.LastIndexedSHA, codeGraphSourceExtensions())
+		if err != nil {
+			s.Status = "unknown"
+			s.Detail = "working-tree freshness check failed: " + err.Error()
+			return
+		}
+		if fingerprint != s.WorkingTreeFingerprint {
+			s.Status = "stale"
+			if fingerprint == "" {
+				s.Detail = "working tree is clean but index-state records dirty indexed content - run gg index --changed"
+			} else {
+				s.Detail = "working tree has changed or untracked source files after last index - run gg index --changed"
+			}
+			return
+		}
 		s.Status = "ready"
-		s.Detail = "index-state matches HEAD"
+		if fingerprint != "" {
+			s.Detail = "index-state matches HEAD and indexed dirty working tree source fingerprint"
+		} else {
+			s.Detail = "index-state matches HEAD and working tree source files"
+		}
 		return
 	}
 	ancestor, err := changed.IsAncestor(ctx, root, s.LastIndexedSHA)
@@ -204,6 +226,20 @@ func renderCodeGraphStatus(w io.Writer, s codeGraphStatus) {
 	} else {
 		fmt.Fprintf(w, "  Watcher: %s\n", s.Watcher)
 	}
+}
+
+func codeGraphSourceExtensions() []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, lang := range []runner.Lang{runner.LangGo, runner.LangPython, runner.LangTypeScript} {
+		for _, ext := range langExtensions(lang) {
+			if !seen[ext] {
+				seen[ext] = true
+				out = append(out, ext)
+			}
+		}
+	}
+	return out
 }
 
 func indexStatusShortSHA(sha string) string {

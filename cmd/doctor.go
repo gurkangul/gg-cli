@@ -257,6 +257,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	fmt.Println("\nProject Structure:")
 	doctorCheckProjectStructure(report)
 
+	// 4b. Code graph freshness — doctor OK means this is ready too, not just file presence.
+	fmt.Println("\nCode graph freshness:")
+	doctorCheckCodeGraphFreshness(cmd, cfg, report)
+
 	// 5. Outbox check — surface any pending index writes without repairing them.
 	fmt.Println("\nOutbox (index pipeline crash-safety):")
 	doctorCheckOutbox(report)
@@ -280,7 +284,8 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	fmt.Println()
 	fmt.Println(strings.Repeat("─", 50))
 	if report.problems == 0 {
-		fmt.Println("All checks passed.")
+		fmt.Println("Core checks passed (connectivity, configured services, code graph freshness, JSONL integrity, and placeholder-vector scan).")
+		fmt.Println("Note: deep JSONL↔Qdrant reconciliation is not part of default doctor; run `gg doctor --reconcile` after crashes or suspected drift.")
 		if driftCount > 0 {
 			fmt.Printf("  ⚠ %d artifact(s) drifted from CLI templates — run `gg doctor --sync-artifacts` to inspect\n", driftCount)
 		}

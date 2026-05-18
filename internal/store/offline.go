@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/qdrant/go-client/qdrant"
 )
@@ -60,6 +61,9 @@ func (c *Client) CollectionUUIDs(ctx context.Context, collSuffix string) (map[st
 // replay restores the payload so the entry is not permanently lost.
 func (c *Client) ReplayBrainEntry(ctx context.Context, collSuffix, uuid string, payload map[string]any) error {
 	collName := c.projectID + "-" + collSuffix
+	payload = copyReplayPayload(payload)
+	payload["gg_vector_degraded"] = "reconcile_zero_vector"
+	payload["gg_vector_degraded_at"] = time.Now().UTC().Format(time.RFC3339)
 	qdrantPayload, err := qdrant.TryValueMap(payload)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
@@ -80,4 +84,47 @@ func (c *Client) ReplayBrainEntry(ctx context.Context, collSuffix, uuid string, 
 			},
 		},
 	})
+}
+
+func copyReplayPayload(payload map[string]any) map[string]any {
+	out := make(map[string]any, len(payload)+2)
+	for k, v := range payload {
+		out[k] = v
+	}
+	return out
+}
+
+// DegradedVectorCounts scans project collections for points restored with a
+// placeholder zero vector. Those payloads are durable but semantic recall is
+// degraded until `gg reembed` rebuilds real vectors from payload text.
+func (c *Client) DegradedVectorCounts(ctx context.Context) (map[string]int, error) {
+	collections := map[string]string{
+		collSuffixDecisions:   c.collDecisions(),
+		collSuffixRejections:  c.collRejections(),
+		collSuffixTasks:       c.collTasks(),
+		collSuffixBugs:        c.collBugs(),
+		collSuffixMessages:    c.collMessages(),
+		collSuffixDiscussions: c.collDiscussions(),
+		collSuffixNotes:       c.collNotes(),
+	}
+	out := make(map[string]int, len(collections))
+	for suffix, collName := range collections {
+		points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+			CollectionName: collName,
+			Limit:          qdrant.PtrOf(uint32(1000)),
+			WithPayload:    qdrant.NewWithPayloadInclude("gg_vector_degraded"),
+		})
+		if err != nil {
+			if isCollectionNotFoundError(err) {
+				continue
+			}
+			return nil, fmt.Errorf("scan degraded vectors in %s: %w", suffix, err)
+		}
+		for _, p := range points {
+			if p.GetPayload()["gg_vector_degraded"].GetStringValue() != "" {
+				out[suffix]++
+			}
+		}
+	}
+	return out, nil
 }

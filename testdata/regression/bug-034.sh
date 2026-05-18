@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# BUG-034 regression guard: runTaskDone must invoke closeWorkerPaneForTask
-# so 'gg task done' atomically removes the worker pane entry from panes.json.
-# Pre-fix (a2f2a04~1): cmd/task_status.go has no such call → bug present.
-# Post-fix: call is wired → bug absent.
-grep -q 'closeWorkerPaneForTask' cmd/task_status.go
+# BUG-034 belonged to removed spawn pane lifecycle orchestration. TASK-413
+# retires that surface; the regression guard is now that it stays removed and
+# stale managed orchestration blocks are cleaned.
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+cd "$repo_root"
+exec testdata/regression/orchestration-retired.sh

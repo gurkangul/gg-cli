@@ -8,13 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gurkangul/gg-cli/internal/index/changed"
 	"github.com/gurkangul/gg-cli/internal/index/state"
 	"github.com/gurkangul/gg-cli/internal/outbox"
 )
 
 func TestCollectCodeGraphStatus_ReadyAndStale(t *testing.T) {
 	root, ggDir := setupIndexStatusRepo(t)
-	first := gitCommit(t, root, "one.txt", "one")
+	first := gitCommit(t, root, "one.go", "package main")
 	if err := state.Write(ggDir, first); err != nil {
 		t.Fatalf("state.Write: %v", err)
 	}
@@ -27,7 +28,17 @@ func TestCollectCodeGraphStatus_ReadyAndStale(t *testing.T) {
 		t.Fatalf("ready sha mismatch: %#v", ready)
 	}
 
-	second := gitCommit(t, root, "two.txt", "two")
+	if err := os.WriteFile(filepath.Join(root, "dirty.go"), []byte("package main\nvar dirty = true\n"), 0o644); err != nil {
+		t.Fatalf("write dirty.go: %v", err)
+	}
+	dirty := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
+	if dirty.Status != "stale" || !strings.Contains(dirty.Detail, "changed or untracked source") {
+		t.Fatalf("dirty status=%q detail=%q", dirty.Status, dirty.Detail)
+	}
+	git(t, root, "add", "dirty.go")
+	git(t, root, "commit", "-m", "commit dirty.go")
+
+	second := gitCommit(t, root, "two.go", "package main\nvar two = 2")
 	stale := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
 	if stale.Status != "stale" {
 		t.Fatalf("stale status=%q detail=%q", stale.Status, stale.Detail)
@@ -39,18 +50,42 @@ func TestCollectCodeGraphStatus_ReadyAndStale(t *testing.T) {
 
 func TestCollectCodeGraphStatus_NonAncestor(t *testing.T) {
 	root, ggDir := setupIndexStatusRepo(t)
-	first := gitCommit(t, root, "one.txt", "one")
+	first := gitCommit(t, root, "one.go", "package main")
 	if err := state.Write(ggDir, first); err != nil {
 		t.Fatalf("state.Write: %v", err)
 	}
 
 	git(t, root, "checkout", "--orphan", "other")
-	_ = os.Remove(filepath.Join(root, "one.txt"))
-	git(t, root, "rm", "-f", "one.txt")
-	_ = gitCommit(t, root, "other.txt", "other")
+	_ = os.Remove(filepath.Join(root, "one.go"))
+	git(t, root, "rm", "-f", "one.go")
+	_ = gitCommit(t, root, "other.go", "package main")
 
 	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
 	if status.Status != "non_ancestor" {
+		t.Fatalf("status=%q detail=%q", status.Status, status.Detail)
+	}
+}
+
+func TestCollectCodeGraphStatus_LanguageFingerprintDoesNotHideOtherDirtySources(t *testing.T) {
+	root, ggDir := setupIndexStatusRepo(t)
+	first := gitCommit(t, root, "one.go", "package main")
+	if err := os.WriteFile(filepath.Join(root, "dirty.go"), []byte("package main\nvar dirty = true\n"), 0o644); err != nil {
+		t.Fatalf("write dirty.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dirty.ts"), []byte("export const dirty = true\n"), 0o644); err != nil {
+		t.Fatalf("write dirty.ts: %v", err)
+	}
+
+	goFingerprint, err := changed.WorkingTreeFingerprint(context.Background(), root, first, []string{".go"})
+	if err != nil {
+		t.Fatalf("WorkingTreeFingerprint: %v", err)
+	}
+	if err := state.WriteWithFingerprint(ggDir, first, goFingerprint); err != nil {
+		t.Fatalf("state.WriteWithFingerprint: %v", err)
+	}
+
+	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
+	if status.Status != "stale" || !strings.Contains(status.Detail, "changed or untracked source") {
 		t.Fatalf("status=%q detail=%q", status.Status, status.Detail)
 	}
 }

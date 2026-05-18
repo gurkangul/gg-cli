@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -153,6 +154,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 
 	// ── Graph queries (optional — skipped if Memgraph not configured) ──────
 	cfg, _ := config.Load()
+	result.Warnings = append(result.Warnings, impactGraphFreshnessWarnings(ctx, projRoot, cfg)...)
 	if cfg != nil && cfg.Memgraph.URI != "" {
 		gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID)
 		if gcErr != nil {
@@ -264,6 +266,24 @@ func runImpact(cmd *cobra.Command, args []string) error {
 		}
 		renderImpactDefault(os.Stdout, result)
 	})
+}
+
+func impactGraphFreshnessWarnings(ctx context.Context, root string, cfg *config.Config) []string {
+	if cfg == nil {
+		return []string{"code graph freshness unknown: config unavailable"}
+	}
+	status := collectCodeGraphStatus(ctx, root, filepath.Join(root, config.DirName), cfg)
+	switch status.Status {
+	case "ready":
+		return nil
+	case "stale", "partial", "missing", "non_ancestor":
+		return []string{fmt.Sprintf("code graph %s: %s", status.Status, status.Detail)}
+	default:
+		if status.Detail != "" {
+			return []string{fmt.Sprintf("code graph freshness unknown: %s", status.Detail)}
+		}
+		return []string{fmt.Sprintf("code graph freshness unknown: %s", status.Status)}
+	}
 }
 
 func renderImpactDefault(w io.Writer, result impactResult) {

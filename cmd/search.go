@@ -219,57 +219,17 @@ func serveSearchFromJSONL(cmd *cobra.Command, query string) error {
 		rejections = append(rejections, r)
 	}
 
-	// Include tasks and bugs as synthetic decisions so they surface in the
-	// offline results. This is a best-effort representation — full task/bug
-	// objects are not available without Qdrant.
+	var tasks []store.Task
 	for _, e := range taskEntries {
-		d := store.Decision{ID: e.UUID, Author: e.Author}
-		if v, ok := e.Payload["title"].(string); ok {
-			d.Text = "[task] " + v
-		}
-		if v, ok := e.Payload["detail"].(string); ok {
-			d.Reason = v
-		}
-		if v, ok := e.Payload["task_id"].(string); ok {
-			d.TaskID = v
-		}
-		if v, ok := e.Payload["status"].(string); ok {
-			d.Status = v
-		}
-		if v, ok := e.Payload["created_at"].(string); ok {
-			d.CreatedAt = v
-		}
-		if tags, ok := e.Payload["tags"].([]any); ok {
-			for _, t := range tags {
-				if s, ok := t.(string); ok {
-					d.Tags = append(d.Tags, s)
-				}
-			}
-		}
-		decisions = append(decisions, d)
-	}
-	for _, e := range bugEntries {
-		d := store.Decision{ID: e.UUID, Author: e.Author}
-		if v, ok := e.Payload["title"].(string); ok {
-			d.Text = "[bug] " + v
-		}
-		if v, ok := e.Payload["detail"].(string); ok {
-			d.Reason = v
-		}
-		if v, ok := e.Payload["created_at"].(string); ok {
-			d.CreatedAt = v
-		}
-		if tags, ok := e.Payload["tags"].([]any); ok {
-			for _, t := range tags {
-				if s, ok := t.(string); ok {
-					d.Tags = append(d.Tags, s)
-				}
-			}
-		}
-		decisions = append(decisions, d)
+		tasks = append(tasks, taskFromJSONLEntry(e))
 	}
 
-	return printSearchResults(cmd, query, decisions, rejections, nil, nil, nil, banner, time.Time{})
+	var bugs []store.Bug
+	for _, e := range bugEntries {
+		bugs = append(bugs, bugFromJSONLEntry(e))
+	}
+
+	return printSearchResults(cmd, query, decisions, rejections, tasks, bugs, nil, banner, time.Time{})
 }
 
 // serveSearchFromCache looks up the last-known-good cache entry for query

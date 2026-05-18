@@ -2,6 +2,7 @@ package changed_test
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -32,9 +33,7 @@ func makeGitRepo(t *testing.T) (root, headSHA string) {
 
 	// First commit
 	f := filepath.Join(dir, "a.txt")
-	if err := exec.Command("sh", "-c", "echo hello > "+f).Run(); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
+	writeFile(t, f, "hello\n")
 	run("add", "a.txt")
 	run("commit", "-m", "init")
 
@@ -43,6 +42,13 @@ func makeGitRepo(t *testing.T) (root, headSHA string) {
 		t.Fatalf("rev-parse: %v", err)
 	}
 	return dir, strings.TrimSpace(string(out))
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }
 
 func TestIsAncestor_SelfIsAncestor(t *testing.T) {
@@ -126,6 +132,37 @@ func TestFiles_NoChanges_ReturnsEmpty(t *testing.T) {
 	}
 	if len(files) != 0 {
 		t.Errorf("expected no files, got %v", files)
+	}
+}
+
+func TestFiles_IncludesTrackedWorkingTreeAndUntracked(t *testing.T) {
+	root, headSHA := makeGitRepo(t)
+	writeFile(t, filepath.Join(root, "a.txt"), "changed\n")
+	writeFile(t, filepath.Join(root, "new.go"), "package main\n")
+
+	files, err := changed.Files(context.Background(), root, headSHA, nil)
+	if err != nil {
+		t.Fatalf("Files: %v", err)
+	}
+	got := strings.Join(files, "\n")
+	for _, want := range []string{"a.txt", "new.go"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %s in %v", want, files)
+		}
+	}
+}
+
+func TestFiles_ExtensionFilter_AppliesToUntracked(t *testing.T) {
+	root, headSHA := makeGitRepo(t)
+	writeFile(t, filepath.Join(root, "new.go"), "package main\n")
+	writeFile(t, filepath.Join(root, "new.txt"), "text\n")
+
+	files, err := changed.Files(context.Background(), root, headSHA, []string{".go"})
+	if err != nil {
+		t.Fatalf("Files: %v", err)
+	}
+	if len(files) != 1 || !strings.HasSuffix(files[0], "new.go") {
+		t.Fatalf("expected only new.go, got %v", files)
 	}
 }
 

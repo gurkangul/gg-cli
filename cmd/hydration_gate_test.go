@@ -50,7 +50,7 @@ func TestTaskDoneHydrationGateRejectsStaleFullGet(t *testing.T) {
 	t.Setenv("GG_AGENT", "codex")
 	t.Setenv("GG_ROLE", "master")
 	dir := t.TempDir()
-	old := time.Now().UTC().Add(-2 * taskDoneHydrationWindow).Format(time.RFC3339)
+	old := time.Now().UTC().Add(-2 * taskHydrationWindow).Format(time.RFC3339)
 	if err := projectstate.Write(dir, projectstate.State{RecentHydrations: []projectstate.HydrationEntry{
 		{TS: old, EntityType: "task", EntityID: "TASK-123"},
 	}}); err != nil {
@@ -59,5 +59,22 @@ func TestTaskDoneHydrationGateRejectsStaleFullGet(t *testing.T) {
 
 	if rej := checkTaskDoneHydrationGate(dir, "TASK-123", time.Now().UTC()); rej == nil {
 		t.Fatal("stale hydration proof should be rejected")
+	}
+}
+
+func TestTaskHydrationGateBlocksOtherStateTransitions(t *testing.T) {
+	t.Setenv("GG_AGENT", "codex")
+	t.Setenv("GG_ROLE", "master")
+
+	for _, action := range []string{"task block", "task ready-for-live"} {
+		t.Run(action, func(t *testing.T) {
+			rej := checkTaskHydrationGate(t.TempDir(), "TASK-123", action, time.Now().UTC())
+			if rej == nil {
+				t.Fatalf("expected %s without hydration proof to be blocked", action)
+			}
+			if !strings.Contains(rej.Message, action) || !strings.Contains(rej.Message, "gg task get TASK-123") {
+				t.Fatalf("message should name action and hydration command, got %q", rej.Message)
+			}
+		})
 	}
 }

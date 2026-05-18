@@ -143,7 +143,7 @@ func runFullIndex(ctx context.Context, root, ggDir string, lang runner.Lang, r r
 	}
 
 	// Write state only on success.
-	if err := state.Write(ggDir, headSHA); err != nil {
+	if err := writeIndexState(ctx, root, ggDir, headSHA, langExtensions(lang)); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
 	} else {
 		fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
@@ -196,7 +196,7 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 	if len(changedFiles) == 0 {
 		fmt.Println("no changed files — index is up to date")
 		if s.LastIndexedSHA != headSHA {
-			if err := state.Write(ggDir, headSHA); err != nil {
+			if err := writeIndexState(ctx, root, ggDir, headSHA, langExtensions(lang)); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
 			} else {
 				fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
@@ -256,13 +256,21 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 		}
 	}
 
-	if err := state.Write(ggDir, headSHA); err != nil {
+	if err := writeIndexState(ctx, root, ggDir, headSHA, langExtensions(lang)); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
 	} else {
 		fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
 		sweepIndexOutbox(ggDir, root, string(lang), outboxID)
 	}
 	return nil
+}
+
+func writeIndexState(ctx context.Context, root, ggDir, headSHA string, extensions []string) error {
+	fingerprint, err := changed.WorkingTreeFingerprint(ctx, root, headSHA, extensions)
+	if err != nil {
+		return err
+	}
+	return state.WriteWithFingerprint(ggDir, headSHA, fingerprint)
 }
 
 // sweepIndexOutbox deletes all pending outbox entries for the given root+lang

@@ -25,6 +25,10 @@ type IndexState struct {
 	LastIndexedSHA string `json:"last_indexed_sha"`
 	// IndexedAt is the RFC3339 timestamp of the last successful index run.
 	IndexedAt string `json:"indexed_at"`
+	// WorkingTreeFingerprint captures dirty/untracked source content indexed on
+	// top of LastIndexedSHA. Empty means the tree was clean, or this state was
+	// written by an older gg version before dirty-tree fingerprints existed.
+	WorkingTreeFingerprint string `json:"working_tree_fingerprint,omitempty"`
 }
 
 // Read loads the IndexState from <ggDir>/index-state.json.
@@ -52,9 +56,16 @@ func Read(ggDir string) (*IndexState, error) {
 // The indexed_at timestamp is always set to now.
 // Only call Write after a successful index run — never on failure.
 func Write(ggDir, sha string) error {
+	return WriteWithFingerprint(ggDir, sha, "")
+}
+
+// WriteWithFingerprint records a successful index run and, when non-empty, the
+// dirty working-tree source fingerprint that was included in that run.
+func WriteWithFingerprint(ggDir, sha, workingTreeFingerprint string) error {
 	s := IndexState{
-		LastIndexedSHA: sha,
-		IndexedAt:      time.Now().UTC().Format(time.RFC3339),
+		LastIndexedSHA:         sha,
+		IndexedAt:              time.Now().UTC().Format(time.RFC3339),
+		WorkingTreeFingerprint: workingTreeFingerprint,
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {

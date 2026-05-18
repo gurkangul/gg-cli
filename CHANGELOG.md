@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.11] - 2026-05-18
+
+### Added
+
+- `gg doctor` now checks code-graph freshness, degraded placeholder vectors, embedding vector validity, and a semantic canary before reporting the project brain as healthy.
+- `gg index --changed`, `gg index status`, and `gg impact` now account for dirty tracked files and untracked source files via working-tree fingerprints, preventing stale impact answers after local edits.
+- `gg task ready-for-live` and `gg task block` now share the compact-hydration gate used by `gg task done`, so tagged agent sessions must hydrate the full task before changing task state.
+
+### Fixed
+
+- `gg update` now verifies the installed `gg` binary version after update attempts, avoiding false "latest" reports caused by Go proxy or PATH skew.
+- Offline JSONL search now renders tasks and bugs as native result kinds instead of coercing them into decisions.
+- `gg doctor --reconcile` marks zero-vector Qdrant payload replays as degraded and tells users to run `gg reembed` to restore semantic recall.
+- Runtime/config state writes now use cross-process locking on Unix to reduce concurrent agent clobbering.
+
 ## [0.3.10] - 2026-05-16
 
 ### Added
@@ -237,9 +252,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.11...HEAD
+[0.3.11]: https://github.com/gurkangul/gg-cli/compare/v0.3.10...v0.3.11
+[0.3.10]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.10
+[0.3.7]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.7
 [0.3.6]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.6
 [0.3.5]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.5
 [0.3.4]: https://github.com/gurkangul/gg-cli/releases/tag/v0.3.4
 [0.2.0]: https://github.com/gurkangul/gg-cli/releases/tag/v0.2.0
 [0.1.0]: https://github.com/gurkangul/gg-cli/releases/tag/v0.1.0
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.6...HEAD

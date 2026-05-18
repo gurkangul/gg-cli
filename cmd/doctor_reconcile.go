@@ -75,7 +75,8 @@ func runDoctorReconcile(cmd *cobra.Command) error {
 					_ = outbox.IncrementRetries(ggDir, e.ID)
 					needsAction = true
 				case replayed:
-					fmt.Printf("  ✓ replayed to Qdrant (collection: %s)\n", collSuffix)
+					fmt.Printf("  ✓ replayed payload to Qdrant with placeholder vector (collection: %s)\n", collSuffix)
+					fmt.Printf("    Semantic recall degraded for this entry until `gg reembed` rebuilds vectors.\n")
 					_ = outbox.Delete(ggDir, e.ID)
 				default:
 					fmt.Printf("  ~ Qdrant unreachable — replay deferred\n")
@@ -177,7 +178,7 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 			}
 		}
 		if recovered > 0 {
-			fmt.Printf("  ✓ %s: recovered %d missing entry(ies)\n", kind, recovered)
+			fmt.Printf("  ⚠ %s: recovered %d missing payload(s) with placeholder vectors — run `gg reembed` to restore semantic recall\n", kind, recovered)
 		}
 		if failed > 0 {
 			fmt.Printf("  ✗ %s: %d replay failure(s)\n", kind, failed)

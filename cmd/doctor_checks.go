@@ -10,12 +10,10 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/config"
-	"github.com/gurkangul/gg-cli/internal/embedding"
 	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/index/runner"
 	"github.com/gurkangul/gg-cli/internal/store"
@@ -94,6 +92,28 @@ func doctorCheckQdrant(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 	} else {
 		report.ok("qdrant collections", "all 7 collections present")
 	}
+	if degraded, ok := c.(interface {
+		DegradedVectorCounts(context.Context) (map[string]int, error)
+	}); ok {
+		counts, countErr := degraded.DegradedVectorCounts(ctx)
+		if countErr != nil {
+			report.warn("qdrant vector quality", fmt.Sprintf("could not scan degraded vectors: %v", countErr))
+			return
+		}
+		total := 0
+		var parts []string
+		for _, kind := range brainKinds {
+			if n := counts[kind]; n > 0 {
+				total += n
+				parts = append(parts, fmt.Sprintf("%s=%d", kind, n))
+			}
+		}
+		if total > 0 {
+			report.warn("qdrant vector quality", fmt.Sprintf("%d payload(s) have placeholder zero vectors (%s) — run `gg reembed` to restore semantic recall", total, strings.Join(parts, ", ")))
+		} else {
+			report.ok("qdrant vector quality", "no placeholder zero vectors detected")
+		}
+	}
 }
 
 // doctorCheckMemgraph checks Memgraph connectivity and schema indexes.
@@ -132,45 +152,6 @@ func doctorCheckMemgraph(cmd *cobra.Command, cfg *config.Config, report *doctorR
 	}
 }
 
-// doctorCheckOllama checks Ollama connectivity and validates the embedding
-// dimension matches the Qdrant VectorSize (768).
-func doctorCheckOllama(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
-	ollamaURL := cfg.Embedding.Host + "/api/tags"
-	curlCtx, curlCancel := context.WithTimeout(cmd.Context(), 3*time.Second)
-	defer curlCancel()
-	c := exec.CommandContext(curlCtx, "curl", "-sf", "--max-time", "3", ollamaURL)
-	if err := c.Run(); err != nil {
-		if hint := sandboxPermissionHint(err); hint != "" {
-			fmt.Fprintf(os.Stderr, "  ✗ ollama unreachable at %s — operation not permitted (sandbox?)\n", cfg.Embedding.Host)
-			fmt.Fprintf(os.Stderr, "    %s\n", hint)
-			report.problems++
-			return
-		}
-		report.fail("ollama", fmt.Sprintf("unreachable at %s", cfg.Embedding.Host))
-		return
-	}
-	report.ok("ollama", fmt.Sprintf("reachable at %s (model: %s)", cfg.Embedding.Host, cfg.Embedding.Model))
-
-	gen := embedding.New(&cfg.Embedding, store.VectorSize)
-	dimCtx, dimCancel := withTimeout(cmd.Context())
-	defer dimCancel()
-	vec, err := gen.Generate(dimCtx, "dimension check")
-	if err != nil {
-		if strings.Contains(err.Error(), "dimension mismatch") {
-			report.fail("ollama embedding dim", err.Error())
-		} else {
-			report.warn("ollama embedding dim", fmt.Sprintf("could not verify: %v", err))
-		}
-		return
-	}
-	if len(vec) != store.VectorSize {
-		report.fail("ollama embedding dim", fmt.Sprintf("model %q returns %d-dim vectors, Qdrant expects %d", cfg.Embedding.Model, len(vec), store.VectorSize))
-	} else {
-		report.ok("ollama embedding dim", fmt.Sprintf("%d-dim ✓ (model: %s)", len(vec), cfg.Embedding.Model))
-	}
-}
-
-// doctorCheckProjectStructure verifies the presence of AGENTS.md and the index state file.
 func doctorCheckProjectStructure(report *doctorReport) {
 	root, err := config.FindRoot()
 	if err != nil {
@@ -212,6 +193,37 @@ func doctorCheckProjectStructure(report *doctorReport) {
 		} else {
 			report.ok(".gg/.gitignore", "aligned")
 		}
+	}
+}
+
+// doctorCheckCodeGraphFreshness verifies that impact/blast-radius answers are
+// backed by a populated Memgraph index aligned with HEAD, not merely by an
+// index-state.json file existing on disk.
+func doctorCheckCodeGraphFreshness(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
+	if cfg == nil {
+		report.warn("code graph", "skipped — config invalid")
+		return
+	}
+	root, err := config.FindRoot()
+	if err != nil {
+		report.warn("code graph", fmt.Sprintf("project root not found: %v", err))
+		return
+	}
+	ggDir := filepath.Join(root, config.DirName)
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+	status := collectCodeGraphStatus(ctx, root, ggDir, cfg)
+	detail := status.Detail
+	if detail == "" {
+		detail = status.Status
+	}
+	switch status.Status {
+	case "ready":
+		report.ok("code graph", detail)
+	case "stale", "partial", "missing", "non_ancestor":
+		report.fail("code graph", detail)
+	default:
+		report.warn("code graph", detail)
 	}
 }
 

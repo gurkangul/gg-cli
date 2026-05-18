@@ -261,6 +261,20 @@ func TestSearch_OfflineFallback_ScansTasksAndBugs(t *testing.T) {
 		t.Errorf("bug title = %q, want 'offline resilience bug'", title)
 	}
 
+	task := taskFromJSONLEntry(taskEntries[0])
+	bug := bugFromJSONLEntry(bugEntries[0])
+	results := buildSearchResults("offline", nil, nil, []store.Task{task}, []store.Bug{bug}, nil)
+	counts := map[string]int{}
+	for _, result := range results {
+		counts[result.Kind]++
+		if result.Kind == "decision" {
+			t.Fatalf("offline task/bug fallback must not coerce records into decisions: %#v", result)
+		}
+	}
+	if counts["task"] != 1 || counts["bug"] != 1 {
+		t.Fatalf("offline fallback kinds = task:%d bug:%d, want 1/1", counts["task"], counts["bug"])
+	}
+
 	// Verify the cmd-level search exits cleanly with Qdrant down.
 	_, _, execErr := execCmd(t, "search", "offline")
 	if execErr != nil {
