@@ -9,8 +9,8 @@ Record a decision (default) or a rejected approach (--stance=reject).
 DEPRECATED: use 'gg record' instead.
 This command will be removed in a future major release.
 
-  gg record "use JWT"                          # accepted decision
-  gg record --stance=reject "use sessions"     # rejected approach
+  gg record "use JWT"                                      # accepted decision
+  gg record "use sessions" --decision-status=rejected      # rejected approach
 
 ```
 gg decide "decision text" [flags]

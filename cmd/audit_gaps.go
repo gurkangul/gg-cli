@@ -246,5 +246,5 @@ func renderAuditGapsDefault(w io.Writer, gaps []string, totalFiles int, since st
 		fmt.Fprintf(w, "  • %s\n", f)
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Run `gg record` or `gg decide` after editing files to capture rationale.")
+	fmt.Fprintln(w, "Run `gg record` after editing files to capture rationale.")
 }

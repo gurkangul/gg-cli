@@ -4,8 +4,8 @@
 // can be detected and replayed by `gg doctor --reconcile`.
 //
 // Scope: outbox entries are only written for gg index operations (cmd/index.go).
-// Commands like gg decide, gg task, gg note, gg bug, and gg reject write to a
-// single Qdrant collection — they are single-store and atomic within that write,
+// Commands like gg record, gg task, and gg bug write to their own durable brain
+// records first — they are single-store and atomic within that local write,
 // so they need no outbox protection.
 //
 // Each pending entry is a small JSON file in <ggDir>/outbox/<id>.json.

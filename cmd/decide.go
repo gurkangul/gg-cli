@@ -16,8 +16,8 @@ var decideCmd = &cobra.Command{
 DEPRECATED: use 'gg record' instead.
 This command will be removed in a future major release.
 
-  gg record "use JWT"                          # accepted decision
-  gg record --stance=reject "use sessions"     # rejected approach`,
+  gg record "use JWT"                                      # accepted decision
+  gg record "use sessions" --decision-status=rejected      # rejected approach`,
 	Args: cobra.ExactArgs(1),
 	RunE: runDecide,
 }

@@ -163,7 +163,7 @@ func runAuditReport(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintf(w, "  • %s\n", f)
 		}
 	}
-	fmt.Fprintln(w, "  Run `gg record` or `gg decide` to capture the rationale.")
+	fmt.Fprintln(w, "  Run `gg record` to capture the rationale.")
 	return nil
 }
 
