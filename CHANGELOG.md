@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.16] - 2026-05-19
+
 ### Documentation
 
 - Trim README into a shorter public-facing overview and point detailed command/config material to docs.
