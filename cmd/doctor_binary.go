@@ -61,17 +61,31 @@ func runDoctorCheckBinary(fix bool) error {
 		return nil
 	}
 	commitTime := time.Unix(commitEpoch, 0)
+	dirtyPaths, dirtyErr := buildAffectingDirtyPaths(srcDir)
+	if dirtyErr != nil {
+		fmt.Printf("  ~ %-28s %s\n", "source state", "could not inspect working tree: "+dirtyErr.Error())
+	}
+	sourceDirty := len(dirtyPaths) > 0
 
 	// --- Step 4: Compare ---
 	fmt.Printf("  binary:   %s\n", binPath)
 	fmt.Printf("  mtime:    %s\n", binMtime.UTC().Format(time.RFC3339))
 	fmt.Printf("  HEAD at:  %s  (%s)\n", srcDir, commitTime.UTC().Format(time.RFC3339))
+	if sourceDirty {
+		fmt.Printf("  source:   %d uncommitted build-affecting change(s)\n", len(dirtyPaths))
+		for _, p := range previewDirtyPaths(dirtyPaths, 5) {
+			fmt.Printf("            %s\n", p)
+		}
+		if len(dirtyPaths) > 5 {
+			fmt.Printf("            … and %d more\n", len(dirtyPaths)-5)
+		}
+	}
 	fmt.Println()
 
 	stale := binMtime.Before(commitTime)
 
 	if fix {
-		if !stale {
+		if !stale && !sourceDirty {
 			fmt.Printf("  ~ %-28s %s\n", "fix-binary", "binary is already up to date — nothing to do")
 			return nil
 		}
@@ -79,6 +93,10 @@ func runDoctorCheckBinary(fix bool) error {
 		if installErr := goInstallGG(srcDir); installErr != nil {
 			fmt.Printf("  ✗ %-28s %s\n", "fix-binary", installErr.Error())
 			return fmt.Errorf("go install failed: %w", installErr)
+		}
+		if sourceDirty {
+			fmt.Printf("  ✓ %-28s binary rebuilt from current working tree; commit or re-run after edits to prove freshness\n", "fix-binary")
+			return nil
 		}
 		fmt.Printf("  ✓ %-28s binary rebuilt\n", "fix-binary")
 		return nil
@@ -90,6 +108,11 @@ func runDoctorCheckBinary(fix bool) error {
 			"gg binary", lag)
 		fmt.Printf("    or: gg doctor --check-binary --fix-binary\n")
 		// Advisory warn — does not count as a hard failure for `gg doctor` default run.
+		return nil
+	}
+	if sourceDirty {
+		fmt.Printf("  ~ %-28s source has uncommitted build-affecting changes — binary freshness cannot be proven\n", "gg binary")
+		fmt.Printf("    run: go install ./cmd/gg after edits are final, then re-check\n")
 		return nil
 	}
 
@@ -130,13 +153,76 @@ func doctorCheckBinaryAdvisory(report *doctorReport) {
 		return
 	}
 	commitTime := time.Unix(commitEpoch, 0)
+	dirtyPaths, dirtyErr := buildAffectingDirtyPaths(srcDir)
+	if dirtyErr != nil {
+		report.warn("gg binary", "could not inspect source working tree")
+		return
+	}
 
 	if binMtime.Before(commitTime) {
 		lag := commitTime.Sub(binMtime).Round(time.Minute)
 		report.warn("gg binary", fmt.Sprintf("stale by %s — run `gg doctor --check-binary --fix-binary`", lag))
 		return
 	}
+	if len(dirtyPaths) > 0 {
+		report.warn("gg binary", fmt.Sprintf("source has %d uncommitted build-affecting change(s); freshness cannot be proven", len(dirtyPaths)))
+		return
+	}
 	report.ok("gg binary", "up to date")
+}
+
+func buildAffectingDirtyPaths(srcDir string) ([]string, error) {
+	cmd := exec.Command("git", "status", "--porcelain=v1", "--untracked-files=all", "--", ".")
+	cmd.Dir = srcDir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git status: %w", err)
+	}
+	var paths []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		path := porcelainPath(line)
+		if isBuildAffectingPath(path) {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
+}
+
+func porcelainPath(line string) string {
+	path := strings.TrimSpace(line)
+	if len(line) >= 4 {
+		path = strings.TrimSpace(line[3:])
+	}
+	if strings.Contains(path, " -> ") {
+		parts := strings.Split(path, " -> ")
+		path = parts[len(parts)-1]
+	}
+	return strings.Trim(path, "\"")
+}
+
+func isBuildAffectingPath(path string) bool {
+	p := filepath.ToSlash(strings.TrimSpace(path))
+	if p == "" {
+		return false
+	}
+	if p == "go.mod" || p == "go.sum" || p == "CHANGELOG.md" {
+		return true
+	}
+	if strings.HasPrefix(p, "cmd/") || strings.HasPrefix(p, "internal/") {
+		return true
+	}
+	return !strings.Contains(p, "/") && strings.HasSuffix(p, ".go")
+}
+
+func previewDirtyPaths(paths []string, limit int) []string {
+	if limit <= 0 || len(paths) <= limit {
+		return paths
+	}
+	return paths[:limit]
 }
 
 // findGGCLISourceDir scans the project registry looking for a locally cloned

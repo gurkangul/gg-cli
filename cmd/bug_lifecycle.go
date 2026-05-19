@@ -46,12 +46,12 @@ var bugAttachReproCmd = &cobra.Command{
 }
 
 var (
-	bugRootCause     string
-	bugFixFiles      string
-	bugFixSymbols    string
-	bugFixRepro      string
-	bugFixBrokenRef  string
-	bugWontFixRepro  string
+	bugRootCause    string
+	bugFixFiles     string
+	bugFixSymbols   string
+	bugFixRepro     string
+	bugFixBrokenRef string
+	bugWontFixRepro string
 )
 
 func init() {
@@ -240,6 +240,9 @@ func runBugFix(cmd *cobra.Command, args []string) error {
 	if err := runInboxGatePreflight(ctx, d.store, "bug-fix"); err != nil {
 		return err
 	}
+	if err := enforceBugHydrationGate(cmd.ErrOrStderr(), nil, bugID, "bug fix", "compact-hydration-bug-fix"); err != nil {
+		return err
+	}
 
 	if err := d.store.FixBug(ctx, bugID, rootCause, summary, bugFixRepro); err != nil {
 		return err
@@ -291,6 +294,9 @@ func runBugStart(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
+	if err := enforceBugHydrationGate(cmd.ErrOrStderr(), nil, bugID, "bug start", "compact-hydration-bug-start"); err != nil {
+		return err
+	}
 	if err := d.store.StartFixingBug(ctx, bugID); err != nil {
 		return err
 	}
@@ -322,6 +328,9 @@ func runBugWontFix(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
+	if err := enforceBugHydrationGate(cmd.ErrOrStderr(), nil, bugID, "bug wontfix", "compact-hydration-bug-wontfix"); err != nil {
+		return err
+	}
 	if err := d.store.WontFixBug(ctx, bugID, reason, bugWontFixRepro); err != nil {
 		return err
 	}
@@ -351,6 +360,9 @@ func runBugAttachRepro(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
+	if err := enforceBugHydrationGate(cmd.ErrOrStderr(), nil, bugID, "bug attach-repro", "compact-hydration-bug-attach-repro"); err != nil {
+		return err
+	}
 	if err := d.store.SetBugReproScript(ctx, bugID, reproPath); err != nil {
 		return err
 	}

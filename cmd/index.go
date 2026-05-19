@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -128,12 +127,12 @@ func runFullIndex(ctx context.Context, root, ggDir string, lang runner.Lang, r r
 		fmt.Fprintf(os.Stderr, "warning: outbox write failed (continuing): %v\n", outboxErr)
 	}
 
-	// Sweep all existing project nodes before re-indexing. Without this, nodes
-	// from a previous branch (e.g. after a switch or rebase) survive as ghost
-	// symbols — they exist in the graph but not in the current working tree.
-	fmt.Println("sweeping stale graph nodes ...")
-	if sweepErr := gc.SweepProject(ctx); sweepErr != nil {
-		fmt.Fprintf(os.Stderr, "warning: sweep project failed (continuing): %v\n", sweepErr)
+	// Sweep existing nodes for this language before re-indexing. Language-scoped
+	// sweeping lets multi-language projects accumulate Go/Python/TypeScript graph
+	// slices without one full index deleting the others.
+	fmt.Printf("sweeping stale %s graph nodes ...\n", lang)
+	if sweepErr := gc.SweepProjectLang(ctx, string(lang)); sweepErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: sweep %s graph nodes failed (continuing): %v\n", lang, sweepErr)
 	}
 
 	for _, modDir := range moduleDirs {
@@ -143,7 +142,7 @@ func runFullIndex(ctx context.Context, root, ggDir string, lang runner.Lang, r r
 	}
 
 	// Write state only on success.
-	if err := writeIndexState(ctx, root, ggDir, headSHA, langExtensions(lang)); err != nil {
+	if err := writeIndexState(ctx, root, ggDir, headSHA, lang, langExtensions(lang)); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
 	} else {
 		fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
@@ -165,26 +164,33 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 		return fmt.Errorf("read index state: %w", err)
 	}
 
+	langState, ok := s.ForLanguage(string(lang))
+	if !ok {
+		fmt.Printf("no previous %s index state — falling back to full index\n", lang)
+		return runFullIndex(ctx, root, ggDir, lang, r, gc)
+	}
+	baseSHA := langState.LastIndexedSHA
+
 	// Verify that the last indexed SHA is a reachable ancestor of the current
 	// HEAD. If it is not (branch switch, rebase, force push), the `git diff`
 	// below would compute a wrong delta or fail entirely, and ghost symbols from
 	// the old branch would survive in the graph. Fall back to a full re-index
 	// which sweeps old nodes first.
-	ancestor, ancestorErr := changed.IsAncestor(ctx, root, s.LastIndexedSHA)
+	ancestor, ancestorErr := changed.IsAncestor(ctx, root, baseSHA)
 	if ancestorErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: ancestor check failed (%v) — falling back to full index\n", ancestorErr)
 		return runFullIndex(ctx, root, ggDir, lang, r, gc)
 	}
 	if !ancestor {
-		fmt.Printf("non-linear history detected (last indexed sha=%s is not an ancestor of HEAD) — falling back to full index\n", s.LastIndexedSHA[:8])
+		fmt.Printf("non-linear history detected (last indexed sha=%s is not an ancestor of HEAD) — falling back to full index\n", indexStatusShortSHA(baseSHA))
 		return runFullIndex(ctx, root, ggDir, lang, r, gc)
 	}
 
-	fmt.Printf("incremental index since %s ...\n", s.LastIndexedSHA[:8])
+	fmt.Printf("incremental index since %s ...\n", indexStatusShortSHA(baseSHA))
 
 	// Compute changed files for the given language.
 	exts := langExtensions(lang)
-	changedFiles, err := changed.Files(ctx, root, s.LastIndexedSHA, exts)
+	changedFiles, err := changed.Files(ctx, root, baseSHA, exts)
 	if err != nil {
 		return fmt.Errorf("compute changed files: %w", err)
 	}
@@ -195,8 +201,8 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 
 	if len(changedFiles) == 0 {
 		fmt.Println("no changed files — index is up to date")
-		if s.LastIndexedSHA != headSHA {
-			if err := writeIndexState(ctx, root, ggDir, headSHA, langExtensions(lang)); err != nil {
+		if baseSHA != headSHA {
+			if err := writeIndexState(ctx, root, ggDir, headSHA, lang, langExtensions(lang)); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
 			} else {
 				fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
@@ -205,12 +211,21 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 		return nil
 	}
 
-	// Expand with 1-hop dependents (CHANGED_CONTRACT.md §2).
-	toInvalidate := make(map[string]bool, len(changedFiles))
+	changedRelFiles := make([]string, 0, len(changedFiles))
 	for _, f := range changedFiles {
+		rel, relErr := relForwardSlash(root, f)
+		if relErr != nil {
+			return fmt.Errorf("changed file %s outside project root: %w", f, relErr)
+		}
+		changedRelFiles = append(changedRelFiles, rel)
+	}
+
+	// Expand with 1-hop dependents (CHANGED_CONTRACT.md §2).
+	toInvalidate := make(map[string]bool, len(changedRelFiles))
+	for _, f := range changedRelFiles {
 		toInvalidate[f] = true
 	}
-	for _, f := range changedFiles {
+	for _, f := range changedRelFiles {
 		deps, err := gc.DependentsOf(ctx, f)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: dependents of %s: %v\n", f, err)
@@ -256,7 +271,7 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 		}
 	}
 
-	if err := writeIndexState(ctx, root, ggDir, headSHA, langExtensions(lang)); err != nil {
+	if err := writeIndexState(ctx, root, ggDir, headSHA, lang, langExtensions(lang)); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
 	} else {
 		fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
@@ -265,12 +280,12 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 	return nil
 }
 
-func writeIndexState(ctx context.Context, root, ggDir, headSHA string, extensions []string) error {
+func writeIndexState(ctx context.Context, root, ggDir, headSHA string, lang runner.Lang, extensions []string) error {
 	fingerprint, err := changed.WorkingTreeFingerprint(ctx, root, headSHA, extensions)
 	if err != nil {
 		return err
 	}
-	return state.WriteWithFingerprint(ggDir, headSHA, fingerprint)
+	return state.WriteLanguage(ggDir, string(lang), headSHA, fingerprint, extensions)
 }
 
 // sweepIndexOutbox deletes all pending outbox entries for the given root+lang
@@ -298,7 +313,12 @@ func sweepIndexOutbox(ggDir, root, lang, currentID string) {
 		if jsonErr := json.Unmarshal(e.Payload, &p); jsonErr != nil {
 			continue
 		}
-		if p.Root == root && p.Lang == lang {
+		// The outbox lives in the project-local .gg directory, so a completed
+		// index for this language also supersedes stale entries written before a
+		// project was moved/renamed. Legacy payloads may have an empty lang/root.
+		// Keep entries for other languages: a TypeScript index must not hide a
+		// still-pending Go/Python graph write.
+		if p.Lang == lang || p.Lang == "" {
 			if delErr := outbox.Delete(ggDir, e.ID); delErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: outbox delete failed (stale entry %s): %v\n", e.ID, delErr)
 			}
@@ -361,92 +381,4 @@ func index(ctx context.Context, projectRoot, moduleDir string, lang runner.Lang,
 	fmt.Printf("indexed %d files, %d symbols, %d references → %d import edges, %d packages\n",
 		h.files, h.symbols, h.refs, h.imports, len(h.seenPackages))
 	return nil
-}
-
-// readModulePath reads the Go module path from go.mod in the project root.
-// Returns "" if go.mod is absent or the module line is not found.
-func readModulePath(root string) string {
-	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.SplitN(string(data), "\n", 20) {
-		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
-		}
-	}
-	return ""
-}
-
-// manifestsForLang returns the manifest filenames whose presence marks a
-// module/package root for the given language. Priority order: earlier entries
-// are preferred when multiple exist in the same dir. Python supports several
-// packaging conventions since many real projects predate pyproject.toml.
-// Returns nil for unsupported langs.
-func manifestsForLang(lang runner.Lang) []string {
-	switch lang {
-	case runner.LangGo:
-		return []string{"go.mod"}
-	case runner.LangTypeScript:
-		return []string{"package.json"}
-	case runner.LangPython:
-		return []string{"pyproject.toml", "setup.py", "setup.cfg", "Pipfile", "requirements.txt"}
-	}
-	return nil
-}
-
-// discoverModuleDirs walks the project root looking for language manifest
-// files (go.mod, package.json, pyproject.toml) and returns the absolute
-// directories that contain them. A manifest at the project root short-circuits
-// the walk and returns [projectRoot] — preserving single-module behaviour.
-// Walk depth and skip-directory list are shared with `gg doctor
-// --install-task-hooks` so monorepo heuristics stay consistent across commands.
-func discoverModuleDirs(projectRoot string, lang runner.Lang) ([]string, error) {
-	manifests := manifestsForLang(lang)
-	if len(manifests) == 0 {
-		return nil, fmt.Errorf("unsupported language %q", lang)
-	}
-	// Fast path: any accepted manifest at root → single-module project.
-	for _, m := range manifests {
-		if _, err := os.Stat(filepath.Join(projectRoot, m)); err == nil {
-			return []string{projectRoot}, nil
-		}
-	}
-	skipDirs, maxDepth := hookInstallSettings()
-	seen := make(map[string]bool)
-	var absDirs []string
-	for _, m := range manifests {
-		relDirs, err := findManifestDirs(projectRoot, m, skipDirs, maxDepth)
-		if err != nil {
-			return nil, err
-		}
-		for _, rel := range relDirs {
-			var abs string
-			if rel == "." {
-				abs = projectRoot
-			} else {
-				abs = filepath.Join(projectRoot, rel)
-			}
-			if seen[abs] {
-				continue
-			}
-			seen[abs] = true
-			absDirs = append(absDirs, abs)
-		}
-	}
-	return absDirs, nil
-}
-
-// langExtensions maps a Lang to the file extensions its indexer handles.
-func langExtensions(lang runner.Lang) []string {
-	switch lang {
-	case runner.LangGo:
-		return []string{".go"}
-	case runner.LangPython:
-		return []string{".py"}
-	case runner.LangTypeScript:
-		return []string{".ts", ".tsx", ".js", ".jsx"}
-	default:
-		return nil
-	}
 }

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.15] - 2026-05-19
+
+### Added
+
+- `gg index status` and `gg system brain status` now treat projects with no supported CodeGraph source as `not_applicable`, so non-code projects no longer block cross-project brain health.
+
+### Fixed
+
+- `gg doctor` now warns when the installed `gg` binary cannot be proven fresh because the source checkout has uncommitted build-affecting changes.
+- `gg bug fix/start/wontfix/reopen/attach-repro` now require a recent full `gg bug get` or `gg bug triage` hydration proof in tagged agent sessions.
+- `gg audit inbox-obedience` no longer treats `gg tell all` broadcasts as per-role acknowledgements unless a role is explicitly mentioned.
+- TypeScript CodeGraph indexing now preserves other language graph slices, records per-language freshness, and can index nested package roots when a workspace root lacks a TypeScript config.
+
 ## [0.3.14] - 2026-05-18
 
 ### Added
@@ -274,7 +287,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.14...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.15...HEAD
+[0.3.15]: https://github.com/gurkangul/gg-cli/compare/v0.3.14...v0.3.15
 [0.3.14]: https://github.com/gurkangul/gg-cli/compare/v0.3.13...v0.3.14
 [0.3.13]: https://github.com/gurkangul/gg-cli/compare/v0.3.12...v0.3.13
 [0.3.12]: https://github.com/gurkangul/gg-cli/compare/v0.3.11...v0.3.12

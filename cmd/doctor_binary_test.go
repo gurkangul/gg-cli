@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -133,4 +134,91 @@ func TestDoctorCheckBinaryAdvisory_UpToDate(t *testing.T) {
 	if lag > 0 {
 		t.Fatalf("expected non-positive lag for fresh binary, got %v", lag)
 	}
+}
+
+func TestBuildAffectingDirtyPathFilter(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{path: "cmd/system_brain_status.go", want: true},
+		{path: "internal/templates/agents.md", want: true},
+		{path: "go.mod", want: true},
+		{path: "CHANGELOG.md", want: true},
+		{path: "changelograw.go", want: true},
+		{path: "docs/architecture.md", want: false},
+		{path: "README.md", want: false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := isBuildAffectingPath(tt.path); got != tt.want {
+				t.Fatalf("isBuildAffectingPath(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildAffectingDirtyPathsDetectsSourceChanges(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"), "module github.com/gurkangul/gg-cli\n")
+	writeTestFile(t, filepath.Join(dir, "cmd", "gg", "main.go"), "package main\n")
+	runGit(t, dir, "init")
+	runGit(t, dir, "config", "user.email", "test@example.com")
+	runGit(t, dir, "config", "user.name", "Test User")
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "commit", "-m", "init")
+
+	runGit(t, dir, "mv", filepath.Join("cmd", "gg", "main.go"), filepath.Join("cmd", "gg", "renamed.go"))
+	writeTestFile(t, filepath.Join(dir, "internal", "new", "file.go"), "package new\n")
+	writeTestFile(t, filepath.Join(dir, "docs", "note.md"), "docs are not build affecting\n")
+
+	paths, err := buildAffectingDirtyPaths(dir)
+	if err != nil {
+		t.Fatalf("buildAffectingDirtyPaths: %v", err)
+	}
+	if !containsPath(paths, "cmd/gg/renamed.go") || !containsPath(paths, "internal/new/file.go") {
+		t.Fatalf("expected dirty source paths, got %v", paths)
+	}
+	if containsPath(paths, "docs/note.md") {
+		t.Fatalf("non-build docs path should be ignored, got %v", paths)
+	}
+}
+
+func TestPorcelainPathUsesRenameDestination(t *testing.T) {
+	got := porcelainPath("R  cmd/old.go -> cmd/new.go")
+	if got != "cmd/new.go" {
+		t.Fatalf("porcelainPath rename = %q, want cmd/new.go", got)
+	}
+}
+
+func writeTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, out)
+	}
+}
+
+func containsPath(paths []string, want string) bool {
+	for _, p := range paths {
+		if p == want {
+			return true
+		}
+	}
+	return false
 }

@@ -383,7 +383,7 @@ func summarizeSystemBrainStatus(projects []systemBrainProjectStatus) systemBrain
 		if p.Qdrant.Status != "up" || p.Ollama.Status != "up" {
 			summary.BackendIssues++
 		}
-		if p.CodeGraph.Status != "ready" {
+		if p.CodeGraph.Status != "ready" && p.CodeGraph.Status != "not_applicable" {
 			summary.CodeGraphIssues++
 		}
 	}
@@ -400,7 +400,7 @@ func (p *systemBrainProjectStatus) addDerivedProblems() {
 	if p.Ollama.Status != "up" {
 		p.addProblem("ollama=" + p.Ollama.Status)
 	}
-	if p.CodeGraph.Status != "ready" {
+	if p.CodeGraph.Status != "ready" && p.CodeGraph.Status != "not_applicable" {
 		p.addProblem("codegraph=" + p.CodeGraph.Status)
 	}
 }

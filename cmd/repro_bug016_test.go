@@ -43,6 +43,39 @@ func TestSweepIndexOutbox_DeletesStaleEntries(t *testing.T) {
 	}
 }
 
+// TestSweepIndexOutbox_DeletesMovedProjectEntries guards project-root moves:
+// stale outbox payloads may still contain the old absolute path, but the outbox
+// directory is project-local, so a successful same-language index supersedes
+// them. Other languages must remain pending.
+func TestSweepIndexOutbox_DeletesMovedProjectEntries(t *testing.T) {
+	ggDir := t.TempDir()
+
+	currentRoot := "/workspace/projects/oneliftui"
+	oldRoot := "/Users/gurkangul/my-projects/oneliftui"
+	lang := "typescript"
+
+	stalePayload, _ := json.Marshal(indexOutboxPayload{Kind: "full", Root: oldRoot, Lang: lang, SHA: "old"})
+	staleID, err := outbox.Write(ggDir, "full-index", json.RawMessage(stalePayload))
+	if err != nil {
+		t.Fatalf("write moved-root stale entry: %v", err)
+	}
+
+	otherLangPayload, _ := json.Marshal(indexOutboxPayload{Kind: "full", Root: oldRoot, Lang: "go", SHA: "old"})
+	otherLangID, err := outbox.Write(ggDir, "full-index", json.RawMessage(otherLangPayload))
+	if err != nil {
+		t.Fatalf("write other-language stale entry: %v", err)
+	}
+
+	sweepIndexOutbox(ggDir, currentRoot, lang, "")
+
+	if _, err := os.Stat(filepath.Join(ggDir, "outbox", staleID+".json")); !os.IsNotExist(err) {
+		t.Fatalf("same-language stale moved-root entry should be deleted, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ggDir, "outbox", otherLangID+".json")); err != nil {
+		t.Fatalf("other-language entry should remain pending, stat err=%v", err)
+	}
+}
+
 // TestSweepIndexOutbox_SkipsCurrentEntry verifies that the current entry is
 // deleted via the explicit Delete call, not silently preserved.
 func TestSweepIndexOutbox_SkipsCurrentEntry(t *testing.T) {

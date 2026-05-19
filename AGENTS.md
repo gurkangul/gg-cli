@@ -505,7 +505,7 @@ Before acting in this project:
 1. Read this entire AGENTS.md file.
 2. Run `gg search --compact <topic>` before proposing anything new.
 3. Record every decision/task/rejection with gg — no exceptions.
-4. Broadcast substantive work via `gg tell all --from <role>`.
+4. Broadcast agent-status work via `gg tell all ... --from <role> --audience agents`.
 
 ### GSD usage (if this project uses GSD)
 

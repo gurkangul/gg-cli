@@ -78,3 +78,32 @@ func TestTaskHydrationGateBlocksOtherStateTransitions(t *testing.T) {
 		})
 	}
 }
+
+func TestBugHydrationGateBlocksTaggedSessionWithoutFullBugGet(t *testing.T) {
+	t.Setenv("GG_AGENT", "codex")
+	t.Setenv("GG_ROLE", "master")
+
+	rej := checkBugHydrationGate(t.TempDir(), "BUG-058", "bug fix", time.Now().UTC())
+	if rej == nil {
+		t.Fatal("expected tagged session without bug hydration proof to be blocked")
+	}
+	if rej.Code != ExitVerifyFailed {
+		t.Fatalf("expected ExitVerifyFailed, got %d", rej.Code)
+	}
+	if !strings.Contains(rej.Message, "gg bug get BUG-058") || !strings.Contains(rej.Message, "gg bug triage BUG-058") {
+		t.Fatalf("message should tell agent how to hydrate bug context, got %q", rej.Message)
+	}
+}
+
+func TestBugHydrationGateAllowsRecentFullBugGet(t *testing.T) {
+	t.Setenv("GG_AGENT", "codex")
+	t.Setenv("GG_ROLE", "master")
+	dir := t.TempDir()
+	if err := projectstate.RecordHydration(dir, "bug", "BUG-058"); err != nil {
+		t.Fatalf("RecordHydration: %v", err)
+	}
+
+	if rej := checkBugHydrationGate(dir, "BUG-058", "bug fix", time.Now().UTC()); rej != nil {
+		t.Fatalf("recent bug hydration proof should pass, got %v", rej)
+	}
+}

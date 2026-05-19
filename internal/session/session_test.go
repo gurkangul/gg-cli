@@ -53,6 +53,11 @@ func TestBriefing_Render_IncludesProtocolSteps(t *testing.T) {
 		}
 	}
 
+	// Agent-status broadcasts must be routed away from the human/global inbox.
+	if !strings.Contains(out, "--audience agents") {
+		t.Errorf("briefing must tell agents to use --audience agents for broadcasts: %q", out)
+	}
+
 	// Rule 5 must mention silent skip.
 	if !strings.Contains(out, "silent skip") && !strings.Contains(out, "silent-skip") &&
 		!strings.Contains(out, "violation") {

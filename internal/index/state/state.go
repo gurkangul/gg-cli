@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 )
 
@@ -18,17 +19,32 @@ const fileName = "index-state.json"
 // Callers should fall back to a full re-index.
 var ErrNoState = errors.New("no index state found — run a full index first")
 
-// IndexState records the outcome of the last successful index run.
+// IndexState records the outcome of successful index runs.
 type IndexState struct {
-	// LastIndexedSHA is the git commit hash that was HEAD when the last full or
-	// incremental index completed successfully.
+	// Legacy top-level fields describe the most recent successful index run.
+	// Older gg versions only wrote these fields, so readers must continue to
+	// treat them as a conservative all-source freshness record when Languages is
+	// empty.
 	LastIndexedSHA string `json:"last_indexed_sha"`
-	// IndexedAt is the RFC3339 timestamp of the last successful index run.
-	IndexedAt string `json:"indexed_at"`
+	IndexedAt      string `json:"indexed_at"`
 	// WorkingTreeFingerprint captures dirty/untracked source content indexed on
 	// top of LastIndexedSHA. Empty means the tree was clean, or this state was
 	// written by an older gg version before dirty-tree fingerprints existed.
 	WorkingTreeFingerprint string `json:"working_tree_fingerprint,omitempty"`
+
+	// Languages records freshness per indexed language. Multi-language projects
+	// are healthy only when every detected language has a fresh entry; this avoids
+	// the old false choice between marking mixed repos stale forever or hiding
+	// dirty source files from unindexed languages.
+	Languages map[string]LanguageState `json:"languages,omitempty"`
+}
+
+// LanguageState records one successful index run for a single language.
+type LanguageState struct {
+	LastIndexedSHA         string   `json:"last_indexed_sha"`
+	IndexedAt              string   `json:"indexed_at"`
+	WorkingTreeFingerprint string   `json:"working_tree_fingerprint,omitempty"`
+	Extensions             []string `json:"extensions,omitempty"`
 }
 
 // Read loads the IndexState from <ggDir>/index-state.json.
@@ -46,10 +62,51 @@ func Read(ggDir string) (*IndexState, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if s.LastIndexedSHA == "" {
+	if s.LastIndexedSHA == "" && len(s.Languages) == 0 {
 		return nil, ErrNoState
 	}
 	return &s, nil
+}
+
+// ForLanguage returns the freshness record that should anchor incremental or
+// status checks for lang. Language-aware state is preferred; legacy top-level
+// state remains a conservative fallback for projects indexed before the
+// language map existed.
+func (s *IndexState) ForLanguage(lang string) (LanguageState, bool) {
+	if s == nil {
+		return LanguageState{}, false
+	}
+	if s.Languages != nil {
+		entry, ok := s.Languages[lang]
+		if ok && entry.LastIndexedSHA != "" {
+			return entry, true
+		}
+		return LanguageState{}, false
+	}
+	if s.LastIndexedSHA == "" {
+		return LanguageState{}, false
+	}
+	return LanguageState{
+		LastIndexedSHA:         s.LastIndexedSHA,
+		IndexedAt:              s.IndexedAt,
+		WorkingTreeFingerprint: s.WorkingTreeFingerprint,
+	}, true
+}
+
+// IndexedLanguages returns language keys in deterministic order.
+func (s *IndexState) IndexedLanguages() []string {
+	if s == nil || len(s.Languages) == 0 {
+		return nil
+	}
+	langs := make([]string, 0, len(s.Languages))
+	for lang, entry := range s.Languages {
+		if entry.LastIndexedSHA == "" {
+			continue
+		}
+		langs = append(langs, lang)
+	}
+	sort.Strings(langs)
+	return langs
 }
 
 // Write atomically overwrites <ggDir>/index-state.json with the given state.
@@ -59,14 +116,52 @@ func Write(ggDir, sha string) error {
 	return WriteWithFingerprint(ggDir, sha, "")
 }
 
-// WriteWithFingerprint records a successful index run and, when non-empty, the
-// dirty working-tree source fingerprint that was included in that run.
+// WriteWithFingerprint records a legacy successful index run and, when
+// non-empty, the dirty working-tree source fingerprint that was included in
+// that run. Prefer WriteLanguage for new code so multi-language repos can track
+// per-language freshness.
 func WriteWithFingerprint(ggDir, sha, workingTreeFingerprint string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
 	s := IndexState{
 		LastIndexedSHA:         sha,
-		IndexedAt:              time.Now().UTC().Format(time.RFC3339),
+		IndexedAt:              now,
 		WorkingTreeFingerprint: workingTreeFingerprint,
 	}
+	return writeState(ggDir, s)
+}
+
+// WriteLanguage records a successful index run for one language while
+// preserving freshness entries for other languages in the same project.
+func WriteLanguage(ggDir, lang, sha, workingTreeFingerprint string, extensions []string) error {
+	if lang == "" {
+		return WriteWithFingerprint(ggDir, sha, workingTreeFingerprint)
+	}
+	s, err := Read(ggDir)
+	if errors.Is(err, ErrNoState) {
+		s = &IndexState{}
+	} else if err != nil {
+		return err
+	}
+	if s.Languages == nil {
+		s.Languages = make(map[string]LanguageState)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	extCopy := append([]string(nil), extensions...)
+	s.Languages[lang] = LanguageState{
+		LastIndexedSHA:         sha,
+		IndexedAt:              now,
+		WorkingTreeFingerprint: workingTreeFingerprint,
+		Extensions:             extCopy,
+	}
+	// Keep legacy fields useful for older readers and compact human output: they
+	// describe the most recent language index, not whole-project freshness.
+	s.LastIndexedSHA = sha
+	s.IndexedAt = now
+	s.WorkingTreeFingerprint = workingTreeFingerprint
+	return writeState(ggDir, *s)
+}
+
+func writeState(ggDir string, s IndexState) error {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err

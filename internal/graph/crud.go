@@ -282,8 +282,9 @@ func (c *Client) CountFileNodes(ctx context.Context) (int64, error) {
 }
 
 // SweepProject removes ALL nodes (and their edges) belonging to this project.
-// Call this before a full re-index to ensure that nodes from a previous branch
-// or rebase don't survive as ghost symbols in the graph.
+// Call this only when intentionally rebuilding the entire project graph.
+// Language-specific indexing should use SweepProjectLang so Go/Python/TS graph
+// slices can coexist in multi-language projects.
 //
 // The operation is idempotent and safe to call on an empty project.
 func (c *Client) SweepProject(ctx context.Context) error {
@@ -293,6 +294,25 @@ func (c *Client) SweepProject(ctx context.Context) error {
 	)
 	if err != nil {
 		return fmt.Errorf("sweep project: %w", err)
+	}
+	cleanup()
+	return nil
+}
+
+// SweepProjectLang removes all nodes for a single indexed language in this
+// project. Code graph nodes (File/Symbol/Package) all carry a lang property;
+// deleting by lang prevents a TypeScript full-index from wiping a Python graph
+// slice, while still removing ghost nodes for the language being rebuilt.
+func (c *Client) SweepProjectLang(ctx context.Context, lang string) error {
+	if lang == "" {
+		return fmt.Errorf("lang is required")
+	}
+	_, cleanup, err := c.runQuery(ctx,
+		"MATCH (n {project_id: $pid, lang: $lang}) DETACH DELETE n",
+		map[string]any{"lang": lang},
+	)
+	if err != nil {
+		return fmt.Errorf("sweep project lang %s: %w", lang, err)
 	}
 	cleanup()
 	return nil

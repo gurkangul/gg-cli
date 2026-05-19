@@ -8,6 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/projectstate"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -101,6 +103,7 @@ func runBugGet(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return notFound(err.Error())
 	}
+	recordBugFullHydration(b.ID)
 
 	renderBugGet := func(w io.Writer) {
 		fmt.Fprintf(w, "%s %s [%s/%s] %s\n", bugStatusIcon(b.Status), b.ID, b.Severity, b.Status, b.Title)
@@ -127,4 +130,20 @@ func runBugGet(cmd *cobra.Command, args []string) error {
 	}
 	emitHydration(cmd, "bug", renderBugGet)
 	return printJSON(b, func() { renderBugGet(os.Stdout) })
+}
+
+func recordBugFullHydration(bugID string) {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not record bug hydration proof: %v\n", err)
+		return
+	}
+	runtimeDir, err := cfg.RuntimeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not record bug hydration proof: %v\n", err)
+		return
+	}
+	if err := projectstate.RecordHydration(runtimeDir, "bug", bugID); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not record bug hydration proof: %v\n", err)
+	}
 }

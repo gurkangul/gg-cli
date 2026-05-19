@@ -61,11 +61,11 @@ func runBugTriage(cmd *cobra.Command, args []string) error {
 
 	// Parallel search across all collections.
 	var (
-		decisions   []store.Decision
-		rejections  []store.Rejection
-		tasks       []store.Task
-		discussions []store.Discussion
-		notes       []store.Note
+		decisions                                 []store.Decision
+		rejections                                []store.Rejection
+		tasks                                     []store.Task
+		discussions                               []store.Discussion
+		notes                                     []store.Note
 		decErr, rejErr, taskErr, discErr, noteErr error
 	)
 
@@ -74,7 +74,10 @@ func runBugTriage(cmd *cobra.Command, args []string) error {
 	go func() { defer wg.Done(); decisions, decErr = d.store.SearchDecisions(ctx, vector, bugTriageLimit) }()
 	go func() { defer wg.Done(); rejections, rejErr = d.store.SearchRejections(ctx, vector, bugTriageLimit) }()
 	go func() { defer wg.Done(); tasks, taskErr = d.store.SearchTasks(ctx, vector, bugTriageLimit, true) }()
-	go func() { defer wg.Done(); discussions, discErr = d.store.SearchDiscussions(ctx, vector, bugTriageLimit, true) }()
+	go func() {
+		defer wg.Done()
+		discussions, discErr = d.store.SearchDiscussions(ctx, vector, bugTriageLimit, true)
+	}()
 	go func() { defer wg.Done(); notes, noteErr = d.store.SearchNotes(ctx, vector, bugTriageLimit) }()
 	wg.Wait()
 
@@ -95,6 +98,7 @@ func runBugTriage(cmd *cobra.Command, args []string) error {
 		"notes":       notes,
 		"warnings":    warnings,
 	}
+	recordBugFullHydration(b.ID)
 
 	return printJSON(payload, func() {
 		fmt.Printf("BUG TRIAGE: %s — %s [%s/%s]\n", b.ID, b.Title, b.Severity, b.Status)

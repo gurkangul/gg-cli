@@ -66,6 +66,9 @@ func runBugReopen(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
+	if err := enforceBugHydrationGate(cmd.ErrOrStderr(), nil, bugID, "bug reopen", "compact-hydration-bug-reopen"); err != nil {
+		return err
+	}
 	if err := d.store.ReopenBug(ctx, bugID, reason); err != nil {
 		return err
 	}

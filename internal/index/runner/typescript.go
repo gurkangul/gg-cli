@@ -26,10 +26,11 @@ func (*TypeScriptRunner) Index(ctx context.Context, req *IndexRequest) (*IndexRe
 		return nil, err
 	}
 
-	// scip-typescript index --output <path>
-	// Must run from project root so it picks up tsconfig.json.
+	// scip-typescript index --infer-tsconfig --output <path>
+	// --infer-tsconfig keeps JS/TS/Nuxt projects without a checked-in tsconfig
+	// indexable while still respecting tsconfig.json when one exists.
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, bin, "index", "--output", outPath)
+	cmd := exec.CommandContext(ctx, bin, "index", "--infer-tsconfig", "--output", outPath)
 	cmd.Dir = req.Root
 	cmd.Env = filteredEnv()
 	cmd.Stderr = &stderr

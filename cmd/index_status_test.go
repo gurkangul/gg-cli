@@ -92,7 +92,7 @@ func TestCollectCodeGraphStatus_LanguageFingerprintDoesNotHideOtherDirtySources(
 
 func TestCollectCodeGraphStatus_MissingAndPartial(t *testing.T) {
 	root, ggDir := setupIndexStatusRepo(t)
-	_ = gitCommit(t, root, "one.txt", "one")
+	_ = gitCommit(t, root, "one.go", "package main")
 
 	missing := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
 	if missing.Status != "missing" {

@@ -33,7 +33,7 @@ func codexManagedBody() string {
 	sb.WriteString("1. Read this entire AGENTS.md file.\n")
 	sb.WriteString("2. Run `gg search --compact <topic>` before proposing anything new.\n")
 	sb.WriteString("3. Record every decision/task/rejection with gg — no exceptions.\n")
-	sb.WriteString("4. Broadcast substantive work via `gg tell all --from <role>`.\n")
+	sb.WriteString("4. Broadcast agent-status work via `gg tell all ... --from <role> --audience agents`.\n")
 	sb.WriteString("\n")
 	sb.WriteString("### GSD usage (if this project uses GSD)\n")
 	sb.WriteString("\n")

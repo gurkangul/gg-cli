@@ -33,7 +33,7 @@ func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing
 		"snapshot=none",
 		"qdrant=down",
 		"ollama=down",
-		"codegraph=missing",
+		"codegraph=not_applicable",
 		"registry_issues=0",
 		"drifted_snapshot=0",
 	} {
@@ -100,7 +100,7 @@ func TestSystemBrainStatusJSONReportsMismatchAndFreshSnapshot(t *testing.T) {
 	if got.Snapshot.Status != "fresh" || got.Snapshot.Checksums != "ok" {
 		t.Fatalf("snapshot mismatch: %#v", got.Snapshot)
 	}
-	if got.Qdrant.Status != "down" || got.Ollama.Status != "down" || got.CodeGraph.Status != "missing" {
+	if got.Qdrant.Status != "down" || got.Ollama.Status != "down" || got.CodeGraph.Status != "not_applicable" {
 		t.Fatalf("backend/codegraph status mismatch: qdrant=%#v ollama=%#v codegraph=%#v", got.Qdrant, got.Ollama, got.CodeGraph)
 	}
 }

@@ -54,6 +54,9 @@ func TestCodex_Install_AppendsBlockWhenAbsent(t *testing.T) {
 	if !strings.Contains(s, codexBlockStart) || !strings.Contains(s, codexBlockEnd) {
 		t.Errorf("managed block markers missing: %s", s)
 	}
+	if !strings.Contains(s, "--audience agents") {
+		t.Errorf("managed block must tell agents to use --audience agents for broadcasts: %s", s)
+	}
 }
 
 func TestCodex_Install_IdempotentOnRerun(t *testing.T) {

@@ -42,11 +42,11 @@ func init() {
 
 // ObedienceRow is the per-role audit result.
 type ObedienceRow struct {
-	Role             string  `json:"role"`
-	Received         int     `json:"received"`
-	Acknowledged     int     `json:"acknowledged"`
-	ObedienceRatio   float64 `json:"obedience_ratio"`
-	LowCompliance    bool    `json:"low_compliance"`
+	Role           string  `json:"role"`
+	Received       int     `json:"received"`
+	Acknowledged   int     `json:"acknowledged"`
+	ObedienceRatio float64 `json:"obedience_ratio"`
+	LowCompliance  bool    `json:"low_compliance"`
 }
 
 func runAuditInboxObedience(cmd *cobra.Command, _ []string) error {
@@ -131,25 +131,37 @@ func computeObedienceRows(ctx context.Context, client *store.Client, since time.
 	return rows, nil
 }
 
-// targetRoles returns the list of role strings a message targets.
-// A message targets a role if to_role==role or content contains @role.
-// "all" is expanded to every sender's peer — for ratio purposes we treat
-// an "all" message as targeting the literal string "all" rather than
-// expanding to every known role (expansion would inflate numbers arbitrarily).
+// targetRoles returns role strings a message directly targets for obedience
+// accounting. Broadcasts to literal "all" are intentionally excluded: a single
+// read bit on a shared broadcast cannot prove per-agent acknowledgement and used
+// to produce permanent false "agent all 0%" warnings. Explicit @mentions inside
+// a broadcast are still counted as role-targeted messages.
 func targetRoles(m store.Message) []string {
-	roles := []string{m.ToRole}
+	roles := []string{}
+	if to := strings.ToLower(strings.TrimSpace(m.ToRole)); to != "" && to != "all" {
+		roles = append(roles, to)
+	}
 	lower := strings.ToLower(m.Content)
 	// Extract @mention roles (simple word-boundary parse).
 	for _, word := range strings.Fields(lower) {
 		if strings.HasPrefix(word, "@") {
 			role := strings.TrimPrefix(word, "@")
 			role = strings.TrimRight(role, ".,;:!?)")
-			if role != "" && role != m.ToRole {
+			if role != "" && role != "all" && !roleInList(roles, role) {
 				roles = append(roles, role)
 			}
 		}
 	}
 	return roles
+}
+
+func roleInList(roles []string, role string) bool {
+	for _, r := range roles {
+		if strings.EqualFold(r, role) {
+			return true
+		}
+	}
+	return false
 }
 
 func printObedienceTable(rows []ObedienceRow, window string) {

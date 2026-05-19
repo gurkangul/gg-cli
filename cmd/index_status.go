@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -39,6 +42,7 @@ type codeGraphStatus struct {
 	MemgraphDetail         string      `json:"memgraph_detail,omitempty"`
 	GraphEmpty             bool        `json:"graph_empty"`
 	Stats                  graph.Stats `json:"stats"`
+	IndexedLanguages       []string    `json:"indexed_languages,omitempty"`
 	PendingOutbox          int         `json:"pending_outbox"`
 	NoWatcherStarted       bool        `json:"no_watcher_started"`
 	Watcher                string      `json:"watcher,omitempty"`
@@ -74,16 +78,42 @@ func collectCodeGraphStatus(ctx context.Context, root, ggDir string, cfg *config
 		status.PendingOutbox = len(entries)
 	}
 
+	detectedLangs, hasSupportedSource, detectErr := detectCodeGraphLanguages(root)
+	if detectErr != nil {
+		status.Status = "unknown"
+		status.Detail = "codegraph applicability check failed: " + detectErr.Error()
+		status.fillGraphStats(ctx, cfg)
+		status.fillWatcher(ggDir)
+		status.finalize()
+		return status
+	}
+	if len(detectedLangs) == 0 && !hasSupportedSource {
+		status.Status = "not_applicable"
+		status.Detail = "no supported code modules or source files found"
+		status.fillGraphStats(ctx, cfg)
+		status.fillWatcher(ggDir)
+		status.finalize()
+		return status
+	}
+
 	if head, err := changed.HeadSHA(ctx, root); err == nil {
 		status.HeadSHA = head
 	} else {
-		status.Detail = "HEAD unavailable: " + err.Error()
+		status.Status = "not_applicable"
+		status.Detail = "git HEAD unavailable; CodeGraph requires a git repository"
+		status.fillGraphStats(ctx, cfg)
+		status.fillWatcher(ggDir)
+		status.finalize()
+		return status
 	}
 
+	var idxState *state.IndexState
 	if s, err := state.Read(ggDir); err == nil {
+		idxState = s
 		status.LastIndexedSHA = s.LastIndexedSHA
 		status.IndexedAt = s.IndexedAt
 		status.WorkingTreeFingerprint = s.WorkingTreeFingerprint
+		status.IndexedLanguages = s.IndexedLanguages()
 	} else if errors.Is(err, state.ErrNoState) {
 		status.Status = "missing"
 		status.Detail = "index-state.json missing - run gg index --lang <lang>"
@@ -92,14 +122,25 @@ func collectCodeGraphStatus(ctx context.Context, root, ggDir string, cfg *config
 		status.Detail = "index-state unreadable: " + err.Error()
 	}
 
-	status.fillGitFreshness(ctx, root)
+	status.fillGitFreshness(ctx, root, idxState, detectedLangs)
 	status.fillGraphStats(ctx, cfg)
 	status.fillWatcher(ggDir)
 	status.finalize()
 	return status
 }
 
-func (s *codeGraphStatus) fillGitFreshness(ctx context.Context, root string) {
+func (s *codeGraphStatus) fillGitFreshness(ctx context.Context, root string, idxState *state.IndexState, detectedLangs []runner.Lang) {
+	if idxState == nil {
+		return
+	}
+	if len(idxState.Languages) > 0 {
+		s.fillLanguageGitFreshness(ctx, root, idxState, detectedLangs)
+		return
+	}
+	s.fillLegacyGitFreshness(ctx, root)
+}
+
+func (s *codeGraphStatus) fillLegacyGitFreshness(ctx context.Context, root string) {
 	if s.LastIndexedSHA == "" || s.HeadSHA == "" {
 		return
 	}
@@ -142,6 +183,81 @@ func (s *codeGraphStatus) fillGitFreshness(ctx context.Context, root string) {
 	s.Detail = "HEAD has commits after the last indexed SHA - run gg index --changed"
 }
 
+func (s *codeGraphStatus) fillLanguageGitFreshness(ctx context.Context, root string, idxState *state.IndexState, detectedLangs []runner.Lang) {
+	if s.HeadSHA == "" {
+		return
+	}
+	if len(detectedLangs) == 0 {
+		detectedLangs = langsFromNames(idxState.IndexedLanguages())
+	}
+	var missing []string
+	for _, lang := range detectedLangs {
+		if _, ok := idxState.ForLanguage(string(lang)); !ok {
+			missing = append(missing, string(lang))
+		}
+	}
+	if len(missing) > 0 {
+		s.Status = "stale"
+		s.Detail = fmt.Sprintf("unindexed language(s): %s - run gg index --lang %s", strings.Join(missing, ", "), missing[0])
+		return
+	}
+	dirtyIndexed := false
+	for _, lang := range detectedLangs {
+		entry, ok := idxState.ForLanguage(string(lang))
+		if !ok {
+			continue
+		}
+		exts := entry.Extensions
+		if len(exts) == 0 {
+			exts = langExtensions(lang)
+		}
+		if entry.LastIndexedSHA == s.HeadSHA {
+			fingerprint, err := changed.WorkingTreeFingerprint(ctx, root, entry.LastIndexedSHA, exts)
+			if err != nil {
+				s.Status = "unknown"
+				s.Detail = fmt.Sprintf("%s working-tree freshness check failed: %v", lang, err)
+				return
+			}
+			if fingerprint != entry.WorkingTreeFingerprint {
+				s.Status = "stale"
+				if fingerprint == "" {
+					s.Detail = fmt.Sprintf("%s working tree is clean but index-state records dirty indexed content - run gg index --lang %s --changed", lang, lang)
+				} else {
+					s.Detail = fmt.Sprintf("%s working tree has changed or untracked source files after last index - run gg index --lang %s --changed", lang, lang)
+				}
+				return
+			}
+			if fingerprint != "" {
+				dirtyIndexed = true
+			}
+			continue
+		}
+		ancestor, err := changed.IsAncestor(ctx, root, entry.LastIndexedSHA)
+		if err != nil {
+			s.Status = "unknown"
+			s.Detail = fmt.Sprintf("%s ancestor check failed: %v", lang, err)
+			return
+		}
+		if !ancestor {
+			s.Status = "non_ancestor"
+			s.Detail = fmt.Sprintf("%s last indexed SHA is not an ancestor of HEAD - run full gg index --lang %s", lang, lang)
+			return
+		}
+		s.Status = "stale"
+		s.Detail = fmt.Sprintf("%s HEAD has commits after the last indexed SHA - run gg index --lang %s --changed", lang, lang)
+		return
+	}
+	s.Status = "ready"
+	if dirtyIndexed {
+		s.Detail = "index-state matches HEAD and indexed dirty working tree source fingerprint"
+	} else {
+		s.Detail = "index-state matches HEAD and working tree source files"
+	}
+	if names := langNames(detectedLangs); len(names) > 0 {
+		s.Detail += " for " + strings.Join(names, ", ")
+	}
+}
+
 func (s *codeGraphStatus) fillGraphStats(ctx context.Context, cfg *config.Config) {
 	if cfg == nil || cfg.Memgraph.URI == "" {
 		s.MemgraphDetail = "not configured"
@@ -171,6 +287,9 @@ func (s *codeGraphStatus) fillGraphStats(ctx context.Context, cfg *config.Config
 }
 
 func (s *codeGraphStatus) finalize() {
+	if s.Status == "not_applicable" {
+		return
+	}
 	if s.PendingOutbox > 0 {
 		s.Status = "partial"
 		if s.Detail == "" {
@@ -212,6 +331,9 @@ func renderCodeGraphStatus(w io.Writer, s codeGraphStatus) {
 	if s.IndexedAt != "" {
 		fmt.Fprintf(w, "  Indexed: %s\n", s.IndexedAt)
 	}
+	if len(s.IndexedLanguages) > 0 {
+		fmt.Fprintf(w, "  Languages: %s\n", strings.Join(s.IndexedLanguages, ", "))
+	}
 	fmt.Fprintf(w, "  Memgraph: %s", boolWord(s.MemgraphAvailable, "available", "unavailable"))
 	if s.MemgraphDetail != "" {
 		fmt.Fprintf(w, " (%s)", s.MemgraphDetail)
@@ -242,6 +364,79 @@ func codeGraphSourceExtensions() []string {
 	return out
 }
 
+func detectCodeGraphLanguages(root string) ([]runner.Lang, bool, error) {
+	var langs []runner.Lang
+	for _, lang := range []runner.Lang{runner.LangGo, runner.LangPython, runner.LangTypeScript} {
+		dirs, err := discoverModuleDirs(root, lang)
+		if err != nil {
+			return nil, false, err
+		}
+		if len(dirs) > 0 {
+			langs = append(langs, lang)
+		}
+	}
+	hasSource, err := hasCodeGraphSourceFiles(root)
+	if err != nil {
+		return nil, false, err
+	}
+	return langs, hasSource, nil
+}
+
+func hasCodeGraphSourceFiles(root string) (bool, error) {
+	extSet := make(map[string]bool)
+	for _, ext := range codeGraphSourceExtensions() {
+		extSet[ext] = true
+	}
+	skipDirs := make(map[string]bool, len(config.DefaultHookInstallSkipDirs)+6)
+	for _, name := range config.DefaultHookInstallSkipDirs {
+		skipDirs[name] = true
+	}
+	for _, name := range []string{".git", config.DirName, "node_modules", "vendor", "dist", "build"} {
+		skipDirs[name] = true
+	}
+	found := errors.New("codegraph source found")
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path != root && skipDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if extSet[filepath.Ext(d.Name())] {
+			return found
+		}
+		return nil
+	})
+	if errors.Is(err, found) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+func langsFromNames(names []string) []runner.Lang {
+	langs := make([]runner.Lang, 0, len(names))
+	for _, name := range names {
+		langs = append(langs, runner.Lang(name))
+	}
+	sort.Slice(langs, func(i, j int) bool { return langs[i] < langs[j] })
+	return langs
+}
+
+func langNames(langs []runner.Lang) []string {
+	names := make([]string, 0, len(langs))
+	for _, lang := range langs {
+		names = append(names, string(lang))
+	}
+	sort.Strings(names)
+	return names
+}
+
 func indexStatusShortSHA(sha string) string {
 	if len(sha) > 8 {
 		return sha[:8]
@@ -264,6 +459,9 @@ func renderCodeGraphStatusCompact(s codeGraphStatus) string {
 	parts = append(parts, "CodeGraph "+s.Status)
 	if s.LastIndexedSHA != "" || s.HeadSHA != "" {
 		parts = append(parts, fmt.Sprintf("idx=%s head=%s", indexStatusShortSHA(s.LastIndexedSHA), indexStatusShortSHA(s.HeadSHA)))
+	}
+	if len(s.IndexedLanguages) > 0 {
+		parts = append(parts, "langs="+strings.Join(s.IndexedLanguages, ","))
 	}
 	parts = append(parts, fmt.Sprintf("memgraph=%s", boolWord(s.MemgraphAvailable, "ok", "down")))
 	parts = append(parts, fmt.Sprintf("files=%d sym=%d edges=%d", s.Stats.Files, s.Stats.Symbols, s.Stats.Edges))
