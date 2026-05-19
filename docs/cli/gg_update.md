@@ -6,7 +6,7 @@ Update gg to the latest public release
 
 Checks the latest public gg module version and, when needed, runs:
 
-  go install github.com/gurkangul/gg-cli/cmd/gg@latest
+  go install github.com/gurkangul/gg-cli/cmd/gg@<latest-version>
 
 After installing, gg refreshes registered project artifacts with system sync
 unless --skip-sync is passed. Network access happens only when this command

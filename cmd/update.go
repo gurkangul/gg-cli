@@ -17,7 +17,7 @@ import (
 
 const (
 	ggModulePath      = "github.com/gurkangul/gg-cli"
-	ggInstallPkg      = "github.com/gurkangul/gg-cli/cmd/gg@latest"
+	ggInstallPkgBase  = "github.com/gurkangul/gg-cli/cmd/gg"
 	updateCheckEnvVar = "GG_UPDATE_CHECK"
 )
 
@@ -37,7 +37,7 @@ var updateCmd = &cobra.Command{
 	Short: "Update gg to the latest public release",
 	Long: `Checks the latest public gg module version and, when needed, runs:
 
-  go install github.com/gurkangul/gg-cli/cmd/gg@latest
+  go install github.com/gurkangul/gg-cli/cmd/gg@<latest-version>
 
 After installing, gg refreshes registered project artifacts with system sync
 unless --skip-sync is passed. Network access happens only when this command
@@ -128,14 +128,19 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 		fmt.Println("Current version is not a released semver build; installing latest anyway.")
 	}
 
+	installPkg := ggInstallPackage(info)
+	installDirect := ggInstallUseDirect(info)
 	if !jsonOutput {
-		fmt.Printf("\nInstalling: go install %s\n", ggInstallPkg)
+		fmt.Printf("\nInstalling: go install %s\n", installPkg)
+		if installDirect {
+			fmt.Println("Using GOPROXY=direct because the direct lookup returned the selected latest release.")
+		}
 	}
 	out := os.Stdout
 	if jsonOutput {
 		out = os.Stderr
 	}
-	if err := runGoInstall(ctx, ggInstallPkg, out, os.Stderr); err != nil {
+	if err := runGoInstall(ctx, installPkg, installDirect, out, os.Stderr); err != nil {
 		return err
 	}
 	result.Installed = true
@@ -220,6 +225,18 @@ func shouldInstallUpdate(info updateInfo, force bool) (bool, string) {
 	return false, "up to date"
 }
 
+func ggInstallPackage(info updateInfo) string {
+	latest := strings.TrimSpace(info.Latest)
+	if latest == "" {
+		latest = "latest"
+	}
+	return ggInstallPkgBase + "@" + latest
+}
+
+func ggInstallUseDirect(info updateInfo) bool {
+	return info.LatestSource == "go-list-direct"
+}
+
 func checkLatestGG(ctx context.Context, current string) (updateInfo, error) {
 	latest, source, warnings, err := latestGGModuleVersion(ctx)
 	if err != nil {
@@ -295,8 +312,11 @@ func latestGGModuleVersionVia(ctx context.Context, direct bool) (string, error) 
 	return mod.Version, nil
 }
 
-func runGoInstall(ctx context.Context, pkg string, stdout, stderr io.Writer) error {
+func runGoInstall(ctx context.Context, pkg string, direct bool, stdout, stderr io.Writer) error {
 	cmd := updateCommandContext(ctx, "go", "install", pkg)
+	if direct {
+		cmd.Env = append(os.Environ(), "GOPROXY=direct")
+	}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
