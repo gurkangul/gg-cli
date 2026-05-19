@@ -20,6 +20,7 @@ func TestCheckMeta_FirstRun(t *testing.T) {
 	}
 	if meta == nil {
 		t.Fatal("expected meta to be written on first run")
+		return
 	}
 	if meta.ModelName != "nomic-embed-text" {
 		t.Errorf("ModelName: got %q, want %q", meta.ModelName, "nomic-embed-text")

@@ -49,19 +49,19 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 			return err
 		}
 
-		switch {
-		case key == "backup.enabled":
+		switch key {
+		case "backup.enabled":
 			enabled, parseErr := strconv.ParseBool(value)
 			if parseErr != nil {
 				return fmt.Errorf("invalid backup.enabled %q — use true or false", value)
 			}
 			cfg.Backup.Enabled = &enabled
-		case key == "backup.interval":
+		case "backup.interval":
 			if err := validateDurationConfigValue("backup.interval", value); err != nil {
 				return err
 			}
 			cfg.Backup.Interval = value
-		case key == "backup.timeout":
+		case "backup.timeout":
 			if err := validateDurationConfigValue("backup.timeout", value); err != nil {
 				return err
 			}

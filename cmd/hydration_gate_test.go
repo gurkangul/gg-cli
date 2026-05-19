@@ -24,6 +24,7 @@ func TestTaskDoneHydrationGateBlocksTaggedSessionWithoutFullGet(t *testing.T) {
 	rej := checkTaskDoneHydrationGate(t.TempDir(), "TASK-123", time.Now().UTC())
 	if rej == nil {
 		t.Fatal("expected tagged session without hydration proof to be blocked")
+		return
 	}
 	if rej.Code != ExitVerifyFailed {
 		t.Fatalf("expected ExitVerifyFailed, got %d", rej.Code)
@@ -71,6 +72,7 @@ func TestTaskHydrationGateBlocksOtherStateTransitions(t *testing.T) {
 			rej := checkTaskHydrationGate(t.TempDir(), "TASK-123", action, time.Now().UTC())
 			if rej == nil {
 				t.Fatalf("expected %s without hydration proof to be blocked", action)
+				return
 			}
 			if !strings.Contains(rej.Message, action) || !strings.Contains(rej.Message, "gg task get TASK-123") {
 				t.Fatalf("message should name action and hydration command, got %q", rej.Message)
@@ -86,6 +88,7 @@ func TestBugHydrationGateBlocksTaggedSessionWithoutFullBugGet(t *testing.T) {
 	rej := checkBugHydrationGate(t.TempDir(), "BUG-058", "bug fix", time.Now().UTC())
 	if rej == nil {
 		t.Fatal("expected tagged session without bug hydration proof to be blocked")
+		return
 	}
 	if rej.Code != ExitVerifyFailed {
 		t.Fatalf("expected ExitVerifyFailed, got %d", rej.Code)

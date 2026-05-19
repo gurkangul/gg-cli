@@ -41,6 +41,7 @@ func TestInstallDetected_ClaudeOnlyWhenPresent(t *testing.T) {
 	}
 	if claudeRes == nil {
 		t.Fatal("claude result missing from report")
+		return
 	}
 	if claudeRes.Action != ActionCreated {
 		t.Errorf("claude action = %q, want %q", claudeRes.Action, ActionCreated)

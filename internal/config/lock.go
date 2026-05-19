@@ -22,7 +22,7 @@ func WithWriteLock(fn func() error) error {
 	if err != nil {
 		return fmt.Errorf("open config lock: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := withFileLock(f, fn); err != nil {
 		return fmt.Errorf("config write lock: %w", err)
 	}

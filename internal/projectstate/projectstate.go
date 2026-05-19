@@ -206,11 +206,12 @@ func RecordHydration(runtimeDir, entityType, entityID string) error {
 				kept = append(kept, h)
 			}
 		}
-		s.RecentHydrations = append(kept, HydrationEntry{
+		kept = append(kept, HydrationEntry{
 			TS:         now.Format(time.RFC3339),
 			EntityType: entityType,
 			EntityID:   entityID,
 		})
+		s.RecentHydrations = kept
 		return nil
 	})
 }

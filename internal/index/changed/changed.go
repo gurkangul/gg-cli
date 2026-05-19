@@ -85,11 +85,12 @@ func WorkingTreeFingerprint(ctx context.Context, projectRoot, baseSHA string, ex
 		_, _ = h.Write([]byte(rel))
 		_, _ = h.Write([]byte{0})
 		data, readErr := os.ReadFile(path)
-		if os.IsNotExist(readErr) {
+		switch {
+		case os.IsNotExist(readErr):
 			_, _ = h.Write([]byte("<deleted>"))
-		} else if readErr != nil {
+		case readErr != nil:
 			return "", fmt.Errorf("read %s: %w", path, readErr)
-		} else {
+		default:
 			_, _ = h.Write(data)
 		}
 		_, _ = h.Write([]byte{0})

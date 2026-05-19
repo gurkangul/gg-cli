@@ -32,6 +32,7 @@ func TestReadyForLiveGate_On_WrongStatus_Rejected(t *testing.T) {
 	rej := checkReadyForLiveGate(task, cfg, "")
 	if rej == nil {
 		t.Fatal("expected refusal when status != ready_for_live")
+		return
 	}
 	if rej.Code != ExitVerifyFailed {
 		t.Errorf("expected ExitVerifyFailed(%d), got %d", ExitVerifyFailed, rej.Code)
@@ -62,6 +63,7 @@ func TestReadyForLiveGate_SeparationOn_EmptyVerifier_Rejected(t *testing.T) {
 	rej := checkReadyForLiveGate(task, cfg, "   ")
 	if rej == nil {
 		t.Fatal("expected refusal when --verifier is empty/whitespace")
+		return
 	}
 	if rej.Code != ExitVerifyFailed {
 		t.Errorf("expected ExitVerifyFailed, got %d", rej.Code)
@@ -80,6 +82,7 @@ func TestReadyForLiveGate_SeparationOn_SameActor_Rejected(t *testing.T) {
 	rej := checkReadyForLiveGate(task, cfg, "claude-code")
 	if rej == nil {
 		t.Fatal("expected refusal when verifier matches ready_for_live_by")
+		return
 	}
 	if rej.Code != ExitVerifyFailed {
 		t.Errorf("expected ExitVerifyFailed, got %d", rej.Code)

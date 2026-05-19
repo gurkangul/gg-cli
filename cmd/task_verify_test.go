@@ -226,6 +226,7 @@ func TestTaskDone_PreHook_PersistsRationaleToStateJSON(t *testing.T) {
 	if found == nil {
 		t.Fatalf("no BypassEntry with Rationale=%q in state.json; log has %d entries: %+v",
 			rationale, len(s.BypassLog), s.BypassLog)
+		return
 	}
 	// RationaleTaskID must be parsed from the TASK-318 prefix.
 	if found.RationaleTaskID != "TASK-318" {

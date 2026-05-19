@@ -64,6 +64,7 @@ func TestInit_ForceAgentHooks_EnvLandsWithoutProjectClaudeDir(t *testing.T) {
 	}
 	if claude == nil {
 		t.Fatal("claude installer result missing from InstallDetected output")
+		return
 	}
 	if claude.Action == agenthooks.ActionSuggested {
 		t.Fatalf("with Force=true, claude must install — got ActionSuggested; dormant-fix regression: %v", claude)

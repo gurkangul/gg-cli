@@ -216,6 +216,7 @@ func TestSearchDiscussions_ExcludesResolvedByDefault(t *testing.T) {
 	f := OpenDiscussionsFilter()
 	if f == nil {
 		t.Fatal("OpenDiscussionsFilter: expected non-nil filter")
+		return
 	}
 	if len(f.Must) != 1 {
 		t.Fatalf("Must conditions: got %d, want 1", len(f.Must))
@@ -236,6 +237,7 @@ func TestSearchTasks_ExcludesDoneByDefault(t *testing.T) {
 	f := ActiveTasksFilter()
 	if f == nil {
 		t.Fatal("ActiveTasksFilter: expected non-nil filter")
+		return
 	}
 	if len(f.Must) != 1 {
 		t.Fatalf("Must conditions: got %d, want 1", len(f.Must))

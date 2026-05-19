@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.18] - 2026-05-19
+
+### Fixed
+
+- Clear the remaining `golangci-lint` debt surfaced by gg task quality hooks.
+
 ## [0.3.17] - 2026-05-19
 
 ### Fixed

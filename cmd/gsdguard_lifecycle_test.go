@@ -41,6 +41,7 @@ func TestAgentLifecycleGate_DeveloperRoleBlockedForDone(t *testing.T) {
 	rej := checkAgentLifecycleGate("done")
 	if rej == nil {
 		t.Fatal("expected gate to block GG_ROLE=developer")
+		return
 	}
 	if rej.Code != ExitVerifyFailed {
 		t.Errorf("expected ExitVerifyFailed(%d), got %d", ExitVerifyFailed, rej.Code)
@@ -103,6 +104,7 @@ func TestAgentLifecycleGate_ReviewDeveloperRoleBlocked(t *testing.T) {
 	rej := checkAgentLifecycleGate("review")
 	if rej == nil {
 		t.Fatal("expected gate to block GG_ROLE=developer for 'review' verb")
+		return
 	}
 	if rej.Code != ExitVerifyFailed {
 		t.Errorf("expected ExitVerifyFailed(%d), got %d", ExitVerifyFailed, rej.Code)

@@ -35,6 +35,7 @@ func TestCheckContract_OK(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatalf("no result for claude")
+		return
 	}
 	if found.Status != ContractOK {
 		t.Errorf("claude: want ContractOK, got %s (found=%s, want=%s)",
@@ -59,6 +60,7 @@ func TestCheckContract_Missing(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatalf("no result for claude")
+		return
 	}
 	if found.Status != ContractMISSING {
 		t.Errorf("claude: want ContractMISSING, got %s", found.Status)
@@ -84,6 +86,7 @@ func TestCheckContract_Stale(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatalf("no result for claude")
+		return
 	}
 	if found.Status != ContractSTALE {
 		t.Errorf("claude: want ContractSTALE, got %s", found.Status)
@@ -109,6 +112,7 @@ func TestCheckContract_Drifted(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatalf("no result for claude")
+		return
 	}
 	if found.Status != ContractDRIFTED {
 		t.Errorf("claude: want ContractDRIFTED, got %s", found.Status)
@@ -134,6 +138,7 @@ func TestCheckContract_DriftedLegacyVersion(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatalf("no result for claude")
+		return
 	}
 	if found.Status != ContractDRIFTED {
 		t.Errorf("legacy contract marker must be DRIFTED, got %s", found.Status)
@@ -272,6 +277,7 @@ func TestCheckContract_Extended(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatalf("no result for claude")
+		return
 	}
 	if found.Status != ContractEXTENDED {
 		t.Errorf("want ContractEXTENDED, got %s", found.Status)
