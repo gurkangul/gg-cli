@@ -78,10 +78,10 @@ User says "continue"/"devam et"/"keep going" → pick next work autonomously:
 1. `gg status` — see open tasks/inbox/recent decisions
 2. Skip tasks already claimed in recent inbox broadcasts
 3. Pick highest-priority unclaimed pending task
-4. Claim: `gg tell "all" "TASK-XXX picked up" --from <role>`
+4. Claim: `gg tell "all" "TASK-XXX picked up" --from <role> --audience agents`
 5. `gg task get TASK-XXX`
 6. Write code, test, commit
-7. `gg task done TASK-XXX "summary"` + broadcast: `gg tell "all" "TASK-XXX done: ..."`
+7. `gg task done TASK-XXX "summary"` + broadcast: `gg tell "all" "TASK-XXX done: ..." --from <role> --audience agents`
 
 User says "do TASK-XXX" specifically → skip selection, go to step 6.
 
@@ -96,7 +96,7 @@ gg tell "target-role" "message" --from your-role
 
 For cross-agent visibility during parallel work, use:
 ```
-gg tell "all" "short status" --from your-role
+gg tell "all" "short status" --from your-role --audience agents
 ```
 
 Broadcast only on: task pick-up, approach-selection moments, blockers,

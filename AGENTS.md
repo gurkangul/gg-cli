@@ -231,12 +231,12 @@ autonomously:
    already claimed a task? If yes, skip those.
 4. Pick the highest-priority unclaimed pending task (`high` before `medium`
    before `low`; among equal priority, lowest TASK-NNN wins).
-5. Claim it with a broadcast so other agents don't collide:
-   `gg tell "all" "TASK-XXX picked up" --from <your-role>`
+5. Claim it with an agent-status broadcast so other agents don't collide:
+   `gg tell "all" "TASK-XXX picked up" --from <your-role> --audience agents`
 6. `gg task get TASK-XXX` — read the detail.
 7. Write code, test, commit.
 8. `gg task done TASK-XXX "summary"` — and broadcast completion:
-   `gg tell "all" "TASK-XXX done: key outcome" --from <your-role>`
+   `gg tell "all" "TASK-XXX done: key outcome" --from <your-role> --audience agents`
 
 When the user says "do TASK-XXX" specifically, skip selection and go to step 6.
 

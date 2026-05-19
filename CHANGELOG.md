@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- Trim README into a shorter public-facing overview and point detailed command/config material to docs.
+- Clarify agent-status broadcasts should use `--audience agents` in runtime/template guidance so status noise stays out of human inboxes.
+- Refresh deprecated decision-capture help text to point users at canonical `gg record` forms.
+
 ## [0.3.15] - 2026-05-19
 
 ### Added
