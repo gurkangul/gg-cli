@@ -22,6 +22,11 @@ func TestTaskFromPayload_Full(t *testing.T) {
 		"done_summary": "",
 		"author":       "developer",
 		"created_at":   "2026-01-01T00:00:00Z",
+		"updated_at":   "2026-01-01T00:05:00Z",
+		"task_version": int64(3),
+		"owner":        "codex",
+		"claimed_at":   "2026-01-01T00:05:00Z",
+		"lease_until":  "2026-01-01T00:35:00Z",
 	})
 	if err != nil {
 		t.Fatalf("TryValueMap: %v", err)
@@ -55,6 +60,21 @@ func TestTaskFromPayload_Full(t *testing.T) {
 	}
 	if task.CreatedAt != "2026-01-01T00:00:00Z" {
 		t.Errorf("CreatedAt: got %q", task.CreatedAt)
+	}
+	if task.UpdatedAt != "2026-01-01T00:05:00Z" {
+		t.Errorf("UpdatedAt: got %q", task.UpdatedAt)
+	}
+	if task.Version != 3 {
+		t.Errorf("Version: got %d", task.Version)
+	}
+	if task.Owner != "codex" {
+		t.Errorf("Owner: got %q", task.Owner)
+	}
+	if task.ClaimedAt != "2026-01-01T00:05:00Z" {
+		t.Errorf("ClaimedAt: got %q", task.ClaimedAt)
+	}
+	if task.LeaseUntil != "2026-01-01T00:35:00Z" {
+		t.Errorf("LeaseUntil: got %q", task.LeaseUntil)
 	}
 }
 

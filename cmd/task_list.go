@@ -188,6 +188,9 @@ func renderTaskListDefault(w io.Writer, tasks []store.Task) {
 			author = " (" + t.Author + ")"
 		}
 		fmt.Fprintf(w, "%s %s [%s] %s%s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title, author)
+		if t.Owner != "" {
+			fmt.Fprintf(w, "    → Owner: %s (lease until %s)\n", t.Owner, t.LeaseUntil)
+		}
 		if t.Status == "blocked" && t.BlockReason != "" {
 			fmt.Fprintf(w, "    ⚠ Blocked: %s\n", t.BlockReason)
 		}
@@ -394,6 +397,15 @@ func renderTaskGetDefault(w io.Writer, t *store.Task) {
 	if len(t.DependsOn) > 0 {
 		fmt.Fprintf(w, "  Depends on: %s\n", strings.Join(t.DependsOn, ", "))
 	}
+	if t.Owner != "" {
+		fmt.Fprintf(w, "  Owner: %s\n", t.Owner)
+		if t.ClaimedAt != "" {
+			fmt.Fprintf(w, "  Claimed: %s\n", t.ClaimedAt)
+		}
+		if t.LeaseUntil != "" {
+			fmt.Fprintf(w, "  Lease until: %s\n", t.LeaseUntil)
+		}
+	}
 	if t.BlockReason != "" {
 		fmt.Fprintf(w, "  ⚠ Blocked: %s\n", t.BlockReason)
 	}
@@ -415,6 +427,8 @@ func renderTaskGetCompact(w io.Writer, t *store.Task) {
 		suffix = " ⚠" + compactTrim(t.BlockReason, 60)
 	} else if t.Status == "done" && t.DoneSummary != "" {
 		suffix = " ✓" + compactTrim(t.DoneSummary, 60)
+	} else if t.Owner != "" {
+		suffix = " @" + compactTrim(t.Owner, 24)
 	}
 	fmt.Fprintf(w, "%s %s [%s] %s%s\n",
 		statusIcon(t.Status), t.ID, t.Priority, compactTrim(t.Title, compactLineWidth), suffix)

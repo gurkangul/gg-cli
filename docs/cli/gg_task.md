@@ -27,5 +27,8 @@ Manage tasks
 * [gg task list](gg_task_list.md)	 - List tasks
 * [gg task ready-for-live](gg_task_ready-for-live.md)	 - Mark a task as ready for live verification — transitions in_progress → ready_for_live
 * [gg task reindex](gg_task_reindex.md)	 - Replay Task nodes into Memgraph from the Qdrant task store
+* [gg task release](gg_task_release.md)	 - Release the current task claim and return it to pending
+* [gg task renew](gg_task_renew.md)	 - Renew the current owner lease for an in-progress task
 * [gg task review](gg_task_review.md)	 - Set review status on a task (approve or reject)
+* [gg task start](gg_task_start.md)	 - Claim a task and move it to in_progress
 

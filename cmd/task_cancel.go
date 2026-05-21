@@ -58,7 +58,7 @@ func runTaskCancel(cmd *cobra.Command, args []string) error {
 		return notFound(fmt.Sprintf("task %s not found: %v", taskID, getErr))
 	}
 
-	if err := d.store.CancelTask(ctx, taskID); err != nil {
+	if err := d.store.CancelTask(ctx, taskID, resolveAuthor(cmd), reason); err != nil {
 		return fmt.Errorf("remove task from store: %w", err)
 	}
 

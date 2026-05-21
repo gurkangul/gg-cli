@@ -32,6 +32,11 @@ type Task struct {
 	Author       string // agent role or user that created this task
 	Requester    string // user | agent | system — who initiated this task
 	CreatedAt    string
+	UpdatedAt    string
+	Version      int64
+	Owner        string // agent currently holding the task claim
+	ClaimedAt    string // RFC3339 timestamp when Owner claimed the task
+	LeaseUntil   string // RFC3339 timestamp when the current claim expires
 	ReviewStatus string // none|pending|approved|rejected — orthogonal to Status lifecycle
 	ReviewedBy   string // reviewer role or agent name
 	ReviewedAt   string // RFC3339 timestamp
@@ -117,6 +122,12 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 	if t.CreatedAt == "" {
 		t.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
+	if t.UpdatedAt == "" {
+		t.UpdatedAt = t.CreatedAt
+	}
+	if t.Version <= 0 {
+		t.Version = 1
+	}
 
 	rawPayload := map[string]any{
 		"task_id":      t.ID,
@@ -133,6 +144,11 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 		"author":       t.Author,
 		"requester":    t.Requester,
 		"created_at":   t.CreatedAt,
+		"updated_at":   t.UpdatedAt,
+		"task_version": t.Version,
+		"owner":        t.Owner,
+		"claimed_at":   t.ClaimedAt,
+		"lease_until":  t.LeaseUntil,
 	}
 
 	// AC-1: JSONL write first — survives Qdrant downtime.
@@ -140,6 +156,16 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 	brainUUID := pointUUIDForTaskID(t.ID)
 	if err := brain.Append(c.dataDir, "tasks", brainUUID, t.Author, rawPayload); err != nil {
 		return "", fmt.Errorf("brain jsonl write: %w", err)
+	}
+	if err := c.AppendTaskEvent(TaskEvent{
+		TaskID:   t.ID,
+		Action:   "created",
+		ToStatus: t.Status,
+		Owner:    t.Owner,
+		Actor:    t.Author,
+		Detail:   t.Title,
+	}); err != nil {
+		return "", err
 	}
 
 	// AC-2: Qdrant upsert is secondary best-effort.
@@ -225,60 +251,6 @@ func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	return &t, nil
 }
 
-// ErrAlreadyInState is returned by UpdateTaskStatus when the task is already
-// in the requested status. Used to detect lost-update races between agents
-// (e.g. two agents both calling `gg task done TASK-X` simultaneously — the
-// second one sees the same target state and bails instead of clobbering the
-// first agent's summary).
-var ErrAlreadyInState = fmt.Errorf("task already in target state")
-
-func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra string) error {
-	pointID := qdrant.NewID(pointUUIDForTaskID(taskID))
-	// Verify the task exists AND read current status to guard against the
-	// concurrent-update race (no Qdrant CAS — this is best-effort).
-	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
-		CollectionName: c.collTasks(),
-		Ids:            []*qdrant.PointId{pointID},
-		WithPayload:    qdrant.NewWithPayloadInclude("task_id", "status"),
-	})
-	if err != nil {
-		return err
-	}
-	if len(existing) == 0 {
-		return fmt.Errorf("task %s not found", taskID)
-	}
-	currentStatus := existing[0].GetPayload()["status"].GetStringValue()
-	if currentStatus == status {
-		return fmt.Errorf("%w: task %s already %s — refusing to overwrite (use --force to clobber)", ErrAlreadyInState, taskID, status)
-	}
-
-	statusVal, _ := qdrant.NewValue(status)
-	emptyVal, _ := qdrant.NewValue("")
-	payload := map[string]*qdrant.Value{
-		"status": statusVal,
-	}
-	switch status {
-	case "done":
-		payload["done_summary"], _ = qdrant.NewValue(extra)
-		payload["block_reason"] = emptyVal
-	case "blocked":
-		payload["block_reason"], _ = qdrant.NewValue(extra)
-		payload["done_summary"] = emptyVal
-	case "pending", "in_progress":
-		payload["block_reason"] = emptyVal
-		payload["done_summary"] = emptyVal
-	}
-
-	wait := true
-	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
-		CollectionName: c.collTasks(),
-		Wait:           &wait,
-		Payload:        payload,
-		PointsSelector: qdrant.NewPointsSelector(pointID),
-	})
-	return err
-}
-
 // ValidReviewStatuses lists the allowed values for review_status.
 var ValidReviewStatuses = map[string]bool{
 	"none": true, "pending": true, "approved": true, "rejected": true,
@@ -299,19 +271,11 @@ func (c *Client) SetReadyForLive(ctx context.Context, taskID, readyBy, plan stri
 	if strings.TrimSpace(readyBy) == "" {
 		return fmt.Errorf("ready_for_live_by is required (use --from or set GG_ROLE)")
 	}
-	pointID := qdrant.NewID(pointUUIDForTaskID(taskID))
-	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
-		CollectionName: c.collTasks(),
-		Ids:            []*qdrant.PointId{pointID},
-		WithPayload:    qdrant.NewWithPayloadInclude("task_id", "status"),
-	})
+	current, err := c.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
-	if len(existing) == 0 {
-		return fmt.Errorf("task %s not found", taskID)
-	}
-	currentStatus := existing[0].GetPayload()["status"].GetStringValue()
+	currentStatus := current.Status
 	if currentStatus == "ready_for_live" {
 		return fmt.Errorf("%w: task %s already ready_for_live", ErrAlreadyInState, taskID)
 	}
@@ -320,26 +284,37 @@ func (c *Client) SetReadyForLive(ctx context.Context, taskID, readyBy, plan stri
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	statusVal, _ := qdrant.NewValue("ready_for_live")
-	byVal, _ := qdrant.NewValue(readyBy)
-	atVal, _ := qdrant.NewValue(now)
-	planVal, _ := qdrant.NewValue(plan)
-	emptyVal, _ := qdrant.NewValue("")
-	wait := true
-	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
-		CollectionName: c.collTasks(),
-		Wait:           &wait,
-		Payload: map[string]*qdrant.Value{
-			"status":              statusVal,
-			"ready_for_live_by":   byVal,
-			"ready_for_live_at":   atVal,
-			"ready_for_live_plan": planVal,
-			"block_reason":        emptyVal,
-			"done_summary":        emptyVal,
-		},
-		PointsSelector: qdrant.NewPointsSelector(pointID),
+	payload := map[string]*qdrant.Value{
+		"status":              taskStringValue("ready_for_live"),
+		"ready_for_live_by":   taskStringValue(readyBy),
+		"ready_for_live_at":   taskStringValue(now),
+		"ready_for_live_plan": taskStringValue(plan),
+		"block_reason":        taskStringValue(""),
+		"done_summary":        taskStringValue(""),
+	}
+	payload = taskVersionedPayload(current, payload, time.Now().UTC())
+	if err := c.setTaskPayloadByFilter(ctx, taskCurrentMutationFilter(current, currentStatus), payload); err != nil {
+		return err
+	}
+	updated, err := c.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if updated.Status != "ready_for_live" {
+		return fmt.Errorf("%w: task %s expected ready_for_live, got %q", ErrTaskTransitionConflict, taskID, updated.Status)
+	}
+	if updated.ReadyForLiveBy != readyBy || updated.ReadyForLivePlan != plan {
+		return fmt.Errorf("%w: task %s ready_for_live metadata changed concurrently", ErrTaskTransitionConflict, taskID)
+	}
+	return c.AppendTaskEvent(TaskEvent{
+		TaskID:     taskID,
+		Action:     "ready_for_live",
+		FromStatus: currentStatus,
+		ToStatus:   updated.Status,
+		Owner:      updated.Owner,
+		Actor:      readyBy,
+		Detail:     plan,
 	})
-	return err
 }
 
 // UpdateReviewStatus updates the review_status, reviewed_by, reviewed_at, and
@@ -349,19 +324,9 @@ func (c *Client) UpdateReviewStatus(ctx context.Context, taskID, reviewStatus, r
 	if !ValidReviewStatuses[reviewStatus] {
 		return fmt.Errorf("review_status must be one of: none, pending, approved, rejected")
 	}
-	pointID := qdrant.NewID(pointUUIDForTaskID(taskID))
-
-	// Verify the task exists first.
-	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
-		CollectionName: c.collTasks(),
-		Ids:            []*qdrant.PointId{pointID},
-		WithPayload:    qdrant.NewWithPayloadInclude("task_id"),
-	})
+	current, err := c.GetTask(ctx, taskID)
 	if err != nil {
 		return err
-	}
-	if len(existing) == 0 {
-		return fmt.Errorf("task %s not found", taskID)
 	}
 
 	rsVal, _ := qdrant.NewValue(reviewStatus)
@@ -369,19 +334,29 @@ func (c *Client) UpdateReviewStatus(ctx context.Context, taskID, reviewStatus, r
 	raVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
 	rnVal, _ := qdrant.NewValue(reviewNotes)
 
-	wait := true
-	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
-		CollectionName: c.collTasks(),
-		Wait:           &wait,
-		Payload: map[string]*qdrant.Value{
-			"review_status": rsVal,
-			"reviewed_by":   rbVal,
-			"reviewed_at":   raVal,
-			"review_notes":  rnVal,
-		},
-		PointsSelector: qdrant.NewPointsSelector(pointID),
+	payload := map[string]*qdrant.Value{
+		"review_status": rsVal,
+		"reviewed_by":   rbVal,
+		"reviewed_at":   raVal,
+		"review_notes":  rnVal,
+	}
+	payload = taskVersionedPayload(current, payload, time.Now().UTC())
+	if err := c.setTaskPayloadByFilter(ctx, taskCurrentMutationFilter(current, current.Status), payload); err != nil {
+		return err
+	}
+	updated, err := c.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if updated.ReviewStatus != reviewStatus || updated.ReviewedBy != reviewedBy || updated.ReviewNotes != reviewNotes {
+		return fmt.Errorf("%w: task %s review metadata changed concurrently", ErrTaskTransitionConflict, taskID)
+	}
+	return c.AppendTaskEvent(TaskEvent{
+		TaskID: taskID,
+		Action: "reviewed",
+		Actor:  reviewedBy,
+		Detail: reviewStatus + ": " + reviewNotes,
 	})
-	return err
 }
 
 // ActiveTasksFilter returns the Qdrant filter that restricts results to tasks
@@ -426,20 +401,25 @@ func taskFromPayload(pay map[string]*qdrant.Value) Task {
 		rs = "none"
 	}
 	return Task{
-		ID:           pay["task_id"].GetStringValue(),
-		Title:        pay["title"].GetStringValue(),
-		Detail:       pay["detail"].GetStringValue(),
-		Status:       pay["status"].GetStringValue(),
-		Priority:     pay["priority"].GetStringValue(),
-		DependsOn:    extractStringList(pay["depends_on"]),
-		Blocks:       extractStringList(pay["blocks"]),
-		Deadline:     pay["deadline"].GetStringValue(),
-		Tags:         extractStringList(pay["tags"]),
-		BlockReason:  pay["block_reason"].GetStringValue(),
-		DoneSummary:  pay["done_summary"].GetStringValue(),
-		Author:       pay["author"].GetStringValue(),
-		Requester:    pay["requester"].GetStringValue(),
-		CreatedAt:    pay["created_at"].GetStringValue(),
+		ID:               pay["task_id"].GetStringValue(),
+		Title:            pay["title"].GetStringValue(),
+		Detail:           pay["detail"].GetStringValue(),
+		Status:           pay["status"].GetStringValue(),
+		Priority:         pay["priority"].GetStringValue(),
+		DependsOn:        extractStringList(pay["depends_on"]),
+		Blocks:           extractStringList(pay["blocks"]),
+		Deadline:         pay["deadline"].GetStringValue(),
+		Tags:             extractStringList(pay["tags"]),
+		BlockReason:      pay["block_reason"].GetStringValue(),
+		DoneSummary:      pay["done_summary"].GetStringValue(),
+		Author:           pay["author"].GetStringValue(),
+		Requester:        pay["requester"].GetStringValue(),
+		CreatedAt:        pay["created_at"].GetStringValue(),
+		UpdatedAt:        pay["updated_at"].GetStringValue(),
+		Version:          pay["task_version"].GetIntegerValue(),
+		Owner:            pay["owner"].GetStringValue(),
+		ClaimedAt:        pay["claimed_at"].GetStringValue(),
+		LeaseUntil:       pay["lease_until"].GetStringValue(),
 		ReviewStatus:     rs,
 		ReviewedBy:       pay["reviewed_by"].GetStringValue(),
 		ReviewedAt:       pay["reviewed_at"].GetStringValue(),
@@ -449,42 +429,3 @@ func taskFromPayload(pay map[string]*qdrant.Value) Task {
 		ReadyForLivePlan: pay["ready_for_live_plan"].GetStringValue(),
 	}
 }
-
-func (c *Client) CountTasks(ctx context.Context, status string) (uint64, error) {
-	req := &qdrant.CountPoints{
-		CollectionName: c.collTasks(),
-	}
-	if status != "" {
-		req.Filter = &qdrant.Filter{
-			Must: []*qdrant.Condition{
-				qdrant.NewMatchKeyword("status", status),
-			},
-		}
-	}
-	return c.qc.Count(ctx, req)
-}
-
-func taskFromRetrieved(p *qdrant.RetrievedPoint) Task {
-	return taskFromPayload(p.GetPayload())
-}
-
-// CancelTask permanently removes a task from Qdrant. The point is deleted by
-// its deterministic UUID so no scan is needed. The caller is responsible for
-// also removing the Task node from Memgraph (see cmd/task_cancel.go).
-func (c *Client) CancelTask(ctx context.Context, taskID string) error {
-	if _, err := ParseTaskID(taskID); err != nil {
-		return err
-	}
-	ptID := qdrant.NewID(pointUUIDForTaskID(taskID))
-	wait := true
-	_, err := c.qc.Delete(ctx, &qdrant.DeletePoints{
-		CollectionName: c.collTasks(),
-		Wait:           &wait,
-		Points:         qdrant.NewPointsSelector(ptID),
-	})
-	if err != nil {
-		return fmt.Errorf("cancel task %s: %w", taskID, err)
-	}
-	return nil
-}
-
