@@ -161,6 +161,19 @@ func runBrainExport(cmd *cobra.Command, _ []string) error {
 		counts["edges"] = n
 	}
 
+	// Preserve append-only local task lifecycle events. They are not a Qdrant
+	// collection, so a snapshot export must carry the existing JSONL file
+	// forward before atomically replacing .gg/brain/.
+	{
+		sum, n, writeErr := copyExistingBrainJSONL(finalDir, partialDir, "task-events.jsonl")
+		if writeErr != nil {
+			_ = os.RemoveAll(partialDir)
+			return fmt.Errorf("write task-events.jsonl: %w", writeErr)
+		}
+		checksums["task-events.jsonl"] = sum
+		counts["task-events"] = n
+	}
+
 	// Write manifest.json.
 	manifest := brainManifest{
 		SchemaVersion:  1,
@@ -345,7 +358,7 @@ func fileChecksum(path string) (string, error) {
 // printBrainDryRun prints what would be written without touching the filesystem.
 func printBrainDryRun(qdrantData map[string][]any, nodes, edges []any) error {
 	fmt.Println("Dry run — would write .gg/brain/:")
-	kindOrder := append(append([]string(nil), store.BrainKind...), "chunks", "edges")
+	kindOrder := append(append([]string(nil), store.BrainKind...), "chunks", "edges", "task-events")
 	for _, k := range kindOrder {
 		var n int
 		switch k {
@@ -353,6 +366,9 @@ func printBrainDryRun(qdrantData map[string][]any, nodes, edges []any) error {
 			n = len(nodes)
 		case "edges":
 			n = len(edges)
+		case "task-events":
+			fmt.Printf("  %-20s preserve existing file if present\n", k+".jsonl")
+			continue
 		default:
 			n = len(qdrantData[k])
 		}

@@ -67,7 +67,7 @@ func runBrainImport(cmd *cobra.Command, _ []string) error {
 	// 3. Dry run — just report.
 	if brainImportDryRun {
 		fmt.Println("Dry run — would import:")
-		kindOrder := append(append([]string(nil), store.BrainKind...), "chunks", "edges")
+		kindOrder := append(append([]string(nil), store.BrainKind...), "chunks", "edges", "task-events")
 		for _, k := range kindOrder {
 			if n := manifest.Counts[k]; n > 0 {
 				fmt.Printf("  %-20s %d records\n", k+".jsonl", n)
@@ -112,6 +112,9 @@ func runBrainImport(cmd *cobra.Command, _ []string) error {
 	if totalChunks+skippedChunks > 0 {
 		fmt.Printf("  Nodes:   %d imported, %d skipped\n", totalChunks, skippedChunks)
 		fmt.Printf("  Edges:   %d imported, %d skipped\n", totalEdges, skippedEdges)
+	}
+	if n := manifest.Counts["task-events"]; n > 0 {
+		fmt.Printf("  Events:  %d task lifecycle events preserved\n", n)
 	}
 	if totalEmbedded > 0 {
 		fmt.Printf("  Vectors: %d embedded\n", totalEmbedded)

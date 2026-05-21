@@ -14,7 +14,7 @@ import (
 
 // brainStatusReport is the structured output for 'gg brain status --json'.
 type brainStatusReport struct {
-	Snapshot   string         `json:"snapshot"`              // "none" | "present"
+	Snapshot   string         `json:"snapshot"` // "none" | "present"
 	ExportedAt string         `json:"exported_at,omitempty"`
 	GGVersion  string         `json:"gg_version,omitempty"`
 	Schema     int            `json:"schema,omitempty"`
@@ -131,7 +131,7 @@ func runBrainStatus(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Print snapshot counts.
-	kindOrder := append(append([]string(nil), store.BrainKind...), "chunks", "edges")
+	kindOrder := append(append([]string(nil), store.BrainKind...), "chunks", "edges", "task-events")
 	countParts := []string{}
 	for _, k := range kindOrder {
 		if n := manifest.Counts[k]; n > 0 {
