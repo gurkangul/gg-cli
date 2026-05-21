@@ -136,6 +136,36 @@ func TestDoctorCheckBinaryAdvisory_UpToDate(t *testing.T) {
 	}
 }
 
+func TestAssessBinaryFreshnessDirtySourceRebuiltOK(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join("cmd", "new.go")
+	writeTestFile(t, filepath.Join(dir, path), "package cmd\n")
+	now := time.Now()
+	if err := os.Chtimes(filepath.Join(dir, path), now.Add(-time.Minute), now.Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	got := assessBinaryFreshness(dir, now, now.Add(-time.Hour), "abcdef123456", []string{path}, binaryBuildMetadata{
+		Revision: "abcdef123456",
+		Modified: true,
+		HasVCS:   true,
+	})
+	if got.Warn {
+		t.Fatalf("expected dirty rebuilt binary to be accepted, got warning: %s", got.Detail)
+	}
+}
+
+func TestAssessBinaryFreshnessRevisionMismatchWarns(t *testing.T) {
+	now := time.Now()
+	got := assessBinaryFreshness(t.TempDir(), now, now.Add(-time.Hour), "abcdef123456", nil, binaryBuildMetadata{
+		Revision: "123456abcdef",
+		HasVCS:   true,
+	})
+	if !got.Warn {
+		t.Fatalf("expected revision mismatch warning, got: %s", got.Detail)
+	}
+}
+
 func TestBuildAffectingDirtyPathFilter(t *testing.T) {
 	cases := []struct {
 		path string

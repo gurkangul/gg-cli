@@ -87,6 +87,43 @@ jobs:
           version: latest
           args: --timeout=5m
 
+  ownership-integration:
+    name: ownership integration
+    runs-on: ubuntu-latest
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.15.1
+        ports:
+          - 6333:6333
+          - 6334:6334
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Wait for Qdrant
+        shell: bash
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:6333/healthz >/dev/null || curl -fsS http://127.0.0.1:6333/ >/dev/null; then
+              echo "Qdrant ready"
+              exit 0
+            fi
+            echo "waiting for Qdrant ($i/30)"
+            sleep 1
+          done
+          docker logs "${{ job.services.qdrant.id }}"
+          exit 1
+
+      - name: Run ownership integration tests
+        env:
+          GG_INTEGRATION_TEST: "1"
+        run: go test ./internal/store -run TestTaskOwnershipIntegration -race -count=1 -timeout=120s -v
+
   vulncheck:
     name: vulncheck
     runs-on: ubuntu-latest

@@ -61,15 +61,18 @@ func TestRunUpdatePinsSelectedDirectVersionWhenProxyStale(t *testing.T) {
 	oldJSON := jsonOutput
 	oldSkipSync := updateSkipSync
 	oldForce := updateForce
+	oldFromSource := updateFromSource
 	rootCmd.Version = "v0.3.9"
 	jsonOutput = false
 	updateSkipSync = true
 	updateForce = false
+	updateFromSource = false
 	t.Cleanup(func() {
 		rootCmd.Version = oldVersion
 		jsonOutput = oldJSON
 		updateSkipSync = oldSkipSync
 		updateForce = oldForce
+		updateFromSource = oldFromSource
 	})
 
 	logPath := filepath.Join(t.TempDir(), "go.log")
@@ -114,6 +117,37 @@ func TestInstalledBinaryWarningDetectsPATHSkew(t *testing.T) {
 	warning := installedBinaryWarning(target)
 	if !strings.Contains(warning, active) || !strings.Contains(warning, filepath.Dir(target)) {
 		t.Fatalf("expected active/path skew warning, got %q", warning)
+	}
+}
+
+func normalizeTestPath(t *testing.T, p string) string {
+	t.Helper()
+
+	clean := filepath.Clean(p)
+	resolved, err := filepath.EvalSymlinks(clean)
+	if err == nil {
+		return filepath.Clean(resolved)
+	}
+	return clean
+}
+
+func TestSourceInstallTargetPrefersPathGG(t *testing.T) {
+	oldLookPath := updateLookPath
+	t.Cleanup(func() { updateLookPath = oldLookPath })
+
+	dir := t.TempDir()
+	active := filepath.Join(dir, "gg")
+	if err := os.WriteFile(active, []byte("fake"), 0o755); err != nil {
+		t.Fatalf("write fake gg: %v", err)
+	}
+	updateLookPath = func(string) (string, error) { return active, nil }
+
+	target, err := sourceInstallTarget(context.Background())
+	if err != nil {
+		t.Fatalf("sourceInstallTarget: %v", err)
+	}
+	if normalizeTestPath(t, target) != normalizeTestPath(t, active) {
+		t.Fatalf("target = %q, want PATH gg %q", target, active)
 	}
 }
 
@@ -181,11 +215,14 @@ func TestUpdateJSON_StdoutIsSingleObject(t *testing.T) {
 
 	oldJSON := jsonOutput
 	oldSkipSync := updateSkipSync
+	oldFromSource := updateFromSource
 	jsonOutput = true
 	updateSkipSync = true
+	updateFromSource = false
 	t.Cleanup(func() {
 		jsonOutput = oldJSON
 		updateSkipSync = oldSkipSync
+		updateFromSource = oldFromSource
 	})
 
 	stdout, stderr, err := captureUpdateOutput(t, func() error {

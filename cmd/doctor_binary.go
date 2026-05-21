@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,7 +21,7 @@ const ggModulePrefix = "module github.com/gurkangul/gg-cli"
 // (i.e. gg-cli is not locally cloned); emits an ERROR when the binary is not
 // resolvable via os.Executable.
 //
-// With fix=true, triggers `go install ./cmd/gg` in the found source directory.
+// With fix=true, rebuilds the source checkout into the active PATH gg target.
 func runDoctorCheckBinary(fix bool) error {
 	fmt.Println("Binary Freshness Check")
 	fmt.Println(strings.Repeat("─", 50))
@@ -52,7 +53,7 @@ func runDoctorCheckBinary(fix bool) error {
 		return nil
 	}
 
-	// --- Step 3: Get the HEAD commit timestamp from the source dir ---
+	// --- Step 3: Get the HEAD commit timestamp/SHA from the source dir ---
 	commitEpoch, gitErr := headCommitEpoch(srcDir)
 	if gitErr != nil {
 		fmt.Printf("  ~ %-28s %s\n", "source dir", "git log failed: "+gitErr.Error())
@@ -61,16 +62,33 @@ func runDoctorCheckBinary(fix bool) error {
 		return nil
 	}
 	commitTime := time.Unix(commitEpoch, 0)
+	headSHA, headErr := headCommitSHA(srcDir)
+	if headErr != nil {
+		fmt.Printf("  ~ %-28s %s\n", "source dir", "git rev-parse failed: "+headErr.Error())
+	}
 	dirtyPaths, dirtyErr := buildAffectingDirtyPaths(srcDir)
 	if dirtyErr != nil {
 		fmt.Printf("  ~ %-28s %s\n", "source state", "could not inspect working tree: "+dirtyErr.Error())
 	}
 	sourceDirty := len(dirtyPaths) > 0
+	buildMeta, buildMetaErr := readBinaryBuildMetadata(binPath)
 
 	// --- Step 4: Compare ---
 	fmt.Printf("  binary:   %s\n", binPath)
 	fmt.Printf("  mtime:    %s\n", binMtime.UTC().Format(time.RFC3339))
 	fmt.Printf("  HEAD at:  %s  (%s)\n", srcDir, commitTime.UTC().Format(time.RFC3339))
+	if headSHA != "" {
+		fmt.Printf("  HEAD sha: %s\n", shortSHA(headSHA))
+	}
+	if buildMeta.HasVCS {
+		dirtySuffix := ""
+		if buildMeta.Modified {
+			dirtySuffix = "+dirty"
+		}
+		fmt.Printf("  built:    %s%s\n", shortSHA(buildMeta.Revision), dirtySuffix)
+	} else if buildMetaErr != nil {
+		fmt.Printf("  built:    unavailable (%v)\n", buildMetaErr)
+	}
 	if sourceDirty {
 		fmt.Printf("  source:   %d uncommitted build-affecting change(s)\n", len(dirtyPaths))
 		for _, p := range previewDirtyPaths(dirtyPaths, 5) {
@@ -82,41 +100,35 @@ func runDoctorCheckBinary(fix bool) error {
 	}
 	fmt.Println()
 
-	stale := binMtime.Before(commitTime)
+	freshness := assessBinaryFreshness(srcDir, binMtime, commitTime, headSHA, dirtyPaths, buildMeta)
 
 	if fix {
-		if !stale && !sourceDirty {
+		if !freshness.Warn && !sourceDirty {
 			fmt.Printf("  ~ %-28s %s\n", "fix-binary", "binary is already up to date — nothing to do")
 			return nil
 		}
-		fmt.Printf("  ↓ %-28s running go install ./cmd/gg ...\n", "fix-binary")
-		if installErr := goInstallGG(srcDir); installErr != nil {
+		fmt.Printf("  ↓ %-28s rebuilding source install target ...\n", "fix-binary")
+		target, installErr := runGoInstallSource(context.Background(), srcDir, os.Stdout, os.Stderr)
+		if installErr != nil {
 			fmt.Printf("  ✗ %-28s %s\n", "fix-binary", installErr.Error())
-			return fmt.Errorf("go install failed: %w", installErr)
+			return fmt.Errorf("source install failed: %w", installErr)
 		}
-		if sourceDirty {
-			fmt.Printf("  ✓ %-28s binary rebuilt from current working tree; commit or re-run after edits to prove freshness\n", "fix-binary")
-			return nil
+		fmt.Printf("  ✓ %-28s %s\n", "installed binary", target)
+		if warning := installedBinaryWarning(target); warning != "" {
+			fmt.Printf("  ~ %-28s %s\n", "PATH", warning)
 		}
-		fmt.Printf("  ✓ %-28s binary rebuilt\n", "fix-binary")
 		return nil
 	}
 
-	if stale {
-		lag := commitTime.Sub(binMtime).Round(time.Minute)
-		fmt.Printf("  ~ %-28s binary is %s behind HEAD — run: go install ./cmd/gg\n",
-			"gg binary", lag)
+	if freshness.Warn {
+		fmt.Printf("  ~ %-28s %s\n", "gg binary", freshness.Detail)
+		fmt.Printf("    run: make install\n")
+		fmt.Printf("    or: gg update --from-source --skip-sync\n")
 		fmt.Printf("    or: gg doctor --check-binary --fix-binary\n")
-		// Advisory warn — does not count as a hard failure for `gg doctor` default run.
-		return nil
-	}
-	if sourceDirty {
-		fmt.Printf("  ~ %-28s source has uncommitted build-affecting changes — binary freshness cannot be proven\n", "gg binary")
-		fmt.Printf("    run: go install ./cmd/gg after edits are final, then re-check\n")
 		return nil
 	}
 
-	fmt.Printf("  ✓ %-28s up to date\n", "gg binary")
+	fmt.Printf("  ✓ %-28s %s\n", "gg binary", freshness.Detail)
 	return nil
 }
 
@@ -153,22 +165,24 @@ func doctorCheckBinaryAdvisory(report *doctorReport) {
 		return
 	}
 	commitTime := time.Unix(commitEpoch, 0)
+	headSHA, headErr := headCommitSHA(srcDir)
+	if headErr != nil {
+		report.warn("gg binary", "could not read HEAD commit SHA")
+		return
+	}
 	dirtyPaths, dirtyErr := buildAffectingDirtyPaths(srcDir)
 	if dirtyErr != nil {
 		report.warn("gg binary", "could not inspect source working tree")
 		return
 	}
+	buildMeta, _ := readBinaryBuildMetadata(binPath)
 
-	if binMtime.Before(commitTime) {
-		lag := commitTime.Sub(binMtime).Round(time.Minute)
-		report.warn("gg binary", fmt.Sprintf("stale by %s — run `gg doctor --check-binary --fix-binary`", lag))
+	freshness := assessBinaryFreshness(srcDir, binMtime, commitTime, headSHA, dirtyPaths, buildMeta)
+	if freshness.Warn {
+		report.warn("gg binary", freshness.Detail)
 		return
 	}
-	if len(dirtyPaths) > 0 {
-		report.warn("gg binary", fmt.Sprintf("source has %d uncommitted build-affecting change(s); freshness cannot be proven", len(dirtyPaths)))
-		return
-	}
-	report.ok("gg binary", "up to date")
+	report.ok("gg binary", freshness.Detail)
 }
 
 func buildAffectingDirtyPaths(srcDir string) ([]string, error) {
@@ -223,6 +237,105 @@ func previewDirtyPaths(paths []string, limit int) []string {
 		return paths
 	}
 	return paths[:limit]
+}
+
+func maxPathModTime(root string, paths []string) (time.Time, error) {
+	var max time.Time
+	for _, p := range paths {
+		info, err := os.Stat(filepath.Join(root, p))
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(max) {
+			max = info.ModTime()
+		}
+	}
+	return max, nil
+}
+
+type binaryBuildMetadata struct {
+	Revision string
+	Modified bool
+	HasVCS   bool
+}
+
+type binaryFreshness struct {
+	Warn   bool
+	Detail string
+}
+
+func assessBinaryFreshness(srcDir string, binMtime, commitTime time.Time, headSHA string, dirtyPaths []string, meta binaryBuildMetadata) binaryFreshness {
+	sourceDirty := len(dirtyPaths) > 0
+	if meta.HasVCS && meta.Revision != "" && headSHA != "" {
+		if meta.Revision != headSHA {
+			return binaryFreshness{Warn: true, Detail: fmt.Sprintf("built from %s, source HEAD is %s", shortSHA(meta.Revision), shortSHA(headSHA))}
+		}
+		if sourceDirty {
+			maxDirtyTime, _ := maxPathModTime(srcDir, dirtyPaths)
+			if meta.Modified && (maxDirtyTime.IsZero() || !binMtime.Before(maxDirtyTime)) {
+				return binaryFreshness{Detail: fmt.Sprintf("up to date with dirty source (HEAD %s+dirty)", shortSHA(headSHA))}
+			}
+			if !meta.Modified {
+				return binaryFreshness{Warn: true, Detail: fmt.Sprintf("built from clean HEAD %s but source has %d dirty build-affecting change(s)", shortSHA(headSHA), len(dirtyPaths))}
+			}
+			return binaryFreshness{Warn: true, Detail: fmt.Sprintf("source has %d dirty build-affecting change(s) newer than the binary", len(dirtyPaths))}
+		}
+		if meta.Modified {
+			return binaryFreshness{Warn: true, Detail: fmt.Sprintf("built from dirty source at %s but working tree is clean; rebuild after commit", shortSHA(headSHA))}
+		}
+		return binaryFreshness{Detail: fmt.Sprintf("up to date (HEAD %s)", shortSHA(headSHA))}
+	}
+
+	if binMtime.Before(commitTime) {
+		lag := commitTime.Sub(binMtime).Round(time.Minute)
+		return binaryFreshness{Warn: true, Detail: fmt.Sprintf("stale by %s", lag)}
+	}
+	if sourceDirty {
+		maxDirtyTime, _ := maxPathModTime(srcDir, dirtyPaths)
+		if !maxDirtyTime.IsZero() && !binMtime.Before(maxDirtyTime) {
+			return binaryFreshness{Detail: "binary mtime is newer than dirty source (VCS build metadata unavailable)"}
+		}
+		return binaryFreshness{Warn: true, Detail: fmt.Sprintf("source has %d dirty build-affecting change(s) newer than the binary", len(dirtyPaths))}
+	}
+	return binaryFreshness{Detail: "up to date"}
+}
+
+func readBinaryBuildMetadata(binPath string) (binaryBuildMetadata, error) {
+	cmd := exec.Command("go", "version", "-m", binPath)
+	out, err := cmd.Output()
+	if err != nil {
+		return binaryBuildMetadata{}, fmt.Errorf("go version -m: %w", err)
+	}
+	var meta binaryBuildMetadata
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "build\t") {
+			continue
+		}
+		kv := strings.TrimPrefix(line, "build\t")
+		switch {
+		case strings.HasPrefix(kv, "vcs.revision="):
+			meta.Revision = strings.TrimPrefix(kv, "vcs.revision=")
+		case strings.HasPrefix(kv, "vcs.modified="):
+			meta.Modified = strings.TrimPrefix(kv, "vcs.modified=") == "true"
+		}
+	}
+	meta.HasVCS = meta.Revision != ""
+	return meta, nil
+}
+
+func headCommitSHA(srcDir string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = srcDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse: %w", err)
+	}
+	sha := strings.TrimSpace(string(out))
+	if sha == "" {
+		return "", fmt.Errorf("git rev-parse returned empty output")
+	}
+	return sha, nil
 }
 
 // findGGCLISourceDir scans the project registry looking for a locally cloned
@@ -293,11 +406,7 @@ func headCommitEpoch(srcDir string) (int64, error) {
 	return epoch, nil
 }
 
-// goInstallGG runs `go install ./cmd/gg` in srcDir.
 func goInstallGG(srcDir string) error {
-	cmd := exec.Command("go", "install", "./cmd/gg")
-	cmd.Dir = srcDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	_, err := runGoInstallSource(context.Background(), srcDir, os.Stdout, os.Stderr)
+	return err
 }

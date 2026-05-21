@@ -17,7 +17,7 @@ gg (CLI, Go)
 ├── Memgraph (graph DB)            localhost:7687 (optional)
 │   ├── Symbol nodes               exported functions, types, variables
 │   ├── File nodes                 source files
-│   └── IMPORTS / CALLS edges      dependency relationships
+│   └── IMPORTS edges              dependency relationships
 │
 └── Ollama (embeddings)            localhost:11434
     └── nomic-embed-text (768-dim) semantic search vectors

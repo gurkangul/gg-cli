@@ -26,6 +26,7 @@ var (
 	updateSkipSync     bool
 	updateForce        bool
 	updateYes          bool
+	updateFromSource   bool
 
 	updateCommandContext = exec.CommandContext
 	updateLookPath       = exec.LookPath
@@ -38,6 +39,10 @@ var updateCmd = &cobra.Command{
 	Long: `Checks the latest public gg module version and, when needed, runs:
 
   go install github.com/gurkangul/gg-cli/cmd/gg@<latest-version>
+
+For a local gg-cli checkout with unreleased changes, use:
+
+  gg update --from-source
 
 After installing, gg refreshes registered project artifacts with system sync
 unless --skip-sync is passed. Network access happens only when this command
@@ -58,6 +63,8 @@ func init() {
 		"skip post-install managed artifact sync")
 	updateCmd.Flags().BoolVar(&updateForce, "force", false,
 		"run go install even when the current version appears up to date")
+	updateCmd.Flags().BoolVar(&updateFromSource, "from-source", false,
+		"rebuild and install gg from the local gg-cli source checkout instead of the latest public release")
 	updateCmd.Flags().BoolVar(&updateYes, "yes", false,
 		"accepted for automation compatibility; gg update never prompts")
 	updateCmd.AddCommand(updateCheckCmd)
@@ -101,6 +108,10 @@ func runUpdateCheck(cmd *cobra.Command, _ []string) error {
 }
 
 func runUpdate(cmd *cobra.Command, _ []string) error {
+	if updateFromSource {
+		return runUpdateFromSource(cmd)
+	}
+
 	ctx, cancel := context.WithTimeout(cmd.Context(), 2*time.Minute)
 	defer cancel()
 
@@ -374,20 +385,16 @@ func goEnv(ctx context.Context, key string) (string, error) {
 
 func installedBinaryWarning(target string) string {
 	target = filepath.Clean(target)
-	active, err := updateExecutable()
-	if err == nil {
-		if resolved, rErr := filepath.EvalSymlinks(active); rErr == nil {
-			active = resolved
-		}
-		if resolved, rErr := filepath.EvalSymlinks(target); rErr == nil {
-			target = resolved
-		}
-		if !samePathString(active, target) {
-			return fmt.Sprintf("this process ran from %s; ensure %s is first on PATH", active, filepath.Dir(target))
-		}
+	if resolved, rErr := filepath.EvalSymlinks(target); rErr == nil {
+		target = resolved
 	}
-	if pathGG, pErr := updateLookPath("gg"); pErr == nil && !samePathString(filepath.Clean(pathGG), target) {
-		return fmt.Sprintf("PATH resolves gg to %s; ensure %s is first on PATH", pathGG, filepath.Dir(target))
+	if pathGG, pErr := updateLookPath("gg"); pErr == nil && pathGG != "" {
+		if resolved, rErr := filepath.EvalSymlinks(pathGG); rErr == nil {
+			pathGG = resolved
+		}
+		if !samePathString(filepath.Clean(pathGG), target) {
+			return fmt.Sprintf("PATH resolves gg to %s; ensure %s is first on PATH", pathGG, filepath.Dir(target))
+		}
 	}
 	return ""
 }

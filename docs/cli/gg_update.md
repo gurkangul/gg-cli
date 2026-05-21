@@ -8,6 +8,10 @@ Checks the latest public gg module version and, when needed, runs:
 
   go install github.com/gurkangul/gg-cli/cmd/gg@<latest-version>
 
+For a local gg-cli checkout with unreleased changes, use:
+
+  gg update --from-source
+
 After installing, gg refreshes registered project artifacts with system sync
 unless --skip-sync is passed. Network access happens only when this command
 or 'gg update check' is run explicitly.
@@ -19,10 +23,11 @@ gg update [flags]
 ### Options
 
 ```
-      --force       run go install even when the current version appears up to date
-  -h, --help        help for update
-      --skip-sync   skip post-install managed artifact sync
-      --yes         accepted for automation compatibility; gg update never prompts
+      --force         run go install even when the current version appears up to date
+      --from-source   rebuild and install gg from the local gg-cli source checkout instead of the latest public release
+  -h, --help          help for update
+      --skip-sync     skip post-install managed artifact sync
+      --yes           accepted for automation compatibility; gg update never prompts
 ```
 
 ### Options inherited from parent commands

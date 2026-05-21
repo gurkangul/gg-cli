@@ -79,6 +79,14 @@ For unreleased development builds:
 go install github.com/gurkangul/gg-cli/cmd/gg@main
 ```
 
+For a local gg-cli checkout with uncommitted dogfood changes:
+
+```sh
+make install
+# or
+gg update --from-source --skip-sync
+```
+
 ---
 
 ## Agent setup
@@ -140,11 +148,11 @@ Compact rows are an index, not the source of truth.
 |---|---|
 | Orientation | `gg status`, `gg search`, `gg context`, `gg inbox` |
 | Decisions | `gg record`, `gg record --decision-status rejected` |
-| Tasks | `gg task create/list/get/done/block/ready-for-live` |
+| Tasks | `gg task create/list/get/start/renew/release/done/block/ready-for-live` |
 | Bugs | `gg bug report/triage/start/fix/wontfix/reopen` |
 | Code impact | `gg index`, `gg index status`, `gg impact` |
 | Brain snapshots | `gg brain export`, `gg brain status`, `gg system brain status` |
-| Health | `gg doctor`, `gg doctor --reconcile`, `gg check` |
+| Health | `gg doctor`, `gg doctor --reconcile`, `gg reconcile`, `gg check` |
 | Maintenance | `gg update check`, `gg update`, `gg reembed` |
 
 Full command reference:

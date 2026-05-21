@@ -99,7 +99,7 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorCheckBinary, "check-binary", false,
 		"verify the installed gg binary is not older than the HEAD commit of the local gg-cli source")
 	doctorCmd.Flags().BoolVar(&doctorFixBinary, "fix-binary", false,
-		"with --check-binary: rebuild and reinstall gg via go install ./cmd/gg when the binary is stale")
+		"with --check-binary: rebuild and reinstall gg from the local source checkout when the binary is stale")
 	doctorCmd.Flags().BoolVar(&doctorInstallSecretScanner, "install-secret-scanner", false,
 		"download and install the pinned gitleaks binary into ~/.gg/bin/gitleaks (checksum-verified)")
 	doctorCmd.Flags().BoolVar(&doctorCheckSecrets, "check-secrets", false,
