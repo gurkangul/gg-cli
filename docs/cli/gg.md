@@ -32,6 +32,7 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg index](gg_index.md)	 - Index the codebase into the Memgraph knowledge graph
 * [gg init](gg_init.md)	 - Initialize shared gg infrastructure (~/.gg/) and register this project
 * [gg metrics](gg_metrics.md)	 - Project health metrics
+* [gg next](gg_next.md)	 - Recommend the next safe agent command
 * [gg reconcile](gg_reconcile.md)	 - Reconcile append-only task events with the live task projection
 * [gg record](gg_record.md)	 - Record that a decision was made (the canonical knowledge-capture verb)
 * [gg reembed](gg_reembed.md)	 - Migrate all Qdrant collections to the currently configured embedding model

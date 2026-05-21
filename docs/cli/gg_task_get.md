@@ -11,6 +11,7 @@ gg task get TASK-ID [flags]
 ```
       --compact        one line summary — drops detail/tags/author to preserve agent context window
   -h, --help           help for get
+      --review         render the reviewer handoff packet (alias for gg task packet TASK-ID)
       --short          one line summary (alias for --compact)
       --with-context   append === Related Context === block with top-3 semantically related items from the knowledge base
 ```
@@ -24,4 +25,3 @@ gg task get TASK-ID [flags]
 ### SEE ALSO
 
 * [gg task](gg_task.md)	 - Manage tasks
-
