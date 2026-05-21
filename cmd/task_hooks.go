@@ -73,16 +73,28 @@ func taskHookEnv(taskID, summary, projectID string) map[string]string {
 // cache may be nil for standalone use (tests); runTaskDone passes the shared
 // cache to avoid loading config twice per command.
 func runTaskDoneHooks(cmd *cobra.Command, cache *hookConfig, taskID, summary string) error {
+	_, err := runTaskDoneHooksResult(cmd, cache, taskID, summary)
+	return err
+}
+
+func runTaskDoneHooksResult(cmd *cobra.Command, cache *hookConfig, taskID, summary string) (bool, error) {
 	if cache == nil {
 		cache = &hookConfig{}
 	}
 	ggDir, cfg, err := cache.load(cmd.ErrOrStderr())
 	if err != nil {
-		return nil // can't find .gg — skip silently
+		return false, nil // can't find .gg — skip silently
 	}
 
-	_, hookErr := hooks.RunHooks(ggDir, "task-done", taskHookEnv(taskID, summary, cfg.ProjectID), cfg.Hooks.Strict, cmd.ErrOrStderr())
-	return hookErr
+	results, hookErr := hooks.RunHooks(ggDir, "task-done", taskHookEnv(taskID, summary, cfg.ProjectID), cfg.Hooks.Strict, cmd.ErrOrStderr())
+	findings := false
+	for _, r := range results {
+		if r.Err != nil || r.ExitCode != 0 {
+			findings = true
+			break
+		}
+	}
+	return findings, hookErr
 }
 
 // notifyTaskLifecycle broadcasts a short "[actor → all] TASK-XXX <event>: detail"

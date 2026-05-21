@@ -26,6 +26,7 @@ const MarkerPrefix = "gg:session-start:"
 // Agent is required; the rest are optional and omitted when empty.
 type Briefing struct {
 	Agent       string
+	Role        string
 	ProjectID   string
 	ProjectRoot string
 }
@@ -48,6 +49,11 @@ func (b Briefing) Render(w io.Writer) error {
 	sb.WriteString("agent: ")
 	sb.WriteString(b.Agent)
 	sb.WriteByte('\n')
+	if strings.TrimSpace(b.Role) != "" {
+		sb.WriteString("role: ")
+		sb.WriteString(strings.TrimSpace(b.Role))
+		sb.WriteByte('\n')
+	}
 	if b.ProjectID != "" {
 		sb.WriteString("project_id: ")
 		sb.WriteString(b.ProjectID)
@@ -59,12 +65,18 @@ func (b Briefing) Render(w io.Writer) error {
 		sb.WriteByte('\n')
 	}
 	sb.WriteString("\n")
-	sb.WriteString("You are operating inside a gg-cli enforced project. Before acting:\n")
-	sb.WriteString("  1. Read AGENTS.md (repo root) — it defines this project's protocol.\n")
-	sb.WriteString("  2. Run `gg search --compact <topic>` before proposing anything new.\n")
-	sb.WriteString("  3. Record every decision/task/rejection with gg — no exceptions.\n")
-	sb.WriteString("  4. Broadcast agent-status work via `gg tell all ... --from <role> --audience agents`.\n")
-	sb.WriteString("  5. Before new work, run `gg inbox` and handle role-targeted assignments — silent skip = violation.\n")
+	role := strings.TrimSpace(b.Role)
+	if role == "" {
+		role = "$GG_ROLE"
+	}
+	sb.WriteString("You are operating inside a gg-cli managed project. Use gg as the shared project brain.\n")
+	sb.WriteString("Next:\n")
+	fmt.Fprintf(&sb, "  1. gg inbox --role %s --peek\n", role)
+	sb.WriteString("  2. gg task list --ready --compact\n")
+	fmt.Fprintf(&sb, "  3. gg task start <TASK-ID> --owner %s --lease 30m\n", b.Agent)
+	sb.WriteString("  4. gg task get <TASK-ID>\n")
+	sb.WriteString("  5. gg context --for-task <TASK-ID>\n")
+	sb.WriteString("Full protocol: docs/agent-protocol-v1.md\n")
 	sb.WriteString("\n")
 	_, err := io.WriteString(w, sb.String())
 	return err
@@ -85,10 +97,12 @@ func PasteBlock(agentHint string) string {
 	var sb strings.Builder
 	sb.WriteString("I am operating inside a gg-cli enforced project.\n")
 	sb.WriteString("Before anything else:\n")
-	fmt.Fprintf(&sb, "  1. export GG_AGENT=%s   # use your agent's name\n", agentHint)
-	sb.WriteString("  2. Run: gg status\n")
-	sb.WriteString("  3. Read AGENTS.md at the repo root.\n")
-	sb.WriteString("  4. From now on use gg for every decision, task, rejection,\n")
+	fmt.Fprintf(&sb, "  1. export GG_AGENT=%s   # unique agent_id, e.g. omo-slim or codex-1\n", agentHint)
+	sb.WriteString("  2. export GG_ROLE=implementer   # role, e.g. implementer/reviewer/planner\n")
+	sb.WriteString("  3. Run: gg session-start --agent \"$GG_AGENT\" --role \"$GG_ROLE\"\n")
+	sb.WriteString("  4. Run: gg inbox --role \"$GG_ROLE\" --peek\n")
+	sb.WriteString("  5. Read AGENTS.md at the repo root.\n")
+	sb.WriteString("  6. From now on use gg for every decision, task, rejection,\n")
 	sb.WriteString("     and cross-agent handoff. No exceptions.\n")
 	return sb.String()
 }

@@ -20,6 +20,7 @@ import (
 )
 
 var sessionStartAgent string
+var sessionStartRole string
 var sessionStartBench bool
 
 // sessionStartStderr is the writer for session-start stderr output.
@@ -48,6 +49,9 @@ Enforcement:
   Otherwise the command exits with code 3 (config error) — a silent skip
   would defeat the point of enforcement.
 
+  --role=ROLE is optional. When provided (or GG_ROLE is set), the briefing
+  prints role-scoped next steps for the current agent instance.
+
 Output layout:
   Line 1:   gg:session-start:v1     (stable marker for tooling)
   Then:     agent + project metadata
@@ -55,15 +59,17 @@ Output layout:
   Then:     current gg status output
 
 Examples:
-  gg session-start --agent=<agent-name>
-  GG_AGENT=cursor gg session-start`,
+  gg session-start --agent=<agent-id> --role=implementer
+  GG_AGENT=cursor GG_ROLE=reviewer gg session-start`,
 	Args: cobra.NoArgs,
 	RunE: runSessionStart,
 }
 
 func init() {
 	sessionStartCmd.Flags().StringVar(&sessionStartAgent, "agent", "",
-		"agent name (codex, cursor, gsd, aider, ...) — overrides $GG_AGENT")
+		"agent_id for this agent instance (for example omo-slim, codex-1, claude-planner) — overrides $GG_AGENT")
+	sessionStartCmd.Flags().StringVar(&sessionStartRole, "role", "",
+		"agent role for this session (for example implementer, reviewer, planner) — overrides $GG_ROLE in briefing output")
 	sessionStartCmd.Flags().BoolVar(&sessionStartBench, "bench", false,
 		"print timing for the managed-block resync step to stderr")
 	rootCmd.AddCommand(sessionStartCmd)
@@ -81,7 +87,7 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 		return configErr("agent identity required (set GG_AGENT or pass --agent)")
 	}
 
-	br := session.Briefing{Agent: agent}
+	br := session.Briefing{Agent: agent, Role: resolveSessionRole()}
 	// Project metadata is best-effort. A missing .gg/ just means the user ran
 	// session-start outside a project — the briefing header is still useful.
 	if root, err := config.FindRoot(); err == nil {
@@ -279,6 +285,13 @@ func resolveSessionAgent() string {
 		return s
 	}
 	return strings.TrimSpace(os.Getenv("GG_AGENT"))
+}
+
+func resolveSessionRole() string {
+	if s := strings.TrimSpace(sessionStartRole); s != "" {
+		return s
+	}
+	return strings.TrimSpace(os.Getenv("GG_ROLE"))
 }
 
 // emitBrainAutoBackup runs 'gg brain export --if-stale=INTERVAL' as a bounded,

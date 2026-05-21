@@ -71,15 +71,27 @@ visible to the others through shared memory.
 
 The very first thing to do at the start of any conversation:
 ```
-export GG_AGENT="${GG_AGENT:-agent}"  # replace "agent" with this runtime's name
-gg status
+export GG_AGENT=omo-slim     # unique agent_id: omo-slim, codex-1, claude-planner, hermes-reviewer, ...
+export GG_ROLE=implementer   # role: implementer, reviewer, planner, researcher, maintainer, ...
+gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
+gg inbox --role "$GG_ROLE" --peek
 ```
 
 The `GG_AGENT` export tags every subsequent gg call as agent-initiated in
 telemetry — without it the dogfood metric undercounts and gives false signals
-about adoption. Set it once per shell.
+about adoption. Set it once per shell and do not leave a stale value from a
+different runtime.
 
-After `gg status`, summarize the open tasks, unread messages, and recent
+Terms: `agent_id` is the unique runtime instance name; `role` is the authority
+for the current work; task `owner` is the `agent_id` holding the lease; inbox
+`role` / `audience` route messages. Use a unique `GG_AGENT` per runtime, even
+when two agents share one `GG_ROLE`.
+
+Role inbox reads should use `--role "$GG_ROLE" --peek`. Do not run role-less
+`gg inbox --advance-cursor`; the CLI rejects it because it can hide role-targeted
+assignments from a future agent.
+
+After `gg session-start`, summarize the open tasks, unread messages, and recent
 decisions for the user.
 
 ## DURING DISCUSSION
@@ -168,22 +180,35 @@ When the user says "work on the tasks", "continue", "keep going", "devam et",
 or gives no specific instruction but implies "do the next thing" — select
 autonomously:
 
-1. `gg status` — see pending tasks + open discussions + inbox.
-2. **Open discussions first**: if any `DISC-NNN` is open, close it (resolve
+1. `gg inbox --role "$GG_ROLE" --peek` — handle role-targeted assignments.
+2. `gg status` — see pending tasks + open discussions + inbox.
+3. **Open discussions first**: if any `DISC-NNN` is open, close it (resolve
    or dismiss) before picking work. Unresolved discussions block new work
    because the decision they represent may change which task matters.
-3. Check inbox for recent `[... → all]` broadcasts — has another agent
-   already claimed a task? If yes, skip those.
-4. Pick the highest-priority unclaimed pending task (`high` before `medium`
+4. List runnable tasks with `gg task list --ready --compact` (there is no
+   `gg task ready` subcommand in the current CLI).
+5. Check recent agent broadcasts with `gg inbox --include-agents --since 2h --peek` —
+   has another agent already claimed a task? If yes, skip those.
+6. Pick the highest-priority unclaimed pending task (`high` before `medium`
    before `low`; among equal priority, lowest TASK-NNN wins).
-5. Claim it with an agent-status broadcast so other agents don't collide:
-   `gg tell "all" "TASK-XXX picked up" --from <your-role> --audience agents`
-6. `gg task get TASK-XXX` — read the detail.
-7. Write code, test, commit.
-8. `gg task done TASK-XXX "summary"` — and broadcast completion:
-   `gg tell "all" "TASK-XXX done: key outcome" --from <your-role> --audience agents`
+7. Claim it with an owner lease and status broadcast:
+   `gg task start TASK-XXX --owner "$GG_AGENT" --lease 30m`
+   `gg tell "all" "TASK-XXX started by $GG_AGENT ($GG_ROLE)" --from "$GG_ROLE" --audience agents --task TASK-XXX`
+8. Hydrate before work: `gg task get TASK-XXX` and
+   `gg context --for-task TASK-XXX`.
+9. Before editing each file, run `gg impact <file> --compact`.
+10. Write code and test. Renew long leases with
+    `gg task renew TASK-XXX --owner "$GG_AGENT" --lease 30m`.
+11. Implementers do **not** close tasks. After local verification, run
+    `gg task get TASK-XXX` (required hydration; `gg context` alone is not enough), then
+    `gg task ready-for-live TASK-XXX "reviewer verify plan" --from "$GG_ROLE"`
+    and `gg tell reviewer "TASK-XXX ready for review" --from "$GG_ROLE" --task TASK-XXX`.
+12. Release only when abandoning or handing off unfinished `in_progress` work:
+    `gg task release TASK-XXX --owner "$GG_AGENT"`. Do not release after
+    `ready-for-live`; the current CLI only releases `in_progress` tasks.
 
-When the user says "do TASK-XXX" specifically, skip selection and go to step 6.
+When the user says "do TASK-XXX" specifically, skip selection and claim that
+task with `gg task start TASK-XXX --owner "$GG_AGENT" --lease 30m` before work.
 
 ## BUG FIX PRE-FLIGHT (mandatory before `gg bug fix`)
 
@@ -241,13 +266,13 @@ gg tell "all" "short status" --from <your-role> --audience agents
 
 **Broadcast at these moments — and only these:**
 - Starting a substantial task (so another agent doesn't pick up the same one):
-  `gg tell "all" "TASK-016 picked up, evaluating Memgraph Go drivers" --from developer --audience agents`
+  `gg tell "all" "TASK-016 started by $GG_AGENT ($GG_ROLE)" --from "$GG_ROLE" --audience agents --task TASK-016`
 - Choosing an approach among alternatives other agents might care about:
-  `gg tell "all" "TASK-016: picked neo4j-go-driver over mgclient-go — Bolt support, active maintenance" --from developer --audience agents`
+  `gg tell "all" "TASK-016: picked neo4j-go-driver over mgclient-go — Bolt support, active maintenance" --from "$GG_ROLE" --audience agents --task TASK-016`
 - Hitting a blocker that affects shared assumptions:
-  `gg tell "all" "TASK-016 blocked: Go 1.26 incompatibility in neo4j driver, investigating workaround" --from developer --audience agents`
-- Finishing a multi-step task (alongside `gg task done`):
-  `gg tell "all" "TASK-016 done: Memgraph Go client live, internal/graph/ ready for TASK-007" --from developer --audience agents`
+  `gg tell "all" "TASK-016 blocked: Go 1.26 incompatibility in neo4j driver, investigating workaround" --from "$GG_ROLE" --audience agents --task TASK-016`
+- Handing off for independent verification after `gg task ready-for-live`:
+  `gg tell reviewer "TASK-016 ready for review: Memgraph Go client live, internal/graph/ ready for TASK-007" --from "$GG_ROLE" --task TASK-016`
 
 **Do NOT broadcast:**
 - Every code change, file read, or thought

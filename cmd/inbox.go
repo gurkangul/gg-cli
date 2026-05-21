@@ -23,12 +23,13 @@ By default, agent-to-agent broadcast messages (audience=agents) are hidden.
 Use --include-agents to see them.
 
 Examples:
-  gg inbox                        # show all unread (human-visible), mark as read
+  gg inbox --role reviewer --peek # safe role-scoped read without marking global read state
   gg inbox --include-agents       # include agent-to-agent status broadcasts
-  gg inbox --peek                 # view without marking as read
   gg inbox --since 2h             # only messages from last 2 hours
+  gg inbox --role reviewer --since-cursor --advance-cursor
+                                  # cursor read; requires --role and is incompatible with --peek
   gg inbox --older-than 7d        # dismiss messages older than 7 days
-  gg inbox --dismiss-all          # mark all unread as read, no output
+  gg inbox --dismiss-all          # mark all unread messages as read without printing them
   gg inbox --group-by sender      # group messages by sender role`,
 	RunE: runInbox,
 }
@@ -55,7 +56,7 @@ func init() {
 	inboxCmd.Flags().StringVar(&inboxGroupBy, "group-by", "", "group output by field: sender")
 	inboxCmd.Flags().BoolVar(&inboxIncludeAgents, "include-agents", false, "show agent-to-agent broadcasts (hidden by default)")
 	inboxCmd.Flags().BoolVar(&inboxSinceCursor, "since-cursor", false, "only show messages newer than the stored per-agent cursor")
-	inboxCmd.Flags().BoolVar(&inboxAdvanceCursor, "advance-cursor", false, "after render, advance the per-agent cursor to the newest message timestamp")
+	inboxCmd.Flags().BoolVar(&inboxAdvanceCursor, "advance-cursor", false, "after render, advance cursor; requires --role and is ignored with --peek")
 	inboxCmd.Flags().BoolVar(&inboxCompact, "compact", false, "one line per message — drops timestamp precision and action-required split to preserve agent context window")
 	rootCmd.AddCommand(inboxCmd)
 }
@@ -68,6 +69,11 @@ func resolveInboxAgent() string {
 }
 
 func runInbox(cmd *cobra.Command, args []string) error {
+	advanceCursor, cursorErr := validateInboxCursorAdvance(inboxRole, inboxPeek, inboxAdvanceCursor)
+	if cursorErr != nil {
+		return cursorErr
+	}
+
 	d, err := loadDeps(false)
 	if err != nil {
 		return err
@@ -87,7 +93,7 @@ func runInbox(cmd *cobra.Command, args []string) error {
 			fmt.Println("No unread messages.")
 		} else {
 			fmt.Printf("✓ Dismissed %d message(s).\n", n)
-			if inboxAdvanceCursor {
+			if advanceCursor {
 				advanceCursorToNow(d)
 			}
 		}
@@ -189,7 +195,7 @@ func runInbox(cmd *cobra.Command, args []string) error {
 	}
 
 	// Advance cursor to the newest message shown (or now if no messages).
-	if inboxAdvanceCursor {
+	if advanceCursor {
 		advanceCursorToMax(d, messages)
 	}
 
@@ -204,6 +210,19 @@ func runInbox(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("mark read: %w", err)
 	}
 	return nil
+}
+
+func validateInboxCursorAdvance(role string, peek, advance bool) (bool, error) {
+	if !advance {
+		return false, nil
+	}
+	if strings.TrimSpace(role) == "" {
+		return false, fmt.Errorf("--advance-cursor requires --role <role>; role-less cursor advance can hide role-targeted assignments")
+	}
+	if peek {
+		return false, nil
+	}
+	return true, nil
 }
 
 // advanceCursorToMax writes the cursor to max(CreatedAt) of shown messages,

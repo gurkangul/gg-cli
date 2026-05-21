@@ -81,6 +81,22 @@ func TestTaskHydrationGateBlocksOtherStateTransitions(t *testing.T) {
 	}
 }
 
+func TestReadyForLiveHydrationGateMessageMentionsContextNotEnough(t *testing.T) {
+	t.Setenv("GG_AGENT", "omo-slim")
+	t.Setenv("GG_ROLE", "implementer")
+
+	rej := checkTaskHydrationGate(t.TempDir(), "TASK-123", "task ready-for-live", time.Now().UTC())
+	if rej == nil {
+		t.Fatal("expected ready-for-live without hydration proof to be blocked")
+	}
+	if !strings.Contains(rej.Message, "before ready-for-live") {
+		t.Fatalf("message should name ready-for-live, got %q", rej.Message)
+	}
+	if !strings.Contains(rej.Message, "gg context --for-task TASK-123") || !strings.Contains(rej.Message, "not enough") {
+		t.Fatalf("message should clarify context alone is not enough, got %q", rej.Message)
+	}
+}
+
 func TestBugHydrationGateBlocksTaggedSessionWithoutFullBugGet(t *testing.T) {
 	t.Setenv("GG_AGENT", "codex")
 	t.Setenv("GG_ROLE", "master")

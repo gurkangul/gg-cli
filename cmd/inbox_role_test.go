@@ -131,3 +131,44 @@ func TestInbox_ContractContainsInboxObeyRule(t *testing.T) {
 		t.Errorf("agent-contract.md missing 'silent skip' violation language:\n%s", contract)
 	}
 }
+
+func TestValidateInboxCursorAdvanceRequiresRole(t *testing.T) {
+	advance, err := validateInboxCursorAdvance("", false, true)
+	if err == nil {
+		t.Fatal("expected role-less --advance-cursor to be rejected")
+	}
+	if advance {
+		t.Fatal("unsafe cursor advance should not be effective")
+	}
+	if !strings.Contains(err.Error(), "--role") {
+		t.Fatalf("error should mention --role, got %q", err.Error())
+	}
+
+	advance, err = validateInboxCursorAdvance("", true, true)
+	if err == nil {
+		t.Fatal("expected role-less --peek --advance-cursor to be rejected before it can hide assignments")
+	}
+	if advance {
+		t.Fatal("role-less peek+advance should not be effective")
+	}
+}
+
+func TestValidateInboxCursorAdvancePeekDoesNotAdvance(t *testing.T) {
+	advance, err := validateInboxCursorAdvance("reviewer", true, true)
+	if err != nil {
+		t.Fatalf("peek+advance should be treated as safe no-op, got %v", err)
+	}
+	if advance {
+		t.Fatal("--peek must not advance the cursor")
+	}
+}
+
+func TestValidateInboxCursorAdvanceAllowsRoleScopedAdvance(t *testing.T) {
+	advance, err := validateInboxCursorAdvance("reviewer", false, true)
+	if err != nil {
+		t.Fatalf("role-scoped advance should be allowed, got %v", err)
+	}
+	if !advance {
+		t.Fatal("role-scoped advance should be effective")
+	}
+}

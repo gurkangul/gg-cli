@@ -10,12 +10,13 @@ By default, agent-to-agent broadcast messages (audience=agents) are hidden.
 Use --include-agents to see them.
 
 Examples:
-  gg inbox                        # show all unread (human-visible), mark as read
+  gg inbox --role reviewer --peek # safe role-scoped read without marking global read state
   gg inbox --include-agents       # include agent-to-agent status broadcasts
-  gg inbox --peek                 # view without marking as read
   gg inbox --since 2h             # only messages from last 2 hours
+  gg inbox --role reviewer --since-cursor --advance-cursor
+                                  # cursor read; requires --role and is incompatible with --peek
   gg inbox --older-than 7d        # dismiss messages older than 7 days
-  gg inbox --dismiss-all          # mark all unread as read, no output
+  gg inbox --dismiss-all          # mark all unread messages as read without printing them
   gg inbox --group-by sender      # group messages by sender role
 
 ```
@@ -25,7 +26,7 @@ gg inbox [flags]
 ### Options
 
 ```
-      --advance-cursor      after render, advance the per-agent cursor to the newest message timestamp
+      --advance-cursor      after render, advance cursor; requires --role and is ignored with --peek
       --compact             one line per message — drops timestamp precision and action-required split to preserve agent context window
       --dismiss-all         mark all unread messages as read without printing them
       --group-by string     group output by field: sender

@@ -13,6 +13,7 @@ import (
 // tests to avoid real Qdrant calls.
 type inboxChecker interface {
 	GetInbox(ctx context.Context, role string, humanOnly bool) ([]store.Message, error)
+	GetTask(ctx context.Context, taskID string) (*store.Task, error)
 }
 
 // InboxGateResult is the outcome of a single inbox-gate evaluation.
@@ -53,6 +54,9 @@ func CheckInboxGate(ctx context.Context, client inboxChecker, role string) (Inbo
 	var targeted []store.Message
 	lowerRole := strings.ToLower(role)
 	for _, m := range msgs {
+		if assignmentResolved(ctx, client, m) {
+			continue
+		}
 		if strings.EqualFold(m.ToRole, role) {
 			targeted = append(targeted, m)
 			continue
@@ -66,6 +70,23 @@ func CheckInboxGate(ctx context.Context, client inboxChecker, role string) (Inbo
 		return InboxGateResult{}, nil
 	}
 	return InboxGateResult{Blocked: true, Count: len(targeted), Messages: targeted}, nil
+}
+
+func assignmentResolved(ctx context.Context, client inboxChecker, m store.Message) bool {
+	if strings.TrimSpace(m.TaskID) == "" {
+		return false
+	}
+	t, err := client.GetTask(ctx, m.TaskID)
+	if err != nil {
+		// Cancelled tasks are removed from the live projection; treat a missing
+		// task-linked assignment as resolved instead of permanently blocking new work.
+		return strings.Contains(strings.ToLower(err.Error()), "not found")
+	}
+	switch strings.ToLower(strings.TrimSpace(t.Status)) {
+	case "done", "cancelled":
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(t.ReviewStatus), "rejected")
 }
 
 // FormatBlockMessage formats the inbox-gate block error message shown to the agent.

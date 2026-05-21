@@ -8,9 +8,14 @@ The user will NEVER ask you to run `gg` — you detect the intent and run it.
 
 First thing in every conversation:
 ```
-gg status
+export GG_AGENT=omo-slim     # unique agent_id (omo-slim, codex-1, claude-planner, ...)
+export GG_ROLE=implementer   # role (implementer, reviewer, planner, ...)
+gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
+gg inbox --role "$GG_ROLE" --peek
 ```
 Summarize open tasks, unread messages, and recent decisions for the user.
+Use unique `GG_AGENT` values when two agents share the same role. Do not run
+role-less `gg inbox --advance-cursor`; role-scoped `--peek` is the safe default.
 
 ## DURING DISCUSSION
 
@@ -75,15 +80,25 @@ Tell the user: "Opened task TASK-XXX."
 
 User says "continue"/"devam et"/"keep going" → pick next work autonomously:
 
-1. `gg status` — see open tasks/inbox/recent decisions
-2. Skip tasks already claimed in recent inbox broadcasts
-3. Pick highest-priority unclaimed pending task
-4. Claim: `gg tell "all" "TASK-XXX picked up" --from <role> --audience agents`
-5. `gg task get TASK-XXX`
-6. Write code, test, commit
-7. `gg task done TASK-XXX "summary"` + broadcast: `gg tell "all" "TASK-XXX done: ..." --from <role> --audience agents`
+1. `gg inbox --role "$GG_ROLE" --peek`
+2. `gg status` — see open tasks/inbox/recent decisions
+3. List runnable tasks: `gg task list --ready --compact` (`gg task ready` is not a current subcommand)
+4. Skip tasks already claimed in recent agent broadcasts: `gg inbox --include-agents --since 2h --peek`
+5. Pick highest-priority unclaimed pending task
+6. Claim: `gg task start TASK-XXX --owner "$GG_AGENT" --lease 30m`
+7. Broadcast: `gg tell "all" "TASK-XXX started by $GG_AGENT ($GG_ROLE)" --from "$GG_ROLE" --audience agents --task TASK-XXX`
+8. Hydrate: `gg task get TASK-XXX` and `gg context --for-task TASK-XXX`
+9. Before editing files: `gg impact <file> --compact`
+10. Write code and test; renew long leases with `gg task renew TASK-XXX --owner "$GG_AGENT" --lease 30m`
+11. Implementers mark ready, not done: run `gg task get TASK-XXX` first (required hydration), then `gg task ready-for-live TASK-XXX "reviewer verify plan" --from "$GG_ROLE"`
+12. Notify reviewer: `gg tell reviewer "TASK-XXX ready for review" --from "$GG_ROLE" --task TASK-XXX`
 
-User says "do TASK-XXX" specifically → skip selection, go to step 6.
+Release only when abandoning/handoff unfinished `in_progress` work:
+`gg task release TASK-XXX --owner "$GG_AGENT"`. Do not release after
+`ready-for-live`; the current CLI only releases `in_progress` tasks.
+
+User says "do TASK-XXX" specifically → skip selection and claim that task
+with `gg task start TASK-XXX --owner "$GG_AGENT" --lease 30m` before work.
 
 ## MESSAGING ANOTHER AGENT
 

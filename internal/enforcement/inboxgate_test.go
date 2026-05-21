@@ -11,6 +11,7 @@ import (
 // fakeInboxChecker is a test double for the inboxChecker interface.
 type fakeInboxChecker struct {
 	messages []store.Message
+	tasks    map[string]*store.Task
 	err      error
 }
 
@@ -28,6 +29,15 @@ func (f *fakeInboxChecker) GetInbox(_ context.Context, role string, _ bool) ([]s
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeInboxChecker) GetTask(_ context.Context, taskID string) (*store.Task, error) {
+	if f.tasks != nil {
+		if t := f.tasks[taskID]; t != nil {
+			return t, nil
+		}
+	}
+	return nil, fmt.Errorf("task %s not found", taskID)
 }
 
 func TestCheckInboxGate_EmptyRole_Skip(t *testing.T) {
@@ -74,6 +84,76 @@ func TestCheckInboxGate_ToRoleMatch_Blocked(t *testing.T) {
 	}
 	if result.Count != 1 {
 		t.Errorf("Count want 1, got %d", result.Count)
+	}
+}
+
+func TestCheckInboxGate_DoneTaskAssignment_NotBlocked(t *testing.T) {
+	client := &fakeInboxChecker{
+		messages: []store.Message{{FromRole: "implementer", ToRole: "reviewer", Content: "TASK-010 ready", TaskID: "TASK-010"}},
+		tasks:    map[string]*store.Task{"TASK-010": {ID: "TASK-010", Status: "done"}},
+	}
+	result, err := CheckInboxGate(context.Background(), client, "reviewer")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Blocked {
+		t.Fatalf("done task assignment should not block, got %+v", result)
+	}
+}
+
+func TestCheckInboxGate_CancelledTaskAssignment_NotBlocked(t *testing.T) {
+	client := &fakeInboxChecker{
+		messages: []store.Message{{FromRole: "implementer", ToRole: "reviewer", Content: "TASK-013 ready", TaskID: "TASK-013"}},
+		tasks:    map[string]*store.Task{"TASK-013": {ID: "TASK-013", Status: "cancelled"}},
+	}
+	result, err := CheckInboxGate(context.Background(), client, "reviewer")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Blocked {
+		t.Fatalf("cancelled task assignment should not block, got %+v", result)
+	}
+}
+
+func TestCheckInboxGate_MissingTaskAssignment_NotBlocked(t *testing.T) {
+	client := &fakeInboxChecker{
+		messages: []store.Message{{FromRole: "implementer", ToRole: "reviewer", Content: "TASK-014 ready", TaskID: "TASK-014"}},
+		tasks:    map[string]*store.Task{},
+	}
+	result, err := CheckInboxGate(context.Background(), client, "reviewer")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Blocked {
+		t.Fatalf("missing task assignment should not block, got %+v", result)
+	}
+}
+
+func TestCheckInboxGate_RejectedReviewAssignment_NotBlocked(t *testing.T) {
+	client := &fakeInboxChecker{
+		messages: []store.Message{{FromRole: "implementer", ToRole: "reviewer", Content: "TASK-011 ready", TaskID: "TASK-011"}},
+		tasks:    map[string]*store.Task{"TASK-011": {ID: "TASK-011", Status: "ready_for_live", ReviewStatus: "rejected"}},
+	}
+	result, err := CheckInboxGate(context.Background(), client, "reviewer")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Blocked {
+		t.Fatalf("rejected review assignment should not block, got %+v", result)
+	}
+}
+
+func TestCheckInboxGate_ActiveTaskAssignment_StillBlocks(t *testing.T) {
+	client := &fakeInboxChecker{
+		messages: []store.Message{{FromRole: "planner", ToRole: "implementer", Content: "TASK-012 start", TaskID: "TASK-012"}},
+		tasks:    map[string]*store.Task{"TASK-012": {ID: "TASK-012", Status: "in_progress"}},
+	}
+	result, err := CheckInboxGate(context.Background(), client, "implementer")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Blocked {
+		t.Fatal("active task assignment should still block")
 	}
 }
 

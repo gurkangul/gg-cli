@@ -88,10 +88,11 @@ func RunHooks(ggDir, name string, env map[string]string, strict bool, out io.Wri
 		results = append(results, r)
 
 		if runErr != nil {
-			fmt.Fprintf(out, "⚠ hook %s failed (exit %d):\n%s\n", r.Script, r.ExitCode, strings.TrimSpace(r.Output))
 			if strict {
+				fmt.Fprintf(out, "⚠ hook %s failed (exit %d):\n%s\n", r.Script, r.ExitCode, strings.TrimSpace(r.Output))
 				return results, fmt.Errorf("hook %s failed (exit %d)", r.Script, r.ExitCode)
 			}
+			fmt.Fprintf(out, "⚠ advisory hook %s reported findings (exit %d):\n%s\n", r.Script, r.ExitCode, strings.TrimSpace(r.Output))
 		}
 	}
 	return results, nil

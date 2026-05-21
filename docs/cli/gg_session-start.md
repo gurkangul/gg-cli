@@ -15,6 +15,9 @@ Enforcement:
   Otherwise the command exits with code 3 (config error) — a silent skip
   would defeat the point of enforcement.
 
+  --role=ROLE is optional. When provided (or GG_ROLE is set), the briefing
+  prints role-scoped next steps for the current agent instance.
+
 Output layout:
   Line 1:   gg:session-start:v1     (stable marker for tooling)
   Then:     agent + project metadata
@@ -22,8 +25,8 @@ Output layout:
   Then:     current gg status output
 
 Examples:
-  gg session-start --agent=<agent-name>
-  GG_AGENT=cursor gg session-start
+  gg session-start --agent=<agent-id> --role=implementer
+  GG_AGENT=cursor GG_ROLE=reviewer gg session-start
 
 ```
 gg session-start [flags]
@@ -32,9 +35,10 @@ gg session-start [flags]
 ### Options
 
 ```
-      --agent string   agent name (codex, cursor, gsd, aider, ...) — overrides $GG_AGENT
+      --agent string   agent_id for this agent instance (for example omo-slim, codex-1, claude-planner) — overrides $GG_AGENT
       --bench          print timing for the managed-block resync step to stderr
   -h, --help           help for session-start
+      --role string    agent role for this session (for example implementer, reviewer, planner) — overrides $GG_ROLE in briefing output
 ```
 
 ### Options inherited from parent commands

@@ -161,7 +161,8 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	notifyTaskLifecycle(ctx, d.store, taskID, "done", summary)
 
 	// Run post-done hooks from .gg/hooks/task-done.d/*.sh (warn-only unless hooks.strict=true).
-	if hookErr := runTaskDoneHooks(cmd, hookCfg, taskID, summary); hookErr != nil {
+	advisoryFindings, hookErr := runTaskDoneHooksResult(cmd, hookCfg, taskID, summary)
+	if hookErr != nil {
 		return hookErr // only non-nil when strict mode is enabled and a hook failed
 	}
 
@@ -169,6 +170,9 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 
 	return printJSON(map[string]any{"id": taskID, "status": "done", "summary": summary}, func() {
 		fmt.Printf("✓ %s marked as done\n", taskID)
+		if advisoryFindings {
+			fmt.Println("  Advisory hook reported findings above; task state is done.")
+		}
 	})
 }
 

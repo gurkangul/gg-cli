@@ -75,10 +75,17 @@ func checkTaskHydrationGate(runtimeDir, taskID, action string, now time.Time) *E
 		Code: ExitVerifyFailed,
 		Message: fmt.Sprintf(
 			"compact hydration gate rejected %s for %s: no recent full task hydration found.\n"+
-				"Compact/list/search output is an index view, not source-of-truth. Run 'gg task get %s' and read the full detail before retrying.\n"+
+				taskHydrationInstruction(action, taskID)+"\n"+
 				"Hydration proof window: %s. Set GG_ENFORCEMENT=off with GG_BYPASS_RATIONALE for emergency bypass.",
-			action, taskID, taskID, taskHydrationWindow),
+			action, taskID, taskHydrationWindow),
 	}
+}
+
+func taskHydrationInstruction(action, taskID string) string {
+	if action == "task ready-for-live" {
+		return fmt.Sprintf("Run 'gg task get %s' before ready-for-live; 'gg context --for-task %s' alone is not enough.", taskID, taskID)
+	}
+	return fmt.Sprintf("Compact/list/search output is an index view, not source-of-truth. Run 'gg task get %s' and read the full detail before retrying.", taskID)
 }
 
 func enforceTaskHydrationGate(w io.Writer, cache *hookConfig, taskID, action, bypassGate string) error {

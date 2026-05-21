@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gurkangul/gg-cli/internal/hooks"
@@ -68,6 +69,12 @@ func TestRunHooks_WarnOnly(t *testing.T) {
 	}
 	if results[0].ExitCode == 0 {
 		t.Error("expected first hook to fail")
+	}
+	if !strings.Contains(out.String(), "advisory hook 01-fail.sh reported findings") {
+		t.Fatalf("warn-only output should describe advisory findings, got:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "hook 01-fail.sh failed") {
+		t.Fatalf("warn-only advisory output should not use blocking failure wording, got:\n%s", out.String())
 	}
 	// Second hook should still run in warn-only mode.
 	if results[1].ExitCode != 0 {

@@ -8,7 +8,7 @@ import (
 
 func TestBriefing_Render_ContainsMarker(t *testing.T) {
 	var buf bytes.Buffer
-	b := Briefing{Agent: "claude-code"}
+	b := Briefing{Agent: "omo-slim", Role: "implementer"}
 	if err := b.Render(&buf); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -17,8 +17,11 @@ func TestBriefing_Render_ContainsMarker(t *testing.T) {
 	if !strings.HasPrefix(out, wantFirstLine+"\n") {
 		t.Errorf("first line = %q, want prefix %q", firstLine(out), wantFirstLine)
 	}
-	if !strings.Contains(out, "agent: claude-code") {
+	if !strings.Contains(out, "agent: omo-slim") {
 		t.Errorf("output missing agent line: %q", out)
+	}
+	if !strings.Contains(out, "role: implementer") {
+		t.Errorf("output missing role line: %q", out)
 	}
 }
 
@@ -39,29 +42,16 @@ func TestBriefing_Render_OmitsEmptyFields(t *testing.T) {
 
 func TestBriefing_Render_IncludesProtocolSteps(t *testing.T) {
 	var buf bytes.Buffer
-	b := Briefing{Agent: "cursor", ProjectID: "abc", ProjectRoot: "/tmp/x"}
+	b := Briefing{Agent: "cursor", Role: "reviewer", ProjectID: "abc", ProjectRoot: "/tmp/x"}
 	if err := b.Render(&buf); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	out := buf.String()
-	// All 5 rules must appear in order. If any fall out the briefing has
-	// silently stopped reminding agents of the full protocol.
-	musts := []string{"AGENTS.md", "gg search", "decision", "gg tell", "gg inbox"}
+	musts := []string{"Next:", "gg inbox --role reviewer --peek", "gg task list --ready --compact", "gg task start <TASK-ID> --owner cursor --lease 30m", "gg task get <TASK-ID>", "gg context --for-task <TASK-ID>", "docs/agent-protocol-v1.md"}
 	for _, m := range musts {
 		if !strings.Contains(out, m) {
 			t.Errorf("briefing missing reference to %q: %q", m, out)
 		}
-	}
-
-	// Agent-status broadcasts must be routed away from the human/global inbox.
-	if !strings.Contains(out, "--audience agents") {
-		t.Errorf("briefing must tell agents to use --audience agents for broadcasts: %q", out)
-	}
-
-	// Rule 5 must mention silent skip.
-	if !strings.Contains(out, "silent skip") && !strings.Contains(out, "silent-skip") &&
-		!strings.Contains(out, "violation") {
-		t.Errorf("briefing rule 5 must mention violation consequence: %q", out)
 	}
 }
 
@@ -73,9 +63,12 @@ func TestPasteBlock_DefaultAgent(t *testing.T) {
 }
 
 func TestPasteBlock_CustomAgent(t *testing.T) {
-	got := PasteBlock("cursor")
-	if !strings.Contains(got, "GG_AGENT=cursor") {
-		t.Errorf("hint=cursor should appear in paste block, got %q", got)
+	got := PasteBlock("omo-slim")
+	if !strings.Contains(got, "GG_AGENT=omo-slim") {
+		t.Errorf("hint=omo-slim should appear in paste block, got %q", got)
+	}
+	if !strings.Contains(got, "--role \"$GG_ROLE\"") {
+		t.Errorf("paste block should use session-start --role, got %q", got)
 	}
 }
 

@@ -143,13 +143,16 @@ These rules are individually recorded via `gg record` (tags:
 
 The very first thing to do at the start of any conversation:
 ```
-export GG_AGENT="${GG_AGENT:-agent}"  # replace "agent" with this runtime's name
-gg status
+export GG_AGENT=omo-slim     # unique agent_id (omo-slim, codex-1, claude-planner, ...)
+export GG_ROLE=implementer   # role (implementer, reviewer, planner, ...)
+gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
+gg inbox --role "$GG_ROLE" --peek
 ```
 
 The `GG_AGENT` export tags every subsequent gg call as agent-initiated in
 telemetry — without it the dogfood metric undercounts and gives false signals
-about adoption. Set it once per shell.
+about adoption. Set it once per shell and do not leave a stale value from a
+different runtime.
 
 Set `GG_AGENT` to the runtime that is actually executing commands. If a side
 pane is a real GSD runtime, `GG_AGENT=gsd` is valid. If Claude Code, Codex,
@@ -157,8 +160,18 @@ Cursor, or another runtime is orchestrating GSD work, keep that runtime's
 identity in `GG_AGENT` and use `GG_ROLE` for authority (`master`, `developer`,
 `reviewer`, etc.).
 
-After `gg status`, summarize the open tasks, unread messages, and recent
-decisions for the user.
+Terms: `agent_id` is the unique runtime instance name; `role` is the authority
+for the current work; task `owner` is the `agent_id` holding the lease; inbox
+`role` / `audience` route messages. Use a unique `GG_AGENT` per runtime, even
+when two agents share one `GG_ROLE`.
+
+Role inbox reads should use `--role "$GG_ROLE" --peek`. Do not run role-less
+`gg inbox --advance-cursor`; the CLI rejects it because it can hide role-targeted
+assignments from a future agent.
+
+After `gg session-start`, summarize the open tasks, unread messages, and recent
+decisions for the user. See `docs/agent-protocol-v1.md` for the full
+multi-agent flow.
 
 ## DURING DISCUSSION
 
@@ -213,7 +226,7 @@ Tell the user: "Recorded that decision."
 
 When a unit of work is clearly needed:
 ```
-gg task create "title" --detail "description" --priority high --tags "tag1,tag2"
+gg task create "title" --detail "description" --priority high --requester user --tags "tag1,tag2"
 ```
 Tell the user: "Opened task TASK-XXX."
 
@@ -223,22 +236,35 @@ When the user says "work on the tasks", "continue", "keep going", "devam et",
 or gives no specific instruction but implies "do the next thing" — select
 autonomously:
 
-1. `gg status` — see pending tasks + open discussions + inbox.
-2. **Open discussions first**: if any `DISC-NNN` is open, close it (resolve
+1. `gg inbox --role "$GG_ROLE" --peek` — handle role-targeted assignments.
+2. `gg status` — see pending tasks + open discussions + inbox.
+3. **Open discussions first**: if any `DISC-NNN` is open, close it (resolve
    or dismiss) before picking work. Unresolved discussions block new work
    because the decision they represent may change which task matters.
-3. Check inbox for recent `[... → all]` broadcasts — has another agent
-   already claimed a task? If yes, skip those.
-4. Pick the highest-priority unclaimed pending task (`high` before `medium`
+4. List runnable tasks with `gg task list --ready --compact` (there is no
+   `gg task ready` subcommand in the current CLI).
+5. Check recent agent broadcasts with `gg inbox --include-agents --since 2h --peek` —
+   has another agent already claimed a task? If yes, skip those.
+6. Pick the highest-priority unclaimed pending task (`high` before `medium`
    before `low`; among equal priority, lowest TASK-NNN wins).
-5. Claim it with an agent-status broadcast so other agents don't collide:
-   `gg tell "all" "TASK-XXX picked up" --from <your-role> --audience agents`
-6. `gg task get TASK-XXX` — read the detail.
-7. Write code, test, commit.
-8. `gg task done TASK-XXX "summary"` — and broadcast completion:
-   `gg tell "all" "TASK-XXX done: key outcome" --from <your-role> --audience agents`
+7. Claim it with an owner lease and status broadcast:
+   `gg task start TASK-XXX --owner "$GG_AGENT" --lease 30m`
+   `gg tell "all" "TASK-XXX started by $GG_AGENT ($GG_ROLE)" --from "$GG_ROLE" --audience agents --task TASK-XXX`
+8. Hydrate before work: `gg task get TASK-XXX` and
+   `gg context --for-task TASK-XXX`.
+9. Before editing each file, run `gg impact <file> --compact`.
+10. Write code and test. Renew long leases with
+    `gg task renew TASK-XXX --owner "$GG_AGENT" --lease 30m`.
+11. Implementers do **not** close tasks. After local verification, run
+    `gg task get TASK-XXX` (required hydration; `gg context` alone is not enough), then
+    `gg task ready-for-live TASK-XXX "reviewer verify plan" --from "$GG_ROLE"`
+    and `gg tell reviewer "TASK-XXX ready for review" --from "$GG_ROLE" --task TASK-XXX`.
+12. Release only when abandoning or handing off unfinished `in_progress` work:
+    `gg task release TASK-XXX --owner "$GG_AGENT"`. Do not release after
+    `ready-for-live`; the current CLI only releases `in_progress` tasks.
 
-When the user says "do TASK-XXX" specifically, skip selection and go to step 6.
+When the user says "do TASK-XXX" specifically, skip selection and claim that
+task with `gg task start TASK-XXX --owner "$GG_AGENT" --lease 30m` before work.
 
 ## PRE-DONE VERIFY GATE
 
@@ -427,13 +453,13 @@ the human passes `--include-agents`). Only omit `--audience` (defaults to
 
 **Broadcast at these moments — and only these:**
 - Starting a substantial task (so another agent doesn't pick up the same one):
-  `gg tell "all" "TASK-016 picked up, evaluating Memgraph Go drivers" --from developer --audience agents`
+  `gg tell "all" "TASK-016 started by $GG_AGENT ($GG_ROLE)" --from "$GG_ROLE" --audience agents --task TASK-016`
 - Choosing an approach among alternatives other agents might care about:
-  `gg tell "all" "TASK-016: picked neo4j-go-driver over mgclient-go — Bolt support, active maintenance" --from developer --audience agents`
+  `gg tell "all" "TASK-016: picked neo4j-go-driver over mgclient-go — Bolt support, active maintenance" --from "$GG_ROLE" --audience agents --task TASK-016`
 - Hitting a blocker that affects shared assumptions:
-  `gg tell "all" "TASK-016 blocked: Go 1.26 incompatibility in neo4j driver, investigating workaround" --from developer --audience agents`
-- Finishing a multi-step task (alongside `gg task done`):
-  `gg tell "all" "TASK-016 done: Memgraph Go client live, internal/graph/ ready for TASK-007" --from developer --audience agents`
+  `gg tell "all" "TASK-016 blocked: Go 1.26 incompatibility in neo4j driver, investigating workaround" --from "$GG_ROLE" --audience agents --task TASK-016`
+- Handing off for independent verification after `gg task ready-for-live`:
+  `gg tell reviewer "TASK-016 ready for review: Memgraph Go client live, internal/graph/ ready for TASK-007" --from "$GG_ROLE" --task TASK-016`
 
 **Do NOT broadcast:**
 - Every code change, file read, or thought
@@ -591,12 +617,16 @@ orchestrating agent you MUST:
 gg-cli is the mandatory coordination channel for this project.
 
 - All tasks, decisions, bugs, and broadcasts go through gg: `gg task`, `gg record`, `gg bug`, `gg tell`
-- Before starting new work, run: `gg inbox`
+- Agent identity terms are generic: `agent_id` is the unique runtime instance (for example `omo-slim`, `codex-1`, `claude-planner`), `role` is the work authority (for example `implementer`, `reviewer`, `planner`), and task `owner` is the leasing `agent_id`.
+- Before starting new work, run: `gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"`, then `gg inbox --role "$GG_ROLE" --peek`.
 - Never call `gsd_plan_*` tools in projects using gg — use `gg task create` instead
-- Before starting any new task or reasoning step, run: `gg inbox --role $GG_ROLE --since-cursor`.
+- Before starting any new task or reasoning step, run: `gg inbox --role "$GG_ROLE" --peek`.
+  Use a unique `GG_AGENT` per runtime. Do not run role-less `gg inbox --advance-cursor`; it is rejected because it can hide role-targeted assignments.
   If role-targeted unread messages exist, you MUST either:
-    (a) start the referenced task via `gg task start <id>`, OR
-    (b) reply with `gg tell <sender> <deferral reason>`
+    (a) start the referenced runnable task via `gg task start <id> --owner "$GG_AGENT" --lease 30m`, OR
+    (b) if the task is already `ready_for_live` and your role is reviewer/verifier, hydrate and review it, OR
+    (c) if the linked task is already closed, treat it as stale assignment noise, OR
+    (d) reply with `gg tell <sender> <deferral reason>`
   Silent skip = protocol violation. It will be caught by structural gates.
 - Source files (.go/.ts/.js/.py/.rs/.java): max 500 lines. Test files (*_test.go, *.test.*, *.spec.*): max 800 lines.
   Oversized files must be split into cohesive modules — extract helpers, split by concern, no god-objects.
