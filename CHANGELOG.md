@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.21] - 2026-05-22
+
+### Added
+
+- Standardize CodeGraph freshness notices across session start, next-step, impact, doctor, and index status outputs.
+
+### Fixed
+
+- Make foreground CodeGraph watchers use per-language freshness state and dirty-tree fingerprints to avoid stale slices and repeated full-refresh loops.
+
 ## [0.3.20] - 2026-05-22
 
 ### Fixed
@@ -327,7 +337,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.20...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.21...HEAD
+[0.3.21]: https://github.com/gurkangul/gg-cli/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/gurkangul/gg-cli/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/gurkangul/gg-cli/compare/v0.3.18...v0.3.19
 [0.3.18]: https://github.com/gurkangul/gg-cli/compare/v0.3.17...v0.3.18
