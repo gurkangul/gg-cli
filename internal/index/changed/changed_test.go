@@ -63,6 +63,67 @@ func TestIsAncestor_SelfIsAncestor(t *testing.T) {
 	}
 }
 
+func TestHeadSHA_UnbornReturnsEmptyTreeSHA(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v — %s", args, err, out)
+		}
+	}
+	run("init")
+	sha, err := changed.HeadSHA(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("HeadSHA: %v", err)
+	}
+	if sha != changed.EmptyTreeSHA {
+		t.Fatalf("HeadSHA=%q want empty tree %q", sha, changed.EmptyTreeSHA)
+	}
+}
+
+func TestIsAncestor_UnbornAcceptsEmptyTreeSHA(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v — %s", args, err, out)
+		}
+	}
+	run("init")
+	ok, err := changed.IsAncestor(context.Background(), dir, changed.EmptyTreeSHA)
+	if err != nil {
+		t.Fatalf("IsAncestor: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected empty tree SHA to be accepted as ancestor")
+	}
+}
+
+func TestFiles_UnbornEmptyTreeIncludesUntrackedSources(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v — %s", args, err, out)
+		}
+	}
+	run("init")
+	writeFile(t, filepath.Join(dir, "main.go"), "package main\n")
+	files, err := changed.Files(context.Background(), dir, changed.EmptyTreeSHA, []string{".go"})
+	if err != nil {
+		t.Fatalf("Files: %v", err)
+	}
+	if len(files) != 1 || !strings.HasSuffix(files[0], "main.go") {
+		t.Fatalf("expected main.go from unborn repo, got %v", files)
+	}
+}
+
 func TestIsAncestor_UnknownSHA(t *testing.T) {
 	root, _ := makeGitRepo(t)
 	// A completely made-up SHA should not be an ancestor (and should not panic).
@@ -148,6 +209,51 @@ func TestFiles_IncludesTrackedWorkingTreeAndUntracked(t *testing.T) {
 	for _, want := range []string{"a.txt", "new.go"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %s in %v", want, files)
+		}
+	}
+}
+
+func TestDetailedFiles_ClassifiesModifiedAddedDeletedAndRename(t *testing.T) {
+	root, _ := makeGitRepo(t)
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v — %s", args, err, out)
+		}
+	}
+	writeFile(t, filepath.Join(root, "delete.go"), "package main\n")
+	run("add", "delete.go")
+	run("commit", "-m", "add delete target")
+	out, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("rev-parse: %v", err)
+	}
+	baseSHA := strings.TrimSpace(string(out))
+
+	writeFile(t, filepath.Join(root, "new.go"), "package main\n")
+	run("mv", "a.txt", "renamed.txt")
+	if err := os.Remove(filepath.Join(root, "delete.go")); err != nil {
+		t.Fatalf("remove delete.go: %v", err)
+	}
+
+	changes, err := changed.DetailedFiles(context.Background(), root, baseSHA, nil)
+	if err != nil {
+		t.Fatalf("DetailedFiles: %v", err)
+	}
+	got := map[string]changed.FileChangeKind{}
+	for _, change := range changes {
+		got[filepath.Base(change.Path)] = change.Kind
+	}
+	for name, kind := range map[string]changed.FileChangeKind{
+		"a.txt":       changed.FileDeleted,
+		"renamed.txt": changed.FileAdded,
+		"new.go":      changed.FileAdded,
+		"delete.go":   changed.FileDeleted,
+	} {
+		if got[name] != kind {
+			t.Fatalf("%s kind=%q want %q (all=%v)", name, got[name], kind, changes)
 		}
 	}
 }

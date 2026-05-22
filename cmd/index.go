@@ -51,6 +51,10 @@ func runIndex(cmd *cobra.Command, _ []string) error {
 	if indexWatch {
 		return runIndexWatch(cmd)
 	}
+	return runIndexOnce(cmd, runner.Lang(indexLang), indexChanged)
+}
+
+func runIndexOnce(cmd *cobra.Command, lang runner.Lang, changedMode bool) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return configErr(fmt.Sprintf("load config: %v", err))
@@ -63,11 +67,10 @@ func runIndex(cmd *cobra.Command, _ []string) error {
 
 	ggDir := root + "/.gg"
 
-	lang := runner.Lang(indexLang)
 	reg := runner.DefaultRegistry()
 	r, ok := reg.Get(lang)
 	if !ok {
-		return fmt.Errorf("unsupported language %q — use go, python, or typescript", indexLang)
+		return fmt.Errorf("unsupported language %q — use go, python, or typescript", lang)
 	}
 
 	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
@@ -84,7 +87,7 @@ func runIndex(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("schema init: %w", err)
 	}
 
-	if indexChanged {
+	if changedMode {
 		return runChangedIndex(ctx, cmd, root, ggDir, lang, r, gc)
 	}
 	return runFullIndex(ctx, root, ggDir, lang, r, gc)
@@ -172,6 +175,10 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 		return runFullIndex(ctx, root, ggDir, lang, r, gc)
 	}
 	baseSHA := langState.LastIndexedSHA
+	if baseSHA == changed.EmptyTreeSHA {
+		fmt.Println("unborn git base detected — falling back to full index")
+		return runFullIndex(ctx, root, ggDir, lang, r, gc)
+	}
 
 	// Verify that the last indexed SHA is a reachable ancestor of the current
 	// HEAD. If it is not (branch switch, rebase, force push), the `git diff`
@@ -192,13 +199,50 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 
 	// Compute changed files for the given language.
 	exts := langExtensions(lang)
-	changedFiles, err := changed.Files(ctx, root, baseSHA, exts)
-	if err != nil {
-		return fmt.Errorf("compute changed files: %w", err)
-	}
 	headSHA, err := changed.HeadSHA(ctx, root)
 	if err != nil {
 		return fmt.Errorf("get HEAD sha: %w", err)
+	}
+	currentFingerprint, fpErr := changed.WorkingTreeFingerprintWithNames(ctx, root, baseSHA, exts, manifestsForLang(lang))
+	if fpErr != nil {
+		return fmt.Errorf("compute current source/module fingerprint: %w", fpErr)
+	}
+	if currentFingerprint == langState.WorkingTreeFingerprint {
+		fmt.Println("indexed source/module fingerprint already matches current tree — advancing index-state")
+		if err := writeIndexState(ctx, root, ggDir, headSHA, lang, langExtensions(lang)); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
+		} else {
+			fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
+		}
+		return nil
+	}
+	summary, summaryErr := codeGraphChangesSince(ctx, root, baseSHA, exts, manifestsForLang(lang))
+	if summaryErr != nil {
+		return fmt.Errorf("compute change summary: %w", summaryErr)
+	}
+	if summary.ModuleFiles > 0 {
+		moduleDirs, discoverErr := discoverModuleDirs(root, lang)
+		if discoverErr != nil {
+			return fmt.Errorf("discover %s modules: %w", lang, discoverErr)
+		}
+		if len(moduleDirs) == 0 {
+			fmt.Printf("module discovery changed and no %s module roots remain — sweeping stale %s graph nodes\n", lang, lang)
+			if sweepErr := gc.SweepProjectLang(ctx, string(lang)); sweepErr != nil {
+				return fmt.Errorf("sweep stale %s graph nodes after module removal: %w", lang, sweepErr)
+			}
+			if err := writeIndexState(ctx, root, ggDir, headSHA, lang, langExtensions(lang)); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
+			} else {
+				fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
+			}
+			return nil
+		}
+		fmt.Printf("module discovery changed (%d module file(s)) — running full %s graph refresh to avoid stale module projection\n", summary.ModuleFiles, lang)
+		return runFullIndex(ctx, root, ggDir, lang, r, gc)
+	}
+	changedFiles, err := changed.Files(ctx, root, baseSHA, exts)
+	if err != nil {
+		return fmt.Errorf("compute changed files: %w", err)
 	}
 
 	if len(changedFiles) == 0 {
@@ -211,6 +255,9 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 			}
 		}
 		return nil
+	}
+	if summary.hasChanges() {
+		fmt.Println(summary.detail("gg index --changed"))
 	}
 
 	changedRelFiles := make([]string, 0, len(changedFiles))
@@ -283,7 +330,7 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 }
 
 func writeIndexState(ctx context.Context, root, ggDir, headSHA string, lang runner.Lang, extensions []string) error {
-	fingerprint, err := changed.WorkingTreeFingerprint(ctx, root, headSHA, extensions)
+	fingerprint, err := changed.WorkingTreeFingerprintWithNames(ctx, root, headSHA, extensions, manifestsForLang(lang))
 	if err != nil {
 		return err
 	}

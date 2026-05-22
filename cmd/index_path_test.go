@@ -172,6 +172,63 @@ func TestDiscoverModuleDirs_NoManifest(t *testing.T) {
 	}
 }
 
+func TestDiscoverModuleDirs_TypeScriptTsconfigAtRoot(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "tsconfig.json"), "{}\n")
+
+	dirs, err := discoverModuleDirs(root, runner.LangTypeScript)
+	if err != nil {
+		t.Fatalf("discoverModuleDirs: %v", err)
+	}
+	if len(dirs) != 1 || dirs[0] != root {
+		t.Fatalf("expected [%q], got %v", root, dirs)
+	}
+}
+
+func TestDiscoverModuleDirs_SourceDirFallback(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(root, "src", "index.ts"), "export const value = 1\n")
+
+	dirs, err := discoverModuleDirs(root, runner.LangTypeScript)
+	if err != nil {
+		t.Fatalf("discoverModuleDirs: %v", err)
+	}
+	if len(dirs) != 1 || dirs[0] != root {
+		t.Fatalf("expected [%q], got %v", root, dirs)
+	}
+}
+
+func TestDiscoverModuleDirs_SourceDirFallbackDoesNotOverrideNestedModules(t *testing.T) {
+	root := t.TempDir()
+	for _, sub := range []string{"services/api", "packages/web"} {
+		dir := filepath.Join(root, sub)
+		if err := os.MkdirAll(filepath.Join(dir, "src"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(dir, "package.json"), "{\"name\":\""+sub+"\"}\n")
+		writeFile(t, filepath.Join(dir, "src", "index.ts"), "export const value = 1\n")
+	}
+
+	dirs, err := discoverModuleDirs(root, runner.LangTypeScript)
+	if err != nil {
+		t.Fatalf("discoverModuleDirs: %v", err)
+	}
+	if len(dirs) != 2 {
+		t.Fatalf("expected 2 nested dirs, got %v", dirs)
+	}
+	sort.Strings(dirs)
+	want := []string{filepath.Join(root, "packages/web"), filepath.Join(root, "services/api")}
+	sort.Strings(want)
+	for i, w := range want {
+		if dirs[i] != w {
+			t.Fatalf("dirs[%d] = %q, want %q", i, dirs[i], w)
+		}
+	}
+}
+
 func TestDiscoverModuleDirs_UnsupportedLang(t *testing.T) {
 	_, err := discoverModuleDirs(t.TempDir(), runner.Lang("ruby"))
 	if err == nil {
@@ -240,7 +297,7 @@ func TestManifestsForLang(t *testing.T) {
 		want []string
 	}{
 		{runner.LangGo, []string{"go.mod"}},
-		{runner.LangTypeScript, []string{"package.json"}},
+		{runner.LangTypeScript, []string{"package.json", "tsconfig.json", "jsconfig.json"}},
 		{runner.LangPython, []string{"pyproject.toml", "setup.py", "setup.cfg", "Pipfile", "requirements.txt"}},
 		{runner.Lang("ruby"), nil},
 	}

@@ -132,6 +132,10 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// Qdrant/outbox/placeholder vectors make semantic recall degraded.
 	emitSemanticMemoryNotice(cmd.Context(), os.Stdout, loadedCfg)
 
+	// Code graph notice: warn agents when impact data is missing/stale, but do
+	// not run an implicit refresh. The explicit safe path is gg doctor --fix-index.
+	emitCodeGraphNotice(cmd.Context(), os.Stdout, loadedCfg)
+
 	// Inline `gg status` so the briefing carries the full current-state
 	// snapshot the agent would otherwise have to fetch separately. runStatus
 	// failure (e.g. Qdrant down) is non-fatal here — the briefing header

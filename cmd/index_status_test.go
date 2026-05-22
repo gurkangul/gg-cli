@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -8,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/index/changed"
+	"github.com/gurkangul/gg-cli/internal/index/runner"
 	"github.com/gurkangul/gg-cli/internal/index/state"
 	"github.com/gurkangul/gg-cli/internal/outbox"
 )
@@ -32,8 +35,11 @@ func TestCollectCodeGraphStatus_ReadyAndStale(t *testing.T) {
 		t.Fatalf("write dirty.go: %v", err)
 	}
 	dirty := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
-	if dirty.Status != "stale" || !strings.Contains(dirty.Detail, "changed or untracked source") {
+	if dirty.Status != "stale" || !strings.Contains(dirty.Detail, "1 new file") {
 		t.Fatalf("dirty status=%q detail=%q", dirty.Status, dirty.Detail)
+	}
+	if dirty.NewFiles != 1 || dirty.ChangedFiles != 0 || dirty.DeletedFiles != 0 {
+		t.Fatalf("dirty counts changed=%d new=%d deleted=%d", dirty.ChangedFiles, dirty.NewFiles, dirty.DeletedFiles)
 	}
 	git(t, root, "add", "dirty.go")
 	git(t, root, "commit", "-m", "commit dirty.go")
@@ -85,8 +91,117 @@ func TestCollectCodeGraphStatus_LanguageFingerprintDoesNotHideOtherDirtySources(
 	}
 
 	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
-	if status.Status != "stale" || !strings.Contains(status.Detail, "changed or untracked source") {
+	if status.Status != "stale" || !strings.Contains(status.Detail, "2 new files") {
 		t.Fatalf("status=%q detail=%q", status.Status, status.Detail)
+	}
+}
+
+func TestCollectCodeGraphStatus_CountsChangedNewDeletedAndModuleFiles(t *testing.T) {
+	root, ggDir := setupIndexStatusRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/app\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "delete_me.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write delete_me.go: %v", err)
+	}
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-m", "initial go module")
+	first := strings.TrimSpace(git(t, root, "rev-parse", "HEAD"))
+	if err := state.WriteLanguage(ggDir, "go", first, "", []string{".go"}); err != nil {
+		t.Fatalf("state.WriteLanguage: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\nfunc main() { println(1) }\n"), 0o644); err != nil {
+		t.Fatalf("modify main.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.go"), []byte("package main\nvar fresh = true\n"), 0o644); err != nil {
+		t.Fatalf("write new.go: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, "delete_me.go")); err != nil {
+		t.Fatalf("remove delete_me.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/app\ngo 1.23\n"), 0o644); err != nil {
+		t.Fatalf("modify go.mod: %v", err)
+	}
+
+	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
+	if status.Status != "stale" {
+		t.Fatalf("status=%q detail=%q", status.Status, status.Detail)
+	}
+	if status.ChangedFiles != 1 || status.NewFiles != 1 || status.DeletedFiles != 1 || status.ModuleFiles != 1 {
+		t.Fatalf("counts changed=%d new=%d deleted=%d modules=%d detail=%q", status.ChangedFiles, status.NewFiles, status.DeletedFiles, status.ModuleFiles, status.Detail)
+	}
+	for _, want := range []string{"1 changed file", "1 new file", "1 deleted file", "1 module file changed", "gg index --lang go --changed"} {
+		if !strings.Contains(status.Detail, want) {
+			t.Fatalf("detail missing %q: %q", want, status.Detail)
+		}
+	}
+}
+
+func TestCollectCodeGraphStatus_DirtyIndexedTreeIsReadyWhenFingerprintMatches(t *testing.T) {
+	root, ggDir := setupIndexStatusRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/app\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-m", "initial go module")
+	head := strings.TrimSpace(git(t, root, "rev-parse", "HEAD"))
+	if err := os.WriteFile(filepath.Join(root, "new.go"), []byte("package main\nvar fresh = true\n"), 0o644); err != nil {
+		t.Fatalf("write new.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/app\ngo 1.23\n"), 0o644); err != nil {
+		t.Fatalf("modify go.mod: %v", err)
+	}
+	fingerprint, err := changed.WorkingTreeFingerprintWithNames(context.Background(), root, head, []string{".go"}, []string{"go.mod"})
+	if err != nil {
+		t.Fatalf("WorkingTreeFingerprintWithNames: %v", err)
+	}
+	if err := state.WriteLanguage(ggDir, "go", head, fingerprint, []string{".go"}); err != nil {
+		t.Fatalf("state.WriteLanguage: %v", err)
+	}
+
+	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
+	if status.Status != "ready" {
+		t.Fatalf("status=%q detail=%q", status.Status, status.Detail)
+	}
+	if status.ChangedFiles+status.NewFiles+status.DeletedFiles+status.ModuleFiles != 0 {
+		t.Fatalf("ready dirty-indexed status should not report stale counts: %#v", status)
+	}
+}
+
+func TestCollectCodeGraphStatus_CommittedIndexedDirtyTreeIsReady(t *testing.T) {
+	root, ggDir := setupIndexStatusRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/app\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-m", "initial go module")
+	base := strings.TrimSpace(git(t, root, "rev-parse", "HEAD"))
+	if err := os.WriteFile(filepath.Join(root, "new.go"), []byte("package main\nvar fresh = true\n"), 0o644); err != nil {
+		t.Fatalf("write new.go: %v", err)
+	}
+	fingerprint, err := changed.WorkingTreeFingerprintWithNames(context.Background(), root, base, []string{".go"}, []string{"go.mod"})
+	if err != nil {
+		t.Fatalf("WorkingTreeFingerprintWithNames: %v", err)
+	}
+	if err := state.WriteLanguage(ggDir, "go", base, fingerprint, []string{".go"}); err != nil {
+		t.Fatalf("state.WriteLanguage: %v", err)
+	}
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-m", "commit previously indexed dirty tree")
+
+	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
+	if status.Status != "ready" {
+		t.Fatalf("status=%q detail=%q last=%s head=%s", status.Status, status.Detail, status.LastIndexedSHA, status.HeadSHA)
 	}
 }
 
@@ -111,6 +226,107 @@ func TestCollectCodeGraphStatus_MissingAndPartial(t *testing.T) {
 	}
 }
 
+func TestCollectCodeGraphStatus_IgnoresNonIndexOutbox(t *testing.T) {
+	root, ggDir := setupIndexStatusRepo(t)
+	first := gitCommit(t, root, "one.go", "package main")
+	if err := state.Write(ggDir, first); err != nil {
+		t.Fatalf("state.Write: %v", err)
+	}
+	if _, err := outbox.Write(ggDir, "task-replay", map[string]any{"uuid": "task-1"}); err != nil {
+		t.Fatalf("outbox.Write: %v", err)
+	}
+
+	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
+	if status.Status != "ready" {
+		t.Fatalf("status=%q detail=%q pending=%d", status.Status, status.Detail, status.PendingOutbox)
+	}
+	if status.PendingOutbox != 0 {
+		t.Fatalf("PendingOutbox=%d want 0", status.PendingOutbox)
+	}
+}
+
+func TestCollectCodeGraphStatus_MissingAfterEmptyInitWithGoCode(t *testing.T) {
+	root, ggDir := setupIndexStatusRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/app\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "cmd", "app"), 0o755); err != nil {
+		t.Fatalf("mkdir cmd/app: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cmd", "app", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+
+	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
+	if status.Status != "missing" {
+		t.Fatalf("status=%q detail=%q", status.Status, status.Detail)
+	}
+	if got := strings.Join(status.DetectedLanguages, ","); got != "go" {
+		t.Fatalf("DetectedLanguages=%q", got)
+	}
+	for _, want := range []string{"project gained code since init", "gg index --lang go --changed"} {
+		if !strings.Contains(status.Detail, want) {
+			t.Fatalf("detail missing %q: %q", want, status.Detail)
+		}
+	}
+	if status.SuggestedCommand != "gg index --lang go --changed" {
+		t.Fatalf("SuggestedCommand=%q", status.SuggestedCommand)
+	}
+}
+
+func TestCollectCodeGraphStatus_MissingAfterEmptyInitWithTypeScriptCode(t *testing.T) {
+	root, ggDir := setupIndexStatusRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte("{\"name\":\"example\"}\n"), 0o644); err != nil {
+		t.Fatalf("write package.json: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+		t.Fatalf("mkdir src: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "src", "index.ts"), []byte("export const value = 1\n"), 0o644); err != nil {
+		t.Fatalf("write index.ts: %v", err)
+	}
+
+	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
+	if status.Status != "missing" {
+		t.Fatalf("status=%q detail=%q", status.Status, status.Detail)
+	}
+	if got := strings.Join(status.DetectedLanguages, ","); got != "typescript" {
+		t.Fatalf("DetectedLanguages=%q", got)
+	}
+	if !strings.Contains(status.Detail, "project gained code since init") {
+		t.Fatalf("detail missing init warning: %q", status.Detail)
+	}
+	if !strings.Contains(status.Detail, "gg index --lang typescript --changed") {
+		t.Fatalf("detail missing suggested command: %q", status.Detail)
+	}
+	if status.SuggestedCommand != "gg index --lang typescript --changed" {
+		t.Fatalf("SuggestedCommand=%q", status.SuggestedCommand)
+	}
+}
+
+func TestCollectCodeGraphStatus_SourceWithoutIndexableModuleDoesNotSuggestImpossibleIndex(t *testing.T) {
+	root, ggDir := setupIndexStatusRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+
+	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
+	if status.Status != "missing" {
+		t.Fatalf("status=%q detail=%q", status.Status, status.Detail)
+	}
+	if len(status.DetectedLanguages) != 0 {
+		t.Fatalf("DetectedLanguages=%v", status.DetectedLanguages)
+	}
+	if status.SuggestedCommand != "" {
+		t.Fatalf("SuggestedCommand=%q", status.SuggestedCommand)
+	}
+	for _, want := range []string{"project gained supported source files", "no indexable module", "go.mod"} {
+		if !strings.Contains(status.Detail, want) {
+			t.Fatalf("detail missing %q: %q", want, status.Detail)
+		}
+	}
+}
+
 func TestRenderCodeGraphStatusCompact(t *testing.T) {
 	out := renderCodeGraphStatusCompact(codeGraphStatus{
 		Status:            "ready",
@@ -122,6 +338,152 @@ func TestRenderCodeGraphStatusCompact(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
+	}
+}
+
+func TestCodeGraphStatus_FinalizeDowngradesReadyWhenMemgraphUnavailable(t *testing.T) {
+	status := codeGraphStatus{
+		Status:            "ready",
+		Detail:            "index-state matches HEAD and working tree source files for go",
+		DetectedLanguages: []string{"go"},
+		SuggestedCommand:  "gg index --lang go --changed",
+		MemgraphDetail:    "unavailable: dial tcp 127.0.0.1:1: connect: connection refused",
+	}
+	status.finalize()
+	if status.Status != "missing" {
+		t.Fatalf("Status=%q Detail=%q", status.Status, status.Detail)
+	}
+	for _, want := range []string{"Memgraph projection unavailable", "restore Memgraph", "gg index --lang go"} {
+		if !strings.Contains(status.Detail, want) {
+			t.Fatalf("detail missing %q: %q", want, status.Detail)
+		}
+	}
+	if strings.Contains(status.Detail, "--changed") || strings.Contains(status.SuggestedCommand, "--changed") {
+		t.Fatalf("unavailable projection should prefer full index, detail=%q suggested=%q", status.Detail, status.SuggestedCommand)
+	}
+}
+
+func TestCodeGraphStatus_FinalizeDowngradesReadyWhenGraphStatsUnavailable(t *testing.T) {
+	status := codeGraphStatus{
+		Status:              "ready",
+		Detail:              "index-state matches HEAD and working tree source files for go",
+		MemgraphAvailable:   true,
+		MemgraphDetail:      "stats unavailable: query failed",
+		DetectedLanguages:   []string{"go"},
+		SuggestedCommand:    "gg index --lang go --changed",
+		GraphStatsAvailable: false,
+	}
+	status.finalize()
+	if status.Status != "missing" {
+		t.Fatalf("Status=%q Detail=%q", status.Status, status.Detail)
+	}
+	for _, want := range []string{"Memgraph projection stats unavailable", "run gg doctor", "gg index --lang go"} {
+		if !strings.Contains(status.Detail, want) {
+			t.Fatalf("detail missing %q: %q", want, status.Detail)
+		}
+	}
+	if strings.Contains(status.Detail, "--changed") || strings.Contains(status.SuggestedCommand, "--changed") {
+		t.Fatalf("stats-unavailable projection should prefer full index, detail=%q suggested=%q", status.Detail, status.SuggestedCommand)
+	}
+}
+
+func TestRenderCodeGraphStatusCompact_IncludesDetectedAndRunCommand(t *testing.T) {
+	out := renderCodeGraphStatusCompact(codeGraphStatus{
+		Status:            "missing",
+		DetectedLanguages: []string{"typescript"},
+		SuggestedCommand:  "gg index --lang typescript --changed",
+	})
+	for _, want := range []string{"CodeGraph missing", "detected=typescript", "run=gg index --lang typescript --changed"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in %q", want, out)
+		}
+	}
+}
+
+func TestEmitCodeGraphNotice_SurfacesWarningAndRecommendation(t *testing.T) {
+	setupGGDir(t)
+	git(t, ".", "init")
+	git(t, ".", "config", "user.email", "test@example.com")
+	git(t, ".", "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(".", "go.mod"), []byte("module example.com/app\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(".", "cmd", "app"), 0o755); err != nil {
+		t.Fatalf("mkdir cmd/app: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(".", "cmd", "app", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+
+	loadedCfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	var buf bytes.Buffer
+	emitCodeGraphNotice(context.Background(), &buf, loadedCfg)
+	out := buf.String()
+	for _, want := range []string{"CODE GRAPH NOTICE", "code graph missing/stale", "gg index --lang go --changed", "gg doctor --fix-index"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+func TestCodeGraphFullIndexSuggestion_UsesFullIndex(t *testing.T) {
+	got := codeGraphFullIndexSuggestion([]runner.Lang{runner.LangGo})
+	if got != "gg index --lang go" {
+		t.Fatalf("got %q, want %q", got, "gg index --lang go")
+	}
+}
+
+func TestCollectCodeGraphStatus_GraphEmptySuggestsFullIndex(t *testing.T) {
+	root, ggDir := setupIndexStatusRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/app\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	sha := gitCommit(t, root, "main.go", "package main")
+	if err := state.Write(ggDir, sha); err != nil {
+		t.Fatalf("state.Write: %v", err)
+	}
+	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
+	status.GraphEmpty = true
+	status.MemgraphAvailable = true
+	status.Status = "missing"
+	status.finalize()
+	if !strings.Contains(status.Detail, "gg index --lang go") || strings.Contains(status.Detail, "--changed") {
+		t.Fatalf("detail should prefer full index, got %q", status.Detail)
+	}
+	if status.SuggestedCommand != "gg index --lang go" {
+		t.Fatalf("SuggestedCommand=%q, want full index", status.SuggestedCommand)
+	}
+}
+
+func TestEmitCodeGraphNotice_NoFixIndexWhenNoIndexableModule(t *testing.T) {
+	setupGGDir(t)
+	git(t, ".", "init")
+	git(t, ".", "config", "user.email", "test@example.com")
+	git(t, ".", "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(".", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+
+	loadedCfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	var buf bytes.Buffer
+	emitCodeGraphNotice(context.Background(), &buf, loadedCfg)
+	out := buf.String()
+	for _, want := range []string{"CODE GRAPH NOTICE", "no indexable module", "Add a supported module manifest"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "gg doctor --fix-index") {
+		t.Fatalf("unexpected fix-index suggestion in non-indexable repo:\n%s", out)
 	}
 }
 

@@ -31,7 +31,7 @@ func manifestsForLang(lang runner.Lang) []string {
 	case runner.LangGo:
 		return []string{"go.mod"}
 	case runner.LangTypeScript:
-		return []string{"package.json"}
+		return []string{"package.json", "tsconfig.json", "jsconfig.json"}
 	case runner.LangPython:
 		return []string{"pyproject.toml", "setup.py", "setup.cfg", "Pipfile", "requirements.txt"}
 	}
@@ -80,7 +80,39 @@ func discoverModuleDirs(projectRoot string, lang runner.Lang) ([]string, error) 
 			absDirs = append(absDirs, abs)
 		}
 	}
+	if len(absDirs) == 0 && hasSourceDirForLang(projectRoot, lang) {
+		return []string{projectRoot}, nil
+	}
 	return absDirs, nil
+}
+
+func hasSourceDirForLang(projectRoot string, lang runner.Lang) bool {
+	if lang == runner.LangGo {
+		return false
+	}
+	srcDir := filepath.Join(projectRoot, "src")
+	info, err := os.Stat(srcDir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	extSet := make(map[string]bool)
+	for _, ext := range langExtensions(lang) {
+		extSet[ext] = true
+	}
+	found := false
+	_ = filepath.WalkDir(srcDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if extSet[filepath.Ext(d.Name())] {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
 
 func discoverNestedModuleDirs(projectRoot string, lang runner.Lang) ([]string, error) {

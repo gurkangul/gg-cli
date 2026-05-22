@@ -49,14 +49,26 @@ func (h *graphHandler) OnFile(ctx context.Context, node *graph.Node) error {
 		h.skippedOutOfTree++
 		return nil
 	}
-	if h.fileFilter != nil && !h.fileFilter[relPath] {
-		return nil
-	}
 	// Store project-relative paths for cross-machine portability (BUG-010 fix).
-	// CHANGED_CONTRACT.md §5 requires source_file on every node for reaping;
-	// relative form keeps the contract while making brain export git-safe.
+	// Set this before the incremental filter so OnSymbol sees the same key for
+	// filtered-out target files in nested modules.
 	node.Properties["path"] = relPath
 	node.Properties["source_file"] = relPath
+	if h.fileFilter != nil && !h.fileFilter[relPath] {
+		// Incremental runs still parse the full SCIP output. For files outside the
+		// write filter, keep enough existing graph identity to resolve imports from
+		// changed files to unchanged target files without rewriting the target.
+		existing, err := h.gc.FindNodeByProperty(ctx, graph.LabelFile, "path", relPath)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			h.fileNodeByPath[relPath] = existing
+		}
+		return nil
+	}
+	// CHANGED_CONTRACT.md §5 requires source_file on every node for reaping;
+	// relative form keeps the contract while making brain export git-safe.
 	if h.headSHA != "" {
 		node.Properties["indexed_at_commit"] = h.headSHA
 	}
@@ -94,6 +106,9 @@ func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNo
 		return nil
 	}
 	if h.fileFilter != nil && !h.fileFilter[relPath] {
+		if scipSymbol != "" {
+			h.scipToFile[scipSymbol] = relPath
+		}
 		return nil
 	}
 	symNode.Properties["source_file"] = relPath

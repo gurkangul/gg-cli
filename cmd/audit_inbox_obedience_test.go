@@ -4,7 +4,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"strings"
+	"fmt"
 	"testing"
 	"time"
 
@@ -15,6 +15,7 @@ import (
 // computeObedienceRows without requiring a real Qdrant instance.
 type fakeMessageClient struct {
 	messages []store.Message
+	tasks    map[string]*store.Task
 }
 
 func (f *fakeMessageClient) ListMessagesSince(_ context.Context, since time.Time) ([]store.Message, error) {
@@ -28,49 +29,21 @@ func (f *fakeMessageClient) ListMessagesSince(_ context.Context, since time.Time
 	return out, nil
 }
 
+func (f *fakeMessageClient) GetTask(_ context.Context, taskID string) (*store.Task, error) {
+	if f.tasks == nil {
+		return nil, fmt.Errorf("task %s not found", taskID)
+	}
+	t, ok := f.tasks[taskID]
+	if !ok {
+		return nil, fmt.Errorf("task %s not found", taskID)
+	}
+	return t, nil
+}
+
 // computeObedienceRowsFromClient is a test-only variant that accepts a
 // fakeMessageClient instead of *store.Client.
 func computeObedienceRowsFromClient(ctx context.Context, client *fakeMessageClient, since time.Time, roleFilter string) ([]ObedienceRow, error) {
-	msgs, err := client.ListMessagesSince(ctx, since)
-	if err != nil {
-		return nil, err
-	}
-
-	type counts struct{ received, acknowledged int }
-	byRole := make(map[string]*counts)
-
-	for _, m := range msgs {
-		targets := targetRoles(m)
-		for _, role := range targets {
-			if roleFilter != "" && !strings.EqualFold(role, roleFilter) {
-				continue
-			}
-			if byRole[role] == nil {
-				byRole[role] = &counts{}
-			}
-			byRole[role].received++
-			if m.Read {
-				byRole[role].acknowledged++
-			}
-		}
-	}
-
-	rows := make([]ObedienceRow, 0, len(byRole))
-	for role, c := range byRole {
-		ratio := 0.0
-		if c.received > 0 {
-			ratio = float64(c.acknowledged) / float64(c.received)
-		}
-		rows = append(rows, ObedienceRow{
-			Role:           role,
-			Received:       c.received,
-			Acknowledged:   c.acknowledged,
-			ObedienceRatio: ratio,
-			LowCompliance:  ratio < 0.5 && c.received > 3,
-		})
-	}
-	sortObedienceRows(rows)
-	return rows, nil
+	return computeObedienceRows(ctx, client, since, roleFilter)
 }
 
 func now() string { return time.Now().UTC().Format(time.RFC3339) }
@@ -103,6 +76,9 @@ func TestObedience_RatioComputed(t *testing.T) {
 	}
 	if r.Acknowledged != 4 {
 		t.Errorf("Acknowledged want 4, got %d", r.Acknowledged)
+	}
+	if r.Actionable != 10 || r.StaleFiltered != 0 {
+		t.Errorf("expected no stale filtering, got actionable=%d stale=%d", r.Actionable, r.StaleFiltered)
 	}
 	want := 0.4
 	if r.ObedienceRatio < want-0.01 || r.ObedienceRatio > want+0.01 {
@@ -192,7 +168,7 @@ func TestObedience_JSONSchema(t *testing.T) {
 	if len(parsed) == 0 {
 		t.Fatal("expected non-empty JSON array")
 	}
-	for _, field := range []string{"role", "received", "acknowledged", "obedience_ratio", "low_compliance"} {
+	for _, field := range []string{"role", "received", "acknowledged", "obedience_ratio", "low_compliance", "stale_filtered", "actionable"} {
 		if _, ok := parsed[0][field]; !ok {
 			t.Errorf("JSON schema missing field %q; got: %v", field, parsed[0])
 		}
@@ -217,5 +193,38 @@ func TestObedience_AllAcknowledged_NotLowCompliance(t *testing.T) {
 	}
 	if rows[0].LowCompliance {
 		t.Errorf("100%% acknowledged should not be LowCompliance")
+	}
+}
+
+func TestObedience_FiltersResolvedTaskLinkedMessages(t *testing.T) {
+	client := &fakeMessageClient{
+		messages: []store.Message{
+			{FromRole: "a", ToRole: "gsd", Content: "done task", TaskID: "TASK-1", Read: true, CreatedAt: now()},
+			{FromRole: "a", ToRole: "gsd", Content: "open task", TaskID: "TASK-2", Read: false, CreatedAt: now()},
+			{FromRole: "a", ToRole: "gsd", Content: "general", Read: true, CreatedAt: now()},
+		},
+		tasks: map[string]*store.Task{
+			"TASK-1": {ID: "TASK-1", Status: "done"},
+			"TASK-2": {ID: "TASK-2", Status: "in_progress"},
+		},
+	}
+
+	rows, err := computeObedienceRowsFromClient(context.Background(), client,
+		time.Now().UTC().Add(-time.Hour), "gsd")
+	if err != nil {
+		t.Fatalf("compute: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 row, got %d", len(rows))
+	}
+	r := rows[0]
+	if r.Received != 3 || r.StaleFiltered != 1 || r.Actionable != 2 {
+		t.Fatalf("unexpected counts: %+v", r)
+	}
+	if r.Acknowledged != 1 {
+		t.Fatalf("acknowledged should exclude resolved messages, got %d", r.Acknowledged)
+	}
+	if r.ObedienceRatio != 0.5 {
+		t.Fatalf("ratio should be 1/2 after stale filtering, got %f", r.ObedienceRatio)
 	}
 }

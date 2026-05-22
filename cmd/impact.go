@@ -151,10 +151,21 @@ func runImpact(cmd *cobra.Command, args []string) error {
 		result.Traversal.Truncated = true
 		result.Warnings = append(result.Warnings, fmt.Sprintf("--hops capped at %d (requested %d)", maxImpactHops, impactHops))
 	}
+	if _, statErr := os.Stat(filepath.Join(projRoot, filepath.FromSlash(relPath))); os.IsNotExist(statErr) {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("target file %s does not exist in the working tree; if it was deleted, run gg index --changed to remove stale graph nodes", relPath))
+	}
 
 	// ── Graph queries (optional — skipped if Memgraph not configured) ──────
 	cfg, _ := config.Load()
-	result.Warnings = append(result.Warnings, impactGraphFreshnessWarnings(ctx, projRoot, cfg)...)
+	var graphStatus codeGraphStatus
+	graphStatusKnown := false
+	if cfg != nil {
+		graphStatus = collectCodeGraphStatus(ctx, projRoot, filepath.Join(projRoot, config.DirName), cfg)
+		graphStatusKnown = true
+		result.Warnings = append(result.Warnings, impactGraphFreshnessWarningsForStatus(graphStatus, relPath)...)
+	} else {
+		result.Warnings = append(result.Warnings, "code graph freshness unknown: config unavailable")
+	}
 	if cfg != nil && cfg.Memgraph.URI != "" {
 		gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID)
 		if gcErr != nil {
@@ -167,7 +178,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 
 			// 0. Detect empty graph — Memgraph is up but nothing has been indexed yet.
 			if fileCount, fcErr := gc.CountFileNodes(gctx); fcErr == nil && fileCount == 0 {
-				result.Warnings = append(result.Warnings, "graph is empty — run 'gg index --lang <lang>' to populate it (e.g. 'gg index --lang go')")
+				result.Warnings = append(result.Warnings, impactGraphEmptyWarning(graphStatus, graphStatusKnown))
 			}
 
 			// 1. Downstream dependents.
@@ -273,11 +284,31 @@ func impactGraphFreshnessWarnings(ctx context.Context, root string, cfg *config.
 		return []string{"code graph freshness unknown: config unavailable"}
 	}
 	status := collectCodeGraphStatus(ctx, root, filepath.Join(root, config.DirName), cfg)
+	return impactGraphFreshnessWarningsForStatus(status, "")
+}
+
+func impactGraphFreshnessWarningsForStatus(status codeGraphStatus, file string) []string {
+	if codeGraphNeedsAction(status.Status) {
+		msg := "Code graph stale or missing"
+		if file != "" {
+			msg += " for " + file
+		}
+		msg += "."
+		if status.SuggestedCommand != "" {
+			msg += " Run: " + status.SuggestedCommand
+		}
+		if status.Detail != "" {
+			msg += " Detail: " + status.Detail
+		}
+		warnings := []string{msg}
+		if status.IndexedAt != "" && status.Status != "missing" {
+			warnings = append(warnings, "WARNING: using stale graph from "+status.IndexedAt)
+		}
+		return warnings
+	}
 	switch status.Status {
 	case "ready":
 		return nil
-	case "stale", "partial", "missing", "non_ancestor":
-		return []string{fmt.Sprintf("code graph %s: %s", status.Status, status.Detail)}
 	default:
 		if status.Detail != "" {
 			return []string{fmt.Sprintf("code graph freshness unknown: %s", status.Detail)}
@@ -286,12 +317,27 @@ func impactGraphFreshnessWarnings(ctx context.Context, root string, cfg *config.
 	}
 }
 
+func impactGraphEmptyWarning(status codeGraphStatus, statusKnown bool) string {
+	if statusKnown {
+		if status.SuggestedCommand != "" {
+			return "graph is empty — run '" + status.SuggestedCommand + "' to populate it"
+		}
+		if strings.Contains(status.Detail, "no indexable module") {
+			return "graph is empty — " + status.Detail
+		}
+	}
+	return "graph is empty — run 'gg index --lang <lang>' to populate it (e.g. 'gg index --lang go')"
+}
+
 func renderImpactDefault(w io.Writer, result impactResult) {
 	fmt.Fprintf(w, "Impact: %s\n", result.File)
 	fmt.Fprintln(w, strings.Repeat("─", 60))
+	graphWarning := impactHasCodeGraphWarning(result.Warnings)
 
 	fmt.Fprintf(w, "\nDownstream Dependents (%d):\n", len(result.Dependents))
 	switch {
+	case len(result.Dependents) == 0 && graphWarning:
+		fmt.Fprintln(w, "  (unavailable — code graph missing/stale; see Warnings)")
 	case len(result.Dependents) == 0:
 		fmt.Fprintln(w, "  (none — or graph not indexed)")
 	case result.HopDepth > 1:
@@ -323,7 +369,9 @@ func renderImpactDefault(w io.Writer, result impactResult) {
 	}
 
 	fmt.Fprintf(w, "\nExported Symbols (%d):\n", len(result.Symbols))
-	if len(result.Symbols) == 0 {
+	if len(result.Symbols) == 0 && graphWarning {
+		fmt.Fprintln(w, "  (unavailable — code graph missing/stale; see Warnings)")
+	} else if len(result.Symbols) == 0 {
 		fmt.Fprintln(w, "  (none — or graph not indexed)")
 	} else {
 		for _, s := range result.Symbols {
@@ -377,6 +425,24 @@ func renderImpactDefault(w io.Writer, result impactResult) {
 			fmt.Fprintf(w, "  ~ %s\n", warn)
 		}
 	}
+}
+
+func impactHasCodeGraphWarning(warnings []string) bool {
+	for _, warning := range warnings {
+		lower := strings.ToLower(warning)
+		if strings.Contains(lower, "code graph stale or missing") ||
+			strings.Contains(lower, "code graph missing/stale") ||
+			strings.Contains(lower, "code graph freshness unknown") ||
+			strings.Contains(warning, "graph is empty") ||
+			strings.Contains(warning, "graph data unavailable") ||
+			strings.Contains(warning, "graph client init:") ||
+			strings.Contains(warning, "dependents query:") ||
+			strings.Contains(warning, "symbols query:") ||
+			strings.Contains(warning, "historical bugs query:") {
+			return true
+		}
+	}
+	return false
 }
 
 func renderImpactCompact(w io.Writer, r impactResult) {

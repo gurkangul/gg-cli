@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.19] - 2026-05-22
+
+### Added
+
+- CodeGraph freshness notices now surface changed/new/deleted/module-file counts across `gg index status`, `gg doctor`, `gg impact`, `gg session-start`, and `gg next`.
+- Added a time-to-productivity onboarding smoke script covering session start, next-step recommendation, search/context retrieval, impact, and ready-task listing.
+
+### Fixed
+
+- `gg doctor --fix-index` now repopulates empty or unavailable Memgraph projections with a full index instead of no-oping through `--changed`, and treats Qdrant downtime as advisory for CodeGraph repair.
+- TypeScript/Python `src/` fallback discovery no longer overrides nested manifest-based module roots.
+- Inbox-obedience auditing now keeps assignment bypass handling aligned with focused user-directed release work.
+
 ## [0.3.18] - 2026-05-19
 
 ### Fixed
@@ -307,7 +320,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.15...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.19...HEAD
+[0.3.19]: https://github.com/gurkangul/gg-cli/compare/v0.3.18...v0.3.19
+[0.3.18]: https://github.com/gurkangul/gg-cli/compare/v0.3.17...v0.3.18
+[0.3.17]: https://github.com/gurkangul/gg-cli/compare/v0.3.16...v0.3.17
+[0.3.16]: https://github.com/gurkangul/gg-cli/compare/v0.3.15...v0.3.16
 [0.3.15]: https://github.com/gurkangul/gg-cli/compare/v0.3.14...v0.3.15
 [0.3.14]: https://github.com/gurkangul/gg-cli/compare/v0.3.13...v0.3.14
 [0.3.13]: https://github.com/gurkangul/gg-cli/compare/v0.3.12...v0.3.13

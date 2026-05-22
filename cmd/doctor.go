@@ -53,6 +53,7 @@ var (
 	doctorDiagnoseSandbox      bool
 	doctorRefreshHooks         bool
 	doctorRefreshHooksForce    bool
+	doctorFixIndex             bool
 )
 
 func init() {
@@ -114,6 +115,8 @@ func init() {
 		"overwrite drifted gg-managed hook templates after backing up each stale copy")
 	doctorCmd.Flags().BoolVar(&doctorRefreshHooksForce, "refresh-hooks-force", false,
 		"with --refresh-hooks: also overwrite user-customized hooks that lack gg-template markers")
+	doctorCmd.Flags().BoolVar(&doctorFixIndex, "fix-index", false,
+		"refresh a missing or stale code graph by running the recommended gg index command(s)")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -226,6 +229,9 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	}
 	if doctorRefreshHooks || doctorRefreshHooksForce {
 		return runDoctorRefreshHooks(doctorRefreshHooksForce)
+	}
+	if doctorFixIndex {
+		return runDoctorFixIndex(cmd)
 	}
 
 	fmt.Println("GG Doctor")

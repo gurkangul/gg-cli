@@ -190,6 +190,24 @@ func TestSemanticMemoryActionWarning_IncludesOutboxSummary(t *testing.T) {
 	}
 }
 
+func TestFormatPlaceholderVectorDetail_IncludesCollectionBreakdown(t *testing.T) {
+	detail := formatPlaceholderVectorDetail(map[string]int{
+		"tasks":       3,
+		"decisions":   2,
+		"messages":    7,
+		"discussions": 0,
+	})
+	if detail != "placeholder_vectors=5 (decisions=2, tasks=3)" {
+		t.Fatalf("unexpected detail: %s", detail)
+	}
+	if got := formatPlaceholderVectorDetail(map[string]int{"messages": 4}); got != "" {
+		t.Fatalf("messages-only counts should not produce detail: %q", got)
+	}
+	if got := formatPlaceholderVectorDetail(map[string]int{}); got != "" {
+		t.Fatalf("empty counts should return empty detail: %q", got)
+	}
+}
+
 func TestIndexerRequiredForProject_LanguageManifests(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/app\n"), 0o644); err != nil {

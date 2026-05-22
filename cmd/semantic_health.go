@@ -50,6 +50,25 @@ func summarizeOutboxEntries(entries []outbox.Entry, now time.Time) outboxStatusS
 	return s
 }
 
+func formatPlaceholderVectorDetail(counts map[string]int) string {
+	var breakdown []string
+	total := 0
+	for _, kind := range []string{"decisions", "tasks", "rejections", "discussions", "notes", "bugs"} {
+		if n := counts[kind]; n > 0 {
+			total += n
+			breakdown = append(breakdown, fmt.Sprintf("%s=%d", kind, n))
+		}
+	}
+	if total == 0 {
+		return ""
+	}
+	detail := fmt.Sprintf("placeholder_vectors=%d", total)
+	if len(breakdown) > 0 {
+		detail += " (" + strings.Join(breakdown, ", ") + ")"
+	}
+	return detail
+}
+
 func semanticMemoryActionWarning(ctx context.Context, cfg *config.Config) string {
 	ggDir := config.GGDirOrEmpty()
 	if ggDir == "" {
@@ -84,12 +103,8 @@ func semanticMemoryActionWarning(ctx context.Context, cfg *config.Config) string
 				counts, countErr := c.DegradedVectorCounts(countCtx)
 				countCancel()
 				if countErr == nil {
-					total := 0
-					for _, n := range counts {
-						total += n
-					}
-					if total > 0 {
-						parts = append(parts, fmt.Sprintf("placeholder_vectors=%d", total))
+					if detail := formatPlaceholderVectorDetail(counts); detail != "" {
+						parts = append(parts, detail)
 					}
 				}
 			}
@@ -98,7 +113,20 @@ func semanticMemoryActionWarning(ctx context.Context, cfg *config.Config) string
 	if len(parts) == 0 {
 		return ""
 	}
-	return "semantic memory degraded: " + strings.Join(parts, "; ") + ". Run: gg doctor"
+	hint := "Run: gg doctor"
+	for _, part := range parts {
+		if strings.HasPrefix(part, "placeholder_vectors=") {
+			hint = "Run: gg reembed"
+			break
+		}
+	}
+	for _, part := range parts {
+		if part == "qdrant unreachable" {
+			hint = "Run: gg doctor"
+			break
+		}
+	}
+	return "semantic memory degraded: " + strings.Join(parts, "; ") + ". " + hint
 }
 
 func emitSemanticMemoryNotice(ctx context.Context, w io.Writer, cfg *config.Config) {
