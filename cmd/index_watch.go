@@ -116,7 +116,7 @@ func runIndexWatchTick(parent context.Context, cmd *cobra.Command, cfg *config.C
 		return fmt.Errorf("schema init: %w", err)
 	}
 	if full {
-		fmt.Fprintln(cmd.OutOrStderr(), "watch: no index state - running full index")
+		fmt.Fprintln(cmd.OutOrStderr(), "watch: full index required - running full index")
 		return runFullIndex(ctx, root, ggDir, lang, r, gc)
 	}
 	fmt.Fprintln(cmd.OutOrStderr(), "watch: source changes detected - running gg index --changed")
@@ -131,12 +131,44 @@ func indexWatchNeedsRun(ctx context.Context, root, ggDir string, lang runner.Lan
 	if err != nil {
 		return false, false, fmt.Errorf("read index state: %w", err)
 	}
-	exts := langExtensions(lang)
-	files, err := changed.Files(ctx, root, s.LastIndexedSHA, exts)
-	if err != nil {
-		return false, false, fmt.Errorf("compute changed files: %w", err)
+	langState, ok := s.ForLanguage(string(lang))
+	if !ok || langState.LastIndexedSHA == "" {
+		return true, true, nil
 	}
-	return len(files) > 0, false, nil
+	baseSHA := langState.LastIndexedSHA
+	if baseSHA == changed.EmptyTreeSHA {
+		return true, true, nil
+	}
+	ancestor, err := changed.IsAncestor(ctx, root, baseSHA)
+	if err != nil {
+		return false, false, fmt.Errorf("check index state ancestor: %w", err)
+	}
+	if !ancestor {
+		return true, true, nil
+	}
+	exts := langState.Extensions
+	if len(exts) == 0 {
+		exts = langExtensions(lang)
+	}
+	manifests := manifestsForLang(lang)
+	fingerprint, err := changed.WorkingTreeFingerprintWithNames(ctx, root, baseSHA, exts, manifests)
+	if err != nil {
+		return false, false, fmt.Errorf("compute current source/module fingerprint: %w", err)
+	}
+	if fingerprint == langState.WorkingTreeFingerprint {
+		return false, false, nil
+	}
+	if langState.WorkingTreeFingerprint != "" {
+		return true, true, nil
+	}
+	summary, err := codeGraphChangesSince(ctx, root, baseSHA, exts, manifests)
+	if err != nil {
+		return false, false, fmt.Errorf("compute change summary: %w", err)
+	}
+	if summary.ModuleFiles > 0 {
+		return true, true, nil
+	}
+	return summary.hasChanges(), false, nil
 }
 
 func acquireIndexWatchLock(ggDir string, lock indexWatchLock) (func(), error) {

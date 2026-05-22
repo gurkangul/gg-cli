@@ -30,7 +30,11 @@ parser currently materializes cross-file references as IMPORTS edges.
 
 Without --changed: full re-index of the entire project.
 With    --changed: incremental update — only files changed since the last
-                   successful index are re-indexed (per CHANGED_CONTRACT.md).`,
+                   successful index are re-indexed (per CHANGED_CONTRACT.md).
+With    --watch: explicit foreground watcher — debounce source/module changes
+                   and run index updates until Ctrl-C. gg never starts a
+                   background indexing daemon; use gg doctor --fix-index for
+                   one-shot repair.`,
 	RunE: runIndex,
 }
 
@@ -215,6 +219,10 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 			fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
 		}
 		return nil
+	}
+	if langState.WorkingTreeFingerprint != "" {
+		fmt.Println("indexed dirty source/module fingerprint changed — running full graph refresh to avoid stale dirty-tree projection")
+		return runFullIndex(ctx, root, ggDir, lang, r, gc)
 	}
 	summary, summaryErr := codeGraphChangesSince(ctx, root, baseSHA, exts, manifestsForLang(lang))
 	if summaryErr != nil {

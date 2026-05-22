@@ -28,6 +28,10 @@ Does not require a long-running server — reads the existing NDJSON telemetry
 file and polls the inbox DB at ~1 second cadence. Safe to Ctrl-C at any time;
 messages are not marked as read.
 
+gg watch --index is a foreground CodeGraph watcher alias for gg index --watch:
+it only runs when explicitly started, never as a background daemon, and Ctrl-C
+stops it. For one-shot graph repair, use gg doctor --fix-index.
+
 Examples:
   gg watch                             # stream everything, pretty format
   gg watch --role qa                   # only messages addressed to 'qa'
