@@ -12,6 +12,10 @@ parser currently materializes cross-file references as IMPORTS edges.
 Without --changed: full re-index of the entire project.
 With    --changed: incremental update — only files changed since the last
                    successful index are re-indexed (per CHANGED_CONTRACT.md).
+With    --watch: explicit foreground watcher — debounce source/module changes
+                   and run index updates until Ctrl-C. gg never starts a
+                   background indexing daemon; use gg doctor --fix-index for
+                   one-shot repair.
 
 ```
 gg index [--changed] [--lang go|python|typescript] [flags]

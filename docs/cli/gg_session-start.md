@@ -24,6 +24,10 @@ Output layout:
   Then:     4-line protocol summary
   Then:     current gg status output
 
+CodeGraph notices use the shared freshness contract. session-start never runs
+background graph refresh; repair is explicit via gg doctor --fix-index, and
+foreground active mode is gg index --watch / gg watch --index.
+
 Examples:
   gg session-start --agent=<agent-id> --role=implementer
   GG_AGENT=cursor GG_ROLE=reviewer gg session-start

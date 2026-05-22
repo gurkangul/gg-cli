@@ -16,10 +16,10 @@ func TestRenderNext_WithCodeGraphWarningShowsRecommendation(t *testing.T) {
 	renderNext(&buf, nextSnapshot{
 		Agent:         "agent-1",
 		Role:          "implementer",
-		StateWarnings: []string{"code graph missing/stale (missing): project gained code since init; detected language(s): go - run gg index --lang go --changed; recommended: gg index --lang go --changed"},
+		StateWarnings: []string{"CodeGraph: missing (missing_graph). Run: gg doctor --fix-index. Optional active mode: gg index --watch --lang go. No background index daemon."},
 	})
 	out := buf.String()
-	for _, want := range []string{"warning: code graph missing/stale", "gg index --lang go --changed", "Recommended next step:"} {
+	for _, want := range []string{"warning: CodeGraph:", "gg doctor --fix-index", "gg index --watch --lang go", "Recommended next step:"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
@@ -27,7 +27,7 @@ func TestRenderNext_WithCodeGraphWarningShowsRecommendation(t *testing.T) {
 }
 
 func TestCodeGraphActionWarning_PrefixesRecommendedCommand(t *testing.T) {
-	if got := codeGraphAgentWarning(codeGraphStatus{Status: "missing", Detail: "project gained code since init; detected language(s): go", SuggestedCommand: "gg index --lang go --changed"}); !strings.Contains(got, "recommended: gg index --lang go --changed") {
+	if got := codeGraphAgentWarning(codeGraphStatus{Status: "missing", Detail: "project gained code since init; detected language(s): go", DetectedLanguages: []string{"go"}, SuggestedCommand: "gg index --lang go --changed"}); !strings.Contains(got, "Run: gg doctor --fix-index") || !strings.Contains(got, "Optional active mode: gg index --watch --lang go") {
 		t.Fatalf("warning=%q", got)
 	}
 }

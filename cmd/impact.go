@@ -36,7 +36,11 @@ Task mode (TASK-NNN argument):
   - Decisions and related tasks from the knowledge store (semantic search)
 
 Requires Memgraph (gg index must have been run). The knowledge-store search
-works even without Memgraph.`,
+works even without Memgraph.
+
+When CodeGraph is missing, stale, or unavailable, impact uses the shared
+freshness notice contract: repair is explicit with gg doctor --fix-index;
+gg never refreshes the graph in the background.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runImpact,
 }
@@ -86,6 +90,7 @@ type impactResult struct {
 	Rejections     []store.Rejection       `json:"rejections"`
 	HistoricalBugs []graph.BugRef          `json:"historical_bugs,omitempty"`
 	Warnings       []string                `json:"warnings,omitempty"`
+	CodeGraph      *codeGraphFreshness     `json:"codegraph,omitempty"`
 	SymbolQuery    string                  `json:"symbol_query,omitempty"`
 	SymbolMatch    *graph.SymbolMatch      `json:"symbol_match,omitempty"`
 	SymbolMatches  []graph.SymbolMatch     `json:"symbol_matches,omitempty"`
@@ -162,6 +167,8 @@ func runImpact(cmd *cobra.Command, args []string) error {
 	if cfg != nil {
 		graphStatus = collectCodeGraphStatus(ctx, projRoot, filepath.Join(projRoot, config.DirName), cfg)
 		graphStatusKnown = true
+		fresh := graphStatus.freshnessContract()
+		result.CodeGraph = &fresh
 		result.Warnings = append(result.Warnings, impactGraphFreshnessWarningsForStatus(graphStatus, relPath)...)
 	} else {
 		result.Warnings = append(result.Warnings, "code graph freshness unknown: config unavailable")
@@ -288,8 +295,18 @@ func impactGraphFreshnessWarnings(ctx context.Context, root string, cfg *config.
 }
 
 func impactGraphFreshnessWarningsForStatus(status codeGraphStatus, file string) []string {
+	if msg := codeGraphNoticeOneLine(status); msg != "" {
+		if file != "" {
+			msg = strings.Replace(msg, "CodeGraph:", "CodeGraph for "+file+":", 1)
+		}
+		warnings := []string{msg}
+		if status.IndexedAt != "" && status.freshnessContract().Status == codeGraphFreshnessStale {
+			warnings = append(warnings, "WARNING: using stale graph from "+status.IndexedAt)
+		}
+		return warnings
+	}
 	if codeGraphNeedsAction(status.Status) {
-		msg := "Code graph stale or missing"
+		msg := "CodeGraph stale or missing"
 		if file != "" {
 			msg += " for " + file
 		}
@@ -319,8 +336,9 @@ func impactGraphFreshnessWarningsForStatus(status codeGraphStatus, file string) 
 
 func impactGraphEmptyWarning(status codeGraphStatus, statusKnown bool) string {
 	if statusKnown {
-		if status.SuggestedCommand != "" {
-			return "graph is empty — run '" + status.SuggestedCommand + "' to populate it"
+		fresh := status.freshnessContract()
+		if fresh.SuggestedCommand != "" {
+			return "graph is empty — run '" + fresh.SuggestedCommand + "' to repair it"
 		}
 		if strings.Contains(status.Detail, "no indexable module") {
 			return "graph is empty — " + status.Detail
@@ -430,7 +448,9 @@ func renderImpactDefault(w io.Writer, result impactResult) {
 func impactHasCodeGraphWarning(warnings []string) bool {
 	for _, warning := range warnings {
 		lower := strings.ToLower(warning)
-		if strings.Contains(lower, "code graph stale or missing") ||
+		if strings.HasPrefix(lower, "codegraph:") ||
+			strings.HasPrefix(lower, "codegraph for ") ||
+			strings.Contains(lower, "code graph stale or missing") ||
 			strings.Contains(lower, "code graph missing/stale") ||
 			strings.Contains(lower, "code graph freshness unknown") ||
 			strings.Contains(warning, "graph is empty") ||

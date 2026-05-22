@@ -85,7 +85,16 @@ gg index --lang go
 
 # After changes, do an incremental update
 gg index --lang go --changed
+
+# Or keep an explicit foreground watcher open until Ctrl-C
+gg index --watch --lang go
 ```
+
+CodeGraph freshness is explicit: gg never runs a background index daemon.
+Agent-facing commands (`gg session-start`, `gg next`, `gg impact`, `gg doctor`,
+and `gg index status`) use the same notice contract and suggest
+`gg doctor --fix-index` when repair is needed. `gg index --watch` / `gg watch --index`
+are optional foreground active modes, not daemons.
 
 ## Install the verify gate
 

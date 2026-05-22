@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -84,7 +85,7 @@ func TestRenderImpactDefault_GroupsMultiHopDependents(t *testing.T) {
 
 func TestRenderImpactDefault_CodeGraphWarningAvoidsNonePlaceholder(t *testing.T) {
 	r := impactResult{
-		Warnings: []string{"code graph missing/stale (missing): project gained code since init; recommended: gg index --lang go --changed"},
+		Warnings: []string{"CodeGraph for cmd/impact.go: stale (changed_files). Run: gg doctor --fix-index. Optional active mode: gg index --watch --lang go. No background index daemon."},
 	}
 	var buf strings.Builder
 	renderImpactDefault(&buf, r)
@@ -137,7 +138,7 @@ func TestImpactGraphEmptyWarning_UsesFullIndexSuggestion(t *testing.T) {
 
 	warn := impactGraphEmptyWarning(status, true)
 	joined := strings.Join(impactGraphFreshnessWarningsForStatus(status, "cmd/index.go"), "\n") + "\n" + warn
-	if !strings.Contains(joined, "gg index --lang go") {
+	if !strings.Contains(joined, "gg doctor --fix-index") {
 		t.Fatalf("missing full index suggestion: %q", joined)
 	}
 	if strings.Contains(joined, "--changed") {
@@ -147,15 +148,40 @@ func TestImpactGraphEmptyWarning_UsesFullIndexSuggestion(t *testing.T) {
 
 func TestImpactGraphFreshnessWarning_IsFileSpecificAndMentionsStaleGraphUse(t *testing.T) {
 	warnings := impactGraphFreshnessWarningsForStatus(codeGraphStatus{
-		Status:           "stale",
-		Detail:           "code graph stale: 1 changed file since last index; run gg index --lang typescript --changed",
-		SuggestedCommand: "gg index --lang typescript --changed",
-		IndexedAt:        "2026-05-21T21:00:00Z",
+		Status:            "stale",
+		Detail:            "code graph stale: 1 changed file since last index; run gg index --lang typescript --changed",
+		ChangedFiles:      1,
+		DetectedLanguages: []string{"typescript"},
+		SuggestedCommand:  "gg index --lang typescript --changed",
+		IndexedAt:         "2026-05-21T21:00:00Z",
 	}, "src/foo.ts")
 	joined := strings.Join(warnings, "\n")
-	for _, want := range []string{"Code graph stale or missing for src/foo.ts", "Run: gg index --lang typescript --changed", "WARNING: using stale graph from 2026-05-21T21:00:00Z"} {
+	for _, want := range []string{"CodeGraph for src/foo.ts: stale (changed_files)", "Run: gg doctor --fix-index", "gg index --watch --lang typescript", "WARNING: using stale graph from 2026-05-21T21:00:00Z"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in %q", want, joined)
+		}
+	}
+}
+
+func TestImpactResultJSONIncludesStandardCodeGraphObject(t *testing.T) {
+	fresh := codeGraphFreshness{
+		Status:                   codeGraphFreshnessStale,
+		Reason:                   codeGraphReasonChangedFiles,
+		DetectedLanguages:        []string{"go"},
+		ChangedFiles:             1,
+		SuggestedCommand:         codeGraphRepairCommand,
+		BackgroundRefresh:        false,
+		ForegroundWatchAvailable: true,
+		ForegroundWatchCommand:   "gg index --watch --lang go",
+	}
+	payload, err := json.Marshal(impactResult{File: "main.go", CodeGraph: &fresh})
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	out := string(payload)
+	for _, want := range []string{"\"codegraph\"", "\"status\":\"stale\"", "\"reason\":\"changed_files\"", "\"suggested_command\":\"gg doctor --fix-index\"", "\"background_refresh\":false", "\"foreground_watch_available\":true"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in %s", want, out)
 		}
 	}
 }

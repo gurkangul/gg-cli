@@ -304,6 +304,28 @@ func TestCollectCodeGraphStatus_MissingAfterEmptyInitWithTypeScriptCode(t *testi
 	}
 }
 
+func TestCollectCodeGraphStatus_MissingLanguageStateHasStandardReason(t *testing.T) {
+	root, ggDir := setupIndexStatusRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/app\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	sha := gitCommit(t, root, "main.go", "package main")
+	if err := state.WriteLanguage(ggDir, "typescript", sha, "", []string{".ts", ".tsx"}); err != nil {
+		t.Fatalf("state.WriteLanguage: %v", err)
+	}
+
+	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
+	if status.Status != "stale" {
+		t.Fatalf("status=%q detail=%q", status.Status, status.Detail)
+	}
+	if status.CodeGraph.Reason != codeGraphReasonLanguageMissing {
+		t.Fatalf("codegraph=%+v detail=%q", status.CodeGraph, status.Detail)
+	}
+	if status.CodeGraph.SuggestedCommand != codeGraphRepairCommand {
+		t.Fatalf("SuggestedCommand=%q", status.CodeGraph.SuggestedCommand)
+	}
+}
+
 func TestCollectCodeGraphStatus_SourceWithoutIndexableModuleDoesNotSuggestImpossibleIndex(t *testing.T) {
 	root, ggDir := setupIndexStatusRepo(t)
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
@@ -393,7 +415,7 @@ func TestRenderCodeGraphStatusCompact_IncludesDetectedAndRunCommand(t *testing.T
 		DetectedLanguages: []string{"typescript"},
 		SuggestedCommand:  "gg index --lang typescript --changed",
 	})
-	for _, want := range []string{"CodeGraph missing", "detected=typescript", "run=gg index --lang typescript --changed"} {
+	for _, want := range []string{"CodeGraph missing", "reason=missing_graph", "detected=typescript", "run=gg doctor --fix-index", "watch=gg index --watch --lang typescript"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
@@ -422,7 +444,7 @@ func TestEmitCodeGraphNotice_SurfacesWarningAndRecommendation(t *testing.T) {
 	var buf bytes.Buffer
 	emitCodeGraphNotice(context.Background(), &buf, loadedCfg)
 	out := buf.String()
-	for _, want := range []string{"CODE GRAPH NOTICE", "code graph missing/stale", "gg index --lang go --changed", "gg doctor --fix-index"} {
+	for _, want := range []string{"CODE GRAPH NOTICE", "CodeGraph:", "gg doctor --fix-index", "gg index --watch --lang go", "does not run a background index daemon"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
@@ -477,13 +499,85 @@ func TestEmitCodeGraphNotice_NoFixIndexWhenNoIndexableModule(t *testing.T) {
 	var buf bytes.Buffer
 	emitCodeGraphNotice(context.Background(), &buf, loadedCfg)
 	out := buf.String()
-	for _, want := range []string{"CODE GRAPH NOTICE", "no indexable module", "Add a supported module manifest"} {
+	for _, want := range []string{"CODE GRAPH NOTICE", "no indexable module", "add a supported module manifest", "does not run a background index daemon"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
 	}
 	if strings.Contains(out, "gg doctor --fix-index") {
 		t.Fatalf("unexpected fix-index suggestion in non-indexable repo:\n%s", out)
+	}
+}
+
+func TestCodeGraphFreshnessContract_ReadyAndMissing(t *testing.T) {
+	ready := codeGraphStatus{Status: "ready", Detail: "index-state matches HEAD and indexed dirty working tree source fingerprint for go", DetectedLanguages: []string{"go"}}
+	fresh := ready.freshnessContract()
+	if fresh.Status != codeGraphFreshnessReady || fresh.BackgroundRefresh {
+		t.Fatalf("ready freshness=%+v", fresh)
+	}
+	if fresh.Reason != "" {
+		t.Fatalf("ready reason=%q, want empty", fresh.Reason)
+	}
+	if fresh.SuggestedCommand != "" || !fresh.ForegroundWatchAvailable || fresh.ForegroundWatchCommand != "gg index --watch --lang go" {
+		t.Fatalf("ready command fields=%+v", fresh)
+	}
+
+	missing := codeGraphStatus{Status: "missing", DetectedLanguages: []string{"go"}, SuggestedCommand: "gg index --lang go --changed"}
+	fresh = missing.freshnessContract()
+	if fresh.Status != codeGraphFreshnessMissing || fresh.Reason != codeGraphReasonMissingGraph {
+		t.Fatalf("missing freshness=%+v", fresh)
+	}
+	if fresh.SuggestedCommand != codeGraphRepairCommand || fresh.BackgroundRefresh {
+		t.Fatalf("missing command/background=%+v", fresh)
+	}
+}
+
+func TestCodeGraphFreshnessContract_Reasons(t *testing.T) {
+	cases := []struct {
+		name   string
+		status codeGraphStatus
+		wantS  string
+		wantR  string
+	}{
+		{"empty graph", codeGraphStatus{Status: "missing", GraphEmpty: true, DetectedLanguages: []string{"go"}}, codeGraphFreshnessMissing, codeGraphReasonEmptyGraph},
+		{"changed files", codeGraphStatus{Status: "stale", ChangedFiles: 1, DetectedLanguages: []string{"go"}}, codeGraphFreshnessStale, codeGraphReasonChangedFiles},
+		{"module manifest", codeGraphStatus{Status: "stale", ModuleFiles: 1, DetectedLanguages: []string{"go"}}, codeGraphFreshnessStale, codeGraphReasonModuleManifestChanged},
+		{"language missing", codeGraphStatus{Status: "stale", Detail: "unindexed language(s): go", DetectedLanguages: []string{"go"}}, codeGraphFreshnessStale, codeGraphReasonLanguageMissing},
+		{"non ancestor", codeGraphStatus{Status: "non_ancestor", DetectedLanguages: []string{"go"}}, codeGraphFreshnessStale, codeGraphReasonNonAncestor},
+		{"memgraph unavailable", codeGraphStatus{Status: "ready", MemgraphConfigured: true, MemgraphDetail: "unavailable: dial tcp", DetectedLanguages: []string{"go"}}, codeGraphFreshnessUnavailable, codeGraphReasonMemgraphUnavailable},
+		{"not applicable", codeGraphStatus{Status: "not_applicable"}, codeGraphFreshnessNotApplicable, codeGraphReasonNotApplicable},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fresh := tc.status.freshnessContract()
+			if fresh.Status != tc.wantS || fresh.Reason != tc.wantR {
+				t.Fatalf("freshness=%+v want status=%s reason=%s", fresh, tc.wantS, tc.wantR)
+			}
+			if fresh.BackgroundRefresh {
+				t.Fatalf("background refresh must be false: %+v", fresh)
+			}
+		})
+	}
+}
+
+func TestCodeGraphFreshnessContract_HumanNotice(t *testing.T) {
+	status := codeGraphStatus{Status: "stale", ChangedFiles: 1, DetectedLanguages: []string{"go"}, SuggestedCommand: "gg index --lang go --changed"}
+	notice := codeGraphNoticeOneLine(status)
+	for _, want := range []string{"CodeGraph: stale (changed_files)", "gg doctor --fix-index", "gg index --watch --lang go", "No background index daemon"} {
+		if !strings.Contains(notice, want) {
+			t.Fatalf("missing %q in %q", want, notice)
+		}
+	}
+}
+
+func TestCodeGraphFreshnessContract_JSONShape(t *testing.T) {
+	status := codeGraphStatus{Status: "stale", ChangedFiles: 1, DetectedLanguages: []string{"go"}, SuggestedCommand: "gg index --lang go --changed"}
+	status.finalize()
+	if status.CodeGraph.Status != codeGraphFreshnessStale || status.CodeGraph.Reason != codeGraphReasonChangedFiles {
+		t.Fatalf("nested codegraph=%+v", status.CodeGraph)
+	}
+	if status.CodeGraph.SuggestedCommand != codeGraphRepairCommand || status.CodeGraph.ForegroundWatchCommand != "gg index --watch --lang go" {
+		t.Fatalf("nested command fields=%+v", status.CodeGraph)
 	}
 }
 

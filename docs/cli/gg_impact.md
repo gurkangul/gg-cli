@@ -23,6 +23,10 @@ Task mode (TASK-NNN argument):
 Requires Memgraph (gg index must have been run). The knowledge-store search
 works even without Memgraph.
 
+When CodeGraph is missing, stale, or unavailable, impact uses the shared
+freshness notice contract: repair is explicit with gg doctor --fix-index;
+gg never refreshes the graph in the background.
+
 ```
 gg impact <file|BUG-NNN|TASK-NNN> [flags]
 ```

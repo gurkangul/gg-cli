@@ -10,6 +10,11 @@ This command is read-only: it does not advance inbox cursors, claim tasks,
 review work, or mark tasks done. It only inspects current task/inbox state and
 prints explicit commands the agent may choose to run next.
 
+If CodeGraph is missing, stale, or unavailable, next prints the shared freshness
+notice. It does not refresh in the background; use gg doctor --fix-index for
+explicit repair or gg index --watch / gg watch --index for foreground active
+mode.
+
 ```
 gg next [flags]
 ```

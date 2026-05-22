@@ -238,10 +238,13 @@ func doctorCheckCodeGraphFreshness(cmd *cobra.Command, cfg *config.Config, repor
 	if detail == "" {
 		detail = status.Status
 	}
-	switch status.Status {
-	case "ready":
+	if notice := codeGraphNoticeOneLine(status); notice != "" {
+		detail = notice
+	}
+	switch status.freshnessContract().Status {
+	case codeGraphFreshnessReady:
 		report.ok("code graph", detail)
-	case "stale", "partial", "missing", "non_ancestor":
+	case codeGraphFreshnessStale, codeGraphFreshnessMissing, codeGraphFreshnessUnavailable:
 		report.fail("code graph", detail)
 	default:
 		report.warn("code graph", detail)

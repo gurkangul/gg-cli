@@ -130,6 +130,7 @@ gg context "authentication" --compact
 # Optional code graph
 gg doctor --install-indexers
 gg index --lang go
+gg index --watch --lang go  # optional foreground watcher; Ctrl-C stops it
 gg impact internal/auth/middleware.go --compact
 
 # Cross-agent handoff
@@ -139,6 +140,14 @@ gg inbox --role reviewer --since-cursor
 
 Use compact output for scanning; hydrate the full record before changing state.
 Compact rows are an index, not the source of truth.
+
+CodeGraph freshness is explicit. gg does not start a background indexing daemon:
+agent-facing commands warn when the graph is missing or stale, `gg doctor --fix-index`
+is the canonical one-shot repair, and `gg index --watch` / `gg watch --index` are
+operator-started foreground watchers that run only until Ctrl-C.
+`gg session-start`, `gg next`, `gg impact`, `gg doctor`, and `gg index status`
+use the same freshness notice contract: status/reason, repair command, and
+foreground-watch hint all come from one shared model.
 
 ---
 
@@ -189,6 +198,8 @@ Important guardrails:
 
 - use `--compact` for scans, then full `gg task get` / `gg bug get` before state changes
 - run `gg impact <file>` before editing source files in gg-managed projects
+- repair stale CodeGraph state with `gg doctor --fix-index`, or explicitly keep a
+  foreground watcher open with `gg index --watch` / `gg watch --index`
 - run project tests before `gg task done`
 - use `--audience agents` for agent-status broadcasts so human inboxes stay clean
 - run `gg doctor --reconcile` after crashes or suspected store drift

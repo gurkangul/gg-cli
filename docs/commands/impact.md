@@ -68,6 +68,12 @@ Graph features (dependents, symbols) require:
 
 If Memgraph is not configured, `gg impact` degrades gracefully — the knowledge-base search still runs, and a warning is printed.
 
+`gg impact` uses the shared CodeGraph freshness notice contract used by
+`gg session-start`, `gg next`, `gg doctor`, and `gg index status`. Stale,
+missing, or unavailable graph warnings include the reason, `gg doctor --fix-index`
+as the explicit repair path when applicable, and the optional foreground watch
+command. gg never refreshes CodeGraph in the background.
+
 ## Examples
 
 ```sh

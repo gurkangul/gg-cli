@@ -27,6 +27,10 @@ keep hitting the same three pains:
 **Key constraints (non-negotiable):**
 - **No daemon, no network.** gg is a CLI + local Docker (Qdrant + Ollama +
   Memgraph). No background process, no telemetry that leaves the machine.
+  CodeGraph freshness follows the same contract: no automatic background indexer;
+  `gg doctor --fix-index` is the canonical one-shot repair, while
+  `gg index --watch` / `gg watch --index` are explicit foreground watchers that
+  run only until Ctrl-C.
 - **Agent-native.** Agents call gg as a subprocess, not via REST/MCP/RPC.
 - **Multi-project isolation.** Single shared infra at `~/.gg/`, but every
   project's data is namespaced by a UUID `project_id`.

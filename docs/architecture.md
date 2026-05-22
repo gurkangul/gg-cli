@@ -71,6 +71,29 @@ Every Qdrant point and every Memgraph node carries a `project_id` field. Multipl
 
 All Memgraph writes use `MERGE` semantics (`UpsertNode`, `UpsertEdge`) so replay is safe.
 
+## CodeGraph freshness contract
+
+Memgraph is a derived CodeGraph projection, not a background service owned by
+gg. Successful index runs update `.gg/index-state.json` with per-language SHAs
+and working-tree fingerprints. `gg session-start`, `gg next`, `gg impact`,
+`gg doctor`, and `gg index status` all render the same shared freshness
+contract: status (`ready`, `missing`, `stale`, `unavailable`, `unknown`,
+`not_applicable`), reason (`missing_graph`, `empty_graph`,
+`memgraph_unavailable`, `language_missing`, `non_ancestor`, `changed_files`,
+`module_manifest_changed`, `fingerprint_mismatch`, `not_applicable`,
+`unknown`), counts, repair command, and foreground-watch hint.
+
+There is no automatic background indexing daemon. The canonical one-shot repair
+path is `gg doctor --fix-index` (or an explicit `gg index --lang <lang>` when the
+operator knows the target language). Active refresh is opt-in only:
+`gg index --watch` and `gg watch --index` start a foreground watcher, hold a
+project-local lock, debounce source/module changes, and stop when the operator
+presses Ctrl-C.
+
+Commands that support JSON include the same additive `codegraph` object with
+`background_refresh: false`, `foreground_watch_available`, and a language-aware
+`foreground_watch_command` when gg can infer the language safely.
+
 ## Embedding model metadata
 
 `.gg/embedding-meta.json` records the model name and dimension used when the collections were created. If the configured model changes, `gg` fails fast with an error rather than silently writing incompatible vectors. Use `gg reembed --confirm` to migrate.

@@ -8,6 +8,11 @@ Check service connectivity and verify that required indexer binaries
 are available. Use --install-indexers to automatically install missing SCIP
 binaries using their native package managers (go install, npm, pip).
 
+Doctor reports the same CodeGraph freshness contract used by session-start,
+next, impact, and index status. It never starts a background index daemon;
+use --fix-index for explicit repair or gg index --watch / gg watch --index for
+optional foreground active mode.
+
 Exit codes:
   0  all checks passed
   1  one or more checks failed

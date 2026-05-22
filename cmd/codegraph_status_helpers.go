@@ -244,18 +244,7 @@ func codeGraphNeedsAction(status string) bool {
 }
 
 func codeGraphAgentWarning(s codeGraphStatus) string {
-	if !codeGraphNeedsAction(s.Status) {
-		return ""
-	}
-	detail := s.Detail
-	if detail == "" {
-		detail = s.Status
-	}
-	msg := fmt.Sprintf("code graph missing/stale (%s): %s", s.Status, detail)
-	if s.SuggestedCommand != "" && !strings.Contains(detail, s.SuggestedCommand) {
-		msg += "; recommended: " + s.SuggestedCommand
-	}
-	return msg
+	return codeGraphNoticeOneLine(s)
 }
 
 func codeGraphActionWarning(ctx context.Context) string {
@@ -280,16 +269,13 @@ func emitCodeGraphNotice(ctx context.Context, w io.Writer, cfg *config.Config) {
 		return
 	}
 	status := collectCodeGraphStatus(ctx, root, filepath.Join(root, config.DirName), cfg)
-	warning := codeGraphAgentWarning(status)
-	if warning == "" {
+	lines := codeGraphNoticeLines(status)
+	if len(lines) == 0 {
 		return
 	}
 	fmt.Fprintln(w, "─── CODE GRAPH NOTICE ───")
-	fmt.Fprintln(w, warning)
-	if status.SuggestedCommand != "" {
-		fmt.Fprintln(w, "No automatic refresh was run. Run the recommended command, or `gg doctor --fix-index`.")
-	} else {
-		fmt.Fprintln(w, "No automatic refresh was run. Add a supported module manifest before refreshing the code graph.")
+	for _, line := range lines {
+		fmt.Fprintln(w, line)
 	}
 	fmt.Fprintln(w)
 }
@@ -330,8 +316,12 @@ func boolWord(ok bool, yes, no string) string {
 }
 
 func renderCodeGraphStatusCompact(s codeGraphStatus) string {
+	fresh := s.freshnessContract()
 	var parts []string
-	parts = append(parts, "CodeGraph "+s.Status)
+	parts = append(parts, "CodeGraph "+fresh.Status)
+	if fresh.Reason != "" {
+		parts = append(parts, "reason="+fresh.Reason)
+	}
 	if s.LastIndexedSHA != "" || s.HeadSHA != "" {
 		parts = append(parts, fmt.Sprintf("idx=%s head=%s", indexStatusShortSHA(s.LastIndexedSHA), indexStatusShortSHA(s.HeadSHA)))
 	}
@@ -352,11 +342,14 @@ func renderCodeGraphStatusCompact(s codeGraphStatus) string {
 	if s.Detail != "" {
 		parts = append(parts, compactTrim(s.Detail, 90))
 	}
-	if s.SuggestedCommand != "" && codeGraphNeedsAction(s.Status) {
-		parts = append(parts, "run="+compactTrim(s.SuggestedCommand, 90))
+	if fresh.SuggestedCommand != "" && fresh.NeedsNotice() {
+		parts = append(parts, "run="+compactTrim(fresh.SuggestedCommand, 90))
+	}
+	if fresh.ForegroundWatchAvailable && fresh.ForegroundWatchCommand != "" && fresh.NeedsNotice() {
+		parts = append(parts, "watch="+compactTrim(fresh.ForegroundWatchCommand, 50))
 	}
 	if !s.NoWatcherStarted {
-		parts = append(parts, "watch="+compactTrim(s.Watcher, 50))
+		parts = append(parts, "watcher="+compactTrim(s.Watcher, 50))
 	}
 	return strings.Join(parts, "  ")
 }

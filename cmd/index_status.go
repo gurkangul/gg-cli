@@ -20,7 +20,12 @@ import (
 var indexStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show code graph freshness and quality",
-	RunE:  runIndexStatus,
+	Long: `Show CodeGraph freshness using the shared agent-facing contract.
+
+gg never runs a background index daemon. Repair is explicit with
+gg doctor --fix-index; optional active foreground mode is gg index --watch or
+gg watch --index.`,
+	RunE: runIndexStatus,
 }
 
 func init() {
@@ -28,28 +33,29 @@ func init() {
 }
 
 type codeGraphStatus struct {
-	Status                 string      `json:"status"`
-	Detail                 string      `json:"detail,omitempty"`
-	LastIndexedSHA         string      `json:"last_indexed_sha,omitempty"`
-	HeadSHA                string      `json:"head_sha,omitempty"`
-	IndexedAt              string      `json:"indexed_at,omitempty"`
-	WorkingTreeFingerprint string      `json:"working_tree_fingerprint,omitempty"`
-	MemgraphConfigured     bool        `json:"memgraph_configured"`
-	MemgraphAvailable      bool        `json:"memgraph_available"`
-	GraphStatsAvailable    bool        `json:"graph_stats_available"`
-	MemgraphDetail         string      `json:"memgraph_detail,omitempty"`
-	GraphEmpty             bool        `json:"graph_empty"`
-	Stats                  graph.Stats `json:"stats"`
-	IndexedLanguages       []string    `json:"indexed_languages,omitempty"`
-	DetectedLanguages      []string    `json:"detected_languages,omitempty"`
-	SuggestedCommand       string      `json:"suggested_command,omitempty"`
-	ChangedFiles           int         `json:"changed_files,omitempty"`
-	NewFiles               int         `json:"new_files,omitempty"`
-	DeletedFiles           int         `json:"deleted_files,omitempty"`
-	ModuleFiles            int         `json:"module_files,omitempty"`
-	PendingOutbox          int         `json:"pending_outbox"`
-	NoWatcherStarted       bool        `json:"no_watcher_started"`
-	Watcher                string      `json:"watcher,omitempty"`
+	Status                 string             `json:"status"`
+	Detail                 string             `json:"detail,omitempty"`
+	LastIndexedSHA         string             `json:"last_indexed_sha,omitempty"`
+	HeadSHA                string             `json:"head_sha,omitempty"`
+	IndexedAt              string             `json:"indexed_at,omitempty"`
+	WorkingTreeFingerprint string             `json:"working_tree_fingerprint,omitempty"`
+	MemgraphConfigured     bool               `json:"memgraph_configured"`
+	MemgraphAvailable      bool               `json:"memgraph_available"`
+	GraphStatsAvailable    bool               `json:"graph_stats_available"`
+	MemgraphDetail         string             `json:"memgraph_detail,omitempty"`
+	GraphEmpty             bool               `json:"graph_empty"`
+	Stats                  graph.Stats        `json:"stats"`
+	IndexedLanguages       []string           `json:"indexed_languages,omitempty"`
+	DetectedLanguages      []string           `json:"detected_languages,omitempty"`
+	SuggestedCommand       string             `json:"suggested_command,omitempty"`
+	ChangedFiles           int                `json:"changed_files,omitempty"`
+	NewFiles               int                `json:"new_files,omitempty"`
+	DeletedFiles           int                `json:"deleted_files,omitempty"`
+	ModuleFiles            int                `json:"module_files,omitempty"`
+	PendingOutbox          int                `json:"pending_outbox"`
+	NoWatcherStarted       bool               `json:"no_watcher_started"`
+	Watcher                string             `json:"watcher,omitempty"`
+	CodeGraph              codeGraphFreshness `json:"codegraph"`
 }
 
 func runIndexStatus(cmd *cobra.Command, _ []string) error {
@@ -365,6 +371,7 @@ func (s *codeGraphStatus) fillGraphStats(ctx context.Context, cfg *config.Config
 }
 
 func (s *codeGraphStatus) finalize() {
+	defer s.refreshFreshnessContract()
 	if s.Status == "not_applicable" {
 		return
 	}
@@ -437,8 +444,12 @@ func (s *codeGraphStatus) fillWatcher(ggDir string) {
 }
 
 func renderCodeGraphStatus(w io.Writer, s codeGraphStatus) {
+	fresh := s.freshnessContract()
 	fmt.Fprintln(w, "CODE GRAPH:")
-	fmt.Fprintf(w, "  Status: %s", s.Status)
+	fmt.Fprintf(w, "  Status: %s", fresh.Status)
+	if fresh.Reason != "" {
+		fmt.Fprintf(w, " (%s)", fresh.Reason)
+	}
 	if s.Detail != "" {
 		fmt.Fprintf(w, " - %s", s.Detail)
 	}
@@ -458,8 +469,14 @@ func renderCodeGraphStatus(w io.Writer, s codeGraphStatus) {
 	if s.ChangedFiles+s.NewFiles+s.DeletedFiles+s.ModuleFiles > 0 {
 		fmt.Fprintf(w, "  Changes: changed=%d new=%d deleted=%d modules=%d\n", s.ChangedFiles, s.NewFiles, s.DeletedFiles, s.ModuleFiles)
 	}
-	if s.SuggestedCommand != "" && codeGraphNeedsAction(s.Status) {
-		fmt.Fprintf(w, "  Suggested: %s\n", s.SuggestedCommand)
+	if fresh.SuggestedCommand != "" && fresh.NeedsNotice() {
+		fmt.Fprintf(w, "  Suggested: %s\n", fresh.SuggestedCommand)
+	}
+	if fresh.ForegroundWatchAvailable && fresh.ForegroundWatchCommand != "" {
+		fmt.Fprintf(w, "  Active mode: %s\n", fresh.ForegroundWatchCommand)
+	}
+	if fresh.Status != codeGraphFreshnessNotApplicable {
+		fmt.Fprintf(w, "  Background refresh: %t\n", fresh.BackgroundRefresh)
 	}
 	fmt.Fprintf(w, "  Memgraph: %s", boolWord(s.MemgraphAvailable, "available", "unavailable"))
 	if s.MemgraphDetail != "" {
