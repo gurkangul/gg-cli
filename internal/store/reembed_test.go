@@ -1,10 +1,18 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/qdrant/go-client/qdrant"
 )
+
+type countingEmbedder struct{ calls int }
+
+func (e *countingEmbedder) Generate(context.Context, string) ([]float32, error) {
+	e.calls++
+	return []float32{1, 2, 3}, nil
+}
 
 // TestPayloadExtractors_KeyAlignment guards against the C1 regression:
 // reembed extractors must read the SAME payload keys that Add*/Send*/Open*
@@ -88,5 +96,61 @@ func TestPayloadExtractors_CollectionsCoveredAtLeastOnce(t *testing.T) {
 		if _, ok := collTextExtractors[suffix]; !ok {
 			t.Errorf("collection %q has no payload extractor — gg reembed will silently drop it", suffix)
 		}
+	}
+}
+
+func TestClearDegradedVectorMarkers_RemovesReplayFlags(t *testing.T) {
+	text, _ := qdrant.NewValue("keep me")
+	marker, _ := qdrant.NewValue("reconcile_zero_vector")
+	markedAt, _ := qdrant.NewValue("2026-05-21T00:00:00Z")
+	payload := map[string]*qdrant.Value{
+		"text":                  text,
+		"gg_vector_degraded":    marker,
+		"gg_vector_degraded_at": markedAt,
+	}
+
+	cleaned := clearDegradedVectorMarkers(payload)
+
+	if cleaned["text"].GetStringValue() != "keep me" {
+		t.Fatalf("text payload not preserved: %#v", cleaned["text"])
+	}
+	if _, ok := cleaned["gg_vector_degraded"]; ok {
+		t.Fatal("gg_vector_degraded marker should be removed after successful reembed")
+	}
+	if _, ok := cleaned["gg_vector_degraded_at"]; ok {
+		t.Fatal("gg_vector_degraded_at marker should be removed after successful reembed")
+	}
+}
+
+func TestVectorForReembed_MessagesKeepIntentionalZeroVector(t *testing.T) {
+	embedder := &countingEmbedder{}
+	vec, err := vectorForReembed(context.Background(), collSuffixMessages, "agent handoff", 3, embedder)
+	if err != nil {
+		t.Fatalf("vectorForReembed: %v", err)
+	}
+	if embedder.calls != 0 {
+		t.Fatalf("message reembed should not call embedder, got %d calls", embedder.calls)
+	}
+	if len(vec) != 3 {
+		t.Fatalf("len(vec) = %d, want 3", len(vec))
+	}
+	for i, v := range vec {
+		if v != 0 {
+			t.Fatalf("vec[%d] = %v, want zero vector", i, v)
+		}
+	}
+}
+
+func TestVectorForReembed_EmptySemanticTextSkipped(t *testing.T) {
+	embedder := &countingEmbedder{}
+	vec, err := vectorForReembed(context.Background(), collSuffixNotes, "", 3, embedder)
+	if err != nil {
+		t.Fatalf("vectorForReembed: %v", err)
+	}
+	if vec != nil {
+		t.Fatalf("vec = %#v, want nil skip", vec)
+	}
+	if embedder.calls != 0 {
+		t.Fatalf("empty text should not call embedder, got %d calls", embedder.calls)
 	}
 }

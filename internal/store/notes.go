@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gurkangul/gg-cli/internal/brain"
 	"github.com/qdrant/go-client/qdrant"
 )
 
@@ -14,11 +15,12 @@ import (
 // can be searched semantically. Useful for capturing context, observations,
 // or ambient progress that doesn't warrant a decision or task entry.
 type Note struct {
-	ID        string
-	Text      string
-	Tags      []string
-	TaskID    string
-	CreatedAt string
+	ID            string
+	Text          string
+	Tags          []string
+	TaskID        string
+	CreatedAt     string
+	SemanticScore float32 `json:"semantic_score,omitempty"`
 }
 
 func (c *Client) AddNote(ctx context.Context, n Note, vector []float32) (string, error) {
@@ -29,12 +31,20 @@ func (c *Client) AddNote(ctx context.Context, n Note, vector []float32) (string,
 		n.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
-	payload, err := qdrant.TryValueMap(map[string]any{
+	rawPayload := map[string]any{
 		"text":       n.Text,
 		"tags":       toAnySlice(n.Tags),
 		"task_id":    n.TaskID,
 		"created_at": n.CreatedAt,
-	})
+	}
+	if err := brain.Append(c.dataDir, "notes", n.ID, "", rawPayload); err != nil {
+		return "", fmt.Errorf("brain jsonl write: %w", err)
+	}
+	if len(vector) == 0 {
+		return n.ID, semanticVectorMissing(OutboxKindNote, n.ID)
+	}
+
+	payload, err := qdrant.TryValueMap(rawPayload)
 	if err != nil {
 		return "", fmt.Errorf("build payload: %w", err)
 	}
@@ -52,7 +62,7 @@ func (c *Client) AddNote(ctx context.Context, n Note, vector []float32) (string,
 		},
 	})
 	if err != nil {
-		return "", err
+		return n.ID, &OutboxQueued{Kind: OutboxKindNote, UUID: n.ID, Cause: err}
 	}
 	return n.ID, nil
 }
@@ -91,7 +101,9 @@ func (c *Client) SearchNotes(ctx context.Context, vector []float32, limit uint64
 	}
 	notes := make([]Note, 0, len(results))
 	for _, r := range results {
-		notes = append(notes, noteFromPayload(r.GetId().GetUuid(), r.GetPayload()))
+		n := noteFromPayload(r.GetId().GetUuid(), r.GetPayload())
+		n.SemanticScore = r.GetScore()
+		notes = append(notes, n)
 	}
 	return notes, nil
 }

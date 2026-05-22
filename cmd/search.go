@@ -151,85 +151,53 @@ func serveSearchFromJSONL(cmd *cobra.Command, query string) error {
 		return serveSearchFromCache(cmd, query)
 	}
 
-	decEntries, decErr := brain.SearchByText(ggDir, "decisions", query)
-	rejEntries, rejErr := brain.SearchByText(ggDir, "rejections", query)
-	taskEntries, taskErr := brain.SearchByText(ggDir, "tasks", query)
-	bugEntries, bugErr := brain.SearchByText(ggDir, "bugs", query)
+	decEntries, decErr := brain.SearchByTextScored(ggDir, "decisions", query)
+	rejEntries, rejErr := brain.SearchByTextScored(ggDir, "rejections", query)
+	taskEntries, taskErr := brain.SearchByTextScored(ggDir, "tasks", query)
+	bugEntries, bugErr := brain.SearchByTextScored(ggDir, "bugs", query)
+	noteEntries, noteErr := brain.SearchByTextScored(ggDir, "notes", query)
 
 	// All absent → fall through to LKG cache (pre-JSONL brain).
-	if decErr != nil && rejErr != nil && taskErr != nil && bugErr != nil {
+	if decErr != nil && rejErr != nil && taskErr != nil && bugErr != nil && noteErr != nil {
 		return serveSearchFromCache(cmd, query)
 	}
 
+	scores := searchScoreOverrides{}
 	var decisions []store.Decision
-	for _, e := range decEntries {
-		d := store.Decision{
-			ID:     e.UUID,
-			Author: e.Author,
-		}
-		if v, ok := e.Payload["text"].(string); ok {
-			d.Text = v
-		}
-		if v, ok := e.Payload["reason"].(string); ok {
-			d.Reason = v
-		}
-		if v, ok := e.Payload["status"].(string); ok {
-			d.Status = v
-		}
-		if v, ok := e.Payload["task_id"].(string); ok {
-			d.TaskID = v
-		}
-		if v, ok := e.Payload["created_at"].(string); ok {
-			d.CreatedAt = v
-		}
-		if tags, ok := e.Payload["tags"].([]any); ok {
-			for _, t := range tags {
-				if s, ok := t.(string); ok {
-					d.Tags = append(d.Tags, s)
-				}
-			}
-		}
+	for _, match := range decEntries {
+		d := decisionFromJSONLEntry(match.Entry)
 		decisions = append(decisions, d)
+		scores.set("decision", d.ID, match.Score)
 	}
 	var rejections []store.Rejection
-	for _, e := range rejEntries {
-		r := store.Rejection{
-			ID:     e.UUID,
-			Author: e.Author,
-		}
-		if v, ok := e.Payload["approach"].(string); ok {
-			r.Approach = v
-		}
-		if v, ok := e.Payload["reason"].(string); ok {
-			r.Reason = v
-		}
-		if v, ok := e.Payload["task_id"].(string); ok {
-			r.TaskID = v
-		}
-		if v, ok := e.Payload["created_at"].(string); ok {
-			r.CreatedAt = v
-		}
-		if tags, ok := e.Payload["tags"].([]any); ok {
-			for _, t := range tags {
-				if s, ok := t.(string); ok {
-					r.Tags = append(r.Tags, s)
-				}
-			}
-		}
+	for _, match := range rejEntries {
+		r := rejectionFromJSONLEntry(match.Entry)
 		rejections = append(rejections, r)
+		scores.set("rejection", r.ID, match.Score)
 	}
 
 	var tasks []store.Task
-	for _, e := range taskEntries {
-		tasks = append(tasks, taskFromJSONLEntry(e))
+	for _, match := range taskEntries {
+		t := taskFromJSONLEntry(match.Entry)
+		tasks = append(tasks, t)
+		scores.set("task", t.ID, match.Score)
 	}
 
 	var bugs []store.Bug
-	for _, e := range bugEntries {
-		bugs = append(bugs, bugFromJSONLEntry(e))
+	for _, match := range bugEntries {
+		b := bugFromJSONLEntry(match.Entry)
+		bugs = append(bugs, b)
+		scores.set("bug", b.ID, match.Score)
 	}
 
-	return printSearchResults(cmd, query, decisions, rejections, tasks, bugs, nil, banner, time.Time{})
+	var notes []store.Note
+	for _, match := range noteEntries {
+		n := noteFromJSONLEntry(match.Entry)
+		notes = append(notes, n)
+		scores.set("note", n.ID, match.Score)
+	}
+
+	return printSearchResultsWithBackendAndScores(cmd, query, decisions, rejections, tasks, bugs, notes, banner, time.Time{}, "jsonl", scores)
 }
 
 // serveSearchFromCache looks up the last-known-good cache entry for query
@@ -254,19 +222,28 @@ func serveSearchFromCache(cmd *cobra.Command, query string) error {
 	}
 
 	banner := fmt.Sprintf("⚠ Qdrant unreachable — cache may be stale; last update at %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
-	return printSearchResults(cmd, query, payload.Decisions, payload.Rejections, payload.Tasks, payload.Bugs, payload.Notes, banner, cachedAt)
+	return printSearchResultsWithBackend(cmd, query, payload.Decisions, payload.Rejections, payload.Tasks, payload.Bugs, payload.Notes, banner, cachedAt, "cache")
 }
 
 func printSearchResults(cmd *cobra.Command, query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, banner string, cachedAt time.Time) error {
-	results := trimSearchResults(buildSearchResults(query, decisions, rejections, tasks, bugs, notes), searchLimit)
+	return printSearchResultsWithBackend(cmd, query, decisions, rejections, tasks, bugs, notes, banner, cachedAt, "qdrant")
+}
+
+func printSearchResultsWithBackend(cmd *cobra.Command, query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, banner string, cachedAt time.Time, backend string) error {
+	return printSearchResultsWithBackendAndScores(cmd, query, decisions, rejections, tasks, bugs, notes, banner, cachedAt, backend, nil)
+}
+
+func printSearchResultsWithBackendAndScores(cmd *cobra.Command, query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, banner string, cachedAt time.Time, backend string, scores searchScoreOverrides) error {
+	results := trimSearchResults(buildSearchResultsWithBackendAndScores(query, decisions, rejections, tasks, bugs, notes, backend, scores), searchLimit)
 	jsonMap := map[string]any{
-		"decisions":  decisions,
-		"rejections": rejections,
-		"tasks":      tasks,
-		"bugs":       bugs,
-		"notes":      notes,
-		"matches":    results,
-		"ranking":    "semantic results with deterministic lexical exact-match boost; BM25/sparse fallback not required",
+		"decisions":      decisions,
+		"rejections":     rejections,
+		"tasks":          tasks,
+		"bugs":           bugs,
+		"notes":          notes,
+		"matches":        results,
+		"ranking":        "semantic results with deterministic lexical exact-match boost; BM25/sparse fallback not required",
+		"source_backend": backend,
 	}
 	if banner != "" {
 		jsonMap["warning"] = banner // include stale signal for agents parsing --json output

@@ -92,6 +92,26 @@ func doctorCheckQdrant(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 	} else {
 		report.ok("qdrant collections", "all 7 collections present")
 	}
+	if counter, ok := c.(interface {
+		CollectionPayloadCounts(context.Context) (map[string]uint64, error)
+	}); ok {
+		counts, countErr := counter.CollectionPayloadCounts(ctx)
+		if countErr != nil {
+			report.warn("qdrant payload counts", fmt.Sprintf("could not count payloads: %v", countErr))
+		} else {
+			var parts []string
+			for _, kind := range brainKinds {
+				if n, exists := counts[kind]; exists {
+					parts = append(parts, fmt.Sprintf("%s=%d", kind, n))
+				}
+			}
+			if len(parts) == 0 {
+				report.warn("qdrant payload counts", "no collection counts available")
+			} else {
+				report.ok("qdrant payload counts", strings.Join(parts, ", "))
+			}
+		}
+	}
 	if degraded, ok := c.(interface {
 		DegradedVectorCounts(context.Context) (map[string]int, error)
 	}); ok {
@@ -114,6 +134,7 @@ func doctorCheckQdrant(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 			report.ok("qdrant vector quality", "no placeholder zero vectors detected")
 		}
 	}
+	report.ok("qdrant message vectors", "messages intentionally use zero vectors; degraded placeholders are marked with gg_vector_degraded")
 }
 
 // doctorCheckMemgraph checks Memgraph connectivity and schema indexes.

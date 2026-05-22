@@ -71,6 +71,9 @@ func runNext(cmd *cobra.Command, _ []string) error {
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
+	if warning := semanticMemoryActionWarning(ctx, nil); warning != "" {
+		snap.StateWarnings = append(snap.StateWarnings, warning)
+	}
 
 	if msgs, msgErr := d.store.GetInbox(ctx, roleForQuery(role), true); msgErr == nil {
 		snap.InboxCount = len(msgs)

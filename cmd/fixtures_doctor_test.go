@@ -2,9 +2,12 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gurkangul/gg-cli/internal/outbox"
 )
@@ -157,6 +160,33 @@ func TestDoctor_WithOutboxEntries(t *testing.T) {
 		if ee, ok := err.(*ExitError); ok && ee.Code == ExitStoreDown {
 			t.Errorf("doctor should not return ExitStoreDown, got: %v", err)
 		}
+	}
+}
+
+func TestSemanticMemoryActionWarning_IncludesOutboxSummary(t *testing.T) {
+	ggDir := setupGGDir(t)
+	if _, err := outbox.Write(ggDir, "full-index", map[string]string{"root": "/proj", "lang": "go", "sha": "abc12345"}); err != nil {
+		t.Fatalf("outbox.Write: %v", err)
+	}
+	if _, err := outbox.Write(ggDir, "changed-index", map[string]string{"root": "/proj", "lang": "go", "sha": "def67890"}); err != nil {
+		t.Fatalf("outbox.Write: %v", err)
+	}
+
+	entries, err := outbox.List(ggDir)
+	if err != nil {
+		t.Fatalf("outbox.List: %v", err)
+	}
+	summary := summarizeOutboxEntries(entries, time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC))
+	if summary.Count != 2 || !strings.Contains(summary.Kinds, "changed-index=1") || !strings.Contains(summary.Kinds, "full-index=1") {
+		t.Fatalf("unexpected outbox summary: %+v", summary)
+	}
+
+	warning := semanticMemoryActionWarning(context.Background(), nil)
+	if !strings.Contains(warning, "outbox=2") || !strings.Contains(warning, "kinds=changed-index=1, full-index=1") {
+		t.Fatalf("warning missing outbox summary: %s", warning)
+	}
+	if !strings.Contains(warning, "Run: gg doctor") {
+		t.Fatalf("warning missing doctor hint: %s", warning)
 	}
 }
 

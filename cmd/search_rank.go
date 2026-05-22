@@ -14,7 +14,12 @@ var exactSearchID = regexp.MustCompile(`\b(TASK|BUG)-\d{3,}\b`)
 type searchResult struct {
 	Kind            string           `json:"kind"`
 	Rank            int              `json:"rank"`
+	FinalRank       int              `json:"final_rank"`
 	Score           int              `json:"lexical_score"`
+	SemanticScore   float32          `json:"semantic_score"`
+	CosineScore     float32          `json:"cosine_score"`
+	RankReason      string           `json:"rank_reason"`
+	SourceBackend   string           `json:"source_backend"`
 	SourceProjectID string           `json:"source_project_id,omitempty"`
 	Decision        *store.Decision  `json:"decision,omitempty"`
 	Rejection       *store.Rejection `json:"rejection,omitempty"`
@@ -23,35 +28,99 @@ type searchResult struct {
 	Note            *store.Note      `json:"note,omitempty"`
 }
 
+type searchScoreOverrides map[string]int
+
+func (s searchScoreOverrides) set(kind, id string, score int) {
+	if s == nil || id == "" {
+		return
+	}
+	s[kind+":"+id] = score
+}
+
+func (s searchScoreOverrides) get(kind, id string) (int, bool) {
+	if s == nil || id == "" {
+		return 0, false
+	}
+	score, ok := s[kind+":"+id]
+	return score, ok
+}
+
 func buildSearchResults(query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note) []searchResult {
+	return buildSearchResultsWithBackend(query, decisions, rejections, tasks, bugs, notes, "qdrant")
+}
+
+func buildSearchResultsWithBackend(query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, backend string) []searchResult {
+	return buildSearchResultsWithBackendAndScores(query, decisions, rejections, tasks, bugs, notes, backend, nil)
+}
+
+func buildSearchResultsWithBackendAndScores(query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, backend string, scores searchScoreOverrides) []searchResult {
 	var out []searchResult
 	rank := 0
 	for i := range decisions {
 		d := decisions[i]
-		out = append(out, searchResult{Kind: "decision", Rank: rank, Score: lexicalScoreWithPrimary(query, d.ID, decisionSearchText(d)), Decision: &d})
+		score := lexicalScoreWithPrimary(query, d.ID, decisionSearchText(d))
+		if override, ok := scores.get("decision", d.ID); ok {
+			score = override
+		}
+		out = append(out, newSearchResult("decision", rank, score, d.SemanticScore, backend, &d, nil, nil, nil, nil))
 		rank++
 	}
 	for i := range rejections {
 		r := rejections[i]
-		out = append(out, searchResult{Kind: "rejection", Rank: rank, Score: lexicalScoreWithPrimary(query, r.ID, rejectionSearchText(r)), Rejection: &r})
+		score := lexicalScoreWithPrimary(query, r.ID, rejectionSearchText(r))
+		if override, ok := scores.get("rejection", r.ID); ok {
+			score = override
+		}
+		out = append(out, newSearchResult("rejection", rank, score, r.SemanticScore, backend, nil, &r, nil, nil, nil))
 		rank++
 	}
 	for i := range tasks {
 		t := tasks[i]
-		out = append(out, searchResult{Kind: "task", Rank: rank, Score: lexicalScoreWithPrimary(query, t.ID, taskSearchText(t)), Task: &t})
+		score := lexicalScoreWithPrimary(query, t.ID, taskSearchText(t))
+		if override, ok := scores.get("task", t.ID); ok {
+			score = override
+		}
+		out = append(out, newSearchResult("task", rank, score, t.SemanticScore, backend, nil, nil, &t, nil, nil))
 		rank++
 	}
 	for i := range bugs {
 		b := bugs[i]
-		out = append(out, searchResult{Kind: "bug", Rank: rank, Score: lexicalScoreWithPrimary(query, b.ID, bugSearchText(b)), Bug: &b})
+		score := lexicalScoreWithPrimary(query, b.ID, bugSearchText(b))
+		if override, ok := scores.get("bug", b.ID); ok {
+			score = override
+		}
+		out = append(out, newSearchResult("bug", rank, score, b.SemanticScore, backend, nil, nil, nil, &b, nil))
 		rank++
 	}
 	for i := range notes {
 		n := notes[i]
-		out = append(out, searchResult{Kind: "note", Rank: rank, Score: lexicalScoreWithPrimary(query, n.ID, noteSearchText(n)), Note: &n})
+		score := lexicalScoreWithPrimary(query, n.ID, noteSearchText(n))
+		if override, ok := scores.get("note", n.ID); ok {
+			score = override
+		}
+		out = append(out, newSearchResult("note", rank, score, n.SemanticScore, backend, nil, nil, nil, nil, &n))
 		rank++
 	}
 	return rankSearchResults(out)
+}
+
+func newSearchResult(kind string, rank, lexicalScore int, semanticScore float32, backend string, d *store.Decision, r *store.Rejection, t *store.Task, b *store.Bug, n *store.Note) searchResult {
+	if backend == "" {
+		backend = "qdrant"
+	}
+	return searchResult{
+		Kind:          kind,
+		Rank:          rank,
+		Score:         lexicalScore,
+		SemanticScore: semanticScore,
+		CosineScore:   semanticScore,
+		SourceBackend: backend,
+		Decision:      d,
+		Rejection:     r,
+		Task:          t,
+		Bug:           b,
+		Note:          n,
+	}
 }
 
 func rankSearchResults(results []searchResult) []searchResult {
@@ -63,8 +132,27 @@ func rankSearchResults(results []searchResult) []searchResult {
 	})
 	for i := range results {
 		results[i].Rank = i + 1
+		results[i].FinalRank = i + 1
+		results[i].RankReason = searchRankReason(results[i])
 	}
 	return results
+}
+
+func searchRankReason(r searchResult) string {
+	switch {
+	case r.SourceBackend == "jsonl" && r.Score > 0:
+		return "jsonl token/field score"
+	case r.SourceBackend == "cache" && r.Score > 0:
+		return "cached semantic results with lexical boost"
+	case r.Score >= 1000:
+		return "exact ID lexical boost over semantic result"
+	case r.Score > 0 && r.SemanticScore > 0:
+		return "semantic cosine score with lexical boost"
+	case r.SemanticScore > 0:
+		return "semantic cosine score"
+	default:
+		return "stable fallback order"
+	}
 }
 
 func trimSearchResults(results []searchResult, limit uint64) []searchResult {

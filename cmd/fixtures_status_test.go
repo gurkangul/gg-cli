@@ -2,21 +2,18 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 )
 
 func TestTell_StoreDown(t *testing.T) {
 	setupGGDir(t)
-	_, _, err := execCmd(t, "tell", "developer", "ship it")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
+	_, stderr, err := execCmd(t, "tell", "developer", "ship it")
+	if err != nil {
+		t.Fatalf("tell should degrade to JSONL/outbox when Qdrant is down, got %v", err)
 	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if !strings.Contains(stderr, "saved to JSONL") {
+		t.Fatalf("missing semantic indexing warning: stderr=%q", stderr)
 	}
 }
 

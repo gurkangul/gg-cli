@@ -28,17 +28,18 @@ func TestDecide_StoreDown(t *testing.T) {
 }
 
 func TestReject_StoreDown(t *testing.T) {
-	setupGGDir(t)
+	ggDir := setupGGDir(t)
 	_, _, err := execCmd(t, "reject", "microservices")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
+	if err != nil {
+		t.Fatalf("expected deprecated reject to follow JSONL-first offline path, got: %v", err)
 	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	jsonlPath := filepath.Join(ggDir, "brain", "rejections.jsonl")
+	data, readErr := os.ReadFile(jsonlPath)
+	if readErr != nil {
+		t.Fatalf("brain/rejections.jsonl not written: %v", readErr)
 	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if len(data) == 0 {
+		t.Error("brain/rejections.jsonl is empty")
 	}
 }
 

@@ -201,6 +201,91 @@ func TestBugOffline_WritesJSONL_NoQdrant(t *testing.T) {
 	}
 }
 
+func TestNoteOffline_WritesJSONL_NoQdrant(t *testing.T) {
+	c := newDownClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	id, err := c.AddNote(ctx, Note{
+		Text:   "semantic fallback should keep notes durable",
+		Tags:   []string{"semantic", "fallback"},
+		TaskID: "TASK-444",
+	}, make([]float32, VectorSize))
+
+	if id == "" {
+		t.Error("expected non-empty note ID on offline add")
+	}
+	if err == nil {
+		t.Fatal("expected OutboxQueued error, got nil")
+	}
+	oq, ok := err.(*OutboxQueued)
+	if !ok {
+		t.Fatalf("expected *OutboxQueued, got %T: %v", err, err)
+	}
+	if oq.Kind != OutboxKindNote {
+		t.Errorf("OutboxQueued.Kind = %q, want %q", oq.Kind, OutboxKindNote)
+	}
+
+	jsonlPath := filepath.Join(c.dataDir, "brain", "notes.jsonl")
+	data, readErr := os.ReadFile(jsonlPath)
+	if readErr != nil {
+		t.Fatalf("brain/notes.jsonl not written: %v", readErr)
+	}
+	var entry map[string]any
+	if jsonErr := json.Unmarshal(data[:len(data)-1], &entry); jsonErr != nil {
+		t.Fatalf("invalid JSONL line: %v", jsonErr)
+	}
+	payload, _ := entry["payload"].(map[string]any)
+	if payload["text"] != "semantic fallback should keep notes durable" {
+		t.Errorf("JSONL payload.text = %v", payload["text"])
+	}
+	if payload["task_id"] != "TASK-444" {
+		t.Errorf("JSONL payload.task_id = %v, want TASK-444", payload["task_id"])
+	}
+}
+
+func TestMessageOffline_WritesJSONL_NoQdrant(t *testing.T) {
+	c := newDownClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := c.SendMessage(ctx, Message{
+		ID:       "msg-offline-1",
+		FromRole: "developer",
+		ToRole:   "reviewer",
+		Content:  "TASK-444 fallback is ready for review",
+		TaskID:   "TASK-444",
+	})
+
+	if err == nil {
+		t.Fatal("expected OutboxQueued error, got nil")
+	}
+	oq, ok := err.(*OutboxQueued)
+	if !ok {
+		t.Fatalf("expected *OutboxQueued, got %T: %v", err, err)
+	}
+	if oq.Kind != OutboxKindMessage {
+		t.Errorf("OutboxQueued.Kind = %q, want %q", oq.Kind, OutboxKindMessage)
+	}
+
+	jsonlPath := filepath.Join(c.dataDir, "brain", "messages.jsonl")
+	data, readErr := os.ReadFile(jsonlPath)
+	if readErr != nil {
+		t.Fatalf("brain/messages.jsonl not written: %v", readErr)
+	}
+	var entry map[string]any
+	if jsonErr := json.Unmarshal(data[:len(data)-1], &entry); jsonErr != nil {
+		t.Fatalf("invalid JSONL line: %v", jsonErr)
+	}
+	payload, _ := entry["payload"].(map[string]any)
+	if payload["content"] != "TASK-444 fallback is ready for review" {
+		t.Errorf("JSONL payload.content = %v", payload["content"])
+	}
+	if payload["task_id"] != "TASK-444" {
+		t.Errorf("JSONL payload.task_id = %v, want TASK-444", payload["task_id"])
+	}
+}
+
 // TestOutboxQueued_IsIdempotentOnRetry (AC-1): writing the same UUID twice
 // to brain JSONL appends two lines, but replay skips the second (UUID dedup).
 // This test verifies the file structure (two lines) — replay idempotency is

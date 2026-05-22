@@ -36,6 +36,7 @@ type Bug struct {
 	By              string   // agent role or user that reported this bug
 	CreatedAt       string
 	UpdatedAt       string
+	SemanticScore   float32 `json:"semantic_score,omitempty"`
 }
 
 func pointUUIDForBugID(id string) string {
@@ -101,6 +102,9 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 	brainUUID := pointUUIDForBugID(b.ID)
 	if err := brain.Append(c.dataDir, "bugs", brainUUID, b.By, rawPayload); err != nil {
 		return "", fmt.Errorf("brain jsonl write: %w", err)
+	}
+	if len(vector) == 0 {
+		return b.ID, semanticVectorMissing(OutboxKindBug, brainUUID)
 	}
 
 	// AC-2: Qdrant secondary best-effort.

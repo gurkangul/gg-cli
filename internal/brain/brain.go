@@ -17,7 +17,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 )
@@ -151,64 +154,169 @@ func parseEntry(line []byte) (Entry, error) {
 	return e, nil
 }
 
-// SearchByText returns entries whose payload "text" or "approach" field
-// contains any of the query words (case-insensitive substring).  This is a
-// minimal offline fallback for gg search — semantic ranking is not available.
+// ScoredEntry is a JSONL fallback match plus its lightweight token/field score.
+type ScoredEntry struct {
+	Entry Entry
+	Score int
+}
+
+// SearchByText returns entries whose payload text fields match the query using
+// a lightweight case-insensitive token scorer. It is deliberately small: JSONL
+// remains the durable fallback, while Qdrant remains the semantic index.
 func SearchByText(ggDir, kind, query string) ([]Entry, error) {
-	all, err := ReadAll(ggDir, kind)
+	matches, err := SearchByTextScored(ggDir, kind, query)
 	if err != nil {
 		return nil, err
 	}
-	if query == "" {
-		return all, nil
-	}
-	// Simple substring scan over the serialised payload.
-	qLower := lowercaseASCII(query)
-	var out []Entry
-	for _, e := range all {
-		if entryMatchesQuery(e, qLower) {
-			out = append(out, e)
-		}
+	out := make([]Entry, 0, len(matches))
+	for _, match := range matches {
+		out = append(out, match.Entry)
 	}
 	return out, nil
 }
 
-func entryMatchesQuery(e Entry, qLower string) bool {
-	for _, field := range []string{"text", "approach", "reason", "title", "detail"} {
-		if v, ok := e.Payload[field]; ok {
-			if s, ok := v.(string); ok {
-				if contains(lowercaseASCII(s), qLower) {
-					return true
-				}
+// SearchByTextScored is SearchByText plus the score used for ordering so CLI
+// JSON output can expose the same fallback ranking signal it actually used.
+func SearchByTextScored(ggDir, kind, query string) ([]ScoredEntry, error) {
+	all, err := ReadAll(ggDir, kind)
+	if err != nil {
+		return nil, err
+	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		out := make([]ScoredEntry, 0, len(all))
+		for _, e := range all {
+			out = append(out, ScoredEntry{Entry: e})
+		}
+		return out, nil
+	}
+	terms := queryTerms(query)
+	phrase := strings.ToLower(query)
+	type scored struct {
+		entry Entry
+		score int
+		idx   int
+	}
+	var scoredEntries []scored
+	for i, e := range all {
+		score := entryQueryScore(e, phrase, terms)
+		if score > 0 {
+			scoredEntries = append(scoredEntries, scored{entry: e, score: score, idx: i})
+		}
+	}
+	sort.SliceStable(scoredEntries, func(i, j int) bool {
+		if scoredEntries[i].score != scoredEntries[j].score {
+			return scoredEntries[i].score > scoredEntries[j].score
+		}
+		if scoredEntries[i].entry.CreatedAt != scoredEntries[j].entry.CreatedAt {
+			return scoredEntries[i].entry.CreatedAt > scoredEntries[j].entry.CreatedAt
+		}
+		return scoredEntries[i].idx < scoredEntries[j].idx
+	})
+	out := make([]ScoredEntry, 0, len(scoredEntries))
+	for _, s := range scoredEntries {
+		out = append(out, ScoredEntry{Entry: s.entry, Score: s.score})
+	}
+	return out, nil
+}
+
+type weightedText struct {
+	text   string
+	weight int
+}
+
+func entryQueryScore(e Entry, phrase string, terms []string) int {
+	fields := entryWeightedFields(e)
+	if len(fields) == 0 || len(terms) == 0 {
+		return 0
+	}
+	matchedTerms := map[string]bool{}
+	score := 0
+	for _, f := range fields {
+		text := strings.ToLower(f.text)
+		if text == "" {
+			continue
+		}
+		if phrase != "" && strings.Contains(text, phrase) {
+			score += 120 + f.weight
+		}
+		for _, term := range terms {
+			if strings.Contains(text, term) {
+				matchedTerms[term] = true
+				score += f.weight
 			}
 		}
 	}
-	return false
-}
-
-// lowercaseASCII lowercases ASCII letters only — avoids unicode dependencies.
-func lowercaseASCII(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if c >= 'A' && c <= 'Z' {
-			b[i] = c + 32
-		}
-	}
-	return string(b)
-}
-
-func contains(s, sub string) bool {
-	return len(sub) == 0 || (len(s) >= len(sub) && indexBytes(s, sub) >= 0)
-}
-
-func indexBytes(s, sub string) int {
-	if len(sub) == 0 {
+	if len(matchedTerms) == 0 {
 		return 0
 	}
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
+	if len(matchedTerms) == len(terms) {
+		score += 80 // AND-style bonus: all query tokens are represented.
+	} else {
+		score += 10 // OR-style fallback: at least one token matched.
+	}
+	return score
+}
+
+func entryWeightedFields(e Entry) []weightedText {
+	fields := []weightedText{
+		{text: e.UUID, weight: 90},
+		{text: e.Kind, weight: 5},
+		{text: e.Author, weight: 5},
+	}
+	for _, spec := range []struct {
+		key    string
+		weight int
+	}{
+		{"task_id", 100}, {"bug_id", 100}, {"id", 90},
+		{"title", 80}, {"text", 80}, {"approach", 80},
+		{"tags", 60},
+		{"reason", 45}, {"detail", 35}, {"root_cause", 35}, {"fix_summary", 35},
+		{"affected_files", 30}, {"affected_symbols", 30},
+		{"status", 15}, {"priority", 15}, {"severity", 15},
+		{"content", 35}, {"from_role", 15}, {"to_role", 15},
+	} {
+		for _, s := range payloadStrings(e.Payload[spec.key]) {
+			fields = append(fields, weightedText{text: s, weight: spec.weight})
 		}
 	}
-	return -1
+	return fields
+}
+
+func payloadStrings(v any) []string {
+	switch value := v.(type) {
+	case string:
+		if value == "" {
+			return nil
+		}
+		return []string{value}
+	case []string:
+		return append([]string(nil), value...)
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func queryTerms(query string) []string {
+	seen := map[string]bool{}
+	var terms []string
+	for _, part := range strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_')
+	}) {
+		part = strings.TrimSpace(part)
+		if part == "" || seen[part] {
+			continue
+		}
+		seen[part] = true
+		terms = append(terms, part)
+	}
+	return terms
 }

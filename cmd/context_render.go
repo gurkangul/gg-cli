@@ -300,20 +300,42 @@ func renderForTask(w io.Writer, tb taskContextBundle, errs []string) {
 	if len(tb.bundle.decisions) > 0 {
 		fmt.Fprintf(w, "\nRELATED DECISIONS (%d):\n", len(tb.bundle.decisions))
 		for _, dec := range tb.bundle.decisions {
-			fmt.Fprintf(w, "  %s\n", compactDecisionLine(dec))
+			line := compactDecisionLine(dec)
+			if dec.ID != "" {
+				line = fmt.Sprintf("[%s] %s", dec.ID, line)
+			}
+			fmt.Fprintf(w, "  %s\n", line)
 		}
 	}
 
 	if len(tb.bundle.rejections) > 0 {
 		fmt.Fprintf(w, "\nRELATED REJECTIONS (%d):\n", len(tb.bundle.rejections))
 		for _, r := range tb.bundle.rejections {
-			fmt.Fprintf(w, "  %s\n", compactRejectionLine(r))
+			line := compactRejectionLine(r)
+			if r.ID != "" {
+				line = fmt.Sprintf("[%s] %s", r.ID, line)
+			}
+			fmt.Fprintf(w, "  %s\n", line)
+		}
+	}
+
+	if len(tb.bundle.notes) > 0 {
+		fmt.Fprintf(w, "\nRELATED NOTES (%d):\n", len(tb.bundle.notes))
+		for _, n := range tb.bundle.notes {
+			fmt.Fprintf(w, "  [%s] %s %s\n", n.ID, shortDate(n.CreatedAt), compactTrim(n.Text, 100))
+		}
+	}
+
+	if len(tb.messages) > 0 {
+		fmt.Fprintf(w, "\nRECENT TASK MESSAGES (%d):\n", len(tb.messages))
+		for _, m := range tb.messages {
+			fmt.Fprintf(w, "  [%s → %s] %s\n", m.FromRole, m.ToRole, compactTrim(m.Content, 100))
 		}
 	}
 
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "  %d decisions  %d rejections  %d deps\n",
-		len(tb.bundle.decisions), len(tb.bundle.rejections), len(tb.deps))
+	fmt.Fprintf(w, "  %d decisions  %d rejections  %d notes  %d messages  %d deps\n",
+		len(tb.bundle.decisions), len(tb.bundle.rejections), len(tb.bundle.notes), len(tb.messages), len(tb.deps))
 
 	if len(errs) > 0 {
 		fmt.Fprintf(w, "\nWarnings:\n  %s\n", strings.Join(errs, "\n  "))

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -22,6 +23,8 @@ var brainKindToCollection = map[string]string{
 	store.OutboxKindRejection: "rejections",
 	store.OutboxKindTask:      "tasks",
 	store.OutboxKindBug:       "bugs",
+	store.OutboxKindNote:      "notes",
+	store.OutboxKindMessage:   "messages",
 }
 
 // runDoctorReconcile scans the outbox for incomplete dual-store writes and
@@ -75,8 +78,12 @@ func runDoctorReconcile(cmd *cobra.Command) error {
 					_ = outbox.IncrementRetries(ggDir, e.ID)
 					needsAction = true
 				case replayed:
-					fmt.Printf("  ✓ replayed payload to Qdrant with placeholder vector (collection: %s)\n", collSuffix)
-					fmt.Printf("    Semantic recall degraded for this entry until `gg reembed` rebuilds vectors.\n")
+					if collSuffix == "messages" {
+						fmt.Printf("  ✓ replayed message payload to Qdrant with intentional zero vector (collection: %s)\n", collSuffix)
+					} else {
+						fmt.Printf("  ✓ replayed payload to Qdrant with placeholder vector (collection: %s)\n", collSuffix)
+						fmt.Printf("    Semantic recall degraded for this entry until `gg reembed` rebuilds vectors.\n")
+					}
 					_ = outbox.Delete(ggDir, e.ID)
 				default:
 					fmt.Printf("  ~ Qdrant unreachable — replay deferred\n")
@@ -178,7 +185,11 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 			}
 		}
 		if recovered > 0 {
-			fmt.Printf("  ⚠ %s: recovered %d missing payload(s) with placeholder vectors — run `gg reembed` to restore semantic recall\n", kind, recovered)
+			if kind == "messages" {
+				fmt.Printf("  ⚠ %s: recovered %d missing payload(s) with intentional zero vectors\n", kind, recovered)
+			} else {
+				fmt.Printf("  ⚠ %s: recovered %d missing payload(s) with placeholder vectors — run `gg reembed` to restore semantic recall\n", kind, recovered)
+			}
 		}
 		if failed > 0 {
 			fmt.Printf("  ✗ %s: %d replay failure(s)\n", kind, failed)
@@ -311,5 +322,17 @@ func doctorCheckOutbox(report *doctorReport) {
 		report.ok("outbox", "empty — stores consistent")
 		return
 	}
-	report.fail("outbox", fmt.Sprintf("%d pending entry(ies) — run `gg doctor --reconcile`", len(entries)))
+	summary := summarizeOutboxEntries(entries, time.Now())
+	detail := fmt.Sprintf("%d pending entry(ies)", summary.Count)
+	if summary.OldestAge != "" {
+		detail += ", oldest " + summary.OldestAge
+	}
+	if summary.Kinds != "" {
+		detail += ", kinds: " + summary.Kinds
+	}
+	if summary.Retries > 0 {
+		detail += fmt.Sprintf(", retries=%d", summary.Retries)
+	}
+	detail += " — run `gg doctor --reconcile` (then `gg reembed` if placeholder vectors were replayed)"
+	report.fail("outbox", detail)
 }

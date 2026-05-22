@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -51,7 +53,7 @@ func runReject(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--task: %w", err)
 	}
 
-	d, err := loadDeps(true)
+	d, err := loadDepsOfflineSafe(true)
 	if err != nil {
 		return err
 	}
@@ -64,14 +66,17 @@ func runReject(cmd *cobra.Command, args []string) error {
 	if reason != "" {
 		embedText = approach + " " + reason
 	}
-	vector, err := d.embedder.Generate(ctx, embedText)
-	if err != nil {
-		return fmt.Errorf("generate embedding: %w", err)
-	}
-
-	if promptIfDuplicate(ctx, d, "rejections", vector) {
-		fmt.Println("Aborted — nothing recorded.")
-		return nil
+	var vector []float32
+	if !d.qdrantDown {
+		vector, err = d.embedder.Generate(ctx, embedText)
+		if err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ embedding unavailable — JSONL write will continue and semantic indexing will be queued: %v\n", err)
+		} else if promptIfDuplicate(ctx, d, "rejections", vector) {
+			fmt.Println("Aborted — nothing recorded.")
+			return nil
+		}
+	} else {
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)")
 	}
 
 	r := store.Rejection{
@@ -83,7 +88,13 @@ func runReject(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := d.store.AddRejection(ctx, r, vector); err != nil {
-		return fmt.Errorf("store rejection: %w", err)
+		var oq *store.OutboxQueued
+		if errors.As(err, &oq) {
+			queueBrainOutbox(oq, config.GGDirOrEmpty())
+			warnBrainOutboxQueued(cmd.ErrOrStderr(), oq.Cause)
+		} else {
+			return fmt.Errorf("store rejection: %w", err)
+		}
 	}
 
 	return printJSON(r, func() {

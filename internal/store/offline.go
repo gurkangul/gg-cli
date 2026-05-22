@@ -2,11 +2,17 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/qdrant/go-client/qdrant"
 )
+
+// ErrSemanticVectorUnavailable means the durable JSONL write succeeded, but no
+// embedding vector was available for Qdrant at write time. The caller should
+// queue replay and surface that semantic indexing is pending.
+var ErrSemanticVectorUnavailable = errors.New("semantic vector unavailable")
 
 // Outbox kind constants for brain-write replay entries.
 const (
@@ -14,10 +20,12 @@ const (
 	OutboxKindRejection = "reject-replay"
 	OutboxKindTask      = "task-replay"
 	OutboxKindBug       = "bug-replay"
+	OutboxKindNote      = "note-replay"
+	OutboxKindMessage   = "message-replay"
 )
 
-// OutboxQueued is returned by AddDecision / AddRejection / CreateTask /
-// ReportBug when the JSONL write succeeded but the Qdrant upsert failed.
+// OutboxQueued is returned by brain-write methods when the JSONL write
+// succeeded but the Qdrant upsert failed.
 // The caller should enqueue an outbox entry and print a stderr note, then
 // return exit 0 — the write is durable in JSONL.
 type OutboxQueued struct {
@@ -31,6 +39,22 @@ func (e *OutboxQueued) Error() string {
 }
 
 func (e *OutboxQueued) Unwrap() error { return e.Cause }
+
+func semanticVectorMissing(kind, uuid string) *OutboxQueued {
+	return &OutboxQueued{Kind: kind, UUID: uuid, Cause: ErrSemanticVectorUnavailable}
+}
+
+func semanticCollectionNames(c *Client) map[string]string {
+	return map[string]string{
+		collSuffixDecisions:   c.collDecisions(),
+		collSuffixRejections:  c.collRejections(),
+		collSuffixTasks:       c.collTasks(),
+		collSuffixBugs:        c.collBugs(),
+		collSuffixMessages:    c.collMessages(),
+		collSuffixDiscussions: c.collDiscussions(),
+		collSuffixNotes:       c.collNotes(),
+	}
+}
 
 // CollectionUUIDs returns the set of all point UUIDs present in the given
 // collection suffix (e.g. "decisions"). Used by gg doctor --reconcile to find
@@ -62,8 +86,10 @@ func (c *Client) CollectionUUIDs(ctx context.Context, collSuffix string) (map[st
 func (c *Client) ReplayBrainEntry(ctx context.Context, collSuffix, uuid string, payload map[string]any) error {
 	collName := c.projectID + "-" + collSuffix
 	payload = copyReplayPayload(payload)
-	payload["gg_vector_degraded"] = "reconcile_zero_vector"
-	payload["gg_vector_degraded_at"] = time.Now().UTC().Format(time.RFC3339)
+	if collSuffix != collSuffixMessages {
+		payload["gg_vector_degraded"] = "reconcile_zero_vector"
+		payload["gg_vector_degraded_at"] = time.Now().UTC().Format(time.RFC3339)
+	}
 	qdrantPayload, err := qdrant.TryValueMap(payload)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
@@ -86,6 +112,24 @@ func (c *Client) ReplayBrainEntry(ctx context.Context, collSuffix, uuid string, 
 	})
 }
 
+// CollectionPayloadCounts returns the number of payload points in each expected
+// semantic-memory collection. Missing collections are omitted so fresh installs
+// can still report useful partial health.
+func (c *Client) CollectionPayloadCounts(ctx context.Context) (map[string]uint64, error) {
+	out := make(map[string]uint64)
+	for suffix, collName := range semanticCollectionNames(c) {
+		count, err := c.qc.Count(ctx, &qdrant.CountPoints{CollectionName: collName})
+		if err != nil {
+			if isCollectionNotFoundError(err) {
+				continue
+			}
+			return nil, fmt.Errorf("count %s payloads: %w", suffix, err)
+		}
+		out[suffix] = count
+	}
+	return out, nil
+}
+
 func copyReplayPayload(payload map[string]any) map[string]any {
 	out := make(map[string]any, len(payload)+2)
 	for k, v := range payload {
@@ -98,15 +142,7 @@ func copyReplayPayload(payload map[string]any) map[string]any {
 // placeholder zero vector. Those payloads are durable but semantic recall is
 // degraded until `gg reembed` rebuilds real vectors from payload text.
 func (c *Client) DegradedVectorCounts(ctx context.Context) (map[string]int, error) {
-	collections := map[string]string{
-		collSuffixDecisions:   c.collDecisions(),
-		collSuffixRejections:  c.collRejections(),
-		collSuffixTasks:       c.collTasks(),
-		collSuffixBugs:        c.collBugs(),
-		collSuffixMessages:    c.collMessages(),
-		collSuffixDiscussions: c.collDiscussions(),
-		collSuffixNotes:       c.collNotes(),
-	}
+	collections := semanticCollectionNames(c)
 	out := make(map[string]int, len(collections))
 	for suffix, collName := range collections {
 		points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{

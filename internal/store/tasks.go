@@ -43,9 +43,10 @@ type Task struct {
 	ReviewNotes  string // optional reviewer notes
 	// ready_for_live metadata — set when status == "ready_for_live". Used by the
 	// verifier-separation gate to ensure a different actor calls `task done`.
-	ReadyForLiveBy   string // role that performed the ready-for-live transition
-	ReadyForLiveAt   string // RFC3339 timestamp of the transition
-	ReadyForLivePlan string // short verify plan written by the implementer
+	ReadyForLiveBy   string  // role that performed the ready-for-live transition
+	ReadyForLiveAt   string  // RFC3339 timestamp of the transition
+	ReadyForLivePlan string  // short verify plan written by the implementer
+	SemanticScore    float32 `json:"semantic_score,omitempty"`
 }
 
 // scrollAll paginates through every point matching the given request template.
@@ -166,6 +167,9 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 		Detail:   t.Title,
 	}); err != nil {
 		return "", err
+	}
+	if len(vector) == 0 {
+		return t.ID, semanticVectorMissing(OutboxKindTask, brainUUID)
 	}
 
 	// AC-2: Qdrant upsert is secondary best-effort.
@@ -390,7 +394,9 @@ func (c *Client) SearchTasks(ctx context.Context, vector []float32, limit uint64
 	}
 	tasks := make([]Task, 0, len(results))
 	for _, r := range results {
-		tasks = append(tasks, taskFromPayload(r.GetPayload()))
+		t := taskFromPayload(r.GetPayload())
+		t.SemanticScore = r.GetScore()
+		tasks = append(tasks, t)
 	}
 	return tasks, nil
 }

@@ -1,12 +1,10 @@
-// Package outbox implements a file-based pending-write queue for index pipeline
-// crash-safety. It protects `gg index` (full and incremental) runs that write
-// to Memgraph: the intent is recorded before execution so that partial failures
-// can be detected and replayed by `gg doctor --reconcile`.
+// Package outbox implements a file-based pending-write queue for derived-store
+// crash-safety. It protects `gg index` writes to Memgraph and brain JSONL writes
+// whose Qdrant semantic-index upsert must be replayed later.
 //
-// Scope: outbox entries are only written for gg index operations (cmd/index.go).
-// Commands like gg record, gg task, and gg bug write to their own durable brain
-// records first — they are single-store and atomic within that local write,
-// so they need no outbox protection.
+// Scope: outbox entries are written for index operations and for JSONL-first
+// brain writes when Qdrant/Ollama is unavailable. The durable local JSONL write
+// remains source-of-truth; the outbox records derived-index repair work.
 //
 // Each pending entry is a small JSON file in <ggDir>/outbox/<id>.json.
 // On successful completion the caller deletes the file. If the process dies

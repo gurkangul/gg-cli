@@ -261,8 +261,8 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	fmt.Println("\nCode graph freshness:")
 	doctorCheckCodeGraphFreshness(cmd, cfg, report)
 
-	// 5. Outbox check — surface any pending index writes without repairing them.
-	fmt.Println("\nOutbox (index pipeline crash-safety):")
+	// 5. Outbox check — surface pending derived-store replay without repairing it.
+	fmt.Println("\nOutbox (derived-store replay):")
 	doctorCheckOutbox(report)
 
 	// 5b. JSONL integrity — warn on malformed lines in brain files.

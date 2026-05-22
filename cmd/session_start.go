@@ -128,6 +128,10 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// to stderr with [brain-backup] prefix and never affects exit code.
 	emitBrainAutoBackup(os.Stdout, sessionStartStderr)
 
+	// Semantic-memory notice: JSONL remains durable, but agents should know when
+	// Qdrant/outbox/placeholder vectors make semantic recall degraded.
+	emitSemanticMemoryNotice(cmd.Context(), os.Stdout, loadedCfg)
+
 	// Inline `gg status` so the briefing carries the full current-state
 	// snapshot the agent would otherwise have to fetch separately. runStatus
 	// failure (e.g. Qdrant down) is non-fatal here — the briefing header

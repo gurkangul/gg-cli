@@ -21,6 +21,7 @@ type Decision struct {
 	TaskID               string
 	Author               string // agent role or user that recorded this decision (e.g. "developer")
 	CreatedAt            string
+	SemanticScore        float32 `json:"semantic_score,omitempty"`
 }
 
 // AddDecision writes the decision to .gg/brain/decisions.jsonl first (durable,
@@ -51,6 +52,9 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 	// AC-1: JSONL write is the primary source of truth.
 	if err := brain.Append(c.dataDir, "decisions", d.ID, d.Author, rawPayload); err != nil {
 		return fmt.Errorf("brain jsonl write: %w", err)
+	}
+	if len(vector) == 0 {
+		return semanticVectorMissing(OutboxKindDecision, d.ID)
 	}
 
 	// AC-2: Qdrant upsert is secondary best-effort.
@@ -89,7 +93,9 @@ func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit ui
 
 	decisions := make([]Decision, 0, len(results))
 	for _, r := range results {
-		decisions = append(decisions, decisionFromPayload(r.GetId().GetUuid(), r.GetPayload()))
+		d := decisionFromPayload(r.GetId().GetUuid(), r.GetPayload())
+		d.SemanticScore = r.GetScore()
+		decisions = append(decisions, d)
 	}
 	return decisions, nil
 }

@@ -46,6 +46,54 @@ func bugFromJSONLEntry(e brain.Entry) store.Bug {
 	}
 }
 
+func decisionFromJSONLEntry(e brain.Entry) store.Decision {
+	return store.Decision{
+		ID:        e.UUID,
+		Text:      stringPayload(e.Payload, "text", ""),
+		Reason:    stringPayload(e.Payload, "reason", ""),
+		Status:    stringPayload(e.Payload, "status", ""),
+		Tags:      stringSlicePayload(e.Payload, "tags"),
+		TaskID:    stringPayload(e.Payload, "task_id", ""),
+		Author:    stringPayload(e.Payload, "author", e.Author),
+		CreatedAt: stringPayload(e.Payload, "created_at", e.CreatedAt),
+	}
+}
+
+func rejectionFromJSONLEntry(e brain.Entry) store.Rejection {
+	return store.Rejection{
+		ID:        e.UUID,
+		Approach:  stringPayload(e.Payload, "approach", ""),
+		Reason:    stringPayload(e.Payload, "reason", ""),
+		Tags:      stringSlicePayload(e.Payload, "tags"),
+		TaskID:    stringPayload(e.Payload, "task_id", ""),
+		Author:    stringPayload(e.Payload, "author", e.Author),
+		CreatedAt: stringPayload(e.Payload, "created_at", e.CreatedAt),
+	}
+}
+
+func noteFromJSONLEntry(e brain.Entry) store.Note {
+	return store.Note{
+		ID:        e.UUID,
+		Text:      stringPayload(e.Payload, "text", ""),
+		Tags:      stringSlicePayload(e.Payload, "tags"),
+		TaskID:    stringPayload(e.Payload, "task_id", ""),
+		CreatedAt: stringPayload(e.Payload, "created_at", e.CreatedAt),
+	}
+}
+
+func messageFromJSONLEntry(e brain.Entry) store.Message {
+	return store.Message{
+		ID:        e.UUID,
+		FromRole:  stringPayload(e.Payload, "from_role", ""),
+		ToRole:    stringPayload(e.Payload, "to_role", ""),
+		Content:   stringPayload(e.Payload, "content", ""),
+		Audience:  stringPayload(e.Payload, "audience", "all"),
+		Read:      boolPayload(e.Payload, "read"),
+		TaskID:    stringPayload(e.Payload, "task_id", ""),
+		CreatedAt: stringPayload(e.Payload, "created_at", e.CreatedAt),
+	}
+}
+
 func stringPayload(payload map[string]any, key, fallback string) string {
 	if v, ok := payload[key].(string); ok {
 		return v
@@ -82,4 +130,11 @@ func intPayload(payload map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+func boolPayload(payload map[string]any, key string) bool {
+	if v, ok := payload[key].(bool); ok {
+		return v
+	}
+	return false
 }

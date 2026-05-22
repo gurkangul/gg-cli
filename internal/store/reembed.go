@@ -104,9 +104,9 @@ func (c *Client) ReembedAll(ctx context.Context, embedder Embedder, newVectorSiz
 		text    string
 	}
 	type collectionData struct {
-		name     string
-		suffix   string
-		points   []savedPoint
+		name      string
+		suffix    string
+		points    []savedPoint
 		extractor func(map[string]*qdrant.Value) string
 	}
 
@@ -157,15 +157,16 @@ func (c *Client) ReembedAll(ctx context.Context, embedder Embedder, newVectorSiz
 	for _, cd := range collData {
 		res := ReembedResult{Collection: cd.name}
 		for _, sp := range cd.points {
-			if sp.text == "" {
-				res.Skipped++
-				continue
-			}
-			vec, err := embedder.Generate(ctx, sp.text)
+			vec, err := vectorForReembed(ctx, cd.suffix, sp.text, newVectorSize, embedder)
 			if err != nil {
 				return results, fmt.Errorf("reembed %s point %s: generate: %w", cd.name, sp.id, err)
 			}
+			if vec == nil {
+				res.Skipped++
+				continue
+			}
 
+			payload := clearDegradedVectorMarkers(sp.payload)
 			wait := true
 			upsertErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
 				CollectionName: cd.name,
@@ -174,7 +175,7 @@ func (c *Client) ReembedAll(ctx context.Context, embedder Embedder, newVectorSiz
 					{
 						Id:      qdrant.NewID(sp.id),
 						Vectors: qdrant.NewVectors(vec...),
-						Payload: sp.payload,
+						Payload: payload,
 					},
 				},
 			})
@@ -186,4 +187,28 @@ func (c *Client) ReembedAll(ctx context.Context, embedder Embedder, newVectorSiz
 		results = append(results, res)
 	}
 	return results, nil
+}
+
+func vectorForReembed(ctx context.Context, suffix string, text string, vectorSize uint64, embedder Embedder) ([]float32, error) {
+	if suffix == collSuffixMessages {
+		// Messages are role-filtered inbox items, not semantic-search documents.
+		// Preserve their intentional zero-vector invariant even during full
+		// reembed migrations.
+		return make([]float32, int(vectorSize)), nil
+	}
+	if text == "" {
+		return nil, nil
+	}
+	return embedder.Generate(ctx, text)
+}
+
+func clearDegradedVectorMarkers(payload map[string]*qdrant.Value) map[string]*qdrant.Value {
+	out := make(map[string]*qdrant.Value, len(payload))
+	for key, value := range payload {
+		if key == "gg_vector_degraded" || key == "gg_vector_degraded_at" {
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }

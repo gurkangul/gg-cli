@@ -18,7 +18,9 @@ func (c *Client) SearchBugs(ctx context.Context, vector []float32, limit uint64)
 	}
 	bugs := make([]Bug, 0, len(results))
 	for _, r := range results {
-		bugs = append(bugs, bugFromPayload(r.GetPayload()))
+		b := bugFromPayload(r.GetPayload())
+		b.SemanticScore = r.GetScore()
+		bugs = append(bugs, b)
 	}
 	return bugs, nil
 }

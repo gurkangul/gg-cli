@@ -122,12 +122,13 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		}
 		vector, err = d.embedder.Generate(ctx, embedText)
 		if err != nil {
-			return fmt.Errorf("generate embedding: %w", err)
-		}
-		// AC-4: skip dedup prompt when Qdrant is down.
-		if promptIfDuplicate(ctx, d, "tasks", vector) {
-			fmt.Println("Aborted — no task created.")
-			return nil
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ embedding unavailable — JSONL write will continue and semantic indexing will be queued: %v\n", err)
+		} else {
+			// AC-4: skip dedup prompt when Qdrant is down or embedding failed.
+			if promptIfDuplicate(ctx, d, "tasks", vector) {
+				fmt.Println("Aborted — no task created.")
+				return nil
+			}
 		}
 	} else {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)")
@@ -150,7 +151,7 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		var oq *store.OutboxQueued
 		if errors.As(createErr, &oq) {
 			queueBrainOutbox(oq, config.GGDirOrEmpty())
-			fmt.Fprintln(cmd.ErrOrStderr(), "⚠ queued for vector index (Qdrant unreachable; will replay on recovery)")
+			warnBrainOutboxQueued(cmd.ErrOrStderr(), oq.Cause)
 			if isSandboxPermissionError(oq.Cause) {
 				fmt.Fprintln(cmd.ErrOrStderr(), "⚠ sandbox EPERM detected — outbox entry queued, but the agent should rerun outside sandbox to avoid drift")
 			}

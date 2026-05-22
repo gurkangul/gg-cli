@@ -12,13 +12,14 @@ import (
 )
 
 type Rejection struct {
-	ID        string
-	Approach  string
-	Reason    string
-	Tags      []string
-	TaskID    string
-	Author    string // agent role or user that recorded this rejection
-	CreatedAt string
+	ID            string
+	Approach      string
+	Reason        string
+	Tags          []string
+	TaskID        string
+	Author        string // agent role or user that recorded this rejection
+	CreatedAt     string
+	SemanticScore float32 `json:"semantic_score,omitempty"`
 }
 
 // AddRejection writes the rejection to .gg/brain/rejections.jsonl first
@@ -43,6 +44,9 @@ func (c *Client) AddRejection(ctx context.Context, r Rejection, vector []float32
 	// AC-1: JSONL write first.
 	if err := brain.Append(c.dataDir, "rejections", r.ID, r.Author, rawPayload); err != nil {
 		return fmt.Errorf("brain jsonl write: %w", err)
+	}
+	if len(vector) == 0 {
+		return semanticVectorMissing(OutboxKindRejection, r.ID)
 	}
 
 	// AC-2: Qdrant secondary best-effort.
@@ -81,7 +85,9 @@ func (c *Client) SearchRejections(ctx context.Context, vector []float32, limit u
 
 	rejections := make([]Rejection, 0, len(results))
 	for _, r := range results {
-		rejections = append(rejections, rejectionFromPayload(r.GetId().GetUuid(), r.GetPayload()))
+		rej := rejectionFromPayload(r.GetId().GetUuid(), r.GetPayload())
+		rej.SemanticScore = r.GetScore()
+		rejections = append(rejections, rej)
 	}
 	return rejections, nil
 }

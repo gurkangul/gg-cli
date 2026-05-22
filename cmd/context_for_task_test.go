@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
+	"github.com/gurkangul/gg-cli/internal/brain"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -171,5 +175,81 @@ func TestRenderForTask_ShowsWarnings(t *testing.T) {
 
 	if !strings.Contains(out, "some error") {
 		t.Error("warning missing from output")
+	}
+}
+
+func TestRunContextForTaskJSONLFallback_RendersSeededData(t *testing.T) {
+	ggDir := setupGGDir(t)
+
+	seed := func(kind, id string, payload map[string]any) {
+		t.Helper()
+		if err := brain.Append(ggDir, kind, id, "test", payload); err != nil {
+			t.Fatalf("Append %s %s: %v", kind, id, err)
+		}
+	}
+	seed("tasks", "TASK-444", map[string]any{
+		"task_id":    "TASK-444",
+		"title":      "Semantic memory reliability",
+		"detail":     "Test JSONL fallback rendering",
+		"status":     "in_progress",
+		"priority":   "high",
+		"depends_on": []any{"TASK-443"},
+		"tags":       []any{"semantic", "reliability"},
+		"created_at": "2026-05-10T00:00:00Z",
+	})
+	seed("tasks", "TASK-443", map[string]any{
+		"task_id":    "TASK-443",
+		"title":      "Seed dependency",
+		"status":     "done",
+		"priority":   "medium",
+		"created_at": "2026-05-09T00:00:00Z",
+	})
+	seed("decisions", "dec-444", map[string]any{
+		"text":       "Use JSONL fallback for degraded semantic memory paths",
+		"reason":     "qdrant unavailable",
+		"task_id":    "TASK-444",
+		"created_at": "2026-05-10T01:00:00Z",
+	})
+	seed("rejections", "rej-444", map[string]any{
+		"approach":   "Ignore degraded paths",
+		"reason":     "rejected because reliability matters",
+		"task_id":    "TASK-444",
+		"created_at": "2026-05-10T02:00:00Z",
+	})
+	seed("notes", "note-444", map[string]any{
+		"text":       "Remember JSONL fallback warnings",
+		"task_id":    "TASK-444",
+		"created_at": "2026-05-10T03:00:00Z",
+	})
+	seed("messages", "msg-444", map[string]any{
+		"from_role":  "planner",
+		"to_role":    "developer",
+		"content":    "Fallback is expected in tests",
+		"task_id":    "TASK-444",
+		"created_at": "2026-05-10T04:00:00Z",
+	})
+
+	cmd := &cobra.Command{}
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	if err := runContextForTaskJSONLFallback(cmd, "TASK-444", "qdrant unreachable"); err != nil {
+		t.Fatalf("runContextForTaskJSONLFallback: %v", err)
+	}
+	out := stdout.String() + stderr.String()
+	if !strings.Contains(out, "served from JSONL fallback") {
+		t.Fatalf("missing fallback warning in output: %s", out)
+	}
+	if !strings.Contains(out, "Run: gg doctor") {
+		t.Fatalf("missing doctor hint in output: %s", out)
+	}
+	if !strings.Contains(out, "TASK-444") || !strings.Contains(out, "Semantic memory reliability") {
+		t.Fatalf("missing seeded task content: %s", out)
+	}
+	if !strings.Contains(out, "dec-444") || !strings.Contains(out, "rej-444") || !strings.Contains(out, "note-444") {
+		t.Fatalf("missing linked JSONL records: %s", out)
+	}
+	if !strings.Contains(out, "Fallback is expected in tests") {
+		t.Fatalf("missing linked JSONL task message: %s", out)
 	}
 }

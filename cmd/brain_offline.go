@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/gurkangul/gg-cli/internal/outbox"
@@ -21,6 +23,14 @@ func queueBrainOutbox(oq *store.OutboxQueued, ggDir string) {
 	if _, err := outbox.Write(ggDir, oq.Kind, payload); err != nil {
 		fmt.Fprintf(os.Stderr, "⚠ outbox write failed: %v (JSONL is intact)\n", err)
 	}
+}
+
+func warnBrainOutboxQueued(w io.Writer, cause error) {
+	if errors.Is(cause, store.ErrSemanticVectorUnavailable) {
+		fmt.Fprintln(w, "⚠ saved to JSONL; semantic indexing queued (embedding unavailable or Qdrant degraded). Run `gg doctor --reconcile`; `gg reembed` restores vectors.")
+		return
+	}
+	fmt.Fprintln(w, "⚠ saved to JSONL; semantic indexing queued (Qdrant unreachable). Run `gg doctor --reconcile` after recovery.")
 }
 
 // brainOutboxPayload is the shape stored in the outbox for brain-write replay.

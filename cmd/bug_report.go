@@ -105,14 +105,12 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		}
 		vector, err = d.embedder.Generate(ctx, embedText)
 		if err != nil {
-			return fmt.Errorf("generate embedding: %w", err)
-		}
-
-		fromFlag := ""
-		if f := cmd.Flags().Lookup("from"); f != nil {
-			fromFlag = f.Value.String()
-		}
-		if !bugForce {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ embedding unavailable — JSONL write will continue and semantic indexing will be queued: %v\n", err)
+		} else if !bugForce {
+			fromFlag := ""
+			if f := cmd.Flags().Lookup("from"); f != nil {
+				fromFlag = f.Value.String()
+			}
 			threshold := float32(dupThreshold)
 			if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Bugs.DupeThreshold > 0 {
 				threshold = float32(cfg.Bugs.DupeThreshold)
@@ -167,7 +165,7 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		var oq *store.OutboxQueued
 		if errors.As(reportErr, &oq) {
 			queueBrainOutbox(oq, config.GGDirOrEmpty())
-			fmt.Fprintln(cmd.ErrOrStderr(), "⚠ queued for vector index (Qdrant unreachable; will replay on recovery)")
+			warnBrainOutboxQueued(cmd.ErrOrStderr(), oq.Cause)
 			if isSandboxPermissionError(oq.Cause) {
 				fmt.Fprintln(cmd.ErrOrStderr(), "⚠ sandbox EPERM detected — outbox entry queued, but the agent should rerun outside sandbox to avoid drift")
 			}
@@ -205,5 +203,11 @@ func addDupeNote(ctx context.Context, d *deps, bugID, title string, vector []flo
 		Tags: []string{bugID, "dupe-of"},
 	}
 	_, err := d.store.AddNote(ctx, n, vector)
+	var oq *store.OutboxQueued
+	if errors.As(err, &oq) {
+		queueBrainOutbox(oq, config.GGDirOrEmpty())
+		warnBrainOutboxQueued(os.Stderr, oq.Cause)
+		return nil
+	}
 	return err
 }

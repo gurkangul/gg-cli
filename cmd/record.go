@@ -112,17 +112,17 @@ func runRecord(cmd *cobra.Command, args []string) error {
 		}
 		vector, err = d.embedder.Generate(ctx, embedText)
 		if err != nil {
-			return fmt.Errorf("generate embedding: %w", err)
-		}
-
-		dupKind := "decisions"
-		if stance == "reject" {
-			dupKind = "rejections"
-		}
-		// AC-4: skip promptIfDuplicate when Qdrant is down.
-		if promptIfDuplicate(ctx, d, dupKind, vector) {
-			fmt.Println("Aborted — nothing recorded.")
-			return nil
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ embedding unavailable — JSONL write will continue and semantic indexing will be queued: %v\n", err)
+		} else {
+			dupKind := "decisions"
+			if stance == "reject" {
+				dupKind = "rejections"
+			}
+			// AC-4: skip promptIfDuplicate when Qdrant is down or embedding failed.
+			if promptIfDuplicate(ctx, d, dupKind, vector) {
+				fmt.Println("Aborted — nothing recorded.")
+				return nil
+			}
 		}
 	} else {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)")
@@ -140,7 +140,7 @@ func runRecord(cmd *cobra.Command, args []string) error {
 			var oq *store.OutboxQueued
 			if errors.As(addErr, &oq) {
 				queueBrainOutbox(oq, config.GGDirOrEmpty())
-				fmt.Fprintln(cmd.ErrOrStderr(), "⚠ queued for vector index (Qdrant unreachable; will replay on recovery)")
+				warnBrainOutboxQueued(cmd.ErrOrStderr(), oq.Cause)
 				if isSandboxPermissionError(oq.Cause) {
 					fmt.Fprintln(cmd.ErrOrStderr(), "⚠ sandbox EPERM detected — outbox entry queued, but the agent should rerun outside sandbox to avoid drift")
 				}
@@ -173,7 +173,7 @@ func runRecord(cmd *cobra.Command, args []string) error {
 		var oq *store.OutboxQueued
 		if errors.As(addErr, &oq) {
 			queueBrainOutbox(oq, config.GGDirOrEmpty())
-			fmt.Fprintln(cmd.ErrOrStderr(), "⚠ queued for vector index (Qdrant unreachable; will replay on recovery)")
+			warnBrainOutboxQueued(cmd.ErrOrStderr(), oq.Cause)
 			if isSandboxPermissionError(oq.Cause) {
 				fmt.Fprintln(cmd.ErrOrStderr(), "⚠ sandbox EPERM detected — outbox entry queued, but the agent should rerun outside sandbox to avoid drift")
 			}

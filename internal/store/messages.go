@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gurkangul/gg-cli/internal/brain"
 	"github.com/qdrant/go-client/qdrant"
 )
 
@@ -35,7 +36,7 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 	if audience == "" {
 		audience = "all"
 	}
-	payload, err := qdrant.TryValueMap(map[string]any{
+	rawPayload := map[string]any{
 		"from_role":  m.FromRole,
 		"to_role":    m.ToRole,
 		"content":    m.Content,
@@ -43,7 +44,12 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 		"read":       false,
 		"task_id":    m.TaskID,
 		"created_at": m.CreatedAt,
-	})
+	}
+	if err := brain.Append(c.dataDir, "messages", m.ID, m.FromRole, rawPayload); err != nil {
+		return fmt.Errorf("brain jsonl write: %w", err)
+	}
+
+	payload, err := qdrant.TryValueMap(rawPayload)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
 	}
@@ -62,7 +68,10 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 			},
 		},
 	})
-	return err
+	if err != nil {
+		return &OutboxQueued{Kind: OutboxKindMessage, UUID: m.ID, Cause: err}
+	}
+	return nil
 }
 
 // GetInbox returns unread messages. When humanOnly is true, messages with

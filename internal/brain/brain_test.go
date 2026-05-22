@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -114,6 +115,62 @@ func TestSearchByText_EmptyQuery(t *testing.T) {
 	}
 	if len(results) != 3 {
 		t.Errorf("expected 3 results for empty query, got %d", len(results))
+	}
+}
+
+func TestSearchByText_TokenAndFieldScoring(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := brain.Append(dir, "decisions", "dec-qdrant", "agent", map[string]any{
+		"text":       "why qdrant reliability matters",
+		"reason":     "qdrant reliability and storage durability",
+		"tags":       []any{"qdrant", "reliability"},
+		"task_id":    "TASK-444",
+		"created_at": "2026-05-01T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("Append qdrant decision: %v", err)
+	}
+	if err := brain.Append(dir, "decisions", "dec-qdrant-weak", "agent", map[string]any{
+		"text":       "qdrant reliability note",
+		"reason":     "storage issue",
+		"tags":       []any{"qdrant"},
+		"created_at": "2026-05-02T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("Append weak decision: %v", err)
+	}
+
+	results, err := brain.SearchByText(dir, "decisions", "why qdrant")
+	if err != nil {
+		t.Fatalf("SearchByText why qdrant: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least one result for 'why qdrant'")
+	}
+	if results[0].UUID != "dec-qdrant" {
+		t.Fatalf("all-token/field-boosted decision should rank first, got %q", results[0].UUID)
+	}
+
+	if err := brain.Append(dir, "rejections", "rej-tr", "agent", map[string]any{
+		"approach":   "Use Redis for cache",
+		"reason":     "Redis neden reddedildi çünkü kalıcılık ve bakım maliyeti yüksekti",
+		"tags":       []any{"redis", "cache"},
+		"created_at": "2026-05-03T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("Append Turkish rejection: %v", err)
+	}
+
+	rejResults, err := brain.SearchByText(dir, "rejections", "redis neden reddedildi")
+	if err != nil {
+		t.Fatalf("SearchByText redis neden reddedildi: %v", err)
+	}
+	if len(rejResults) != 1 {
+		t.Fatalf("expected 1 Turkish rejection result, got %d", len(rejResults))
+	}
+	if rejResults[0].UUID != "rej-tr" {
+		t.Fatalf("unexpected rejection match: %q", rejResults[0].UUID)
+	}
+	if !strings.Contains(strings.ToLower(rejResults[0].Payload["reason"].(string)), "neden reddedildi") {
+		t.Fatalf("expected Turkish reason in payload, got %v", rejResults[0].Payload["reason"])
 	}
 }
 

@@ -216,7 +216,10 @@ func runContextForTask(cmd *cobra.Command, taskID string) error {
 	defer d.Close()
 
 	if d.qdrantDown {
-		return fmt.Errorf("qdrant unreachable — cannot fetch task context (no fallback for --for-task)")
+		return runContextForTaskJSONLFallback(cmd, taskID, "qdrant unreachable")
+	}
+	if d.qdrantSlow {
+		return runContextForTaskJSONLFallback(cmd, taskID, "qdrant health check timed out")
 	}
 
 	ctx, cancel := withTimeout(cmd.Context())
@@ -258,7 +261,7 @@ func runContextForTask(cmd *cobra.Command, taskID string) error {
 
 	vector, err := d.embedder.Generate(ctx, queryText)
 	if err != nil {
-		return fmt.Errorf("generate embedding: %w", err)
+		return runContextForTaskJSONLFallback(cmd, taskID, fmt.Sprintf("generate embedding: %v", err))
 	}
 
 	var bundle contextBundle
@@ -314,14 +317,25 @@ func runContextForTask(cmd *cobra.Command, taskID string) error {
 // renderForTaskCompact emits the --for-task bundle as one line per item.
 func renderForTaskCompact(w io.Writer, tb taskContextBundle, errs []string) {
 	a := tb.anchor
-	fmt.Fprintf(w, "for-task: %s [%s/%s] %s — %d deps %dD %dR\n\n",
+	extra := ""
+	if len(tb.bundle.notes) > 0 {
+		extra += fmt.Sprintf(" %dN", len(tb.bundle.notes))
+	}
+	if len(tb.messages) > 0 {
+		extra += fmt.Sprintf(" %dM", len(tb.messages))
+	}
+	fmt.Fprintf(w, "for-task: %s [%s/%s] %s — %d deps %dD %dR%s\n\n",
 		a.ID, a.Status, a.Priority, compactTrim(a.Title, compactLineWidth),
-		len(tb.deps), len(tb.bundle.decisions), len(tb.bundle.rejections))
+		len(tb.deps), len(tb.bundle.decisions), len(tb.bundle.rejections), extra)
 	for _, dep := range tb.deps {
 		fmt.Fprintln(w, compactTaskLine(dep))
 	}
 	writeCompactDecisions(w, tb.bundle.decisions)
 	writeCompactRejections(w, tb.bundle.rejections)
+	writeCompactNotes(w, tb.bundle.notes)
+	for _, m := range tb.messages {
+		fmt.Fprintf(w, "M  %s [%s→%s] %s\n", shortDate(m.CreatedAt), m.FromRole, m.ToRole, compactTrim(m.Content, compactLineWidth))
+	}
 	if len(errs) > 0 {
 		fmt.Fprintf(w, "\n! %s\n", strings.Join(errs, "; "))
 	}

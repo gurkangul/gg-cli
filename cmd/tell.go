@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
 
+	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -115,7 +117,7 @@ func runTell(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no valid targets specified")
 	}
 
-	d, err := loadDeps(false)
+	d, err := loadDepsOfflineSafe(false)
 	if err != nil {
 		return err
 	}
@@ -133,6 +135,12 @@ func runTell(cmd *cobra.Command, args []string) error {
 			TaskID:   taskRef,
 		}
 		if err := d.store.SendMessage(ctx, m); err != nil {
+			var oq *store.OutboxQueued
+			if errors.As(err, &oq) {
+				queueBrainOutbox(oq, config.GGDirOrEmpty())
+				warnBrainOutboxQueued(cmd.ErrOrStderr(), oq.Cause)
+				continue
+			}
 			return fmt.Errorf("send message to %s: %w", target, err)
 		}
 	}

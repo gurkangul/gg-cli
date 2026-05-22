@@ -35,9 +35,10 @@ type contextPayload struct {
 
 // taskContextBundle holds the result of a --for-task query.
 type taskContextBundle struct {
-	anchor store.Task
-	deps   []store.Task // tasks listed in anchor.DependsOn
-	bundle contextBundle
+	anchor   store.Task
+	deps     []store.Task // tasks listed in anchor.DependsOn
+	bundle   contextBundle
+	messages []store.Message
 }
 
 // collectBundleErrors returns a slice of warning strings for any non-nil errors in bundle.
