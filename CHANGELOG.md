@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.20] - 2026-05-22
+
+### Fixed
+
+- Regenerate CLI docs with deterministic trailing newlines so the docs drift CI gate stays clean.
+- Add focused task-claim helper coverage to keep `internal/store` above the required coverage threshold.
+
 ## [0.3.19] - 2026-05-22
 
 ### Added
@@ -320,7 +327,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.19...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.20...HEAD
+[0.3.20]: https://github.com/gurkangul/gg-cli/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/gurkangul/gg-cli/compare/v0.3.18...v0.3.19
 [0.3.18]: https://github.com/gurkangul/gg-cli/compare/v0.3.17...v0.3.18
 [0.3.17]: https://github.com/gurkangul/gg-cli/compare/v0.3.16...v0.3.17

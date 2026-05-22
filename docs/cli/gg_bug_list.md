@@ -23,4 +23,3 @@ gg bug list [flags]
 ### SEE ALSO
 
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
-

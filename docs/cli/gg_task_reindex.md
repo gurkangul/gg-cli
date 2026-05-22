@@ -34,4 +34,3 @@ gg task reindex [flags]
 ### SEE ALSO
 
 * [gg task](gg_task.md)	 - Manage tasks
-

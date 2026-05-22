@@ -28,4 +28,3 @@ was initialized before the registry existed.
 * [gg system brain](gg_system_brain.md)	 - Cross-project brain health operations
 * [gg system register](gg_system_register.md)	 - Add a project to the registry (or prune dead entries)
 * [gg system sync](gg_system_sync.md)	 - Propagate latest gg artifacts (contract + hooks) to every registered project
-

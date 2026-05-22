@@ -37,4 +37,3 @@ Set GG_NO_AUDIT=1 to suppress both the track and report hooks.
 * [gg audit report](gg_audit_report.md)	 - Emit audit warning at session end if mutations are untracked (Stop hook)
 * [gg audit track](gg_audit_track.md)	 - Record one file mutation in the session audit log (PostToolUse hook)
 * [gg audit trends](gg_audit_trends.md)	 - Quality-signal metrics: bug reopen rate over a lookback window
-

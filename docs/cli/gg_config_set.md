@@ -33,4 +33,3 @@ gg config set <key> <value> [flags]
 ### SEE ALSO
 
 * [gg config](gg_config.md)	 - Inspect or modify project configuration
-

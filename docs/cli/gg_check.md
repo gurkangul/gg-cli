@@ -44,4 +44,3 @@ gg check [flags]
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
-

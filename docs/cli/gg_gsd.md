@@ -18,4 +18,3 @@ GSD integration utilities
 
 * [gg](gg.md)	 - Shared brain for AI agents
 * [gg gsd audit](gg_gsd_audit.md)	 - Audit GSD scratchpad items against gg durable work
-

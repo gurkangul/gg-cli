@@ -25,4 +25,3 @@ gg bug attach-repro BUG-ID <repro-path> [flags]
 ### SEE ALSO
 
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
-

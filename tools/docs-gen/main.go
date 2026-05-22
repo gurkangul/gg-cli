@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/gurkangul/gg-cli/cmd"
 	"github.com/spf13/cobra/doc"
@@ -55,6 +56,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: generate docs: %v\n", err)
 		os.Exit(1)
 	}
+	if err := normalizeMarkdownEOF(outDir); err != nil {
+		fmt.Fprintf(os.Stderr, "error: normalize docs: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Count generated files for a friendly confirmation message.
 	entries, _ := os.ReadDir(outDir)
@@ -66,4 +71,29 @@ func main() {
 	}
 
 	fmt.Printf("Generated %d markdown files in %s\n", mdCount, outDir)
+}
+
+func normalizeMarkdownEOF(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		normalized := strings.TrimRight(string(data), "\n") + "\n"
+		if normalized == string(data) {
+			continue
+		}
+		if err := os.WriteFile(path, []byte(normalized), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }

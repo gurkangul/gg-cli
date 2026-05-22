@@ -25,4 +25,3 @@ Subcommands:
 
 * [gg](gg.md)	 - Shared brain for AI agents
 * [gg config set](gg_config_set.md)	 - Set a config field
-

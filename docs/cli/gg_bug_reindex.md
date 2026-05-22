@@ -34,4 +34,3 @@ gg bug reindex [flags]
 ### SEE ALSO
 
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
-

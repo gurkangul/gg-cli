@@ -21,4 +21,3 @@ gg brain status [flags]
 ### SEE ALSO
 
 * [gg brain](gg_brain.md)	 - Portable brain snapshot (export / import / status)
-

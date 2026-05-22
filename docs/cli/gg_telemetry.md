@@ -32,4 +32,3 @@ Disable permanently:
 * [gg](gg.md)	 - Shared brain for AI agents
 * [gg telemetry compact-missed](gg_telemetry_compact-missed.md)	 - Show per-verb missed compact savings (last 7 days)
 * [gg telemetry summary](gg_telemetry_summary.md)	 - Show command usage summary for the last 7 days
-

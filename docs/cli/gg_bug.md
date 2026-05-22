@@ -35,4 +35,3 @@ searchable by description. Each bug moves through a lifecycle:
 * [gg bug start](gg_bug_start.md)	 - Move a bug to 'fixing' status
 * [gg bug triage](gg_bug_triage.md)	 - Auto context bundle for fixing a bug
 * [gg bug wontfix](gg_bug_wontfix.md)	 - Close a bug as won't-fix
-

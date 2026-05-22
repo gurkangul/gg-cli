@@ -26,4 +26,3 @@ portable brain snapshots, drift, and CodeGraph freshness.
 
 * [gg system](gg_system.md)	 - Host-level gg operations (cross-project registry + sync)
 * [gg system brain status](gg_system_brain_status.md)	 - Show per-project brain snapshot/backend/CodeGraph health
-

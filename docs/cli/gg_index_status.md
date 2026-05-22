@@ -21,4 +21,3 @@ gg index status [flags]
 ### SEE ALSO
 
 * [gg index](gg_index.md)	 - Index the codebase into the Memgraph knowledge graph
-

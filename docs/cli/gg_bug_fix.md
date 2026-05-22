@@ -27,4 +27,3 @@ gg bug fix BUG-ID "summary" [flags]
 ### SEE ALSO
 
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
-

@@ -26,4 +26,3 @@ gg trace clear [flags]
 ### SEE ALSO
 
 * [gg trace](gg_trace.md)	 - Inspect GG_TRACE span data
-

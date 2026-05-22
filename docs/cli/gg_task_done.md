@@ -53,4 +53,3 @@ gg task done TASK-ID "summary" [flags]
 ### SEE ALSO
 
 * [gg task](gg_task.md)	 - Manage tasks
-

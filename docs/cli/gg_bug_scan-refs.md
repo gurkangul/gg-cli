@@ -34,4 +34,3 @@ gg bug scan-refs "text" [flags]
 ### SEE ALSO
 
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
-

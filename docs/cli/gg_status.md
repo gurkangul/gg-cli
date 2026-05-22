@@ -31,4 +31,3 @@ gg status [flags]
 
 * [gg](gg.md)	 - Shared brain for AI agents
 * [gg status render](gg_status_render.md)	 - Generate STATUS.md from gg brain state
-

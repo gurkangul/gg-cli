@@ -40,4 +40,3 @@ gg update [flags]
 
 * [gg](gg.md)	 - Shared brain for AI agents
 * [gg update check](gg_update_check.md)	 - Check whether a newer public gg release is available
-

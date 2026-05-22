@@ -31,4 +31,3 @@ gg audit file-size [flags]
 ### SEE ALSO
 
 * [gg audit](gg_audit.md)	 - Session mutation audit (called by PostToolUse and Stop hooks)
-

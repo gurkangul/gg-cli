@@ -29,4 +29,3 @@ gg telemetry compact-missed [flags]
 ### SEE ALSO
 
 * [gg telemetry](gg_telemetry.md)	 - Manage local usage telemetry
-

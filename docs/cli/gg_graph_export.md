@@ -23,4 +23,3 @@ gg graph export [flags]
 ### SEE ALSO
 
 * [gg graph](gg_graph.md)	 - Work with the local code graph
-

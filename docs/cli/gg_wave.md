@@ -33,4 +33,3 @@ They live in Memgraph only — no Qdrant collection is created.
 * [gg wave list](gg_wave_list.md)	 - List waves
 * [gg wave migrate-tags](gg_wave_migrate-tags.md)	 - Dry-run tag-to-wave migration (--apply to execute)
 * [gg wave status](gg_wave_status.md)	 - Show wave details and assigned tasks
-

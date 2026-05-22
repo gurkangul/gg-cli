@@ -28,4 +28,3 @@ gg wave migrate-tags [flags]
 ### SEE ALSO
 
 * [gg wave](gg_wave.md)	 - Manage wave/milestone calendar buckets (Memgraph only)
-

@@ -33,4 +33,3 @@ gg status render [flags]
 ### SEE ALSO
 
 * [gg status](gg_status.md)	 - Orient yourself — show open tasks, pending messages, and recent decisions
-

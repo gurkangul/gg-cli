@@ -32,4 +32,3 @@ gg bug reopen BUG-ID "reason" [flags]
 ### SEE ALSO
 
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
-

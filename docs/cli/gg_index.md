@@ -38,4 +38,3 @@ gg index [--changed] [--lang go|python|typescript] [flags]
 
 * [gg](gg.md)	 - Shared brain for AI agents
 * [gg index status](gg_index_status.md)	 - Show code graph freshness and quality
-

@@ -41,4 +41,3 @@ gg task create "title" [flags]
 ### SEE ALSO
 
 * [gg task](gg_task.md)	 - Manage tasks
-

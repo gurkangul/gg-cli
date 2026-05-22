@@ -27,4 +27,3 @@ Each operation is appended as a JSON line to .gg/traces/YYYY-MM-DD.jsonl.
 * [gg trace clear](gg_trace_clear.md)	 - Delete old trace files
 * [gg trace show](gg_trace_show.md)	 - Print recorded spans
 * [gg trace summary](gg_trace_summary.md)	 - Per-operation latency breakdown (p50/p95/p99)
-

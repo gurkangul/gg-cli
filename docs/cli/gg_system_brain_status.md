@@ -21,4 +21,3 @@ gg system brain status [flags]
 ### SEE ALSO
 
 * [gg system brain](gg_system_brain.md)	 - Cross-project brain health operations
-

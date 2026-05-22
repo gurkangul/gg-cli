@@ -25,4 +25,3 @@ Subcommands:
 
 * [gg](gg.md)	 - Shared brain for AI agents
 * [gg metrics dogfood](gg_metrics_dogfood.md)	 - Per-project velocity and rework rate for dogfood sessions
-

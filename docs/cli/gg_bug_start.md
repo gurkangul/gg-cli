@@ -21,4 +21,3 @@ gg bug start BUG-ID [flags]
 ### SEE ALSO
 
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
-

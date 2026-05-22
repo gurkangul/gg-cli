@@ -38,4 +38,3 @@ gg context [topic] [flags]
 
 * [gg](gg.md)	 - Shared brain for AI agents
 * [gg context artifacts](gg_context_artifacts.md)	 - Manage project-local context artifacts
-

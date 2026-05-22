@@ -29,4 +29,3 @@ gg bug report "title" [flags]
 ### SEE ALSO
 
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
-

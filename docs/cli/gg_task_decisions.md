@@ -31,4 +31,3 @@ gg task decisions TASK-ID [flags]
 ### SEE ALSO
 
 * [gg task](gg_task.md)	 - Manage tasks
-

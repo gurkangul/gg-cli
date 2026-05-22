@@ -18,4 +18,3 @@ Work with the local code graph
 
 * [gg](gg.md)	 - Shared brain for AI agents
 * [gg graph export](gg_graph_export.md)	 - Export a self-contained offline graph visualization
-

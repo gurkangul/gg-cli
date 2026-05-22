@@ -38,4 +38,3 @@ gg metrics dogfood [flags]
 ### SEE ALSO
 
 * [gg metrics](gg_metrics.md)	 - Project health metrics
-

@@ -38,4 +38,3 @@ gg task ready-for-live TASK-ID "verify plan" [flags]
 ### SEE ALSO
 
 * [gg task](gg_task.md)	 - Manage tasks
-

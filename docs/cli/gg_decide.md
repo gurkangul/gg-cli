@@ -36,4 +36,3 @@ gg decide "decision text" [flags]
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
-

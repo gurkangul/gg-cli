@@ -21,4 +21,3 @@ gg context artifacts index [flags]
 ### SEE ALSO
 
 * [gg context artifacts](gg_context_artifacts.md)	 - Manage project-local context artifacts
-

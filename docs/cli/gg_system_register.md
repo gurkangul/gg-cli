@@ -39,4 +39,3 @@ gg system register [flags]
 ### SEE ALSO
 
 * [gg system](gg_system.md)	 - Host-level gg operations (cross-project registry + sync)
-

@@ -28,4 +28,3 @@ gg bug run-repros [flags]
 ### SEE ALSO
 
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
-

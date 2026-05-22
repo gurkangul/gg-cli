@@ -49,4 +49,3 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg verify](gg_verify.md)	 - Write-boundary verification for a source file
 * [gg watch](gg_watch.md)	 - Tail inbox messages and event stream
 * [gg wave](gg_wave.md)	 - Manage wave/milestone calendar buckets (Memgraph only)
-

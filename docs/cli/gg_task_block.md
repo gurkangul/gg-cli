@@ -30,4 +30,3 @@ gg task block TASK-ID "reason" [flags]
 ### SEE ALSO
 
 * [gg task](gg_task.md)	 - Manage tasks
-
