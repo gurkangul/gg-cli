@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.22] - 2026-05-24
+
+### Fixed
+
+- `gg system sync` now self-heals missing per-project tracker collections before refreshing contracts/hooks, while preserving non-destructive stale registry reporting and cancellation semantics.
+- `gg system brain status` now describes its role separately from the tracker self-heal performed by `gg system sync`.
+
 ## [0.3.21] - 2026-05-22
 
 ### Added
@@ -337,7 +344,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.21...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.22...HEAD
+[0.3.22]: https://github.com/gurkangul/gg-cli/compare/v0.3.21...v0.3.22
 [0.3.21]: https://github.com/gurkangul/gg-cli/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/gurkangul/gg-cli/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/gurkangul/gg-cli/compare/v0.3.18...v0.3.19
