@@ -1,37 +1,65 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/embedding"
+	"github.com/gurkangul/gg-cli/internal/store"
 )
 
 var systemSyncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Propagate latest gg artifacts (contract + hooks) to every registered project",
-	Long: `Iterates ~/.gg/projects.json and runs doctor --fix in each project so
-contract and hook updates baked into a new gg binary reach every host-local
-project without the user cd'ing to each repo.
+	Short: "Propagate latest gg artifacts and self-heal tracker collections",
+	Long: `Iterates ~/.gg/projects.json and runs tracker self-heal plus doctor --check-contract --fix
+in each project so contract, hook, and tracker-collection updates baked into a
+new gg binary reach every host-local project without the user cd'ing to each repo.
 
 Stages per project:
-  1. gg doctor --check-contract --fix      (contract block drift repair)
-  2. gg doctor --install-agent-hooks       (idempotent agent-hook refresh)
-  3. gg doctor --install-task-hooks        (idempotent task-hook refresh)
+  1. tracker self-heal                      (ensure decision/task/message/etc collections)
+  2. gg doctor --check-contract --fix      (contract block drift repair)
+  3. gg doctor --install-agent-hooks       (idempotent agent-hook refresh)
+  4. gg doctor --install-task-hooks        (idempotent task-hook refresh)
 
 Projects whose root directory no longer exists are skipped with a
-warning — prune them with 'gg system register --prune' after verifying.`,
+warning — prune them with 'gg system register --prune' after verifying.
+Projects with missing .gg/config.yaml are also skipped, as they were likely
+partially removed or migrated away.
+`,
 	RunE: runSystemSync,
+}
+
+type systemSyncQdrant interface {
+	HealthCheck(ctx context.Context) error
+	CollectionStatus(ctx context.Context) (present, missing []string, err error)
+	EnsureCollections(ctx context.Context, vectorSize uint64) error
+	Close() error
 }
 
 var (
 	systemSyncDryRun             bool
 	systemSyncContractOnly       bool
 	systemSyncContractForceReset bool
+
+	systemSyncRunCommand = runGGIn
+
+	systemSyncNewQdrantClient = func(cfg *config.Config, ggDir string) (systemSyncQdrant, error) {
+		return store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	}
+
+	systemSyncTrackerHealthTimeout = 2 * time.Second
+	systemSyncTrackerStatusTimeout = 2 * time.Second
 )
 
 func init() {
@@ -66,29 +94,48 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 
 	var ok, skipped, failed int
 	for _, p := range projects {
+		if err := cmd.Context().Err(); err != nil {
+			return err
+		}
 		fmt.Printf("• %-20s  %s\n", p.Name, p.Root)
 
-		if _, statErr := os.Stat(filepath.Join(p.Root, ".gg", "config.yaml")); statErr != nil {
+		if _, statErr := os.Stat(p.Root); statErr != nil {
+			fmt.Println("  ✗ skipped — project root missing (run `gg system register --prune` to clean up)")
+			skipped++
+			continue
+		}
+
+		configPath := filepath.Join(p.Root, ".gg", "config.yaml")
+		if _, statErr := os.Stat(configPath); statErr != nil {
 			fmt.Println("  ✗ skipped — .gg/config.yaml missing (run `gg system register --prune` to clean up)")
 			skipped++
 			continue
 		}
 
-		if systemSyncDryRun {
-			contractCmd := "gg doctor --check-contract --fix"
-			if systemSyncContractForceReset {
-				contractCmd += " --force-reset"
-			}
-			fmt.Printf("  (dry-run) would run: %s\n", contractCmd)
-			if !systemSyncContractOnly {
-				fmt.Println("  (dry-run) would run: gg doctor --install-agent-hooks")
-				fmt.Println("  (dry-run) would run: gg doctor --install-task-hooks")
-				if drifted, err := countHookTemplateDriftInProject(p.Root); err == nil {
-					fmt.Printf("  (dry-run) would refresh %d drifted hook(s)\n", drifted)
-				} else {
-					fmt.Printf("  (dry-run) hook template drift check skipped: %v\n", err)
+		cfg, cfgErr := config.LoadFromGGDir(filepath.Join(p.Root, config.DirName))
+		if cfgErr != nil {
+			fmt.Printf("  ✗ invalid config at %s: %v\n", configPath, cfgErr)
+			failed++
+			continue
+		}
+
+		if !systemSyncDryRun {
+			if err := runSystemSyncTracker(cmd.Context(), p.Root, cfg); err != nil {
+				if ctxErr := cmd.Context().Err(); ctxErr != nil {
+					return ctxErr
 				}
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+				fmt.Printf("  ✗ tracker self-heal failed: %v\n", err)
+				failed++
+				continue
 			}
+			if err := cmd.Context().Err(); err != nil {
+				return err
+			}
+		} else {
+			runSystemSyncDryRunStages(p.Root)
 			ok++
 			continue
 		}
@@ -97,18 +144,18 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 		if systemSyncContractForceReset {
 			contractArgs = append(contractArgs, "--force-reset")
 		}
-		if runErr := runGGIn(self, p.Root, contractArgs...); runErr != nil {
+		if runErr := systemSyncRunCommand(self, p.Root, contractArgs...); runErr != nil {
 			fmt.Printf("  ✗ contract sync failed: %v\n", runErr)
 			failed++
 			continue
 		}
 		if !systemSyncContractOnly {
-			if runErr := runGGIn(self, p.Root, "doctor", "--install-agent-hooks"); runErr != nil {
+			if runErr := systemSyncRunCommand(self, p.Root, "doctor", "--install-agent-hooks"); runErr != nil {
 				fmt.Printf("  ✗ agent-hook refresh failed: %v\n", runErr)
 				failed++
 				continue
 			}
-			if runErr := runGGIn(self, p.Root, "doctor", "--install-task-hooks"); runErr != nil {
+			if runErr := systemSyncRunCommand(self, p.Root, "doctor", "--install-task-hooks"); runErr != nil {
 				fmt.Printf("  ✗ task-hook refresh failed: %v\n", runErr)
 				failed++
 				continue
@@ -131,6 +178,192 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("%d project(s) failed to sync", failed)
 	}
 	return nil
+}
+
+func runSystemSyncTracker(ctx context.Context, projectRoot string, cfg *config.Config) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	ggDir := filepath.Join(projectRoot, config.DirName)
+	vectorSize, err := systemSyncVectorSize(ggDir)
+	if err != nil {
+		return err
+	}
+	client, err := systemSyncNewQdrantClient(cfg, ggDir)
+	if err != nil {
+		return fmt.Errorf("create qdrant client: %w", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	healthCtx, cancel := context.WithTimeout(ctx, systemSyncTrackerHealthTimeout)
+	err = client.HealthCheck(healthCtx)
+	cancel()
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+		fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+		return nil
+	}
+
+	statusCtx, cancel := context.WithTimeout(ctx, systemSyncTrackerStatusTimeout)
+	present, missing, err := client.CollectionStatus(statusCtx)
+	cancel()
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if systemSyncQdrantUnavailable(err) {
+			fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+			return nil
+		}
+		return fmt.Errorf("check tracker collections: %w", err)
+	}
+	if len(missing) == 0 {
+		fmt.Printf("  ✓ tracker collections present (%d)\n", len(present))
+		return nil
+	}
+
+	statusCtx, cancel = context.WithTimeout(ctx, systemSyncTrackerStatusTimeout)
+	err = client.EnsureCollections(statusCtx, vectorSize)
+	cancel()
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if systemSyncQdrantUnavailable(err) {
+			fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+			return nil
+		}
+		if systemSyncAlreadyExists(err) {
+			return runSystemSyncRetryAfterRace(ctx, client, vectorSize)
+		}
+		return fmt.Errorf("ensure tracker collections: %w", err)
+	}
+	fmt.Printf("  ✓ tracker collections ensured: %d missing -> created\n", len(missing))
+	return nil
+}
+
+func systemSyncVectorSize(ggDir string) (uint64, error) {
+	meta, err := embedding.ReadMeta(ggDir)
+	if err != nil {
+		return 0, err
+	}
+	if meta == nil || meta.Dim <= 0 {
+		return uint64(store.VectorSize), nil
+	}
+	return uint64(meta.Dim), nil
+}
+
+func runSystemSyncRetryAfterRace(ctx context.Context, client systemSyncQdrant, vectorSize uint64) error {
+	statusCtx, cancel := context.WithTimeout(ctx, systemSyncTrackerStatusTimeout)
+	_, missing, err := client.CollectionStatus(statusCtx)
+	cancel()
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if systemSyncQdrantUnavailable(err) {
+			fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+			return nil
+		}
+		return fmt.Errorf("verify tracker collections after create race: %w", err)
+	}
+	if len(missing) == 0 {
+		fmt.Println("  ✓ tracker collections ensured by concurrent sync")
+		return nil
+	}
+
+	statusCtx, cancel = context.WithTimeout(ctx, systemSyncTrackerStatusTimeout)
+	err = client.EnsureCollections(statusCtx, vectorSize)
+	cancel()
+	if err == nil {
+		fmt.Printf("  ✓ tracker collections ensured after create race: %d missing -> created\n", len(missing))
+		return nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if systemSyncQdrantUnavailable(err) {
+		fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+		return nil
+	}
+	if systemSyncAlreadyExists(err) {
+		return runSystemSyncFinalRaceCheck(ctx, client)
+	}
+	return fmt.Errorf("ensure tracker collections after create race: %w", err)
+}
+
+func runSystemSyncFinalRaceCheck(ctx context.Context, client systemSyncQdrant) error {
+	statusCtx, cancel := context.WithTimeout(ctx, systemSyncTrackerStatusTimeout)
+	_, missing, err := client.CollectionStatus(statusCtx)
+	cancel()
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if systemSyncQdrantUnavailable(err) {
+			fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+			return nil
+		}
+		return fmt.Errorf("verify tracker collections after repeated create race: %w", err)
+	}
+	if len(missing) == 0 {
+		fmt.Println("  ✓ tracker collections ensured by concurrent sync")
+		return nil
+	}
+	return fmt.Errorf("ensure tracker collections raced; still missing %d collection(s)", len(missing))
+}
+
+func systemSyncQdrantUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	code := status.Code(err)
+	if code == codes.Unavailable || code == codes.DeadlineExceeded {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "deadline exceeded") ||
+		strings.Contains(msg, "unavailable")
+}
+
+func systemSyncAlreadyExists(err error) bool {
+	if err == nil {
+		return false
+	}
+	if status.Code(err) == codes.AlreadyExists {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "already exists")
+}
+
+func runSystemSyncDryRunStages(root string) {
+	fmt.Println("  (dry-run) would check tracker collections (collection status + ensure)")
+
+	contractCmd := "gg doctor --check-contract --fix"
+	if systemSyncContractForceReset {
+		contractCmd += " --force-reset"
+	}
+	fmt.Printf("  (dry-run) would run: %s\n", contractCmd)
+
+	if !systemSyncContractOnly {
+		fmt.Println("  (dry-run) would run: gg doctor --install-agent-hooks")
+		fmt.Println("  (dry-run) would run: gg doctor --install-task-hooks")
+		if drifted, err := countHookTemplateDriftInProject(root); err == nil {
+			fmt.Printf("  (dry-run) would refresh %d drifted hook(s)\n", drifted)
+		} else {
+			fmt.Printf("  (dry-run) hook template drift check skipped: %v\n", err)
+		}
+	}
 }
 
 // runGGIn executes the gg binary in the given project directory, streaming

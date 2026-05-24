@@ -6,9 +6,10 @@ Cross-project brain health operations
 
 Inspect brain readiness across every project in ~/.gg/projects.json.
 
-This is intentionally separate from 'gg system sync': sync propagates agent
-contracts and hooks, while brain status verifies project_id, backend reachability,
-portable brain snapshots, drift, and CodeGraph freshness.
+This is intentionally separate from 'gg system sync': sync also performs
+contract/hooks propagation plus tracker self-heal, while brain status verifies
+project_id, backend reachability, portable brain snapshots, drift, and
+CodeGraph freshness.
 
 ### Options
 

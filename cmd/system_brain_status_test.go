@@ -26,7 +26,7 @@ func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing
 	}
 	for _, want := range []string{
 		"Brain health across 1 registered project(s)",
-		"Note: gg system sync refreshes contract/hooks only; brain health is reported here.",
+		"Note: gg system sync refreshes contracts/hooks plus tracker self-heal; brain status reports snapshot drift, portability checks, and CodeGraph health.",
 		"proj-a",
 		"registry=ok",
 		"project_id=ok",

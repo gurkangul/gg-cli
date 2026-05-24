@@ -17,16 +17,17 @@ import (
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
-const systemBrainHealthNote = "gg system sync refreshes contract/hooks only; brain health is reported here."
+const systemBrainHealthNote = "gg system sync refreshes contracts/hooks plus tracker self-heal; brain status reports snapshot drift, portability checks, and CodeGraph health."
 
 var systemBrainCmd = &cobra.Command{
 	Use:   "brain",
 	Short: "Cross-project brain health operations",
 	Long: `Inspect brain readiness across every project in ~/.gg/projects.json.
 
-This is intentionally separate from 'gg system sync': sync propagates agent
-contracts and hooks, while brain status verifies project_id, backend reachability,
-portable brain snapshots, drift, and CodeGraph freshness.`,
+This is intentionally separate from 'gg system sync': sync also performs
+contract/hooks propagation plus tracker self-heal, while brain status verifies
+project_id, backend reachability, portable brain snapshots, drift, and
+CodeGraph freshness.`,
 }
 
 var systemBrainStatusCmd = &cobra.Command{
