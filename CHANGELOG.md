@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.23] - 2026-05-26
+
+### Added
+
+- `gg context --compact` without a topic now emits a compact project-level onboarding bundle for fresh agent sessions.
+- `gg task ready-for-live` can update the stored verifier plan on already-ready tasks, including via `--plan`.
+
+### Changed
+
+- CodeGraph freshness now explicitly excludes dependency lockfile-only churn such as `go.sum`, npm/yarn/pnpm lockfiles, and Python lockfiles.
+- Reviewer packets and reconciliation output now surface clearer task lifecycle drift details.
+
+### Fixed
+
+- Impact attestation now checks the active task diff first and only falls back to HEAD trailers when HEAD references the exact task being closed.
+
 ## [0.3.22] - 2026-05-24
 
 ### Fixed
@@ -344,7 +360,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copylocks vet warning in flock implementation
 - `elementId()` not supported in Memgraph 3.0 — replaced with `toString(id(n))`
 
-[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.22...HEAD
+[Unreleased]: https://github.com/gurkangul/gg-cli/compare/v0.3.23...HEAD
+[0.3.23]: https://github.com/gurkangul/gg-cli/compare/v0.3.22...v0.3.23
 [0.3.22]: https://github.com/gurkangul/gg-cli/compare/v0.3.21...v0.3.22
 [0.3.21]: https://github.com/gurkangul/gg-cli/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/gurkangul/gg-cli/compare/v0.3.19...v0.3.20
