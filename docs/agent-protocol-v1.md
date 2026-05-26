@@ -37,6 +37,9 @@ Standard terms:
 export GG_AGENT=omo-slim
 export GG_ROLE=implementer
 gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
+gg inbox --role "$GG_ROLE" --peek
+gg task list --ready --compact
+gg context --compact
 ```
 
 Rules:
@@ -44,7 +47,7 @@ Rules:
 - `GG_AGENT` / `--agent` must identify the actual runtime doing the command. Do not leave a stale value from another agent.
 - If two agents have the same role, keep `GG_ROLE` the same but make `GG_AGENT` unique, for example `codex-1` and `codex-2`.
 - `gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"` is a briefing and validation command, not a shell environment mutator. Export variables yourself for multi-command shells, or pass explicit flags on later commands.
-- Minimal Omo Slim bootstrap text: "You are working in a gg-cli managed project. Use gg-cli as the shared project brain. Start with: `gg session-start --agent omo-slim --role implementer`. Then read inbox, list ready tasks, claim one task, hydrate it, load context, work, test, mark ready-for-live. Do not bypass gg-cli task ownership."
+- Minimal Omo Slim bootstrap text: "You are working in a gg-cli managed project. Use gg-cli as the shared project brain. Start with: `gg session-start --agent omo-slim --role implementer`, `gg inbox --role implementer --peek`, `gg task list --ready --compact`, and `gg context --compact`. Then claim one task, hydrate it, load task context, run impacts, work, test, mark ready-for-live. Do not bypass gg-cli task ownership."
 - If `gg session-start` is unavailable in an older installed binary, use the fallback:
 
 ```bash
@@ -88,7 +91,7 @@ Guidelines:
 - Use a role target such as `reviewer` for action-required handoff.
 - Always include `--task TASK-ID` when the message is about a task.
 - If an inbox message assigns a runnable implementation task, claim it with `gg task start ...`.
-- If an inbox message assigns a `ready_for_live` review task and your role is reviewer/verifier, hydrate and review it; `gg task start` is not supported from `ready_for_live`.
+- If an inbox message assigns a `ready_for_live` review task and your role is reviewer/verifier, hydrate with `gg task get TASK-ID --review` and review it; `gg task start` is not supported from `ready_for_live`.
 - If an inbox message assigns work you will not take, reply with `gg tell <sender> "deferring because ..." --task TASK-ID`; do not silently skip.
 
 ## 3. Select and claim a task
@@ -135,6 +138,7 @@ Use compact scans first, then hydrate full bodies only when needed:
 ```bash
 gg search "topic keywords" --compact
 gg context "topic keywords" --compact
+gg context --compact                 # project-level onboarding bundle
 ```
 
 Before editing any file, run impact for every intended path:
@@ -197,13 +201,14 @@ Notes:
 Use `ready-for-live` when local implementation and local verification are complete, but an independent reviewer/verifier still needs to inspect and/or run live-shaped checks.
 
 ```bash
-gg task ready-for-live TASK-123 "Reviewer: run diff review, tests, and live smoke for <specific behavior>" --from "$GG_ROLE"
+gg task ready-for-live TASK-123 --plan "Reviewer: run diff review, tests, and live smoke for <specific behavior>" --from "$GG_ROLE"
 gg tell reviewer "TASK-123 ready for review: <short summary>" --from "$GG_ROLE" --task TASK-123
 ```
 
 Rules:
 
 - Implementer roles may mark ready-for-live.
+- If the verifier plan needs correction while the task is already `ready_for_live`, rerun `gg task ready-for-live TASK-123 --plan "<corrected plan>" --from "$GG_ROLE"`; the state stays `ready_for_live` and the plan is updated.
 - Implementer roles must not call `gg task done` in projects that enforce reviewer/verifier separation.
 - Do not release after ready-for-live in the current CLI. The owner field remains useful audit metadata.
 - If you discover more work after ready-for-live, tell the reviewer and record the issue. Do not self-close.
@@ -222,7 +227,7 @@ gg inbox --role "$GG_ROLE" --peek
 Reviewer checklist:
 
 ```bash
-gg task get TASK-123
+gg task get TASK-123 --review
 gg context --for-task TASK-123
 git diff --stat
 git diff --check
@@ -297,6 +302,7 @@ gg inbox --role "$GG_ROLE" --peek
 gg task list --ready --compact
 gg task start TASK-123 --owner "$GG_AGENT" --lease 30m
 gg task get TASK-123
+gg context --compact
 gg context --for-task TASK-123
 gg impact path/to/changed-file.go --compact
 # work
@@ -304,7 +310,7 @@ git diff --check
 go test ./... -count=1 -race -timeout=120s
 gg doctor
 gg reconcile
-gg task ready-for-live TASK-123 "Reviewer: run diff review, tests, and live smoke." --from "$GG_ROLE"
+gg task ready-for-live TASK-123 --plan "Reviewer: run diff review, tests, and live smoke." --from "$GG_ROLE"
 gg tell reviewer "TASK-123 ready for review" --from "$GG_ROLE" --task TASK-123
 ```
 
@@ -316,7 +322,7 @@ export GG_ROLE=reviewer
 
 gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 gg inbox --role "$GG_ROLE" --peek
-gg task get TASK-123
+gg task get TASK-123 --review
 gg context --for-task TASK-123
 # review diff + run verification
 gg task review TASK-123 --approve --by "$GG_ROLE" --notes "Verified."

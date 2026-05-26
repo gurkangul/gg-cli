@@ -96,6 +96,12 @@ and `gg index status`) use the same notice contract and suggest
 `gg doctor --fix-index` when repair is needed. `gg index --watch` / `gg watch --index`
 are optional foreground active modes, not daemons.
 
+Freshness is based on source files and selected module manifests, not dependency
+lockfile churn. Go `go.sum`, npm/pnpm/yarn lockfiles, Poetry `poetry.lock`,
+`uv.lock`, and similar lockfiles do not make CodeGraph stale by themselves;
+run `gg doctor --fix-index` manually after dependency work if you need a fresh
+graph projection.
+
 ## Install the verify gate
 
 Once you start marking tasks done, have `gg` reject the transition when

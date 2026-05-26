@@ -90,6 +90,15 @@ func TestTaskClaimHelpers(t *testing.T) {
 		assertValueKind(t, taskIntValue(42), "integer_value", int64(42))
 	})
 
+	t.Run("readyForLiveActionForStatus marks updates", func(t *testing.T) {
+		if got := readyForLiveActionForStatus("pending"); got != "ready_for_live" {
+			t.Fatalf("pending action = %q", got)
+		}
+		if got := readyForLiveActionForStatus("ready_for_live"); got != "ready_for_live_updated" {
+			t.Fatalf("ready_for_live action = %q", got)
+		}
+	})
+
 	t.Run("mutation filters include task_id status owner and version conditions", func(t *testing.T) {
 		single := taskMutationFilter("task-1", "pending")
 		assertFilterConditionStrings(t, single, []string{

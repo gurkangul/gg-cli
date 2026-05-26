@@ -188,7 +188,9 @@ func foldTaskEvents(creates map[string]brain.Entry, events []brain.Entry) map[st
 			p.ClaimedAt = ""
 			p.LeaseUntil = ""
 			p.Cancelled = false
-		case "ready_for_live", "done", "blocked":
+		case "ready_for_live", "ready_for_live_updated":
+			p.Status = defaultStatus(toStatus, "ready_for_live")
+		case "done", "blocked":
 			p.Status = defaultStatus(toStatus, action)
 		case "cancelled":
 			p.Status = "cancelled"
@@ -343,8 +345,20 @@ func orphanedLease(t store.Task) bool {
 }
 
 func diffDetail(exp taskProjection, got store.Task) string {
-	return fmt.Sprintf("expected status=%s owner=%q lease=%q; got status=%s owner=%q lease=%q",
-		exp.Status, exp.Owner, exp.LeaseUntil, got.Status, got.Owner, got.LeaseUntil)
+	parts := make([]string, 0, 4)
+	appendDiff := func(field, expected, actual string) {
+		if expected != actual {
+			parts = append(parts, fmt.Sprintf("field %s expected=%q actual=%q", field, expected, actual))
+		}
+	}
+	appendDiff("status", exp.Status, got.Status)
+	appendDiff("owner", exp.Owner, got.Owner)
+	appendDiff("claimed_at", exp.ClaimedAt, got.ClaimedAt)
+	appendDiff("lease_until", exp.LeaseUntil, got.LeaseUntil)
+	if len(parts) == 0 {
+		return "projection drift detected but lifecycle fields compare equal; run with --apply to refresh metadata fields"
+	}
+	return strings.Join(parts, "; ")
 }
 
 func defaultStatus(value, fallback string) string {

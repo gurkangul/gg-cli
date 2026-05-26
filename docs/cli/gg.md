@@ -20,7 +20,7 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
 * [gg check](gg_check.md)	 - Pre-push health check — open tasks, unresolved discussions
 * [gg config](gg_config.md)	 - Inspect or modify project configuration
-* [gg context](gg_context.md)	 - Fetch a unified context bundle for a topic or task
+* [gg context](gg_context.md)	 - Fetch a unified context bundle for the project, a topic, or a task
 * [gg decide](gg_decide.md)	 - Record a decision or rejection (deprecated: use gg record)
 * [gg doctor](gg_doctor.md)	 - Diagnose and repair gg configuration
 * [gg export](gg_export.md)	 - Export all project data to a portable bundle

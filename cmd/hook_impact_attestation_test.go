@@ -47,6 +47,29 @@ func runImpactAttestationHook(
 	ggImpactLines map[string][]string, // file→lines returned by fake gg impact
 	extraEnv map[string]string,
 ) impactAttestationResult {
+	return runImpactAttestationHookWithActiveDiff(t, sourceFiles, commitMsg, ggImpactLines, extraEnv, true)
+}
+
+func runImpactAttestationHookWithActiveDiff(
+	t *testing.T,
+	sourceFiles []string,
+	commitMsg string,
+	ggImpactLines map[string][]string,
+	extraEnv map[string]string,
+	activeDiff bool,
+) impactAttestationResult {
+	return runImpactAttestationHookWithDiffOptions(t, sourceFiles, commitMsg, ggImpactLines, extraEnv, activeDiff, nil)
+}
+
+func runImpactAttestationHookWithDiffOptions(
+	t *testing.T,
+	sourceFiles []string,
+	commitMsg string,
+	ggImpactLines map[string][]string,
+	extraEnv map[string]string,
+	activeDiff bool,
+	untrackedFiles []string,
+) impactAttestationResult {
 	t.Helper()
 
 	hookPath := hookImpactAttestationPath(t)
@@ -76,6 +99,21 @@ func runImpactAttestationHook(
 	}
 	runIn("git", "add", ".")
 	runIn("git", "commit", "-m", commitMsg)
+
+	// The hook is task/diff-aware: default fixtures exercise current
+	// staged/unstaged source changes; specific tests can leave the worktree clean
+	// to exercise HEAD commit fallback when GG_TASK_ID matches the commit body.
+	if activeDiff {
+		for _, f := range sourceFiles {
+			full := filepath.Join(dir, f)
+			_ = os.WriteFile(full, []byte("package x\n// active task diff\n"), 0o644)
+		}
+	}
+	for _, f := range untrackedFiles {
+		full := filepath.Join(dir, f)
+		_ = os.MkdirAll(filepath.Dir(full), 0o755)
+		_ = os.WriteFile(full, []byte("package x\n// untracked task diff\n"), 0o644)
+	}
 
 	// Build a fake gg stub that responds to `gg impact --compact <file>`.
 	// It matches the file argument by substring against ggImpactLines keys.
@@ -151,6 +189,70 @@ func TestImpactAttestation_MandatoryAtThreshold(t *testing.T) {
 	}
 }
 
+func TestImpactAttestation_NoCurrentSourceDiffSkips(t *testing.T) {
+	r := runImpactAttestationHook(t, nil, "chore: evidence-only closure", nil, nil)
+	if r.ExitCode != 0 {
+		t.Errorf("expected exit 0 for no current source diff, got %d\noutput:\n%s", r.ExitCode, r.Output)
+	}
+	if !strings.Contains(r.Output, "no task source diff detected") {
+		t.Errorf("expected explicit no-diff skip message\ngot: %s", r.Output)
+	}
+}
+
+func TestImpactAttestation_CommittedTaskHeadWithoutTrailerBlocks(t *testing.T) {
+	files := []string{"a.go", "b.go", "c.go", "d.go"}
+	r := runImpactAttestationHookWithActiveDiff(t, files, "feat(TASK-TEST): change four files without trailer", nil, nil, false)
+	if r.ExitCode != 7 {
+		t.Errorf("expected exit 7 for committed task HEAD without trailer, got %d\noutput:\n%s", r.ExitCode, r.Output)
+	}
+	if !strings.Contains(r.Output, "HEAD commit for TASK-TEST") {
+		t.Errorf("expected HEAD task commit source in output\ngot: %s", r.Output)
+	}
+}
+
+func TestImpactAttestation_ActiveDiffIgnoresUnrelatedHeadTrailer(t *testing.T) {
+	files := []string{"a.go", "b.go", "c.go", "d.go"}
+	commitMsg := "feat(TASK-999): previous task\n\nImpact-Reviewed: old.go — 0 callers"
+	r := runImpactAttestationHookWithActiveDiff(t, files, commitMsg, nil, nil, true)
+	if r.ExitCode != 7 {
+		t.Errorf("expected exit 7 for active diff without current-task trailer, got %d\noutput:\n%s", r.ExitCode, r.Output)
+	}
+}
+
+func TestImpactAttestation_UntrackedSourceFilesCount(t *testing.T) {
+	files := []string{"a.go", "b.go", "c.go", "d.go"}
+	r := runImpactAttestationHookWithDiffOptions(t, nil, "chore: base", nil, nil, false, files)
+	if r.ExitCode != 7 {
+		t.Errorf("expected exit 7 for untracked source files at threshold, got %d\noutput:\n%s", r.ExitCode, r.Output)
+	}
+	if !strings.Contains(r.Output, "changed source files: 4") {
+		t.Errorf("expected untracked sources to be counted\ngot: %s", r.Output)
+	}
+}
+
+func TestImpactAttestation_CleanUnrelatedHeadSkips(t *testing.T) {
+	files := []string{"a.go", "b.go", "c.go", "d.go"}
+	r := runImpactAttestationHookWithActiveDiff(t, files, "feat(TASK-999): unrelated task without trailer", nil, nil, false)
+	if r.ExitCode != 0 {
+		t.Errorf("expected exit 0 for clean unrelated HEAD, got %d\noutput:\n%s", r.ExitCode, r.Output)
+	}
+	if !strings.Contains(r.Output, "no task source diff detected") {
+		t.Errorf("expected no task-diff skip message\ngot: %s", r.Output)
+	}
+}
+
+func TestImpactAttestation_TaskIDPrefixDoesNotMatchHeadFallback(t *testing.T) {
+	files := []string{"a.go", "b.go", "c.go", "d.go"}
+	commitMsg := "feat(TASK-440): unrelated prefix task\n\nImpact-Reviewed: a.go — 0 callers"
+	r := runImpactAttestationHookWithActiveDiff(t, files, commitMsg, nil, map[string]string{"GG_TASK_ID": "TASK-44"}, false)
+	if r.ExitCode != 0 {
+		t.Errorf("expected exit 0 for clean HEAD mentioning only prefix-similar task, got %d\noutput:\n%s", r.ExitCode, r.Output)
+	}
+	if strings.Contains(r.Output, "HEAD commit for TASK-44") {
+		t.Errorf("prefix-similar task id should not trigger HEAD fallback\ngot: %s", r.Output)
+	}
+}
+
 // TestImpactAttestation_AdvisoryBelowThreshold: 2 changed source files, no
 // trailer → hook must exit 0 with an advisory warning on stderr.
 func TestImpactAttestation_AdvisoryBelowThreshold(t *testing.T) {
@@ -195,8 +297,8 @@ func TestImpactAttestation_HighDependentEscalation(t *testing.T) {
 // passes regardless of file count.
 func TestImpactAttestation_TrailerSatisfies(t *testing.T) {
 	files := []string{"a.go", "b.go", "c.go", "d.go", "e.go"}
-	commitMsg := "feat: change five files\n\nImpact-Reviewed: a.go — 2 callers, tests green"
-	r := runImpactAttestationHook(t, files, commitMsg, nil, nil)
+	commitMsg := "feat(TASK-TEST): change five files\n\nImpact-Reviewed: a.go — 2 callers, tests green"
+	r := runImpactAttestationHookWithActiveDiff(t, files, commitMsg, nil, nil, false)
 	if r.ExitCode != 0 {
 		t.Errorf("expected exit 0 when Impact-Reviewed: trailer present, got %d\noutput:\n%s", r.ExitCode, r.Output)
 	}
@@ -207,8 +309,8 @@ func TestImpactAttestation_TrailerSatisfies(t *testing.T) {
 
 func TestImpactAttestation_LowercaseImpactFileTrailerSatisfies(t *testing.T) {
 	files := []string{"a.go", "b.go", "c.go", "d.go", "e.go"}
-	commitMsg := "feat: change five files\n\nimpact a.go: 2 callers, tests green"
-	r := runImpactAttestationHook(t, files, commitMsg, nil, nil)
+	commitMsg := "feat(TASK-TEST): change five files\n\nimpact a.go: 2 callers, tests green"
+	r := runImpactAttestationHookWithActiveDiff(t, files, commitMsg, nil, nil, false)
 	if r.ExitCode != 0 {
 		t.Errorf("expected exit 0 when impact <file>: trailer present, got %d\noutput:\n%s", r.ExitCode, r.Output)
 	}
@@ -216,8 +318,8 @@ func TestImpactAttestation_LowercaseImpactFileTrailerSatisfies(t *testing.T) {
 
 func TestImpactAttestation_CompactImpactLineSatisfies(t *testing.T) {
 	files := []string{"a.go", "b.go", "c.go", "d.go", "e.go"}
-	commitMsg := "feat: change five files\n\nimpact: a.go — 2 deps 3 sym 1D 0T 0R 0B"
-	r := runImpactAttestationHook(t, files, commitMsg, nil, nil)
+	commitMsg := "feat(TASK-TEST): change five files\n\nimpact: a.go — 2 deps 3 sym 1D 0T 0R 0B"
+	r := runImpactAttestationHookWithActiveDiff(t, files, commitMsg, nil, nil, false)
 	if r.ExitCode != 0 {
 		t.Errorf("expected exit 0 when gg impact --compact header is pasted, got %d\noutput:\n%s", r.ExitCode, r.Output)
 	}

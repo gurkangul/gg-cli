@@ -148,6 +148,9 @@ operator-started foreground watchers that run only until Ctrl-C.
 `gg session-start`, `gg next`, `gg impact`, `gg doctor`, and `gg index status`
 use the same freshness notice contract: status/reason, repair command, and
 foreground-watch hint all come from one shared model.
+Freshness tracks source files plus selected module manifests, not dependency
+lockfiles such as `go.sum`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`,
+`poetry.lock`, or `uv.lock`.
 
 ---
 

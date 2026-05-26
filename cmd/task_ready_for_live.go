@@ -58,8 +58,11 @@ func checkReadyForLiveGate(t *store.Task, tasksCfg *config.TasksConfig, verifier
 // Falls back to $GG_ROLE / $GG_AGENT when the flag is empty.
 var taskReadyForLiveFrom string
 
+// taskReadyForLivePlan is an optional flag alias for the positional verify plan.
+var taskReadyForLivePlan string
+
 var taskReadyForLiveCmd = &cobra.Command{
-	Use:   `ready-for-live TASK-ID "verify plan"`,
+	Use:   `ready-for-live TASK-ID ["verify plan"]`,
 	Short: "Mark a task as ready for live verification — transitions in_progress → ready_for_live",
 	Long: `Record that an implementation is complete and ready for an independent live-verifier
 to run against the live environment. Writes the actor (from --from or $GG_ROLE) alongside
@@ -71,17 +74,36 @@ but production-shaped verification (live e2e / make e2e-cold / manual smoke) has
 been run by an independent role. The verify plan should be one sentence describing what
 the live-verifier is expected to exercise.
 
-The plan is stored on the task and surfaced by 'gg task get'.
+The plan is stored on the task and surfaced by 'gg task get'. If a task is already
+ready_for_live, running this command again updates that stored plan without
+changing state; use either the positional plan or --plan.
 
 See also: gg task done (close after verifier sign-off).`,
-	Args: cobra.ExactArgs(2),
+	Args: cobra.RangeArgs(1, 2),
 	RunE: runTaskReadyForLive,
 }
 
 func init() {
 	taskReadyForLiveCmd.Flags().StringVar(&taskReadyForLiveFrom, "from",
 		"", "role performing the transition (defaults to $GG_ROLE / $GG_AGENT)")
+	taskReadyForLiveCmd.Flags().StringVar(&taskReadyForLivePlan, "plan",
+		"", "verify plan to store on the task (alternative to positional plan)")
 	taskCmd.AddCommand(taskReadyForLiveCmd)
+}
+
+func readyForLivePlanFromArgs(args []string, flagPlan string) (string, error) {
+	positional := ""
+	if len(args) > 0 {
+		positional = strings.TrimSpace(args[0])
+	}
+	flagPlan = strings.TrimSpace(flagPlan)
+	if positional != "" && flagPlan != "" {
+		return "", fmt.Errorf("verify plan specified twice — use either positional plan or --plan, not both")
+	}
+	if flagPlan != "" {
+		return requireNonEmpty("verify plan", flagPlan)
+	}
+	return requireNonEmpty("verify plan", positional)
 }
 
 func runTaskReadyForLive(cmd *cobra.Command, args []string) error {
@@ -89,7 +111,7 @@ func runTaskReadyForLive(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	plan, err := requireNonEmpty("verify plan", args[1])
+	plan, err := readyForLivePlanFromArgs(args[1:], taskReadyForLivePlan)
 	if err != nil {
 		return err
 	}

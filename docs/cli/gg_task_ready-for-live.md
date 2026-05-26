@@ -14,12 +14,14 @@ but production-shaped verification (live e2e / make e2e-cold / manual smoke) has
 been run by an independent role. The verify plan should be one sentence describing what
 the live-verifier is expected to exercise.
 
-The plan is stored on the task and surfaced by 'gg task get'.
+The plan is stored on the task and surfaced by 'gg task get'. If a task is already
+ready_for_live, running this command again updates that stored plan without
+changing state; use either the positional plan or --plan.
 
 See also: gg task done (close after verifier sign-off).
 
 ```
-gg task ready-for-live TASK-ID "verify plan" [flags]
+gg task ready-for-live TASK-ID ["verify plan"] [flags]
 ```
 
 ### Options
@@ -27,6 +29,7 @@ gg task ready-for-live TASK-ID "verify plan" [flags]
 ```
       --from string   role performing the transition (defaults to $GG_ROLE / $GG_AGENT)
   -h, --help          help for ready-for-live
+      --plan string   verify plan to store on the task (alternative to positional plan)
 ```
 
 ### Options inherited from parent commands

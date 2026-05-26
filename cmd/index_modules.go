@@ -25,7 +25,11 @@ func readModulePath(root string) string {
 }
 
 // manifestsForLang returns manifest filenames whose presence marks a module
-// root. Priority order matters when several manifests exist in one directory.
+// root and participates in CodeGraph freshness. Dependency lockfiles are
+// intentionally excluded: lockfile-only dependency version churn does not
+// change source symbol/import topology, while module manifests can change the
+// module layout and indexer inputs. Priority order matters when several
+// manifests exist in one directory.
 func manifestsForLang(lang runner.Lang) []string {
 	switch lang {
 	case runner.LangGo:

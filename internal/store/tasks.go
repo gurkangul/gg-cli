@@ -255,6 +255,13 @@ func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	return &t, nil
 }
 
+func readyForLiveActionForStatus(status string) string {
+	if status == "ready_for_live" {
+		return "ready_for_live_updated"
+	}
+	return "ready_for_live"
+}
+
 // ValidReviewStatuses lists the allowed values for review_status.
 var ValidReviewStatuses = map[string]bool{
 	"none": true, "pending": true, "approved": true, "rejected": true,
@@ -265,9 +272,10 @@ var ValidReviewStatuses = map[string]bool{
 // actor is read by the verifier-separation gate in `gg task done` to enforce
 // same-actor-cannot-verify.
 //
-// Refuses when the task is already in "ready_for_live" (returns
-// ErrAlreadyInState) or in terminal status "done" (no backwards transition —
-// reopen via `gg task reopen` or `gg bug reopen` instead).
+// If the task is already in "ready_for_live", this updates the verifier plan
+// in place and appends a "ready_for_live_updated" event. Terminal "done"
+// tasks are still refused (no backwards transition — reopen via
+// `gg task reopen` or `gg bug reopen` instead).
 //
 // readyBy should be a role/agent name — empty is rejected so the gate has
 // something non-empty to compare against on the done side.
@@ -280,12 +288,10 @@ func (c *Client) SetReadyForLive(ctx context.Context, taskID, readyBy, plan stri
 		return err
 	}
 	currentStatus := current.Status
-	if currentStatus == "ready_for_live" {
-		return fmt.Errorf("%w: task %s already ready_for_live", ErrAlreadyInState, taskID)
-	}
 	if currentStatus == "done" {
 		return fmt.Errorf("cannot transition done task %s back to ready_for_live (reopen first)", taskID)
 	}
+	action := readyForLiveActionForStatus(currentStatus)
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	payload := map[string]*qdrant.Value{
@@ -312,7 +318,7 @@ func (c *Client) SetReadyForLive(ctx context.Context, taskID, readyBy, plan stri
 	}
 	return c.AppendTaskEvent(TaskEvent{
 		TaskID:     taskID,
-		Action:     "ready_for_live",
+		Action:     action,
 		FromStatus: currentStatus,
 		ToStatus:   updated.Status,
 		Owner:      updated.Owner,

@@ -65,6 +65,33 @@ func TestStaleLeaseOnlyAppliesToInProgress(t *testing.T) {
 	}
 }
 
+func TestReconcileDriftDetailNamesDifferingFields(t *testing.T) {
+	exp := taskProjection{
+		ID:         "TASK-009",
+		Status:     "in_progress",
+		Owner:      "codex",
+		ClaimedAt:  "2026-05-20T10:00:00Z",
+		LeaseUntil: "2026-05-20T13:00:00Z",
+	}
+	got := store.Task{
+		ID:         "TASK-009",
+		Status:     "in_progress",
+		Owner:      "codex",
+		ClaimedAt:  "",
+		LeaseUntil: "2026-05-20T13:00:00Z",
+	}
+
+	detail := diffDetail(exp, got)
+	for _, want := range []string{"field claimed_at", "expected=\"2026-05-20T10:00:00Z\"", "actual=\"\""} {
+		if !contains(detail, want) {
+			t.Fatalf("diff detail %q missing %q", detail, want)
+		}
+	}
+	if contains(detail, "expected status=") {
+		t.Fatalf("legacy ambiguous summary leaked into detail: %q", detail)
+	}
+}
+
 func taskEventEntry(taskID, action, fromStatus, toStatus, owner, leaseUntil, createdAt string) brain.Entry {
 	return brain.Entry{Payload: map[string]any{
 		"task_id":     taskID,

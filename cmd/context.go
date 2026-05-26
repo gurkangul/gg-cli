@@ -16,9 +16,12 @@ import (
 
 var contextCmd = &cobra.Command{
 	Use:   `context [topic]`,
-	Short: "Fetch a unified context bundle for a topic or task",
-	Long: `Searches decisions, rejections, tasks, and discussions for the given topic
-using semantic similarity and returns a bundled context package for agent consumption.
+	Short: "Fetch a unified context bundle for the project, a topic, or a task",
+	Long: `Without a topic, prints a compact project onboarding bundle: recent decisions,
+rejections, active tasks, open discussions, notes, and context artifacts.
+
+With a topic, searches decisions, rejections, tasks, and discussions using
+semantic similarity and returns a bundled context package for agent consumption.
 
 Use --for-task TASK-NNN to get a task-scoped context bundle: the task itself,
 its dependencies, and semantically related decisions/rejections, useful for
@@ -53,7 +56,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 		return runContextForTask(cmd, contextForTask)
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("topic argument required (or use --for-task TASK-NNN)")
+		return runProjectContext(cmd)
 	}
 	query, err := requireNonEmpty("topic", args[0])
 	if err != nil {

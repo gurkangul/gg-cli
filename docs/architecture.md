@@ -83,6 +83,16 @@ contract: status (`ready`, `missing`, `stale`, `unavailable`, `unknown`,
 `module_manifest_changed`, `fingerprint_mismatch`, `not_applicable`,
 `unknown`), counts, repair command, and foreground-watch hint.
 
+Freshness tracks source files plus selected module manifests only:
+`go.mod` for Go; `package.json`, `tsconfig.json`, and `jsconfig.json` for
+TypeScript/JavaScript; and `pyproject.toml`, `setup.py`, `setup.cfg`,
+`Pipfile`, and `requirements.txt` for Python. Dependency lockfiles such as
+`go.sum`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `poetry.lock`,
+and `uv.lock` are deliberately excluded from CodeGraph freshness because
+lockfile-only version churn does not change the source symbol/import graph.
+If dependency upgrades require a fresh graph, run `gg doctor --fix-index`
+explicitly after the upgrade.
+
 There is no automatic background indexing daemon. The canonical one-shot repair
 path is `gg doctor --fix-index` (or an explicit `gg index --lang <lang>` when the
 operator knows the target language). Active refresh is opt-in only:

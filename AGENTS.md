@@ -622,13 +622,13 @@ gg-cli is the mandatory coordination channel for this project.
 
 - All tasks, decisions, bugs, and broadcasts go through gg: `gg task`, `gg record`, `gg bug`, `gg tell`
 - Agent identity terms are generic: `agent_id` is the unique runtime instance (for example `omo-slim`, `codex-1`, `claude-planner`), `role` is the work authority (for example `implementer`, `reviewer`, `planner`), and task `owner` is the leasing `agent_id`.
-- Before starting new work, run: `gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"`, then `gg inbox --role "$GG_ROLE" --peek`.
+- Before starting new work, run: `gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"`, then `gg inbox --role "$GG_ROLE" --peek`, `gg task list --ready --compact`, and `gg context --compact` for project-level onboarding.
 - Never call `gsd_plan_*` tools in projects using gg — use `gg task create` instead
 - Before starting any new task or reasoning step, run: `gg inbox --role "$GG_ROLE" --peek`.
   Use a unique `GG_AGENT` per runtime. Do not run role-less `gg inbox --advance-cursor`; it is rejected because it can hide role-targeted assignments.
   If role-targeted unread messages exist, you MUST either:
     (a) start the referenced runnable task via `gg task start <id> --owner "$GG_AGENT" --lease 30m`, OR
-    (b) if the task is already `ready_for_live` and your role is reviewer/verifier, hydrate and review it, OR
+    (b) if the task is already `ready_for_live` and your role is reviewer/verifier, hydrate with `gg task get <id> --review` and review it, OR
     (c) if the linked task is already closed, treat it as stale assignment noise, OR
     (d) reply with `gg tell <sender> <deferral reason>`
   Silent skip = protocol violation. It will be caught by structural gates.

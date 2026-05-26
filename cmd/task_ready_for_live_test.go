@@ -113,6 +113,37 @@ func TestReadyForLiveGate_VerifierTrimmed(t *testing.T) {
 	}
 }
 
+func TestReadyForLivePlanFromArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		flagPlan string
+		want     string
+		wantErr  bool
+	}{
+		{name: "positional", args: []string{"smoke live deploy"}, want: "smoke live deploy"},
+		{name: "flag", flagPlan: " verify endpoint ", want: "verify endpoint"},
+		{name: "missing", wantErr: true},
+		{name: "both", args: []string{"one"}, flagPlan: "two", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := readyForLivePlanFromArgs(tc.args, tc.flagPlan)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("readyForLivePlanFromArgs: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("plan = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && indexOf(haystack, needle) >= 0
 }

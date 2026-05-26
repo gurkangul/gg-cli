@@ -315,6 +315,31 @@ func TestManifestsForLang(t *testing.T) {
 	}
 }
 
+func TestManifestsForLang_ExcludesDependencyLockfiles(t *testing.T) {
+	lockfiles := map[runner.Lang][]string{
+		runner.LangGo:         {"go.sum"},
+		runner.LangTypeScript: {"package-lock.json", "pnpm-lock.yaml", "yarn.lock"},
+		runner.LangPython:     {"poetry.lock", "uv.lock", "Pipfile.lock"},
+	}
+	for lang, excluded := range lockfiles {
+		got := manifestsForLang(lang)
+		for _, name := range excluded {
+			if stringSliceContains(got, name) {
+				t.Fatalf("manifestsForLang(%q) unexpectedly includes lockfile %q in %v", lang, name, got)
+			}
+		}
+	}
+}
+
+func stringSliceContains(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil { //nolint:gosec

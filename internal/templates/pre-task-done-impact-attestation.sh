@@ -1,12 +1,17 @@
 #!/bin/sh
 # gg pre-task-done hook: impact-attestation gate.
 #
-# Checks the HEAD commit body for an Impact-Reviewed: trailer line.
+# Checks the current staged/unstaged/untracked task diff plus, when the working
+# tree is clean, the HEAD commit only if its message references GG_TASK_ID.
+# This keeps no-diff/evidence-only closures from being blocked by an unrelated
+# historical commit while still enforcing Impact-Reviewed evidence for committed
+# task work.
 # Gate is mandatory when:
-#   (a) the commit changes >=3 source files (excluding _test.go), OR
+#   (a) the task diff changes >=3 source files (excluding _test.go), OR
 #   (b) ANY changed file has >=5 graph dependents (escalation regardless of count)
 #
-# When neither threshold is met, prints a soft advisory to stderr and exits 0.
+# When there is no task source diff, exits 0 with an explicit skip. When there
+# is source diff below threshold, prints a soft advisory to stderr and exits 0.
 #
 # Modes (env GG_IMPACT_ATTESTATION):
 #   on    (default) — block (exit 7) when trailer is missing at threshold
@@ -38,31 +43,54 @@ if [ -z "$COMMIT_MSG" ]; then
   exit 0
 fi
 
-# ── 2. Count changed source files (excluding _test.go) ───────────────────────
-CHANGED_FILES=$(git log -1 --name-only --pretty="" 2>/dev/null || true)
-SOURCE_COUNT=0
-SOURCE_LIST=""
-while IFS= read -r f; do
-  [ -z "$f" ] && continue
-  # Only count source files that are not test files.
-  case "$f" in
-    *_test.go|*.test.*|*.spec.*) continue ;;
-    *.go|*.ts|*.js|*.py|*.rs|*.java|*.c|*.cpp|*.h) ;;
-    *) continue ;;
-  esac
-  SOURCE_COUNT=$((SOURCE_COUNT + 1))
-  SOURCE_LIST="${SOURCE_LIST}${f}
-"
-done << FILESEOF
-$CHANGED_FILES
-FILESEOF
+# ── 2. Select task diff files and count changed source files ────────────────
+CHANGED_FILES=$( (git diff --name-only 2>/dev/null; git diff --cached --name-only 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null) | sort -u || true)
+DIFF_SOURCE="current staged/unstaged/untracked diff"
+ALLOW_HEAD_TRAILER=0
 
+count_source_files() {
+  SOURCE_COUNT=0
+  SOURCE_LIST=""
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    # Only count source files that are not test files.
+    case "$f" in
+      *_test.go|*.test.*|*.spec.*) continue ;;
+      *.go|*.ts|*.js|*.py|*.rs|*.java|*.c|*.cpp|*.h) ;;
+      *) continue ;;
+    esac
+    SOURCE_COUNT=$((SOURCE_COUNT + 1))
+    SOURCE_LIST="${SOURCE_LIST}${f}
+"
+  done << FILESEOF
+$1
+FILESEOF
+}
+
+count_source_files "$CHANGED_FILES"
+if [ "$SOURCE_COUNT" = "0" ] && [ -n "${GG_TASK_ID:-}" ]; then
+  if printf '%s' "$COMMIT_MSG" | grep -Eqi "(^|[^[:alnum:]_-])${GG_TASK_ID}([^[:alnum:]_-]|$)"; then
+    CHANGED_FILES=$(git log -1 --name-only --pretty="" 2>/dev/null || true)
+    DIFF_SOURCE="HEAD commit for ${GG_TASK_ID}"
+    ALLOW_HEAD_TRAILER=1
+    count_source_files "$CHANGED_FILES"
+  fi
+fi
+
+echo "[impact-attestation] diff source: $DIFF_SOURCE"
 echo "[impact-attestation] changed source files: $SOURCE_COUNT"
+
+if [ "$SOURCE_COUNT" = "0" ]; then
+  echo "[impact-attestation] no task source diff detected; skipping impact attestation"
+  exit 0
+fi
 
 # ── 3. Check for impact attestation trailer in commit body ───────────────────
 HAS_TRAILER=0
-if printf '%s' "$COMMIT_MSG" | grep -Eqi "^(Impact-Reviewed:|impact[[:space:]]+[^:]+:|impact:[[:space:]]+)"; then
-  HAS_TRAILER=1
+if [ "$ALLOW_HEAD_TRAILER" = "1" ]; then
+  if printf '%s' "$COMMIT_MSG" | grep -Eqi "^(Impact-Reviewed:|impact[[:space:]]+[^:]+:|impact:[[:space:]]+)"; then
+    HAS_TRAILER=1
+  fi
 fi
 
 # Early pass: trailer present — soft log and exit 0 regardless of thresholds.

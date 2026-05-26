@@ -75,6 +75,7 @@ func (b Briefing) Render(w io.Writer) error {
 	sb.WriteString("Fallback:\n")
 	fmt.Fprintf(&sb, "  gg inbox --role %s --peek\n", role)
 	sb.WriteString("  gg task list --ready --compact\n")
+	sb.WriteString("  gg context --compact\n")
 	sb.WriteString("Full protocol: docs/agent-protocol-v1.md\n")
 	sb.WriteString("\n")
 	_, err := io.WriteString(w, sb.String())

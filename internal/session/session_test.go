@@ -47,7 +47,7 @@ func TestBriefing_Render_IncludesProtocolSteps(t *testing.T) {
 		t.Fatalf("Render: %v", err)
 	}
 	out := buf.String()
-	musts := []string{"Next:", "gg next --agent cursor --role reviewer", "Fallback:", "gg inbox --role reviewer --peek", "gg task list --ready --compact", "docs/agent-protocol-v1.md"}
+	musts := []string{"Next:", "gg next --agent cursor --role reviewer", "Fallback:", "gg inbox --role reviewer --peek", "gg task list --ready --compact", "gg context --compact", "docs/agent-protocol-v1.md"}
 	for _, m := range musts {
 		if !strings.Contains(out, m) {
 			t.Errorf("briefing missing reference to %q: %q", m, out)

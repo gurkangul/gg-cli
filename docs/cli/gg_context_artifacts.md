@@ -16,5 +16,5 @@ Manage project-local context artifacts
 
 ### SEE ALSO
 
-* [gg context](gg_context.md)	 - Fetch a unified context bundle for a topic or task
+* [gg context](gg_context.md)	 - Fetch a unified context bundle for the project, a topic, or a task
 * [gg context artifacts index](gg_context_artifacts_index.md)	 - Index configured context artifacts and record content hashes
