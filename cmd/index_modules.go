@@ -38,6 +38,8 @@ func manifestsForLang(lang runner.Lang) []string {
 		return []string{"package.json", "tsconfig.json", "jsconfig.json"}
 	case runner.LangPython:
 		return []string{"pyproject.toml", "setup.py", "setup.cfg", "Pipfile", "requirements.txt"}
+	case runner.LangSwift:
+		return []string{"Package.swift", "project.pbxproj", "contents.xcworkspacedata"}
 	}
 	return nil
 }
@@ -46,6 +48,9 @@ func manifestsForLang(lang runner.Lang) []string {
 // Root manifests preserve single-module behavior; nested manifests support
 // monorepos using the same depth/skip settings as hook installation.
 func discoverModuleDirs(projectRoot string, lang runner.Lang) ([]string, error) {
+	if lang == runner.LangSwift {
+		return discoverSwiftModuleDirs(projectRoot)
+	}
 	manifests := manifestsForLang(lang)
 	if len(manifests) == 0 {
 		return nil, fmt.Errorf("unsupported language %q", lang)
@@ -88,6 +93,151 @@ func discoverModuleDirs(projectRoot string, lang runner.Lang) ([]string, error) 
 		return []string{projectRoot}, nil
 	}
 	return absDirs, nil
+}
+
+func discoverSwiftModuleDirs(projectRoot string) ([]string, error) {
+	if _, err := os.Stat(filepath.Join(projectRoot, "Package.swift")); err == nil {
+		return []string{projectRoot}, nil
+	}
+	if hasSwiftProjectAtRoot(projectRoot) {
+		return []string{projectRoot}, nil
+	}
+	packageDirs, err := discoverSwiftPackageDirs(projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	if len(packageDirs) > 0 {
+		return packageDirs, nil
+	}
+	dirs, err := discoverSwiftProjectDirs(projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	if len(dirs) > 0 {
+		return dirs, nil
+	}
+	if hasSwiftSourceFiles(projectRoot) {
+		return []string{projectRoot}, nil
+	}
+	return nil, nil
+}
+
+func hasSwiftProjectAtRoot(projectRoot string) bool {
+	entries, err := os.ReadDir(projectRoot)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		ext := filepath.Ext(entry.Name())
+		if ext == ".xcodeproj" || ext == ".xcworkspace" {
+			return true
+		}
+	}
+	return false
+}
+
+func discoverSwiftPackageDirs(projectRoot string) ([]string, error) {
+	skipDirs, maxDepth := hookInstallSettings()
+	relDirs, err := findManifestDirs(projectRoot, "Package.swift", skipDirs, maxDepth)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool)
+	dirs := make([]string, 0, len(relDirs))
+	for _, rel := range relDirs {
+		if rel == "." {
+			continue
+		}
+		abs := filepath.Join(projectRoot, rel)
+		if seen[abs] {
+			continue
+		}
+		seen[abs] = true
+		dirs = append(dirs, abs)
+	}
+	return dirs, nil
+}
+
+func discoverSwiftProjectDirs(projectRoot string) ([]string, error) {
+	skipDirs, maxDepth := hookInstallSettings()
+	seen := make(map[string]bool)
+	var dirs []string
+	rootClean := filepath.Clean(projectRoot)
+	err := filepath.WalkDir(rootClean, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		if path == rootClean {
+			return nil
+		}
+		rel, relErr := filepath.Rel(rootClean, path)
+		if relErr != nil {
+			return nil
+		}
+		if skipDirs[d.Name()] {
+			return filepath.SkipDir
+		}
+		depth := len(strings.Split(filepath.ToSlash(rel), "/"))
+		if depth > maxDepth {
+			return filepath.SkipDir
+		}
+		ext := filepath.Ext(d.Name())
+		if ext != ".xcodeproj" && ext != ".xcworkspace" {
+			return nil
+		}
+		parent := filepath.Dir(path)
+		if !seen[parent] {
+			seen[parent] = true
+			dirs = append(dirs, parent)
+		}
+		return filepath.SkipDir
+	})
+	if err != nil {
+		return nil, err
+	}
+	return dirs, nil
+}
+
+func hasSwiftSourceFiles(projectRoot string) bool {
+	skipDirs, maxDepth := hookInstallSettings()
+	found := false
+	rootClean := filepath.Clean(projectRoot)
+	_ = filepath.WalkDir(rootClean, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found {
+			return nil
+		}
+		if d.IsDir() {
+			if path == rootClean {
+				return nil
+			}
+			rel, relErr := filepath.Rel(rootClean, path)
+			if relErr != nil {
+				return filepath.SkipDir
+			}
+			if skipDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			depth := len(strings.Split(filepath.ToSlash(rel), "/"))
+			if depth > maxDepth {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(d.Name()) == ".swift" {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
 
 func hasSourceDirForLang(projectRoot string, lang runner.Lang) bool {
@@ -162,6 +312,8 @@ func langExtensions(lang runner.Lang) []string {
 		return []string{".py"}
 	case runner.LangTypeScript:
 		return []string{".ts", ".tsx", ".js", ".jsx"}
+	case runner.LangSwift:
+		return []string{".swift"}
 	default:
 		return nil
 	}

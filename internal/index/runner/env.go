@@ -6,13 +6,13 @@ import (
 )
 
 // sensitiveEnvPrefixes lists the env-var prefixes that must never be passed to
-// child indexer processes. Indexers are third-party binaries (scip-go,
-// scip-typescript, scip-python) that should not have access to database
-// credentials or internal secrets held in the parent process.
+// child indexer processes. Indexers are third-party SCIP binaries that should
+// not have access to database credentials or internal secrets held in the
+// parent process.
 var sensitiveEnvPrefixes = []string{
-	"MEMGRAPH_",    // Memgraph DB credentials (MEMGRAPH_PASSWORD, etc.)
-	"GG_SECRET_",   // gg internal secrets
-	"GG_API_KEY",   // gg API keys
+	"MEMGRAPH_",  // Memgraph DB credentials (MEMGRAPH_PASSWORD, etc.)
+	"GG_SECRET_", // gg internal secrets
+	"GG_API_KEY", // gg API keys
 }
 
 // filteredEnv returns a copy of os.Environ() with sensitive variables removed.

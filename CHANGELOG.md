@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.24] - 2026-05-28
+
+### Added
+
+- Add Swift CodeGraph recognition and externally-backed SCIP ingestion: `gg index --lang swift`, SwiftPM/Xcode/.swift freshness detection, explicit `scip-swift` preflight errors, and Swift setup documentation.
+
 ## [0.3.23] - 2026-05-26
 
 ### Added

@@ -12,15 +12,27 @@ import (
 // found via any of the resolution strategies. Callers can use errors.As to
 // extract the binary name and installation hint.
 type ErrIndexerMissing struct {
-	Binary string // e.g. "scip-go"
-	Hint   string // actionable install command, e.g. "go install ..."
+	Binary      string // e.g. "scip-go"
+	Hint        string // actionable install command or external-indexer guidance
+	AutoInstall bool   // true when gg doctor --install-indexers can install it
 }
 
 func (e *ErrIndexerMissing) Error() string {
+	if !e.AutoInstall {
+		return fmt.Sprintf(
+			"indexer %q not found in PATH or ~/.gg/bin/ — %s",
+			e.Binary, e.Hint,
+		)
+	}
 	return fmt.Sprintf(
 		"indexer %q not found in PATH or ~/.gg/bin/ — run 'gg doctor --install-indexers' or manually: %s",
 		e.Binary, e.Hint,
 	)
+}
+
+type indexerHint struct {
+	Hint        string
+	AutoInstall bool
 }
 
 // IsIndexerMissing reports whether err (or any error in its chain) is an
@@ -32,10 +44,22 @@ func IsIndexerMissing(err error) bool {
 
 // indexerHints maps binary names to their manual installation commands.
 // Used as the Hint field of ErrIndexerMissing.
-var indexerHints = map[string]string{
-	"scip-go":         "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest",
-	"scip-typescript": "npm install -g @sourcegraph/scip-typescript",
-	"scip-python":     "npm install -g @sourcegraph/scip-python",
+var indexerHints = map[string]indexerHint{
+	"scip-go": {
+		Hint:        "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest",
+		AutoInstall: true,
+	},
+	"scip-typescript": {
+		Hint:        "npm install -g @sourcegraph/scip-typescript",
+		AutoInstall: true,
+	},
+	"scip-python": {
+		Hint:        "npm install -g @sourcegraph/scip-python",
+		AutoInstall: true,
+	},
+	"scip-swift": {
+		Hint: "gg does not bundle or auto-install a Swift SCIP indexer because no official maintained Sourcegraph scip-swift exists; provide a compatible scip-swift binary. Contract: scip-swift index --output <file> <project-root>",
+	},
 }
 
 // resolveChain is the ordered list of strategies tried when locating a binary.
@@ -65,10 +89,10 @@ func (resolveChain) Resolve(name string) (string, error) {
 
 	// 3. Not found — return typed error with actionable hint.
 	hint := indexerHints[name]
-	if hint == "" {
-		hint = fmt.Sprintf("check the %s project for install instructions", name)
+	if hint.Hint == "" {
+		hint.Hint = fmt.Sprintf("check the %s project for install instructions", name)
 	}
-	return "", &ErrIndexerMissing{Binary: name, Hint: hint}
+	return "", &ErrIndexerMissing{Binary: name, Hint: hint.Hint, AutoInstall: hint.AutoInstall}
 }
 
 // ggBinDir returns the absolute path to ~/.gg/bin/.

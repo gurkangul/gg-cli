@@ -6,7 +6,9 @@ Diagnose and repair gg configuration
 
 Check service connectivity and verify that required indexer binaries
 are available. Use --install-indexers to automatically install missing SCIP
-binaries using their native package managers (go install, npm, pip).
+binaries with maintained package-manager flows (go, TypeScript, Python).
+Swift detection is supported, but Swift graph generation requires a user-provided
+compatible scip-swift binary because gg does not bundle one.
 
 Doctor reports the same CodeGraph freshness contract used by session-start,
 next, impact, and index status. It never starts a background index daemon;
@@ -44,7 +46,7 @@ gg doctor [flags]
       --history                  with --check-secrets: run full git history scan only (gitleaks detect)
       --install-agent-hooks      write agent-side config (SessionStart hook / alwaysApply rule / read-preload) to enforce gg usage
       --install-agents-md        inject the gg tracker-rules managed block into AGENTS.md (idempotent; alias for --install-agent-hooks --agent codex)
-      --install-indexers         install missing SCIP indexer binaries (scip-go, scip-typescript, scip-python)
+      --install-indexers         install missing SCIP indexer binaries with maintained installers (scip-go, scip-typescript, scip-python)
       --install-secret-scanner   download and install the pinned gitleaks binary into ~/.gg/bin/gitleaks (checksum-verified)
       --install-task-hooks       install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)
       --reconcile                scan the outbox for incomplete dual-store writes and report what needs repair

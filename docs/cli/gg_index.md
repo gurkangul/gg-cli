@@ -18,7 +18,7 @@ With    --watch: explicit foreground watcher — debounce source/module changes
                    one-shot repair.
 
 ```
-gg index [--changed] [--lang go|python|typescript] [flags]
+gg index [--changed] [--lang go|python|swift|typescript] [flags]
 ```
 
 ### Options
@@ -26,7 +26,7 @@ gg index [--changed] [--lang go|python|typescript] [flags]
 ```
       --changed                   incremental: re-index only files changed since last index
   -h, --help                      help for index
-      --lang string               language to index: go, python, typescript (default "go")
+      --lang string               language to index: go, python, swift, typescript (default "go")
       --watch                     foreground watch mode: debounce source changes and run incremental index updates
       --watch-debounce duration   foreground watch debounce before indexing (default 2s)
       --watch-poll duration       foreground watch poll interval (default 1s)

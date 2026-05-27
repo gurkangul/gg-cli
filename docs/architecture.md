@@ -85,13 +85,21 @@ contract: status (`ready`, `missing`, `stale`, `unavailable`, `unknown`,
 
 Freshness tracks source files plus selected module manifests only:
 `go.mod` for Go; `package.json`, `tsconfig.json`, and `jsconfig.json` for
-TypeScript/JavaScript; and `pyproject.toml`, `setup.py`, `setup.cfg`,
-`Pipfile`, and `requirements.txt` for Python. Dependency lockfiles such as
-`go.sum`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `poetry.lock`,
-and `uv.lock` are deliberately excluded from CodeGraph freshness because
-lockfile-only version churn does not change the source symbol/import graph.
-If dependency upgrades require a fresh graph, run `gg doctor --fix-index`
-explicitly after the upgrade.
+TypeScript/JavaScript; `pyproject.toml`, `setup.py`, `setup.cfg`, `Pipfile`,
+and `requirements.txt` for Python; and `Package.swift`, Xcode project files,
+and Xcode workspace files for Swift. Dependency lockfiles such as `go.sum`,
+`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `poetry.lock`, and `uv.lock`
+are deliberately excluded from CodeGraph freshness because lockfile-only
+version churn does not change the source symbol/import graph. If dependency
+upgrades require a fresh graph, run `gg doctor --fix-index` explicitly after the
+upgrade.
+
+Swift support is recognition plus externally-backed SCIP ingestion. gg detects
+SwiftPM packages, Xcode projects/workspaces, and `.swift` source files, but it
+does not bundle a native Swift SCIP generator. A compatible `scip-swift` binary
+must accept `scip-swift index --output <file> <project-root>` and write a valid
+SCIP file. It must exit non-zero on failure and emit document paths either
+relative to `<project-root>` or absolute paths under the gg project root.
 
 There is no automatic background indexing daemon. The canonical one-shot repair
 path is `gg doctor --fix-index` (or an explicit `gg index --lang <lang>` when the

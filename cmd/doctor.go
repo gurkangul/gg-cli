@@ -15,7 +15,9 @@ var doctorCmd = &cobra.Command{
 	Short: "Diagnose and repair gg configuration",
 	Long: `Check service connectivity and verify that required indexer binaries
 are available. Use --install-indexers to automatically install missing SCIP
-binaries using their native package managers (go install, npm, pip).
+binaries with maintained package-manager flows (go, TypeScript, Python).
+Swift detection is supported, but Swift graph generation requires a user-provided
+compatible scip-swift binary because gg does not bundle one.
 
 Doctor reports the same CodeGraph freshness contract used by session-start,
 next, impact, and index status. It never starts a background index daemon;
@@ -63,7 +65,7 @@ var (
 
 func init() {
 	doctorCmd.Flags().BoolVar(&doctorInstallIndexers, "install-indexers", false,
-		"install missing SCIP indexer binaries (scip-go, scip-typescript, scip-python)")
+		"install missing SCIP indexer binaries with maintained installers (scip-go, scip-typescript, scip-python)")
 	doctorCmd.Flags().BoolVar(&doctorReconcile, "reconcile", false,
 		"scan the outbox for incomplete dual-store writes and report what needs repair")
 	doctorCmd.Flags().BoolVar(&doctorInstallAgentHooks, "install-agent-hooks", false,
@@ -152,6 +154,11 @@ var indexers = []indexerSpec{
 		Lang:    "python",
 		Install: []string{"npm", "install", "-g", "@sourcegraph/scip-python"},
 		Note:    "requires Node.js 18+",
+	},
+	{
+		Binary: "scip-swift",
+		Lang:   "swift",
+		Note:   "Swift CodeGraph support is externally backed: provide a compatible scip-swift on PATH or ~/.gg/bin. Contract: scip-swift index --output <file> <project-root>",
 	},
 }
 

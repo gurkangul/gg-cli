@@ -34,15 +34,28 @@ gg task list --json
 
 ## SCIP indexers
 
-`gg index` uses SCIP indexers to build the code knowledge graph. Install them via `gg doctor --install-indexers` or manually:
+`gg index` uses SCIP indexers to build the code knowledge graph. Maintained
+Go, TypeScript, and Python indexers can be installed with
+`gg doctor --install-indexers` or manually:
 
-| Language | Indexer | Install |
+| Language | Indexer | Install / setup |
 |---|---|---|
 | Go | `scip-go` | `go install github.com/sourcegraph/scip-go/cmd/scip-go@latest` |
 | TypeScript | `scip-typescript` | `npm install -g @sourcegraph/scip-typescript` |
 | Python | `scip-python` | `npm install -g @sourcegraph/scip-python` |
+| Swift | `scip-swift` | External/custom binary required; gg does not auto-install one |
 
 Requires Go 1.21+ for scip-go, Node.js 18+ for scip-typescript and scip-python.
+Swift support is externally backed because there is no official maintained
+Sourcegraph Swift SCIP indexer. A compatible `scip-swift` must accept:
+
+```sh
+scip-swift index --output <scip-file> <project-root>
+```
+
+It must exit non-zero on failure, write a valid SCIP file at `<scip-file>`, and
+emit document paths either relative to `<project-root>` or absolute paths under
+the gg project root.
 
 ## Git hooks
 

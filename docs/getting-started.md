@@ -77,7 +77,7 @@ gg session-start --agent=codex
 For impact analysis (`gg impact <file>`) and code context, index your code:
 
 ```sh
-# Install the SCIP indexer for your language
+# Install maintained SCIP indexers for Go, TypeScript, and Python
 gg doctor --install-indexers
 
 # Index the codebase
@@ -89,6 +89,20 @@ gg index --lang go --changed
 # Or keep an explicit foreground watcher open until Ctrl-C
 gg index --watch --lang go
 ```
+
+Supported `--lang` values are `go`, `python`, `swift`, and `typescript`.
+Swift is an externally-backed path: gg can detect SwiftPM and Xcode projects,
+track `.swift`/manifest freshness, and ingest SCIP output, but it does not
+bundle a Swift SCIP generator. Put a compatible `scip-swift` binary on `PATH`
+or `~/.gg/bin` using this contract:
+
+```sh
+scip-swift index --output <scip-file> <project-root>
+```
+
+The converter must exit non-zero on failure, write a valid SCIP file at
+`<scip-file>`, and emit document paths either relative to `<project-root>` or
+absolute paths under the gg project root.
 
 CodeGraph freshness is explicit: gg never runs a background index daemon.
 Agent-facing commands (`gg session-start`, `gg next`, `gg impact`, `gg doctor`,

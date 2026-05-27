@@ -60,7 +60,7 @@ func codeGraphPlural(n int, one, many string) string {
 func codeGraphSourceExtensions() []string {
 	seen := make(map[string]bool)
 	var out []string
-	for _, lang := range []runner.Lang{runner.LangGo, runner.LangPython, runner.LangTypeScript} {
+	for _, lang := range runner.SupportedLangs() {
 		for _, ext := range langExtensions(lang) {
 			if !seen[ext] {
 				seen[ext] = true
@@ -74,7 +74,7 @@ func codeGraphSourceExtensions() []string {
 func codeGraphAllManifestNames() []string {
 	seen := make(map[string]bool)
 	var out []string
-	for _, lang := range []runner.Lang{runner.LangGo, runner.LangPython, runner.LangTypeScript} {
+	for _, lang := range runner.SupportedLangs() {
 		for _, name := range manifestsForLang(lang) {
 			if !seen[name] {
 				seen[name] = true
@@ -125,7 +125,7 @@ func codeGraphChangesSince(ctx context.Context, root, baseSHA string, extensions
 
 func detectCodeGraphLanguages(root string) ([]runner.Lang, bool, error) {
 	seen := make(map[runner.Lang]bool)
-	for _, lang := range []runner.Lang{runner.LangGo, runner.LangPython, runner.LangTypeScript} {
+	for _, lang := range runner.SupportedLangs() {
 		dirs, err := discoverModuleDirs(root, lang)
 		if err != nil {
 			return nil, false, err
@@ -148,7 +148,7 @@ func detectCodeGraphLanguages(root string) ([]runner.Lang, bool, error) {
 
 func detectCodeGraphSourceLanguages(root string) ([]runner.Lang, bool, error) {
 	extLang := make(map[string]runner.Lang)
-	for _, lang := range []runner.Lang{runner.LangGo, runner.LangPython, runner.LangTypeScript} {
+	for _, lang := range runner.SupportedLangs() {
 		for _, ext := range langExtensions(lang) {
 			extLang[ext] = lang
 		}
@@ -197,7 +197,7 @@ func codeGraphMissingDetail(langs []runner.Lang, hasSupportedSource bool) string
 		return fmt.Sprintf("project gained code since init; detected language(s): %s - run %s", strings.Join(langNames(langs), ", "), codeGraphIndexSuggestion(langs))
 	}
 	if hasSupportedSource {
-		return "project gained supported source files since init, but no indexable module was found - add a supported module manifest (go.mod, package.json, tsconfig.json, pyproject.toml, setup.py, or requirements.txt)"
+		return "project gained supported source files since init, but no indexable module was found - add a supported module manifest (go.mod, package.json, tsconfig.json, pyproject.toml, setup.py, Package.swift, or an Xcode project/workspace)"
 	}
 	return "index-state.json missing - run gg index --lang <lang>"
 }

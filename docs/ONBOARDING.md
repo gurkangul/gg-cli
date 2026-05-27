@@ -153,7 +153,7 @@ After your first session, answer these and share with us:
 # GG-FEEDBACK v1
 date: YYYY-MM-DD
 role: developer|architect|reviewer|other
-project_type: go|python|typescript|other
+project_type: go|python|swift|typescript|other
 session_duration_min: N
 
 ## What worked

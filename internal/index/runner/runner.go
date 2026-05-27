@@ -34,8 +34,45 @@ type Lang string
 const (
 	LangGo         Lang = "go"
 	LangPython     Lang = "python"
+	LangSwift      Lang = "swift"
 	LangTypeScript Lang = "typescript"
 )
+
+// SupportedLangs returns every language exposed by gg index in stable display
+// order. Keep command validation, freshness detection, and docs wired through
+// this helper to avoid one command accepting a language another command cannot
+// reason about.
+func SupportedLangs() []Lang {
+	return []Lang{LangGo, LangPython, LangSwift, LangTypeScript}
+}
+
+// IndexerBinary returns the executable name for a language runner.
+func IndexerBinary(lang Lang) (string, bool) {
+	switch lang {
+	case LangGo:
+		return "scip-go", true
+	case LangPython:
+		return "scip-python", true
+	case LangSwift:
+		return "scip-swift", true
+	case LangTypeScript:
+		return "scip-typescript", true
+	default:
+		return "", false
+	}
+}
+
+// Preflight verifies that the indexer binary for lang is available before any
+// caller mutates derived graph state. Individual runners resolve again when
+// executing so PATH changes between preflight and run are still respected.
+func Preflight(lang Lang) error {
+	bin, ok := IndexerBinary(lang)
+	if !ok {
+		return fmt.Errorf("unsupported language %q", lang)
+	}
+	_, err := ResolveIndexer(bin)
+	return err
+}
 
 // Runner is the interface every language indexer must satisfy.
 type Runner interface {
@@ -77,6 +114,7 @@ func DefaultRegistry() *Registry {
 	reg := NewRegistry()
 	reg.Register(&GoRunner{})
 	reg.Register(&PythonRunner{})
+	reg.Register(&SwiftRunner{})
 	reg.Register(&TypeScriptRunner{})
 	return reg
 }

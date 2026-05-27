@@ -361,11 +361,22 @@ func checkIndexers(cmd *cobra.Command, report *doctorReport) {
 				report.warn(spec.Binary, fmt.Sprintf("not found — optional; no %s manifest detected", spec.Lang))
 				continue
 			}
-			report.fail(spec.Binary, fmt.Sprintf("not found — install: %s", missing.Hint))
+			label := "install"
+			if !missing.AutoInstall {
+				label = "external setup"
+			}
+			report.fail(spec.Binary, fmt.Sprintf("not found — %s: %s", label, missing.Hint))
 			continue
 		}
 		if !required {
 			report.warn(spec.Binary, fmt.Sprintf("not found — optional; no %s manifest detected", spec.Lang))
+			continue
+		}
+		if len(spec.Install) == 0 {
+			report.fail(spec.Binary, fmt.Sprintf("not found — automatic install unavailable: %s", missing.Hint))
+			if spec.Note != "" {
+				fmt.Printf("    note: %s\n", spec.Note)
+			}
 			continue
 		}
 
@@ -461,6 +472,9 @@ func runDoctorWipeBrain(cmd *cobra.Command) error {
 // runInstall executes the install command for the given spec.
 func runInstall(cmd *cobra.Command, spec indexerSpec) error {
 	args := spec.Install
+	if len(args) == 0 {
+		return fmt.Errorf("no automatic installer configured for %s", spec.Binary)
+	}
 	if runtime.GOOS == "windows" {
 		args = append([]string{"cmd", "/C"}, args...)
 	}

@@ -48,7 +48,7 @@ func runDoctorFixIndex(cmd *cobra.Command) error {
 			return fmt.Errorf("detect code graph languages: %w", detectErr)
 		}
 		if len(langs) == 0 && hasSource {
-			return fmt.Errorf("supported source files found but no indexable module was found; add a supported module manifest (go.mod, package.json, tsconfig.json, pyproject.toml, setup.py, or requirements.txt) and re-run gg doctor --fix-index")
+			return fmt.Errorf("supported source files found but no indexable module was found; add a supported module manifest (go.mod, package.json, tsconfig.json, pyproject.toml, setup.py, requirements.txt, Package.swift, or an Xcode project/workspace) and re-run gg doctor --fix-index")
 		}
 	}
 	if len(langs) == 0 {

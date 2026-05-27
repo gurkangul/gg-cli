@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -55,7 +56,7 @@ func runIndexWatch(cmd *cobra.Command) error {
 	reg := runner.DefaultRegistry()
 	r, ok := reg.Get(lang)
 	if !ok {
-		return fmt.Errorf("unsupported language %q - use go, python, or typescript", indexLang)
+		return fmt.Errorf("unsupported language %q - use %s", indexLang, strings.Join(langNames(runner.SupportedLangs()), ", "))
 	}
 
 	release, err := acquireIndexWatchLock(ggDir, indexWatchLock{

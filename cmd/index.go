@@ -21,7 +21,7 @@ import (
 )
 
 var indexCmd = &cobra.Command{
-	Use:   "index [--changed] [--lang go|python|typescript]",
+	Use:   "index [--changed] [--lang go|python|swift|typescript]",
 	Short: "Index the codebase into the Memgraph knowledge graph",
 	Long: `Runs a SCIP indexer on the project and writes the resulting code graph
 (Symbol, File, Package nodes and DEFINES/IMPORTS edges) to Memgraph.
@@ -47,7 +47,7 @@ var (
 func init() {
 	indexCmd.Flags().BoolVar(&indexChanged, "changed", false, "incremental: re-index only files changed since last index")
 	indexCmd.Flags().BoolVar(&indexWatch, "watch", false, "foreground watch mode: debounce source changes and run incremental index updates")
-	indexCmd.Flags().StringVar(&indexLang, "lang", "go", "language to index: go, python, typescript")
+	indexCmd.Flags().StringVar(&indexLang, "lang", "go", "language to index: go, python, swift, typescript")
 	rootCmd.AddCommand(indexCmd)
 }
 
@@ -74,7 +74,7 @@ func runIndexOnce(cmd *cobra.Command, lang runner.Lang, changedMode bool) error 
 	reg := runner.DefaultRegistry()
 	r, ok := reg.Get(lang)
 	if !ok {
-		return fmt.Errorf("unsupported language %q — use go, python, or typescript", lang)
+		return fmt.Errorf("unsupported language %q — use %s", lang, strings.Join(langNames(runner.SupportedLangs()), ", "))
 	}
 
 	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
@@ -115,6 +115,9 @@ func runFullIndex(ctx context.Context, root, ggDir string, lang runner.Lang, r r
 	}
 	if len(moduleDirs) == 0 {
 		return fmt.Errorf("no %s modules found under %s — none of [%s] present at root or within doctor.hook_install.max_depth subdirs", lang, root, strings.Join(manifestsForLang(lang), ", "))
+	}
+	if err := runner.Preflight(lang); err != nil {
+		return fmt.Errorf("indexer preflight (%s): %w", lang, err)
 	}
 
 	fmt.Printf("indexing %s (full, lang=%s, %d module(s)) ...\n", root, lang, len(moduleDirs))
@@ -266,6 +269,9 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 	}
 	if summary.hasChanges() {
 		fmt.Println(summary.detail("gg index --changed"))
+	}
+	if err := runner.Preflight(lang); err != nil {
+		return fmt.Errorf("indexer preflight (%s): %w", lang, err)
 	}
 
 	changedRelFiles := make([]string, 0, len(changedFiles))

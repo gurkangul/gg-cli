@@ -1,9 +1,10 @@
 // Package compat implements the indexer version compat-matrix for gg.
 //
-// Problem: the three SCIP indexers (scip-go, scip-typescript, scip-python)
-// have independent release cadences. A user might update scip-go independently
-// of gg, or vice versa, and the two may produce incompatible SCIP proto schemas
-// or symbol formats. Silent data corruption is worse than a hard error.
+// Problem: SCIP indexers have independent release cadences. A user might update
+// scip-go, scip-typescript, scip-python, or an externally supplied scip-swift
+// independently of gg, or vice versa, and the two may produce incompatible SCIP
+// proto schemas or symbol formats. Silent data corruption is worse than a hard
+// error.
 //
 // Solution: on first index run, write a manifest recording the exact binary
 // versions in use. On subsequent index runs, compare the installed versions

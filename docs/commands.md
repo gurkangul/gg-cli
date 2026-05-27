@@ -52,10 +52,16 @@ gg inbox [--role developer]
 ## Code index & impact
 
 ```sh
-gg index --lang go|typescript|python [--changed]
+gg index --lang go|python|swift|typescript [--changed]
 gg impact <file>          # downstream deps + exported symbols + related KB entries
 gg check                  # pre-push: open tasks + unresolved discussions
 ```
+
+Swift CodeGraph support requires an external compatible `scip-swift` binary;
+`gg doctor --install-indexers` does not auto-install Swift because there is no
+official maintained Sourcegraph Swift SCIP indexer. The binary must accept
+`scip-swift index --output <scip-file> <project-root>` and emit document paths
+relative to `<project-root>` or absolute paths under the gg project root.
 
 See [docs/commands/impact.md](commands/impact.md) for the full `gg impact` semantic contract (hop depth, exit codes, KB selection, flags).
 

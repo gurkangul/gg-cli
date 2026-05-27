@@ -33,8 +33,8 @@ func detectAgentHint(results []agenthooks.Result) string {
 // files in cwd, or "" when nothing matches. Empty return means "do not propose
 // gg index" — caller MUST check for "" before suggesting a language.
 //
-// Supported langs are the ones cmd/index.go actually has indexers for: go,
-// python, typescript. Detection of other ecosystems (.NET, Java, Rust, …)
+// Supported langs are the ones cmd/index.go actually has indexer entry points
+// for: go, python, swift, typescript. Detection of other ecosystems (.NET, Java, Rust, …)
 // lives in detectUnsupportedLang for messaging only.
 func detectLangHint(dir string) string {
 	checks := []struct {
@@ -46,10 +46,28 @@ func detectLangHint(dir string) string {
 		{"pyproject.toml", "python"},
 		{"setup.py", "python"},
 		{"requirements.txt", "python"},
+		{"Package.swift", "swift"},
 	}
 	for _, c := range checks {
 		if _, err := os.Stat(filepath.Join(dir, c.file)); err == nil {
 			return c.lang
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() {
+			ext := filepath.Ext(name)
+			if ext == ".xcodeproj" || ext == ".xcworkspace" {
+				return "swift"
+			}
+			continue
+		}
+		if filepath.Ext(name) == ".swift" {
+			return "swift"
 		}
 	}
 	return ""
@@ -76,7 +94,6 @@ func detectUnsupportedLang(dir string) string {
 		{"Gemfile", "Ruby"},
 		{"composer.json", "PHP"},
 		{"mix.exs", "Elixir"},
-		{"Package.swift", "Swift"},
 	}
 	for _, c := range exact {
 		if _, err := os.Stat(filepath.Join(dir, c.file)); err == nil {
@@ -121,10 +138,14 @@ func printBootstrapPrompt(agentHint, langHint, unsupportedHint string, indexed b
 	fmt.Println("────────────────────────────────────────────────────────────")
 	fmt.Println()
 	if !indexed && langHint != "" {
-		fmt.Printf("Next: run `gg index --lang %s` to populate the code graph.\n", langHint)
+		if langHint == "swift" {
+			fmt.Println("Next: provide a compatible external `scip-swift` binary, then run `gg index --lang swift` to populate the code graph.")
+		} else {
+			fmt.Printf("Next: run `gg index --lang %s` to populate the code graph.\n", langHint)
+		}
 		fmt.Println()
 	} else if !indexed && unsupportedHint != "" {
-		fmt.Printf("Detected %s — `gg index` supports go, python, typescript only; code graph skipped.\n", unsupportedHint)
+		fmt.Printf("Detected %s — `gg index` supports go, python, swift, typescript only; code graph skipped.\n", unsupportedHint)
 		fmt.Println()
 	}
 	fmt.Println("Forgot the prompt? Run `gg doctor` — it shows it again.")

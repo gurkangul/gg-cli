@@ -36,6 +36,9 @@ func maybeRunIndex(cmd *cobra.Command, langHint string, composeOK bool) bool {
 		return false
 	}
 	shouldRun := initWithIndex
+	if langHint == "swift" {
+		fmt.Fprintln(cmd.OutOrStdout(), "Note: Swift CodeGraph requires a compatible external scip-swift binary on PATH or ~/.gg/bin; gg doctor --install-indexers will not install one.")
+	}
 	if !shouldRun {
 		if !isTerminal(os.Stdin) {
 			return false
@@ -65,7 +68,11 @@ func maybeRunIndex(cmd *cobra.Command, langHint string, composeOK bool) bool {
 	indexChanged = false
 	if err := runIndex(cmd, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "⚠ gg index failed: %v\n", err)
-		fmt.Fprintf(os.Stderr, "  You can retry with: gg index --lang %s\n", langHint)
+		if langHint == "swift" {
+			fmt.Fprintf(os.Stderr, "  Provide compatible scip-swift first, then retry with: gg index --lang %s\n", langHint)
+		} else {
+			fmt.Fprintf(os.Stderr, "  You can retry with: gg index --lang %s\n", langHint)
+		}
 		return false
 	}
 	return true
