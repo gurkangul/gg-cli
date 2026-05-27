@@ -4,35 +4,126 @@
 [![Latest Release](https://img.shields.io/github/v/release/gurkangul/gg-cli)](https://github.com/gurkangul/gg-cli/releases/latest)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/gurkangul/gg-cli)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status: Alpha](https://img.shields.io/badge/status-alpha-orange)](https://github.com/gurkangul/gg-cli/releases)
+[![Status: Dogfood Ready](https://img.shields.io/badge/status-dogfood--ready-blue)](https://github.com/gurkangul/gg-cli/releases)
 
-> **Status: Alpha.** API and storage format may change between releases.
-> Good for personal projects and early multi-agent dogfooding; not yet a
-> production multi-team coordination system.
+**gg** is a local shared-brain CLI for developers who run more than one AI
+coding agent in the same codebase.
 
-**gg** is a local shared-brain CLI for developers running multiple AI agents
-(Codex, Claude Code, Cursor, Aider, manual shells, etc.) in the same project.
+Claude Code, Codex, Cursor, Aider, DeepSeek/Qwen-based agents, custom shells,
+and manual terminals can all read and write the same project memory through one
+simple interface:
 
-It gives every agent the same project memory:
+```sh
+gg status
+gg search "auth" --compact
+gg context "checkout" --compact
+gg impact path/to/file.go --compact
+```
 
-- decisions and rejected approaches
-- tasks, bugs, handoffs, and inbox messages
-- compact context bundles for agent prompts
-- optional code-impact graph for safer edits
+No hosted service. No gg daemon. No agent-specific SDK. If an agent can run a
+terminal command, it can use gg.
 
-**One brain. Any agent. Local-first. Subprocess-only. No hosted service.**
+> **Status:** pre-1.0 and actively dogfooded. The CLI is usable as a local
+> product today, while command details and storage formats may still evolve
+> before a stable 1.0 release.
 
 ---
 
 ## Why gg exists
 
-| Multi-agent failure mode | What gg adds |
+Multi-agent development is powerful, but the default experience is messy:
+
+- every agent starts from a blank slate
+- rejected ideas keep coming back
+- one agent changes code without knowing what another agent already decided
+- fixes land without impact analysis
+- “done” is claimed without an independent review or live smoke test
+
+gg turns that chaos into a shared operating system for agents.
+
+| What usually breaks | What gg gives you |
 |---|---|
-| Every agent re-derives context from scratch | `gg status`, `gg search`, and `gg context` surface prior project memory |
-| Agents repeat rejected ideas | Rejections are first-class records returned by search/context |
-| Fixes are impact-blind | `gg index` + `gg impact` show related files, symbols, tasks, bugs, and decisions |
-| Parallel agents collide | `gg task`, `gg tell`, and `gg inbox` make claims and handoffs visible |
-| “Done” is asserted without proof | Verify hooks and hydration gates make agents read context and run checks first |
+| Agents re-discover the same context | Shared decisions, tasks, bugs, messages, notes, and compact context bundles |
+| Rejected approaches get proposed again | Rejections are first-class memory and appear in search/context |
+| Parallel agents collide | Task ownership, leases, inboxes, and agent broadcasts |
+| Fixes are impact-blind | CodeGraph impact queries across files, symbols, bugs, tasks, and decisions |
+| “Done” means “the agent thinks it works” | Review gates, ready-for-live handoff, hooks, and smoke-test discipline |
+| Each project drifts differently | Cross-project sync, health checks, and portable brain snapshots |
+
+---
+
+## What you gain
+
+- **One shared memory for every agent**
+  Decisions, tasks, bugs, handoffs, rejections, discussions, and notes live in
+  one project brain instead of scattered chat windows.
+
+- **Model-agnostic collaboration**
+  gg does not care whether the caller is Claude, Codex, Cursor, Aider, a
+  DeepSeek/Qwen agent, or a human shell. The contract is the CLI.
+
+- **Less context waste**
+  `--compact` output gives agents dense one-line summaries first. They hydrate
+  full records only when needed.
+
+- **Fewer repeated mistakes**
+  Rejected approaches are stored beside decisions, so future agents see why an
+  idea was not chosen.
+
+- **Safer edits**
+  `gg impact` shows what a file or task touches before an agent changes it.
+
+- **Clear ownership**
+  Agents claim tasks with leases, renew work they still own, release work they
+  abandon, and hand off review explicitly.
+
+- **Reviewer-verified completion**
+  Implementers can mark work ready for live verification, but a separate
+  reviewer closes it.
+
+- **Local-first privacy**
+  Data stays on your machine. gg uses local Docker services for search,
+  embeddings, and graph queries.
+
+- **Portable project brain**
+  Brain snapshots can be exported, checked, and restored without depending on a
+  hosted account.
+
+- **Cross-project maintenance**
+  A single command can refresh contracts, hooks, tracker collections, and health
+  checks across all registered local projects.
+
+---
+
+## How it works
+
+```text
+Agent A        Agent B        Agent C        Human shell
+  │              │              │              │
+  └─────── runs `gg ...` as a subprocess ──────┘
+                         │
+                         ▼
+              local shared project brain
+                         │
+        ┌────────────────┼────────────────┐
+        ▼                ▼                ▼
+     Qdrant           Ollama          Memgraph
+ semantic memory   local embeddings   CodeGraph
+```
+
+gg is intentionally boring infrastructure:
+
+- agents call a CLI command
+- every record is namespaced by project ID
+- Qdrant powers semantic recall
+- Ollama provides local embeddings
+- Memgraph stores the optional code graph
+- project metadata is committed with the project
+- runtime state stays outside the project repository
+
+There is no central coordinator and no background gg daemon. CodeGraph freshness
+is explicit: run a one-shot repair when needed, or start an opt-in foreground
+watcher that stops when you stop it.
 
 ---
 
@@ -62,9 +153,26 @@ gg doctor --install-agent-hooks
 
 - Qdrant for semantic search
 - Ollama with `nomic-embed-text` for local embeddings
-- Memgraph for optional code-impact queries
+- Memgraph for CodeGraph queries
 
-No cloud account or API key is required.
+No cloud account or API key is required for normal use. Installing the CLI,
+pulling Docker images, and checking for updates can still use the network when
+you explicitly run those commands.
+
+For brownfield projects, or after a gg upgrade, refresh agent instructions and
+hooks explicitly:
+
+```sh
+gg doctor --install-agent-hooks
+gg doctor --install-task-hooks
+```
+
+Optional but recommended for impact analysis:
+
+```sh
+gg doctor --install-indexers
+gg doctor --fix-index
+```
 
 Update later with:
 
@@ -73,13 +181,7 @@ gg update check
 gg update
 ```
 
-For unreleased development builds:
-
-```sh
-go install github.com/gurkangul/gg-cli/cmd/gg@main
-```
-
-For a local gg-cli checkout with uncommitted dogfood changes:
+For a local gg-cli checkout with dogfood changes:
 
 ```sh
 make install
@@ -89,68 +191,104 @@ gg update --from-source --skip-sync
 
 ---
 
-## Agent setup
+## Quick start for agents
 
-| Agent | Recommended path |
-|---|---|
-| Codex | Install `gg`, run `gg init`; Codex reads project `AGENTS.md`. Optional global reminder: `~/.codex/instructions.md`. |
-| Claude Code | Install `gg`, run `gg init`, then `gg doctor --install-agent-hooks`; Claude reads generated `CLAUDE.md` / `AGENTS.md`. |
-| Cursor | Install `gg`, run `gg init`, then `gg doctor --install-agent-hooks`; Cursor reads generated `.cursor/rules/gg.mdc`. |
-| Manual shell | `export GG_AGENT=manual GG_ROLE=developer`, then run `gg status` and `gg inbox --role "$GG_ROLE" --since-cursor`. |
-
-At the start of a session, agents should orient themselves with:
+At the start of every agent session:
 
 ```sh
-export GG_AGENT="${GG_AGENT:-agent}"  # codex, claude-code, cursor, aider, ...
-gg status
-gg inbox --role "${GG_ROLE:-developer}" --since-cursor
+export GG_AGENT="codex-1"          # unique runtime instance
+export GG_ROLE="implementer"       # role/authority for this session
+
+gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
+gg inbox --role "$GG_ROLE" --peek
+gg task list --ready --compact
+gg context --compact
 ```
 
-See [`docs/getting-started.md`](docs/getting-started.md) for the full agent
-workflow.
+Before changing a file:
+
+```sh
+gg search "topic or feature" --compact
+gg impact path/to/file.go --compact
+```
+
+When starting work:
+
+```sh
+gg task start TASK-123 --owner "$GG_AGENT" --lease 30m
+gg tell all "TASK-123 started by $GG_AGENT ($GG_ROLE)" \
+  --from "$GG_ROLE" --audience agents --task TASK-123
+```
+
+When implementation is locally verified:
+
+```sh
+gg task ready-for-live TASK-123 \
+  "Reviewer: inspect diff, run tests, and perform live smoke" \
+  --from "$GG_ROLE"
+
+gg tell reviewer "TASK-123 ready for review" --from "$GG_ROLE" --task TASK-123
+```
+
+The implementer should not close their own task in projects that enforce
+reviewer separation.
 
 ---
 
-## Quick workflow
+## Daily workflow
 
 ```sh
-# Record durable context
-gg record "use JWT for auth" --reason "stateless, scales well" --tags "auth,api"
-gg record "raw SQL rollback rejected" --decision-status rejected --reason "unsafe in prod"
+# Capture durable decisions
+gg record "use JWT for auth" \
+  --reason "stateless, simple to deploy" \
+  --tags "auth,api"
+
+# Capture rejected approaches too
+gg record "store sessions in Redis" \
+  --decision-status rejected \
+  --reason "adds infra we do not need yet" \
+  --tags "auth,api"
 
 # Create and inspect work
-gg task create "add auth middleware" --detail "protect API routes" --priority high --requester user
-gg task list --compact
+gg task create "add auth middleware" \
+  --detail "protect API routes" \
+  --priority high \
+  --requester user
+
+gg task list --ready --compact
 gg task get TASK-001
 
-# Search before editing
-gg search "auth" --compact
+# Ask the shared brain before editing
+gg search "authentication" --compact
 gg context "authentication" --compact
+gg impact path/to/file.go --compact
 
-# Optional code graph
-gg doctor --install-indexers
-gg index --lang go
-gg index --watch --lang go  # optional foreground watcher; Ctrl-C stops it
-gg impact internal/auth/middleware.go --compact
-
-# Cross-agent handoff
-gg tell "all" "TASK-001 picked up" --from developer --audience agents
-gg inbox --role reviewer --since-cursor
+# Check project health
+gg status
+gg check --strict
+gg doctor
 ```
 
-Use compact output for scanning; hydrate the full record before changing state.
-Compact rows are an index, not the source of truth.
+Use compact output for scanning. Hydrate the full task, bug, or decision before
+changing state.
 
-CodeGraph freshness is explicit. gg does not start a background indexing daemon:
-agent-facing commands warn when the graph is missing or stale, `gg doctor --fix-index`
-is the canonical one-shot repair, and `gg index --watch` / `gg watch --index` are
-operator-started foreground watchers that run only until Ctrl-C.
-`gg session-start`, `gg next`, `gg impact`, `gg doctor`, and `gg index status`
-use the same freshness notice contract: status/reason, repair command, and
-foreground-watch hint all come from one shared model.
-Freshness tracks source files plus selected module manifests, not dependency
-lockfiles such as `go.sum`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`,
-`poetry.lock`, or `uv.lock`.
+---
+
+## Agent and model compatibility
+
+gg works at the process boundary, not the model boundary.
+
+| Runtime/model setup | Works with gg? | Requirement |
+|---|---:|---|
+| Claude Code | Yes | Shell/tool command access |
+| Codex-style CLI agent | Yes | Shell/tool command access |
+| Cursor agent | Yes | Project rules + shell/tool command access |
+| Aider/manual terminal | Yes | Run `gg` commands directly |
+| DeepSeek/Qwen-based agent | Yes | The host agent runtime must expose shell/tool execution |
+| Plain chat with no tools | Indirectly | A human or wrapper must run the commands |
+
+This is why gg can support new models without rewriting integrations: the
+stable interface is the command line.
 
 ---
 
@@ -158,12 +296,13 @@ lockfiles such as `go.sum`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`,
 
 | Area | Commands |
 |---|---|
-| Orientation | `gg status`, `gg search`, `gg context`, `gg inbox` |
+| Orientation | `gg session-start`, `gg status`, `gg search`, `gg context`, `gg inbox` |
 | Decisions | `gg record`, `gg record --decision-status rejected` |
-| Tasks | `gg task create/list/get/start/renew/release/done/block/ready-for-live` |
+| Tasks | `gg task create/list/get/start/renew/release/block/ready-for-live/done` |
 | Bugs | `gg bug report/triage/start/fix/wontfix/reopen` |
-| Code impact | `gg index`, `gg index status`, `gg impact` |
-| Brain snapshots | `gg brain export`, `gg brain status`, `gg system brain status` |
+| Impact | `gg index`, `gg index status`, `gg impact` |
+| Sync | `gg system sync`, `gg system brain status` |
+| Brain snapshots | `gg brain export`, `gg brain import`, `gg brain status` |
 | Health | `gg doctor`, `gg doctor --reconcile`, `gg reconcile`, `gg check` |
 | Maintenance | `gg update check`, `gg update`, `gg reembed` |
 
@@ -174,55 +313,71 @@ Full command reference:
 
 ---
 
-## How data is stored
-
-gg is local-first:
-
-- project metadata lives in `.gg/config.yaml`
-- durable brain records are JSONL-first
-- Qdrant is a derived semantic-search index
-- Memgraph is an optional derived code graph
-- runtime telemetry/cache/brain exports live outside public source paths
-
-Every record is namespaced by project ID, so multiple projects can share the
-same local backend without mixing data.
-
-See [`docs/architecture.md`](docs/architecture.md) for package layout,
-crash-safety, indexing, and isolation details.
-
----
-
 ## Safety model
 
-gg is useful because it makes project memory visible, but it is deliberately not
-magic. Agents still need to verify before acting.
+gg does not ask you to trust agents more. It gives agents fewer excuses to act
+without evidence.
 
 Important guardrails:
 
-- use `--compact` for scans, then full `gg task get` / `gg bug get` before state changes
-- run `gg impact <file>` before editing source files in gg-managed projects
-- repair stale CodeGraph state with `gg doctor --fix-index`, or explicitly keep a
-  foreground watcher open with `gg index --watch` / `gg watch --index`
-- run project tests before `gg task done`
-- use `--audience agents` for agent-status broadcasts so human inboxes stay clean
-- run `gg doctor --reconcile` after crashes or suspected store drift
+- search previous decisions before proposing a new direction
+- record rejected approaches so they do not come back later
+- run impact checks before editing source files
+- use task ownership and leases to avoid parallel collisions
+- use role-scoped inbox reads for assignments and review handoffs
+- keep broadcasts agent-only unless the human needs to see them
+- run tests and live-shaped smoke checks before ready-for-live
+- let a different reviewer close the task when verifier separation is enabled
+- reconcile after crashes or suspected store drift
 
-See [`docs/verify-gate.md`](docs/verify-gate.md) and
-[`docs/adapters.md`](docs/adapters.md) for hooks and agent integration.
+The result is not “the AI is always right.” The result is: every claim has a
+trail, every decision has a reason, and every agent can inspect the same facts.
 
 ---
 
-## Local telemetry
+## Cross-project operations
 
-When enabled, gg writes local command telemetry to
-`~/.gg/projects/<project_id>/telemetry.jsonl`. It is never sent to a hosted
-service.
+gg can manage every registered local project from one place:
 
-Disable it with:
+```sh
+gg system sync
+gg system brain status
+```
+
+Use this after installing a new gg release to propagate:
+
+- managed agent instructions
+- Claude/Cursor/Codex/GSD contract blocks where detected
+- task and verification hooks
+- tracker collection self-healing
+- brain snapshot health checks
+- CodeGraph readiness reports
+
+This is what keeps a multi-project workstation from drifting into nine slightly
+different agent protocols.
+
+---
+
+## Data and privacy
+
+gg is local-first:
+
+- project identity and rules are stored with the project
+- runtime cache and telemetry stay under your local `~/.gg/` directory
+- semantic search is local Qdrant
+- embeddings are local Ollama
+- CodeGraph is local Memgraph
+- records are namespaced by project ID
+- telemetry is local-only and can be disabled
+
+Disable local telemetry with:
 
 ```sh
 export GG_TELEMETRY=0
 ```
+
+See [`docs/architecture.md`](docs/architecture.md) for isolation, storage,
+crash-safety, and indexing details.
 
 ---
 
@@ -230,14 +385,14 @@ export GG_TELEMETRY=0
 
 | Doc | Purpose |
 |---|---|
-| [`docs/getting-started.md`](docs/getting-started.md) | install and first run |
+| [`docs/getting-started.md`](docs/getting-started.md) | first install and first project |
 | [`docs/commands.md`](docs/commands.md) | command overview |
 | [`docs/cli/`](docs/cli/) | generated per-command help |
+| [`docs/agent-protocol-v1.md`](docs/agent-protocol-v1.md) | multi-agent operating protocol |
 | [`docs/architecture.md`](docs/architecture.md) | internals and data model |
 | [`docs/adapters.md`](docs/adapters.md) | agent integrations and hooks |
 | [`docs/verify-gate.md`](docs/verify-gate.md) | task-close verification gates |
 | [`docs/roadmap.md`](docs/roadmap.md) | historical plan and future direction |
-| [`AGENTS.md`](AGENTS.md) | runtime agent contract for this repository |
 
 ---
 
@@ -245,8 +400,8 @@ export GG_TELEMETRY=0
 
 Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-For security issues, see [`SECURITY.md`](SECURITY.md) — please do not open a
-public issue.
+For security issues, see [`SECURITY.md`](SECURITY.md). Please do not open a
+public issue for vulnerabilities.
 
 ## License
 
