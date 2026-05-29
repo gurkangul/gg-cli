@@ -6,9 +6,12 @@ Full reference for all `gg` commands. Run `gg <command> --help` for live usage.
 
 | Command | Description |
 |---|---|
+| `gg session-start --agent <id> --role <role>` | Start-of-session briefing and identity validation |
+| `gg next --agent <id> --role <role>` | Read-only next-step packet: inbox, active work, ready tasks/reviews |
 | `gg status` | Open tasks, pending messages, recent decisions |
-| `gg search "topic"` | Semantic search over decisions and rejections |
-| `gg context "topic"` | Unified context bundle (decisions + rejections + tasks + notes) |
+| `gg search "topic" --compact` | Semantic search over decisions and rejections |
+| `gg context "topic" --compact` | Unified context bundle (decisions + rejections + tasks + notes) |
+| `gg inbox --role <role> --peek` | Role-scoped messages without consuming same-role reads |
 
 ## Decisions & rejections
 
@@ -23,21 +26,30 @@ gg record "sessions" --decision-status rejected --reason "stateful" # rejected a
 
 ```sh
 gg task create "title" --detail "..." --priority high|medium|low --tags "t1,t2"
-gg task list [--status pending|in_progress|done|blocked] [--ready]
-gg task get TASK-ID
-gg task done TASK-ID "summary"
+gg task list [--status pending|in_progress|ready_for_live|done|blocked] [--ready] [--compact]
+gg task get TASK-ID [--review]
+gg task start TASK-ID --owner "$GG_AGENT" --lease 30m
+gg task renew TASK-ID --owner "$GG_AGENT" --lease 30m
+gg task release TASK-ID --owner "$GG_AGENT"
+gg task ready-for-live TASK-ID --plan "Reviewer: <check>; Evidence: commands=<cmds>; live=<smoke>; impact=<files>; gaps=<none|gap>; artifacts=<paths>" --from "$GG_ROLE"
+gg task review TASK-ID --approve|--reject --by reviewer --notes "..."
+gg task done TASK-ID "verified summary" --verifier reviewer
 gg task block TASK-ID "reason"
 gg task deps TASK-ID
+gg task packet TASK-ID             # reviewer handoff packet; also available as gg task get --review
 ```
+
+Evidence/handoff summaries belong in existing task/tell fields. Keep bulky logs
+or screenshots outside gg and record only the summary plus path/reference.
 
 ## Bugs
 
 ```sh
-gg bug report "title" --detail "..." --severity critical|high|medium|low
+gg bug report "title" --detail "..." --severity critical|high|medium|low --files path/to/file.go --symbols SymbolName
 gg bug list [--status open|fixing|fixed|wontfix]
 gg bug get BUG-ID
 gg bug start BUG-ID
-gg bug fix BUG-ID "summary" --root-cause "what caused it"
+gg bug fix BUG-ID "summary" --root-cause "what caused it" --repro path/to/repro.sh --repro-broken-ref <sha> --files path/to/file.go --symbols SymbolName
 gg bug wontfix BUG-ID "reason"
 gg bug triage BUG-ID          # unified context bundle for fixing
 ```
@@ -46,7 +58,8 @@ gg bug triage BUG-ID          # unified context bundle for fixing
 
 ```sh
 gg tell "role" "message" --from architect
-gg inbox [--role developer]
+gg tell reviewer "TASK-123 ready. Evidence: commands run: <cmds>; live smoke: <result>; impacted files: <files>; known gaps: <none|gap>; artifacts: <paths>" --from "$GG_ROLE" --task TASK-123
+gg inbox --role developer --peek
 ```
 
 ## Code index & impact

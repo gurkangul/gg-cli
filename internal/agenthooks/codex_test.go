@@ -54,8 +54,8 @@ func TestCodex_Install_AppendsBlockWhenAbsent(t *testing.T) {
 	if !strings.Contains(s, codexBlockStart) || !strings.Contains(s, codexBlockEnd) {
 		t.Errorf("managed block markers missing: %s", s)
 	}
-	if !strings.Contains(s, "--audience agents") {
-		t.Errorf("managed block must tell agents to use --audience agents for broadcasts: %s", s)
+	if !strings.Contains(s, "Durable outputs include decisions") {
+		t.Errorf("managed block must explain durable-memory capture: %s", s)
 	}
 }
 
@@ -107,12 +107,13 @@ func TestCodex_Install_ReplacesDriftedBlock(t *testing.T) {
 	}
 }
 
-func TestCodex_ManagedBody_AllowsManualGSDOnly(t *testing.T) {
+func TestCodex_ManagedBody_AllowsNativeGSDScratchpad(t *testing.T) {
 	body := codexManagedBody()
 	for _, want := range []string{
-		"GSD itself is **not banned**",
-		"local scratchpad or manual helper",
-		"tabs, panes, queues, nudges, heartbeats, and worker routing",
+		"GSD itself is allowed",
+		"local scratchpad/helper",
+		"copy durable outcomes into gg",
+		"do not rely on `.gsd/gsd.db` for shared memory",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("codex managed body missing %q", want)
@@ -125,10 +126,11 @@ func TestCodex_ManagedBody_AllowsManualGSDOnly(t *testing.T) {
 		"developer" + ".command",
 		"Every GSD " + "task (T-level, not milestone or slice) MUST have a gg task",
 		"Mirror at " + "pickup",
+		"tabs, panes, queues, nudges, heartbeats, and worker routing",
 	}
 	for _, removed := range removed {
 		if strings.Contains(body, removed) {
-			t.Fatalf("codex managed body still contains removed orchestration text %q", removed)
+			t.Fatalf("codex managed body still contains removed control text %q", removed)
 		}
 	}
 }

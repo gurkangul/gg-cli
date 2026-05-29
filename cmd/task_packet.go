@@ -268,7 +268,8 @@ func renderTaskPacket(w io.Writer, p taskPacket) {
 	}
 
 	fmt.Fprintln(w, "\nChanged files / impact summary:")
-	fmt.Fprintln(w, "  (not stored in task metadata; reviewer should inspect git diff and commit impact footers)")
+	fmt.Fprintln(w, "  (not stored in task metadata; reviewer should inspect git diff and any task-scoped evidence messages)")
+	fmt.Fprintln(w, "  Evidence packet should include: commands run, live smoke, impacted files, known gaps, artifact paths")
 	fmt.Fprintln(w, "  Suggested per changed file: gg impact <file> --compact")
 
 	fmt.Fprintln(w, "\nTest evidence:")
@@ -283,7 +284,7 @@ func renderTaskPacket(w io.Writer, p taskPacket) {
 	fmt.Fprintf(w, "  gg task packet %s\n", t.ID)
 	if t.Status == "ready_for_live" {
 		fmt.Fprintf(w, "  gg task review %s --approve --by reviewer-1\n", t.ID)
-		fmt.Fprintf(w, "  gg task done %s \"verified live workflow\" --verifier reviewer-1\n", t.ID)
+		fmt.Fprintf(w, "  gg task done %s \"verified: tests + live smoke\" --verifier reviewer-1\n", t.ID)
 	} else {
 		fmt.Fprintf(w, "  gg context --for-task %s\n", t.ID)
 	}

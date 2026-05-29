@@ -58,23 +58,22 @@ func TestCursor_Install_IdempotentWhenContentMatches(t *testing.T) {
 	}
 }
 
-// TestCursor_RuleContent_ContainsAuthorityPreamble verifies AC-4: the Cursor
-// rule file declares gg-cli is canonical so Cursor agents defer to gg.
-// Checks all spec-required clauses: AUTHORITY opener, canonical claim, and
-// the "persisted via gg" requirement.
-func TestCursor_RuleContent_ContainsAuthorityPreamble(t *testing.T) {
+// TestCursor_RuleContent_ContainsDurableMemoryRule verifies the Cursor rule
+// keeps Cursor's native workflow while requiring durable outputs in gg.
+func TestCursor_RuleContent_ContainsDurableMemoryRule(t *testing.T) {
 	content := cursorRuleContent()
 	checks := []struct {
 		substr string
 		label  string
 	}{
-		{"AUTHORITY:", "AUTHORITY: preamble opener"},
-		{"gg-cli is canonical", "gg-cli is canonical clause"},
-		{"persisted via gg", "persisted via gg requirement"},
+		{"shared-memory project", "shared-memory project clause"},
+		{"does not own Cursor's workflow", "native workflow clause"},
+		{"persist", "durable persistence verb"},
+		{"future agents need", "future-agent continuity clause"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(content, c.substr) {
-			t.Errorf("cursorRuleContent missing %s (AC-4): want substring %q", c.label, c.substr)
+			t.Errorf("cursorRuleContent missing %s: want substring %q", c.label, c.substr)
 		}
 	}
 }

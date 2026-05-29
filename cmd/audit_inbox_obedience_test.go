@@ -1,4 +1,4 @@
-// Package cmd — tests for gg audit inbox-obedience metric computation.
+// Package cmd — tests for gg audit inbox-obedience handoff acknowledgement metric computation.
 package cmd
 
 import (
@@ -103,7 +103,7 @@ func TestObedience_EmptyWindow_NoError(t *testing.T) {
 
 func TestObedience_AllBroadcastsAreNotRoleAcknowledgement(t *testing.T) {
 	client := &fakeMessageClient{messages: []store.Message{
-		{FromRole: "orchestrator", ToRole: "all", Content: "TASK-423 picked up", Read: false, CreatedAt: now()},
+		{FromRole: "coordinator", ToRole: "all", Content: "TASK-423 picked up", Read: false, CreatedAt: now()},
 	}}
 	rows, err := computeObedienceRowsFromClient(context.Background(), client,
 		time.Now().UTC().Add(-time.Hour), "")
@@ -111,13 +111,13 @@ func TestObedience_AllBroadcastsAreNotRoleAcknowledgement(t *testing.T) {
 		t.Fatalf("compute: %v", err)
 	}
 	if len(rows) != 0 {
-		t.Fatalf("broadcast-only messages should not create obedience rows, got %+v", rows)
+		t.Fatalf("broadcast-only messages should not create role-targeted handoff rows, got %+v", rows)
 	}
 }
 
 func TestObedience_AllBroadcastWithMentionCountsMentionedRole(t *testing.T) {
 	client := &fakeMessageClient{messages: []store.Message{
-		{FromRole: "orchestrator", ToRole: "all", Content: "@reviewer please verify BUG-059", Read: true, CreatedAt: now()},
+		{FromRole: "coordinator", ToRole: "all", Content: "@reviewer please verify BUG-059", Read: true, CreatedAt: now()},
 	}}
 	rows, err := computeObedienceRowsFromClient(context.Background(), client,
 		time.Now().UTC().Add(-time.Hour), "")
@@ -131,7 +131,7 @@ func TestObedience_AllBroadcastWithMentionCountsMentionedRole(t *testing.T) {
 
 func TestObedience_DuplicateMentionDoesNotDoubleCount(t *testing.T) {
 	client := &fakeMessageClient{messages: []store.Message{
-		{FromRole: "orchestrator", ToRole: "developer", Content: "@developer please ack", Read: true, CreatedAt: now()},
+		{FromRole: "coordinator", ToRole: "developer", Content: "@developer please ack", Read: true, CreatedAt: now()},
 	}}
 	rows, err := computeObedienceRowsFromClient(context.Background(), client,
 		time.Now().UTC().Add(-time.Hour), "")

@@ -6,14 +6,14 @@ Print session bootstrap briefing (called by agent SessionStart hooks)
 
 Print the session-start briefing for an AI agent entering this project.
 
-This is the canonical entrypoint used by agent SessionStart hooks installed
+This is the canonical orientation entrypoint used by agent SessionStart hooks installed
 via `gg doctor --install-agent-hooks`. The output is a stable,
 machine-parseable briefing followed by the current project state.
 
-Enforcement:
+Identity:
   --agent=NAME must be provided, or GG_AGENT must be set in the environment.
-  Otherwise the command exits with code 3 (config error) — a silent skip
-  would defeat the point of enforcement.
+  Otherwise the command exits with code 3 (config error). Agent identity keeps
+  durable memory and telemetry attributable to the runtime that wrote it.
 
   --role=ROLE is optional. When provided (or GG_ROLE is set), the briefing
   prints role-scoped next steps for the current agent instance.

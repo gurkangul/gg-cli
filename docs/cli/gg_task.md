@@ -26,7 +26,7 @@ Manage tasks
 * [gg task get](gg_task_get.md)	 - Get task details
 * [gg task list](gg_task_list.md)	 - List tasks
 * [gg task packet](gg_task_packet.md)	 - Print a reviewer handoff packet for a task
-* [gg task ready-for-live](gg_task_ready-for-live.md)	 - Mark a task as ready for live verification — transitions in_progress → ready_for_live
+* [gg task ready-for-live](gg_task_ready-for-live.md)	 - Record implementation evidence for independent live verification
 * [gg task reindex](gg_task_reindex.md)	 - Replay Task nodes into Memgraph from the Qdrant task store
 * [gg task release](gg_task_release.md)	 - Release the current task claim and return it to pending
 * [gg task renew](gg_task_renew.md)	 - Renew the current owner lease for an in-progress task

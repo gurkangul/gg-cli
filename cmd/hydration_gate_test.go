@@ -29,8 +29,8 @@ func TestTaskDoneHydrationGateBlocksTaggedSessionWithoutFullGet(t *testing.T) {
 	if rej.Code != ExitVerifyFailed {
 		t.Fatalf("expected ExitVerifyFailed, got %d", rej.Code)
 	}
-	if !strings.Contains(rej.Message, "gg task get TASK-123") {
-		t.Fatalf("message should tell the agent how to hydrate, got %q", rej.Message)
+	if !strings.Contains(rej.Message, "missing durable task evidence") || !strings.Contains(rej.Message, "gg task get TASK-123") {
+		t.Fatalf("message should explain missing durable evidence and hydration command, got %q", rej.Message)
 	}
 }
 
@@ -74,8 +74,8 @@ func TestTaskHydrationGateBlocksOtherStateTransitions(t *testing.T) {
 				t.Fatalf("expected %s without hydration proof to be blocked", action)
 				return
 			}
-			if !strings.Contains(rej.Message, action) || !strings.Contains(rej.Message, "gg task get TASK-123") {
-				t.Fatalf("message should name action and hydration command, got %q", rej.Message)
+			if !strings.Contains(rej.Message, action) || !strings.Contains(rej.Message, "missing durable task evidence") || !strings.Contains(rej.Message, "gg task get TASK-123") {
+				t.Fatalf("message should name action, missing evidence, and hydration command, got %q", rej.Message)
 			}
 		})
 	}
@@ -109,8 +109,8 @@ func TestBugHydrationGateBlocksTaggedSessionWithoutFullBugGet(t *testing.T) {
 	if rej.Code != ExitVerifyFailed {
 		t.Fatalf("expected ExitVerifyFailed, got %d", rej.Code)
 	}
-	if !strings.Contains(rej.Message, "gg bug get BUG-058") || !strings.Contains(rej.Message, "gg bug triage BUG-058") {
-		t.Fatalf("message should tell agent how to hydrate bug context, got %q", rej.Message)
+	if !strings.Contains(rej.Message, "missing durable bug evidence") || !strings.Contains(rej.Message, "gg bug get BUG-058") || !strings.Contains(rej.Message, "gg bug triage BUG-058") {
+		t.Fatalf("message should explain missing bug evidence and hydration commands, got %q", rej.Message)
 	}
 }
 

@@ -109,25 +109,24 @@ func TestGSD_Install_DryRun(t *testing.T) {
 	}
 }
 
-// TestGSD_BridgeBlock_ContainsAuthorityPreamble verifies the GSD bridge block
-// declares gg-cli as canonical while keeping GSD as a manual scratchpad/helper.
-func TestGSD_BridgeBlock_ContainsAuthorityPreamble(t *testing.T) {
+// TestGSD_BridgeBlock_ContainsDurableMemoryRule verifies the GSD bridge block
+// keeps GSD as a native scratchpad/helper while requiring durable outcomes in gg.
+func TestGSD_BridgeBlock_ContainsDurableMemoryRule(t *testing.T) {
 	body := gsdBridgeBlock()
 	checks := []struct {
 		substr string
 		label  string
 	}{
-		{"AUTHORITY:", "AUTHORITY: preamble opener"},
-		{"gg-cli is canonical", "gg-cli is canonical clause"},
-		{"gg mandatory contract", "gg mandatory contract clause"},
-		{"MANUAL GSD SCRATCHPAD", "manual scratchpad heading"},
-		{"local scratchpad/helper", "scratchpad scope"},
-		{"copy durable outcomes back into gg", "durable outcome copy guidance"},
+		{"Native GSD Scratchpad", "native scratchpad heading"},
+		{"does not own GSD's workflow", "gg scope clause"},
+		{"durable outcomes", "durable outcome clause"},
+		{"canonical cross-agent memory", "canonical memory clause"},
+		{"`.gsd/gsd.db` as shared memory", "gsd db non-canonical clause"},
 		{"`gg gsd audit` is advisory", "advisory audit guidance"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(body, c.substr) {
-			t.Errorf("gsdBridgeBlock missing %s (AC-4): want substring %q", c.label, c.substr)
+			t.Errorf("gsdBridgeBlock missing %s: want substring %q", c.label, c.substr)
 		}
 	}
 	removed := []string{
@@ -135,6 +134,7 @@ func TestGSD_BridgeBlock_ContainsAuthorityPreamble(t *testing.T) {
 		"Every GSD " + "task (T-level) MUST have exactly one gg task " + "mirror",
 		"developer execution " + "environment",
 		"gsd_complete" + "_task",
+		"tabs, panes, queues, nudges, heartbeats, and worker routing",
 	}
 	for _, removed := range removed {
 		if strings.Contains(body, removed) {

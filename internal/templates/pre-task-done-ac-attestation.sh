@@ -340,11 +340,11 @@ if [ -n "$GG_ALLOW_INCOMPLETE_AC" ]; then
 fi
 
 # ── 8. Report unmatched ACs ───────────────────────────────────────────────────
-printf '[ac-attestation] ⚠ %s: unmatched acceptance criteria:%s\n\n' \
+printf '[ac-attestation] ⚠ %s: missing durable evidence for acceptance criteria:%s\n\n' \
   "$GG_TASK_ID" "$UNMATCHED" >&2
 
 FIRST_NUM="$(printf '%s' "$ACS" | head -1 | cut -f1)"
-printf 'To fix — any one of (a)–(e) satisfies an AC:\n' >&2
+printf 'Record one evidence reference per unmatched AC — any one of (a)–(e) satisfies an AC:\n' >&2
 printf '  (a) AC-N: line in commit body — one per unmatched AC:\n' >&2
 while IFS="	" read -r NUM _; do
   [ -z "$NUM" ] && continue

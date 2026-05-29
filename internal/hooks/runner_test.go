@@ -92,7 +92,7 @@ func TestRunHooks_Strict(t *testing.T) {
 	if err == nil {
 		t.Error("strict mode: expected error on hook failure, got nil")
 	}
-	// Strict mode aborts after first failure — second hook not executed.
+	// Strict hook behavior aborts after first failure — second hook not executed.
 	if len(results) != 1 {
 		t.Errorf("strict mode: expected 1 result (abort after first), got %d", len(results))
 	}

@@ -14,13 +14,15 @@ import (
 
 var auditInboxObedienceCmd = &cobra.Command{
 	Use:   "inbox-obedience",
-	Short: "Measure inbox-obey compliance per agent role",
+	Short: "Measure role-targeted handoff acknowledgement per agent role",
 	Long: `Count role-targeted messages received vs acknowledged (marked read) per agent
 role over a time window. Acknowledged = marked read via 'gg inbox' (peek bypassed).
 
-obedience_ratio = acknowledged / received
+handoff_ack_ratio = acknowledged / actionable role-targeted messages
 
-Roles with ratio < 0.5 and received > 3 are flagged as low-compliance.`,
+Roles with ratio < 0.5 and actionable > 3 are flagged because future agents may
+be missing durable blockers, review requests, or evidence handoffs. The JSON
+field remains "obedience_ratio" for backward compatibility.`,
 	RunE: runAuditInboxObedience,
 }
 
@@ -40,7 +42,9 @@ func init() {
 	auditCmd.AddCommand(auditInboxObedienceCmd)
 }
 
-// ObedienceRow is the per-role audit result.
+// ObedienceRow is the backward-compatible JSON schema for the per-role handoff
+// acknowledgement audit. ObedienceRatio keeps its public field/tag name so
+// existing parsers do not break.
 type ObedienceRow struct {
 	Role           string  `json:"role"`
 	Received       int     `json:"received"`
@@ -85,7 +89,7 @@ func runAuditInboxObedience(cmd *cobra.Command, _ []string) error {
 }
 
 // computeObedienceRows fetches all messages since `since` and computes
-// per-role acknowledgment rates. roleFilter narrows to one role when set.
+// per-role handoff acknowledgement rates. roleFilter narrows to one role when set.
 func computeObedienceRows(ctx context.Context, client obedienceStoreClient, since time.Time, roleFilter string) ([]ObedienceRow, error) {
 	msgs, err := client.ListMessagesSince(ctx, since)
 	if err != nil {
@@ -161,9 +165,9 @@ func isResolvedAssignment(ctx context.Context, client obedienceStoreClient, m st
 	return strings.EqualFold(strings.TrimSpace(t.ReviewStatus), "rejected")
 }
 
-// targetRoles returns role strings a message directly targets for obedience
-// accounting. Broadcasts to literal "all" are intentionally excluded: a single
-// read bit on a shared broadcast cannot prove per-agent acknowledgement and used
+// targetRoles returns role strings a message directly targets for handoff
+// acknowledgement accounting. Broadcasts to literal "all" are intentionally
+// excluded: a single read bit on a shared broadcast cannot prove per-agent acknowledgement and used
 // to produce permanent false "agent all 0%" warnings. Explicit @mentions inside
 // a broadcast are still counted as role-targeted messages.
 func targetRoles(m store.Message) []string {
@@ -200,7 +204,7 @@ func printObedienceTable(rows []ObedienceRow, window string) {
 		return
 	}
 
-	fmt.Printf("Inbox Obedience  (window: %s)\n", window)
+	fmt.Printf("Inbox Handoff Acknowledgement  (window: %s)\n", window)
 	fmt.Println(strings.Repeat("─", 60))
 	fmt.Printf("  %-16s  %8s  %10s  %12s  %7s  %7s  %s\n",
 		"Role", "Received", "Actionable", "Acknowledged", "Stale", "Ratio", "Status")

@@ -9,15 +9,16 @@ import (
 
 // BMAD skill agents (Mary, John, Winston, Amelia, Paige, Sally) run inside
 // Claude Code sessions via the BMAD skill framework. They cannot invoke gg
-// as a subprocess themselves — the orchestrating agent must extract
-// gg-relevant outputs (decisions, tasks, rejections) and call gg directly.
+// as a subprocess themselves — the host agent must extract durable outputs
+// (decisions, tasks, rejections, blockers, artifact references, handoffs) and
+// call gg directly.
 //
 // The installer injects a BMAD-specific guidance section into AGENTS.md so
-// the orchestrating agent (Claude Code reading AGENTS.md) sees the rule and
-// acts as a relay for its BMAD subagents.
+// the host agent (Claude Code reading AGENTS.md) sees the relay rule for its
+// BMAD subagents.
 //
-// Tier: SOFT — the block is readable by the orchestrator but enforcement
-// depends on the orchestrator following the instruction.
+// Tier: SOFT — the block is readable by the host agent but durable capture
+// depends on that agent following the instruction.
 const (
 	bmadFile       = "AGENTS.md"
 	bmadBlockStart = "<!-- gg-bmad:start -->"
@@ -28,23 +29,22 @@ func bmadManagedBody() string {
 	var sb strings.Builder
 	sb.WriteString(bmadBlockStart)
 	sb.WriteString("\n")
-	sb.WriteString("## BMAD Skill Agents — gg Protocol Relay\n")
+	sb.WriteString("## BMAD Skill Agents — gg Durable Memory Relay\n")
 	sb.WriteString("\n")
-	sb.WriteString("AUTHORITY: When BMAD party rules (in _bmad/) conflict with gg-cli protocol\n")
-	sb.WriteString("(this AGENTS.md, .gg/), gg-cli wins. BMAD agents are subagents inside the\n")
-	sb.WriteString("gg-orchestrated session — every decision/task/rejection MUST be\n")
-	sb.WriteString("persisted via gg before the next round.\n")
+	sb.WriteString("BMAD rounds may run normally. gg-cli does not own BMAD's workflow; it only\n")
+	sb.WriteString("stores durable outputs that future agents need.\n")
 	sb.WriteString("\n")
 	sb.WriteString("BMAD agents (Mary, John, Winston, Amelia, Paige, Sally, and others) run\n")
-	sb.WriteString("inside Claude Code sessions. They cannot call gg directly. As the\n")
-	sb.WriteString("orchestrating agent you MUST:\n")
+	sb.WriteString("inside Claude Code sessions. They usually cannot call gg directly. The host\n")
+	sb.WriteString("agent must persist durable round outputs into gg:\n")
 	sb.WriteString("\n")
-	sb.WriteString("- After each BMAD round: extract any decisions, task proposals, or\n")
-	sb.WriteString("  rejected approaches and persist them with gg immediately.\n")
-	sb.WriteString("- Do NOT wait for the user to ask — capture before moving on.\n")
+	sb.WriteString("- After each BMAD round: extract accepted decisions, task proposals, blockers,\n")
+	sb.WriteString("  compact evidence summaries, artifact references, handoffs, and rejected approaches that future agents need.\n")
 	sb.WriteString("- If a BMAD agent says 'reject X' → `gg record \"X\" --decision-status=rejected --reason \"why\"`\n")
-	sb.WriteString("- If a BMAD agent proposes a task → `gg task create \"title\" ...`\n")
-	sb.WriteString("- If a BMAD agent reaches a conclusion the user accepts → `gg record \"conclusion\" --reason \"...\"``\n")
+	sb.WriteString("- If a BMAD agent proposes durable project work → `gg task create \"title\" ...`\n")
+	sb.WriteString("- If a BMAD agent reaches a conclusion the user accepts → `gg record \"conclusion\" --reason \"...\"`\n")
+	sb.WriteString("\n")
+	sb.WriteString("Do this before moving on; otherwise the knowledge stays trapped in one prompt.\n")
 	sb.WriteString("\n")
 	sb.WriteString(bmadBlockEnd)
 	sb.WriteString("\n")

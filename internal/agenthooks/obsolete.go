@@ -29,9 +29,9 @@ var obsoleteBlocks = []obsoleteBlock{
 	},
 }
 
-// RemoveObsoleteBlocks strips managed guidance for removed orchestration
-// features. It is deliberately narrow: only exact marker families owned by gg
-// are removed, so project-local prose is left for explicit human edits.
+// RemoveObsoleteBlocks strips managed guidance for retired block families. It is
+// deliberately narrow: only exact marker families owned by gg are removed, so
+// project-local prose is left for explicit human edits.
 func RemoveObsoleteBlocks(projectRoot string) ([]string, []error) {
 	var lines []string
 	var errs []error

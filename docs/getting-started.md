@@ -32,8 +32,8 @@ Run `gg doctor` to verify everything is connected:
 gg doctor
 ```
 
-Install agent hooks so Claude/Codex/Cursor sessions automatically load the
-session-start briefing:
+Install agent hooks so Claude/Codex/Cursor sessions can load the durable-memory
+briefing:
 
 ```sh
 gg doctor --install-agent-hooks
@@ -60,17 +60,18 @@ gg status
 
 ## Setting up for multi-agent use
 
-`gg doctor --install-agent-hooks` installs the managed agent instructions for
-detected tools. Each agent should run `gg session-start` at the start of every
-session.
-
-Set `GG_AGENT` / `GG_ROLE` in each agent's environment so messages are attributed:
+gg does not replace each agent's native workflow. Set `GG_AGENT` / `GG_ROLE` in
+each agent's environment so durable records are attributed correctly:
 
 ```sh
 export GG_AGENT=codex
 export GG_ROLE=developer   # or architect, reviewer, etc.
-gg session-start --agent=codex
+gg session-start --agent=codex --role=developer
 ```
+
+Use `gg record`, `gg task`, `gg bug`, and `gg tell` when a durable decision,
+rejection, shared work item, root cause, evidence summary, blocker, or handoff
+must be visible to future agents.
 
 ## Index your codebase (optional)
 

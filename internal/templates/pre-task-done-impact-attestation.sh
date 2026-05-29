@@ -159,8 +159,8 @@ fi
 
 # ── 8. Block — trailer missing at mandatory threshold ─────────────────────────
 printf '[impact-attestation] ✗ %s: Impact-Reviewed: trailer missing\n' "${GG_TASK_ID:-TASK}" >&2
-printf '  Reason gate is mandatory: %s\n' "$REASON" >&2
-printf '\nAdd to your commit body:\n' >&2
+printf '  Reason this evidence is required: %s\n' "$REASON" >&2
+printf '\nAdd durable impact evidence to your commit body:\n' >&2
 printf '  Impact-Reviewed: <file> — <N> callers, tests green\n' >&2
 printf '  Impact-Reviewed: <file2> — 0 callers\n' >&2
 printf '\nThen amend: git commit --amend (or add the trailer to your next commit body).\n' >&2

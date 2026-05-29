@@ -37,8 +37,8 @@ func TestReadyForLiveGate_On_WrongStatus_Rejected(t *testing.T) {
 	if rej.Code != ExitVerifyFailed {
 		t.Errorf("expected ExitVerifyFailed(%d), got %d", ExitVerifyFailed, rej.Code)
 	}
-	if rej.Message == "" || !contains(rej.Message, "ready-for-live") {
-		t.Errorf("message should reference the missing ready-for-live step, got %q", rej.Message)
+	if rej.Message == "" || !contains(rej.Message, "durable review handoff") || !contains(rej.Message, "ready-for-live") {
+		t.Errorf("message should explain missing durable ready-for-live handoff, got %q", rej.Message)
 	}
 }
 
@@ -68,8 +68,8 @@ func TestReadyForLiveGate_SeparationOn_EmptyVerifier_Rejected(t *testing.T) {
 	if rej.Code != ExitVerifyFailed {
 		t.Errorf("expected ExitVerifyFailed, got %d", rej.Code)
 	}
-	if !contains(rej.Message, "--verifier") {
-		t.Errorf("message should tell the caller to pass --verifier, got %q", rej.Message)
+	if !contains(rej.Message, "--verifier") || !contains(rej.Message, "future reviewers") {
+		t.Errorf("message should tell the caller to record verifier evidence, got %q", rej.Message)
 	}
 }
 
@@ -87,8 +87,8 @@ func TestReadyForLiveGate_SeparationOn_SameActor_Rejected(t *testing.T) {
 	if rej.Code != ExitVerifyFailed {
 		t.Errorf("expected ExitVerifyFailed, got %d", rej.Code)
 	}
-	if !contains(rej.Message, "matches the actor") {
-		t.Errorf("message should name the same-actor violation, got %q", rej.Message)
+	if !contains(rej.Message, "matches the actor") || !contains(rej.Message, "independent verification") {
+		t.Errorf("message should name the same-actor evidence gap, got %q", rej.Message)
 	}
 }
 

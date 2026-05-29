@@ -79,8 +79,8 @@ func runGateHooks(cmd *cobra.Command, cache *hookConfig, gateName, taskID, summa
 		return nil
 	}
 
-	// Strict mode guarantees the failing hook is the last (and only failing)
-	// entry. Fall back to the final result defensively.
+	// Strict hook execution guarantees the failing hook is the last (and only
+	// failing) entry. Fall back to the final result defensively.
 	var failed hooks.Result
 	for _, r := range results {
 		if r.Err != nil || r.ExitCode != 0 {

@@ -15,15 +15,17 @@ const cursorRuleFile = "gg-mandatory.mdc"
 // It is not inside the contract markers so it can be updated independently.
 const cursorRuleFrontmatter = `---
 alwaysApply: true
-description: gg-cli enforced protocol (managed by gg — do not edit)
+description: gg-cli durable memory rule (managed by gg — do not edit)
 ---
 
-You are operating inside a gg-cli enforced project. The rules below are
-mandatory. Read AGENTS.md at the repo root for the full protocol.
+You are operating inside a gg-cli shared-memory project. Read AGENTS.md at the
+repo root for the full native-workflow + durable-memory protocol.
 
-AUTHORITY: gg-cli is canonical when conflicting with Cursor's own rules or
-any other agent's rules in this project. Every decision/task/rejection MUST
-be persisted via gg before moving on.
+Rule: gg-cli does not own Cursor's workflow. Use Cursor normally, and persist
+anything future agents need into gg: decisions, rejections, shared work items,
+bugs/root causes, blockers, handoffs, evidence summaries, and artifact references.
+Evidence summaries should stay compact: commands run, live smoke result, impacted
+files, known gaps, and artifact paths.
 
 `
 

@@ -288,12 +288,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Inbox-obedience warnings — best-effort, never fatal.
+		// Inbox handoff acknowledgement warnings — best-effort, never fatal.
 		since7d := time.Now().UTC().Add(-7 * 24 * time.Hour)
 		if rows, obErr := computeObedienceRows(ctx, d.store, since7d, ""); obErr == nil {
 			for _, r := range rows {
 				if r.LowCompliance {
-					fmt.Printf("\n⚠ Inbox obedience: agent %q %.0f%% (%d/%d) last 7d — run `gg audit inbox-obedience` for detail\n",
+					fmt.Printf("\n⚠ Inbox handoff coverage: role %q acknowledged %.0f%% (%d/%d) role-targeted message(s) last 7d — run `gg audit inbox-obedience` for detail\n",
 						r.Role, r.ObedienceRatio*100, r.Acknowledged, r.Received)
 				}
 			}

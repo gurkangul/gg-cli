@@ -18,14 +18,16 @@ import (
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
-// lifecycleBlockedRoles lists implementation roles that are prohibited from
-// owning reviewer/verifier lifecycle transitions. This is deliberately
-// role-based, not agent-brand based: Codex, Claude, Cursor, GSD, or any future
-// runtime may be the worker or the master depending on GG_ROLE.
+// lifecycleBlockedRoles lists implementation roles that cannot provide the
+// independent review/verification evidence required for close/review lifecycle
+// transitions. This is deliberately role-based, not agent-brand based: Codex,
+// Claude, Cursor, GSD, or any future runtime may be the worker or the master
+// depending on GG_ROLE.
 var lifecycleBlockedRoles = []string{"developer", "worker", "implementer"}
 
 // isLifecycleBlockedRole reports whether role is an implementation role that
-// cannot approve/review/close its own work. Matching is case-insensitive.
+// cannot supply independent review/verification evidence for its own work.
+// Matching is case-insensitive.
 func isLifecycleBlockedRole(role string) bool {
 	lower := strings.ToLower(strings.TrimSpace(role))
 	for _, blocked := range lifecycleBlockedRoles {
@@ -36,11 +38,12 @@ func isLifecycleBlockedRole(role string) bool {
 	return false
 }
 
-// checkAgentLifecycleGate enforces the role-owned lifecycle policy:
-// implementation roles may mark work ready-for-live, but they must not own
-// reviewer/verifier transitions (`gg task done` / `gg task review`). The policy
-// is intentionally agent-agnostic: authority comes from GG_ROLE, not from
-// whether the process is Codex, Claude, Cursor, GSD, or another runtime.
+// checkAgentLifecycleGate enforces the role-owned evidence policy:
+// implementation roles may mark work ready-for-live, but close/review
+// transitions need independent review evidence (`gg task done` / `gg task
+// review`). The policy is intentionally agent-agnostic: authority comes from
+// GG_ROLE, not from whether the process is Codex, Claude, Cursor, GSD, or
+// another runtime.
 //
 // The check reads GG_ROLE. Returns nil when allowed, or an *ExitError with
 // ExitVerifyFailed when blocked. Returns nil without checking when
@@ -57,9 +60,9 @@ func checkAgentLifecycleGate(verb string) *ExitError {
 	return &ExitError{
 		Code: ExitVerifyFailed,
 		Message: fmt.Sprintf(
-			"lifecycle gate rejected '%s': GG_ROLE=%q is an implementation role and cannot own reviewer/verifier transitions.\n"+
-				"Use GG_ROLE=master/reviewer/verifier for 'gg task %s', or mark implementation complete with 'gg task ready-for-live'.\n"+
-				"Set GG_ENFORCEMENT=off to bypass for this session (emergency use only).",
+			"missing independent review evidence for '%s': GG_ROLE=%q is an implementation role, so gg-managed close/review gates require a separate reviewer or verifier.\n"+
+				"Record implementation evidence with 'gg task ready-for-live', then have a reviewer/verifier run 'gg task %s' with their own evidence.\n"+
+				"The issue is not your native workflow; it is missing shared review evidence. Set GG_ENFORCEMENT=off to bypass for this session (emergency use only).",
 			verb, role, verb),
 	}
 }
@@ -121,10 +124,10 @@ func runGSDGuard(_ *cobra.Command, _ []string) error {
 	for _, forbidden := range forbiddenGSDTools {
 		if strings.Contains(toolName, forbidden) {
 			fmt.Fprintf(os.Stdout,
-				"BLOCKED by gg tracker guard: this project uses gg as its canonical tracker.\n"+
-					"Do not call %s — use gg instead:\n\n"+
+				"BLOCKED by gg durable-memory guard: %s writes only to local GSD planner state, which future agents may not read.\n"+
+					"Record durable shared work in gg instead:\n\n"+
 					"  gg task create \"<title>\" --priority <high|medium|low> --detail \"<details>\"\n\n"+
-					"Set tracker.canonical in .gg/config.yaml to change this behaviour.\n",
+					"This does not ban GSD as a native workflow; it prevents missing shared memory/evidence. Set tracker.canonical in .gg/config.yaml to change this behaviour.\n",
 				payload.ToolName)
 			os.Exit(1)
 		}

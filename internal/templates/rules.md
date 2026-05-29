@@ -1,21 +1,39 @@
 # GG RULES
 
-This project uses a shared knowledge base. All decisions, tasks, and
-inter-agent information exchange flow through the `gg` CLI.
-The user will NEVER ask you to run `gg` — you detect the intent and run it.
+This project uses gg as durable shared memory. gg does not own the agent's
+workflow; use the native workflow that fits the work. The mandatory rule is
+durable memory sync: anything future agents must know goes into gg.
 
-## SESSION START
+Record durable outputs:
 
-First thing in every conversation:
+- decisions and reasons
+- rejected approaches and reasons
+- project work items or story outputs future agents need
+- bugs, root causes, repros, and fix evidence
+- test/diff/evidence summaries and important artifact references
+- blockers and handoffs
+
+Minimal evidence packet for review or handoff: commands run, live smoke result,
+impacted files, known gaps, and artifact paths. Keep bulky logs/screenshots/traces
+in their native location and write only the compact summary/reference into gg.
+
+The user will NEVER ask you to run `gg` — you detect the durable-memory moment
+and run it.
+
+## RECOMMENDED ORIENTATION
+
+At session start, orient yourself when shell access is available:
 ```
 export GG_AGENT=omo-slim     # unique agent_id (omo-slim, codex-1, claude-planner, ...)
 export GG_ROLE=implementer   # role (implementer, reviewer, planner, ...)
 gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 gg inbox --role "$GG_ROLE" --peek
+gg context --compact
 ```
-Summarize open tasks, unread messages, and recent decisions for the user.
-Use unique `GG_AGENT` values when two agents share the same role. Do not run
-role-less `gg inbox --advance-cursor`; role-scoped `--peek` is the safe default.
+Summarize open tasks, unread messages, and recent decisions for the user when
+useful. Use unique `GG_AGENT` values when two agents share the same role. Do not
+run role-less `gg inbox --advance-cursor`; role-scoped `--peek` is the safe
+default.
 
 ## DURING DISCUSSION
 
@@ -48,8 +66,8 @@ inventing a decision:
 gg record "Open question: <question>" --reason "context and what is unknown" --tags "question"
 ```
 
-If the open question creates follow-up work, create a task instead of leaving it
-implicit:
+If the open question creates durable follow-up work, create a task instead of
+leaving it implicit:
 ```
 gg task create "Resolve <question>" --detail "context" --priority medium --requester user --tags "question"
 ```
@@ -68,37 +86,56 @@ gg record "short decision" --reason "why" --tags "tag1,tag2"
 ```
 Tell the user: "Recorded that decision."
 
-## TASK CREATION
+## REJECTED APPROACHES
 
-When a unit of work becomes clear:
+When an approach is considered but not chosen:
+```
+gg record "approach" --decision-status rejected --reason "why not"
+```
+
+## DURABLE WORK ITEMS
+
+When a unit of work, story output, or follow-up must be visible outside one
+agent session:
 ```
 gg task create "title" --detail "description" --priority high --requester user --tags "tag1,tag2"
 ```
 Tell the user: "Opened task TASK-XXX."
 
-## WORKING TASKS
+Do not create gg tasks for private scratchpad steps that do not matter to future
+agents.
 
-User says "continue"/"devam et"/"keep going" → pick next work autonomously:
+### Evidence and handoffs
+
+When a reviewer or next agent needs proof without raw logs, include:
+commands run, live smoke result, impacted files, known gaps, and artifact paths.
+Put that compact packet in `gg task ready-for-live --plan` or `gg tell --task`.
+Use `gg bug` for bug/root-cause/fix evidence.
+
+## WHEN USING GG-MANAGED TASKS
+
+User says "continue"/"devam et"/"keep going" and the project uses gg-managed
+tasks:
 
 1. `gg inbox --role "$GG_ROLE" --peek`
 2. `gg status` — see open tasks/inbox/recent decisions
 3. List runnable tasks: `gg task list --ready --compact` (`gg task ready` is not a current subcommand)
 4. Skip tasks already claimed in recent agent broadcasts: `gg inbox --include-agents --since 2h --peek`
-5. Pick highest-priority unclaimed pending task
+5. Pick highest-priority unclaimed pending task unless the user named one
 6. Claim: `gg task start TASK-XXX --owner "$GG_AGENT" --lease 30m`
 7. Broadcast: `gg tell "all" "TASK-XXX started by $GG_AGENT ($GG_ROLE)" --from "$GG_ROLE" --audience agents --task TASK-XXX`
 8. Hydrate: `gg task get TASK-XXX` and `gg context --for-task TASK-XXX`
 9. Before editing files: `gg impact <file> --compact`
-10. Write code and test; renew long leases with `gg task renew TASK-XXX --owner "$GG_AGENT" --lease 30m`
-11. Implementers mark ready, not done: run `gg task get TASK-XXX` first (required hydration), then `gg task ready-for-live TASK-XXX "reviewer verify plan" --from "$GG_ROLE"`
-12. Notify reviewer: `gg tell reviewer "TASK-XXX ready for review" --from "$GG_ROLE" --task TASK-XXX`
+10. Work in the native tool of choice and test; renew long leases with `gg task renew TASK-XXX --owner "$GG_AGENT" --lease 30m`
+11. If configured review gates require handoff, mark ready rather than done: `gg task ready-for-live TASK-XXX --plan "Reviewer: inspect diff and rerun smoke. Evidence: commands=<cmds run>; live=<smoke result>; impact=<files checked with gg impact>; gaps=<none|known gap>; artifacts=<paths>" --from "$GG_ROLE"`
+12. Notify reviewer: `gg tell reviewer "TASK-XXX ready. Evidence: commands run: <cmds>; live smoke: <result>; impacted files: <files>; known gaps: <none|gap>; artifacts: <paths>" --from "$GG_ROLE" --task TASK-XXX`
 
 Release only when abandoning/handoff unfinished `in_progress` work:
 `gg task release TASK-XXX --owner "$GG_AGENT"`. Do not release after
 `ready-for-live`; the current CLI only releases `in_progress` tasks.
 
-User says "do TASK-XXX" specifically → skip selection and claim that task
-with `gg task start TASK-XXX --owner "$GG_AGENT" --lease 30m` before work.
+If another native tool owns local planning, keep using it and mirror durable
+outputs into gg instead of forcing all scratchpad steps into `gg task`.
 
 ## MESSAGING ANOTHER AGENT
 
@@ -114,10 +151,10 @@ For cross-agent visibility during parallel work, use:
 gg tell "all" "short status" --from your-role --audience agents
 ```
 
-Broadcast only on: task pick-up, approach-selection moments, blockers,
-task completion. Do not broadcast routine progress or compile errors.
-Rule: if another agent doesn't need it to avoid collision or duplicate
-work, skip.
+Broadcast only on: task pick-up, approach-selection moments, blockers, and
+handoffs/completion that affect other agents. Do not broadcast routine progress
+or compile errors. Rule: if another agent doesn't need it to avoid collision or
+duplicate work, skip.
 
 ## BLOCKERS
 
@@ -126,16 +163,9 @@ When a task cannot proceed:
 gg task block TASK-XXX "reason"
 ```
 
-## REJECTED APPROACHES
-
-When an approach is considered but not chosen:
-```
-gg record "approach" --decision-status rejected --reason "why not"
-```
-
 ## NEVER
 
-- Make decisions without `gg`
+- Make durable decisions without `gg`
 - Re-propose a rejected approach (search first)
-- Say "we'll do that later" without opening a task
-- Ask the user to run `gg` commands
+- Say "we'll do that later" for durable work without opening a task
+- Ask the user to run `gg` commands you can run yourself

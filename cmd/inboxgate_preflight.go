@@ -25,15 +25,16 @@ func resolveActorRole() string {
 // unset. State-changing commands must call this before writing to the store.
 func requireAgentIdentity() error {
 	if resolveActorRole() == "" {
-		return fmt.Errorf("identify yourself: export GG_AGENT=<runtime-name> (e.g. codex, cursor, gsd)")
+		return fmt.Errorf("missing durable actor identity: set GG_AGENT=<runtime-name> (e.g. codex, cursor, gsd) so shared evidence and handoffs are attributable")
 	}
 	return nil
 }
 
 // runInboxGatePreflight checks whether the calling agent has unread role-targeted
-// inbox messages that must be handled before proceeding. Returns a non-nil error
-// if the gate blocks. When GG_ALLOW_INBOX_SKIP is set the bypass is logged to
-// the bypass audit and the function returns nil.
+// handoff messages that may contain blockers, review requests, or evidence the
+// next state change needs to preserve. Returns a non-nil error if the gate
+// blocks. When GG_ALLOW_INBOX_SKIP is set the bypass is logged to the bypass
+// audit and the function returns nil.
 //
 // commandName is used in the bypass audit log (gate field).
 func runInboxGatePreflight(ctx context.Context, client *store.Client, commandName string) error {
@@ -66,6 +67,6 @@ func logInboxBypass(gate, reason, actor string) {
 	if err != nil {
 		return
 	}
-	_ = projectstate.AppendBypass(runtimeDir, "inbox-obey:"+gate, "", actor, "", "", "")
-	fmt.Fprintf(os.Stderr, "⚠ inbox gate bypassed (GG_ALLOW_INBOX_SKIP=%s)\n", reason)
+	_ = projectstate.AppendBypass(runtimeDir, "inbox-handoff:"+gate, "", actor, "", "", "")
+	fmt.Fprintf(os.Stderr, "⚠ inbox handoff gate bypassed (GG_ALLOW_INBOX_SKIP=%s)\n", reason)
 }

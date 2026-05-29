@@ -21,7 +21,8 @@ WHEN TO USE: you've concluded something — chosen a library, rejected an approa
 established a constraint. Anything that would appear in an ADR belongs here.
 
 WHEN NOT TO USE: for in-progress deliberation use 'gg tell <to> <msg> --from <role>'; for task
-tracking use 'gg task create'; for progress notes use 'gg task done'.
+tracking use 'gg task create'. For handoff/evidence summaries, use 'gg tell --task' or
+'gg task ready-for-live --plan'; for closure summaries, use 'gg task done'.
 
 Examples:
   gg record "use JWT for auth" --reason "stateless, scales horizontally" --tags "auth,security"

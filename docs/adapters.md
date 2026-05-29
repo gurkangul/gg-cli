@@ -2,15 +2,23 @@
 
 ## AI agent adapters
 
+In gg docs, an adapter is an instruction snippet or shell-command convention. It
+is not a daemon, RPC bridge, MCP server, hosted sync service, or runtime control
+layer.
+
 `gg` works with any agent that can run shell commands. The integration is via `AGENTS.md` — drop it in your project root and agents will find it automatically.
+
+For lightweight guidance on when each supported agent/workflow should mirror
+native outputs into gg, see [Native Workflow Capture Points](native-workflow-capture.md).
 
 ### Claude Code
 
 Add to your `CLAUDE.md` or include `AGENTS.md` at session start. Claude Code calls `gg` as a subprocess.
 
-### BMAD / orchestrator agents
+### BMAD / host agents
 
-Point the agent's rules file at `AGENTS.md`. In party mode, each role (architect, developer, reviewer) gets a separate terminal with `GG_ROLE` set:
+Point the agent's rules file at `AGENTS.md`. In party mode, each role
+(architect, developer, reviewer) can use a separate terminal with `GG_ROLE` set:
 
 ```sh
 # Terminal 1 — architect

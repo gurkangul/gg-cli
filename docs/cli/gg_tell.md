@@ -16,6 +16,9 @@ Use --audience to control inbox visibility:
   gg tell all "TASK-016 picked up" --from developer --audience agents
   gg tell human "deploy is blocked, need approval" --from developer --audience human
 
+Handoff/evidence summaries should be compact and task-scoped when possible:
+  gg tell reviewer "TASK-123 ready. Evidence: commands run: go test ./... -count=1; live smoke: CLI smoke passed; impacted files: cmd/foo.go (gg impact checked); known gaps: none; artifacts: .artifacts/TASK-123-smoke.txt" --from developer --task TASK-123
+
 ```
 gg tell "role[,role2,...]" "message" [flags]
 ```

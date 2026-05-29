@@ -30,8 +30,10 @@ type InboxGateResult struct {
 	BypassReason string
 }
 
-// CheckInboxGate evaluates the inbox obey rule for the given role.
-// It returns a result indicating whether the caller should be blocked.
+// CheckInboxGate evaluates whether role-targeted handoffs need attention before
+// a state-changing command writes new shared memory. It returns a result
+// indicating whether the caller should be blocked until the durable handoff or
+// evidence context is read, replied to, or consciously bypassed.
 // When GG_ALLOW_INBOX_SKIP is set the gate is always bypassed (result.Bypassed=true).
 // When role is empty or enforcement is disabled the gate is skipped (result.Blocked=false).
 func CheckInboxGate(ctx context.Context, client inboxChecker, role string) (InboxGateResult, error) {
@@ -92,7 +94,7 @@ func assignmentResolved(ctx context.Context, client inboxChecker, m store.Messag
 // FormatBlockMessage formats the inbox-gate block error message shown to the agent.
 func FormatBlockMessage(role string, result InboxGateResult) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "ACTION REQUIRED: %d unread assignment(s) for role %s\n", result.Count, role)
+	fmt.Fprintf(&sb, "MISSING DURABLE HANDOFF CONTEXT: %d unread role-targeted message(s) for role %s\n", result.Count, role)
 	for _, m := range result.Messages {
 		preview := m.Content
 		if len(preview) > 80 {
@@ -100,6 +102,6 @@ func FormatBlockMessage(role string, result InboxGateResult) string {
 		}
 		fmt.Fprintf(&sb, "  [%s → %s] %s\n", m.FromRole, m.ToRole, preview)
 	}
-	sb.WriteString("Handle these assignments first, or set GG_ALLOW_INBOX_SKIP=<reason> to bypass.")
+	sb.WriteString("Read or respond so future agents can see the blocker, decision, review request, or evidence path. If you already handled it elsewhere, set GG_ALLOW_INBOX_SKIP=<reason> to record an audited bypass.")
 	return sb.String()
 }

@@ -1,15 +1,17 @@
 ## gg audit inbox-obedience
 
-Measure inbox-obey compliance per agent role
+Measure role-targeted handoff acknowledgement per agent role
 
 ### Synopsis
 
 Count role-targeted messages received vs acknowledged (marked read) per agent
 role over a time window. Acknowledged = marked read via 'gg inbox' (peek bypassed).
 
-obedience_ratio = acknowledged / received
+handoff_ack_ratio = acknowledged / actionable role-targeted messages
 
-Roles with ratio < 0.5 and received > 3 are flagged as low-compliance.
+Roles with ratio < 0.5 and actionable > 3 are flagged because future agents may
+be missing durable blockers, review requests, or evidence handoffs. The JSON
+field remains "obedience_ratio" for backward compatibility.
 
 ```
 gg audit inbox-obedience [flags]

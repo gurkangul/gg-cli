@@ -12,7 +12,7 @@ func TestContractBlock_LoadsFromTemplate(t *testing.T) {
 	if body == "" {
 		t.Fatal("ContractBody() is empty — agent-contract.md not embedded")
 	}
-	if !strings.Contains(body, "GG MANDATORY CONTRACT") {
+	if !strings.Contains(body, "GG DURABLE MEMORY CONTRACT") {
 		t.Errorf("ContractBody() missing expected heading: %q", body)
 	}
 }

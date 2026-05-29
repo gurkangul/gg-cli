@@ -45,10 +45,11 @@ if [ "$status" = "approved" ]; then
   exit 0
 fi
 
-msg="[review-gate] ⚠ $GG_TASK_ID closing without explicit review (status=${status:-unset}).
-  Have a different role read the diff, then:
+msg="[review-gate] ⚠ $GG_TASK_ID closing without durable review evidence (status=${status:-unset}).
+  Future reviewers cannot verify this work without a recorded review note.
+  Have a different role read the diff/tests, then record what was verified:
     gg task review $GG_TASK_ID --approve --notes \"<what you verified>\"
-  For trivial changes where review would be theatre, skip with:
+  For trivial changes where review adds no evidence, skip with:
     GG_REVIEW_GATE=off gg task done $GG_TASK_ID ..."
 
 if [ "$mode" = "block" ]; then

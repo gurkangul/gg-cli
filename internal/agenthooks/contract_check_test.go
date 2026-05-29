@@ -70,7 +70,7 @@ func TestCheckContract_Missing(t *testing.T) {
 func TestCheckContract_Stale(t *testing.T) {
 	dir := t.TempDir()
 	// Write a contract block with old content.
-	staleBlock := ContractBlockBegin + "\n## GG MANDATORY CONTRACT\n\nold content\n" + ContractBlockEnd + "\n"
+	staleBlock := ContractBlockBegin + "\n## OLD GG CONTRACT\n\nold content\n" + ContractBlockEnd + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(staleBlock), 0o644); err != nil {
 		t.Fatalf("write CLAUDE.md: %v", err)
 	}

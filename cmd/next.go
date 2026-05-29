@@ -267,14 +267,14 @@ func renderNext(w io.Writer, snap nextSnapshot) {
 			fmt.Fprintln(w, "Next:")
 			fmt.Fprintf(w, "  gg task get %s\n", t.ID)
 			fmt.Fprintf(w, "  gg task packet %s\n", t.ID)
-			fmt.Fprintf(w, "  gg tell reviewer \"%s ready for review\" --from %s --task %s\n", t.ID, snap.Role, t.ID)
+			fmt.Fprintf(w, "  gg tell reviewer \"%s ready for review: include evidence packet (commands, live smoke, impact, gaps, artifacts)\" --from %s --task %s\n", t.ID, snap.Role, t.ID)
 			return
 		}
 		fmt.Fprintln(w, "Reviewer should run:")
 		fmt.Fprintf(w, "  gg task get %s\n", t.ID)
 		fmt.Fprintf(w, "  gg task packet %s\n", t.ID)
 		fmt.Fprintf(w, "  gg task review %s --approve --by %s\n", t.ID, reviewerName(snap))
-		fmt.Fprintf(w, "  gg task done %s \"verified live workflow\" --verifier %s\n", t.ID, reviewerName(snap))
+		fmt.Fprintf(w, "  gg task done %s \"verified: tests + live smoke\" --verifier %s\n", t.ID, reviewerName(snap))
 		return
 	}
 

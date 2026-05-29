@@ -3,6 +3,7 @@ package enforcement
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gurkangul/gg-cli/internal/store"
@@ -212,6 +213,21 @@ func TestCheckInboxGate_EnforcementDisabled_Skip(t *testing.T) {
 	}
 	if result.Blocked {
 		t.Errorf("enforcement disabled should skip gate, got Blocked=true")
+	}
+}
+
+func TestFormatBlockMessage_ExplainsDurableHandoffContext(t *testing.T) {
+	msg := FormatBlockMessage("reviewer", InboxGateResult{
+		Blocked: true,
+		Count:   1,
+		Messages: []store.Message{
+			{FromRole: "implementer", ToRole: "reviewer", Content: "TASK-123 ready. Evidence: commands=go test ./...; gaps=none"},
+		},
+	})
+	for _, want := range []string{"MISSING DURABLE HANDOFF CONTEXT", "future agents", "evidence path", "GG_ALLOW_INBOX_SKIP"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("formatted block message missing %q:\n%s", want, msg)
+		}
 	}
 }
 

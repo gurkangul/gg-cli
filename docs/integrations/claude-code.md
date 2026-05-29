@@ -1,33 +1,37 @@
 # gg Integration: Claude Code
 
-This document explains how to inject `gg` agent rules into a Claude Code project so that Claude automatically calls `gg` during sessions.
+This document explains how to remind Claude Code sessions to use gg as shared
+durable memory. Claude Code keeps its native workflow; gg stores the decisions,
+rejections, bugs, evidence, and handoffs future agents need. For the compact
+Claude Code capture map, see [Native Workflow Capture Points](../native-workflow-capture.md#claude-code).
 
 ## Rules file
 
-Claude Code reads project-level rules from `CLAUDE.md` (project root) or `~/.claude/CLAUDE.md` (global).
+Claude Code reads project-level rules from `CLAUDE.md` (project root) or
+`~/.claude/CLAUDE.md` (global).
 
-Place the inject snippet in your project's `CLAUDE.md` or at the top of an existing file.
+Place the inject snippet in your project's `CLAUDE.md` or at the top of an
+existing file.
 
 ## Inject snippet
 
 Add the following block to `CLAUDE.md`:
 
 ```markdown
-## gg — Shared Agent Knowledge Base
+## gg — Shared Durable Memory
 
-This project uses `gg` as a shared knowledge base CLI.
-All decisions, tasks, messages, and rejected approaches are recorded via `gg`.
+This project uses `gg` as a durable shared memory and evidence ledger.
+Use Claude Code normally, and sync durable outputs into gg.
 
 ### Rules
 
-1. **Session start** — always run `gg status` first and summarize open tasks,
-   unread inbox, and recent decisions for the user.
+1. **Orientation** — run `gg status` or `gg context --compact` and summarize
+   relevant open tasks, unread inbox, and recent decisions for the user.
 
-2. **During discussion** — before proposing any approach, run
-   `gg search "<topic>"` to check for existing decisions or rejections.
+2. **During discussion** — before proposing or changing important behavior, run
+   `gg search "<topic>" --compact` to check for existing decisions or rejections.
 
-3. **Decision** — when the user reaches a decision (explicit or implicit),
-   immediately run:
+3. **Decision** — when the user reaches a decision, run:
    ```sh
    gg record "decision text" --reason "why" --tags "..."
    ```
@@ -37,29 +41,29 @@ All decisions, tasks, messages, and rejected approaches are recorded via `gg`.
    gg record "approach" --decision-status=rejected --reason "why not"
    ```
 
-5. **Task** — when a unit of work is clearly needed:
+5. **Durable work item** — when a task/story output must be visible to future agents:
    ```sh
    gg task create "title" --detail "..." --priority high
    ```
 
-6. **Messaging** — to hand off work to another agent role:
-   ```sh
-   gg tell "<role>" "message" --from claude-code
-   ```
+6. **Bugs, evidence, and handoffs** — use `gg bug` for bug/root-cause records.
+   Use `gg tell --task` or `gg task ready-for-live --plan` for handoffs with a
+   compact evidence packet: commands run, live smoke result, impacted files,
+   known gaps, and artifact paths. Keep bulky artifacts outside gg and record
+   only their path/reference.
 
-See [AGENTS.md](./AGENTS.md) for the full protocol.
+See the project-root `AGENTS.md` for the full protocol.
 ```
 
 ## Verification
 
 After injecting, start a new Claude Code session and confirm the rule is active:
 
-1. Claude should open with a `gg status` call (check the tool call log).
-2. Run a test decision:
+1. Claude should be able to run `gg status` or `gg context --compact`.
+2. Run a test search:
    ```sh
-   gg search "test"
+   gg search "test" --compact
    ```
-   You should see the call appear in `gg inbox` from the agent's perspective.
 3. Confirm agent-initiated calls show in status:
    ```sh
    gg status
@@ -67,7 +71,9 @@ After injecting, start a new Claude Code session and confirm the rule is active:
 
 ## Version update
 
-When `gg` adds new commands or changes the protocol, update `CLAUDE.md` to match the new `AGENTS.md`. Check `gg --version` to confirm the CLI matches the rules version documented here.
+When gg adds new commands or changes the protocol, update `CLAUDE.md` to match
+the new `AGENTS.md`. Check `gg --version` to confirm the CLI matches the rules
+version documented here.
 
 ```sh
 gg --version
@@ -75,6 +81,7 @@ gg --version
 ```
 
 To get the latest CLI and managed project files:
+
 ```sh
 gg update check
 gg update

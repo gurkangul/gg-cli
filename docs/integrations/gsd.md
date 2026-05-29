@@ -1,48 +1,67 @@
 # gg Integration: GSD (pi / gsd-pi)
 
-This document explains how to inject `gg` agent rules into GSD (the `pi` coding agent harness) so GSD can be used for structured execution while gg remains the shared project brain.
+This document explains how GSD can be used as a native planning/execution
+scratchpad while gg remains the shared durable memory for the project.
+
+gg does not own GSD's workflow. GSD may create specs, context, plans, and local
+execution notes in its own way. The sync point is durable knowledge: anything
+future agents need must be copied into gg. For the compact GSD2 capture map,
+see [Native Workflow Capture Points](../native-workflow-capture.md#gsd2).
 
 ## Rules file
 
 GSD reads project instructions from:
+
 - `CLAUDE.md` — if running inside Claude Code via the GSD harness
 - `.gsd/PROJECT.md` — project description used for context injection
 - `AGENTS.md` — auto-detected if present at project root
 
-`gg init` creates `AGENTS.md` automatically. GSD agents pick it up via the `prior_system_context` injection when Claude Code reads it.
+`gg init` creates `AGENTS.md` automatically. GSD agents pick it up via the
+`prior_system_context` injection when Claude Code reads it.
 
 ## Inject snippet
 
-If the GSD harness is not injecting `AGENTS.md` automatically, add the following to `CLAUDE.md` or a project-level CLAUDE.md:
+If the GSD harness is not injecting `AGENTS.md` automatically, add the following
+to `CLAUDE.md` or a project-level CLAUDE.md:
 
 ```markdown
-## gg — Shared Agent Knowledge Base
+## gg — Shared Durable Memory
 
-This project uses `gg` as a shared knowledge base CLI.
+This project uses `gg` as a durable shared memory and evidence ledger.
 Follow the rules in `AGENTS.md` at the project root.
 
 Key rules:
-1. Run `gg status` at the start of every session.
-2. Before proposing any approach, run `gg search "<topic>"`.
-3. Record decisions: `gg record "text" --reason "why" --tags "..."`
-4. Record rejections: `gg record "approach" --decision-status=rejected --reason "why not"`
-5. Create gg tasks only for durable project work: `gg task create "title" --priority high --tags "gsd"`
-6. Set `GG_ROLE` in the environment for message attribution.
+1. Use GSD normally for local planning/execution.
+2. Run `gg status` or `gg context --compact` to see what other agents recorded.
+3. Before changing important behavior, run `gg search "<topic>" --compact`.
+4. Record decisions: `gg record "text" --reason "why" --tags "..."`.
+5. Record rejections: `gg record "approach" --decision-status=rejected --reason "why not"`.
+6. Create gg tasks only for durable project work future agents need: `gg task create "title" --priority high --tags "gsd"`.
+7. Record blockers, handoffs, and compact evidence summaries with `gg tell --task`
+   or `gg task ready-for-live --plan`; include commands run, live smoke result,
+   impacted files, known gaps, and artifact paths. Use `gg bug` for bug/root-cause/fix evidence.
 
-The full protocol with all lifecycle rules is in `AGENTS.md`.
+The full native-workflow + durable-memory protocol is in `AGENTS.md`.
 ```
 
 ## GSD-specific notes
 
-- GSD may run manually in its own terminal when useful, but gg owns durable tasks, decisions, messages, and review state.
-- GSD's `.gsd/KNOWLEDGE.md` and `gg` are complementary: `KNOWLEDGE.md` can store local scratchpad guidance; `gg` stores cross-session decisions, tasks, and inter-agent messages.
-- `gg gsd audit` is advisory. It can surface GSD tasks that may need durable gg records, but scratchpad-only GSD tasks are not failures.
-- When using GSD party mode (multi-agent rounds), the orchestrator must extract subagent decisions and persist them via `gg record` / `gg task create` before the round closes.
+- GSD may run manually in its own terminal when useful.
+- `.gsd/gsd.db` is not canonical shared memory; other agents cannot read it.
+- GSD's `.gsd/KNOWLEDGE.md` and gg are complementary: `KNOWLEDGE.md` can store
+  local scratchpad guidance; gg stores cross-session decisions, rejections,
+  bugs, tasks, handoffs, and evidence summaries.
+- `gg gsd audit` is advisory. It can surface GSD tasks that may need durable gg
+  records, but scratchpad-only GSD tasks are not failures.
+- When using GSD party mode or subagent rounds, the host agent extracts durable
+  outputs and persists them via `gg record`, `gg task`, `gg bug`, or `gg tell`
+  before moving on.
 
 ## Verification
 
 1. Start a GSD session in the project directory.
-2. The agent should call `gg status` as its first action (visible in tool call log).
+2. The agent should be able to run `gg status` or `gg context --compact` and see
+   the shared project memory.
 3. Confirm from the shell:
    ```sh
    gg status
@@ -50,13 +69,15 @@ The full protocol with all lifecycle rules is in `AGENTS.md`.
 
 ## Version update
 
-Upgrade the CLI and regenerate `AGENTS.md`:
+Upgrade the CLI and regenerate managed instructions:
+
 ```sh
 gg update check
 gg update
 ```
 
-GSD context injection automatically picks up the updated `AGENTS.md` on the next session start.
+GSD context injection automatically picks up the updated `AGENTS.md` on the next
+session start.
 
 ## See Also
 

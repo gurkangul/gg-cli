@@ -251,8 +251,10 @@ gate. Providing both is fine; `GG_BYPASS_RATIONALE_RECORD` takes precedence.
 
 ### `GG_ALLOW_INBOX_SKIP`
 
-Bypasses the inbox-obedience gate (unread role-targeted messages must be
-handled before starting new work). Value is a free-form reason string.
+Bypasses the inbox handoff-evidence gate. Use only when the unread role-targeted
+messages have already been read or answered elsewhere; otherwise future agents
+may miss blockers, review requests, or evidence handoffs. Value is a free-form
+reason string.
 
 ```sh
 GG_ALLOW_INBOX_SKIP="continuing async sprint, messages already triaged" \

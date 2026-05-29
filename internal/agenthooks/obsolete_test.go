@@ -7,14 +7,14 @@ import (
 	"testing"
 )
 
-func TestRemoveObsoleteBlocks_StripsRemovedOrchestrationBlocks(t *testing.T) {
+func TestRemoveObsoleteBlocks_StripsRetiredManagedBlocks(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "CLAUDE.md")
 	content := `# Project
 
 keep before
 <!-- gg:master-role:begin v3 -->
-old master orchestration
+old master guidance
 <!-- gg:master-role:end -->
 middle
 <!-- gg:dev-routing:begin v1 -->
@@ -42,7 +42,7 @@ keep after
 	for _, needle := range []string{
 		"gg:master-role",
 		"gg:dev-routing",
-		"old master orchestration",
+		"old master guidance",
 		"old dev routing",
 	} {
 		if strings.Contains(updated, needle) {

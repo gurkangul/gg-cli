@@ -33,8 +33,8 @@ func checkBugHydrationGate(runtimeDir, bugID, action string, now time.Time) *Exi
 		return &ExitError{
 			Code: ExitVerifyFailed,
 			Message: fmt.Sprintf(
-				"compact hydration gate could not verify full context for %s before %s: %v\n"+
-					"Run 'gg bug get %s' or 'gg bug triage %s' to hydrate the full bug before changing state, then retry.",
+				"durable bug-context gate could not verify full detail for %s before %s: %v\n"+
+					"Run 'gg bug get %s' or 'gg bug triage %s' to record the full bug context needed by reviewers, then retry.",
 				bugID, action, err, bugID, bugID),
 		}
 	}
@@ -44,8 +44,8 @@ func checkBugHydrationGate(runtimeDir, bugID, action string, now time.Time) *Exi
 	return &ExitError{
 		Code: ExitVerifyFailed,
 		Message: fmt.Sprintf(
-			"compact hydration gate rejected %s for %s: no recent full bug hydration found.\n"+
-				"Compact/list/search output is an index view, not source-of-truth. Run 'gg bug get %s' or 'gg bug triage %s' and read the full detail before retrying.\n"+
+			"missing durable bug evidence for %s on %s: no recent full bug context read is recorded.\n"+
+				"Compact/list/search output is an index view, not source-of-truth; reviewers may miss root-cause or repro detail. Run 'gg bug get %s' or 'gg bug triage %s' and read the full detail before retrying.\n"+
 				"Hydration proof window: %s. Set GG_ENFORCEMENT=off with GG_BYPASS_RATIONALE for emergency bypass.",
 			action, bugID, bugID, bugID, taskHydrationWindow),
 	}
@@ -63,8 +63,8 @@ func checkTaskHydrationGate(runtimeDir, taskID, action string, now time.Time) *E
 		return &ExitError{
 			Code: ExitVerifyFailed,
 			Message: fmt.Sprintf(
-				"compact hydration gate could not verify full context for %s before %s: %v\n"+
-					"Run 'gg task get %s' to hydrate the full task before changing state, then retry.",
+				"durable task-context gate could not verify full detail for %s before %s: %v\n"+
+					"Run 'gg task get %s' to record the full task context needed by reviewers, then retry.",
 				taskID, action, err, taskID),
 		}
 	}
@@ -74,7 +74,7 @@ func checkTaskHydrationGate(runtimeDir, taskID, action string, now time.Time) *E
 	return &ExitError{
 		Code: ExitVerifyFailed,
 		Message: fmt.Sprintf(
-			"compact hydration gate rejected %s for %s: no recent full task hydration found.\n"+
+			"missing durable task evidence for %s on %s: no recent full task detail read is recorded.\n"+
 				taskHydrationInstruction(action, taskID)+"\n"+
 				"Hydration proof window: %s. Set GG_ENFORCEMENT=off with GG_BYPASS_RATIONALE for emergency bypass.",
 			action, taskID, taskHydrationWindow),
@@ -83,9 +83,9 @@ func checkTaskHydrationGate(runtimeDir, taskID, action string, now time.Time) *E
 
 func taskHydrationInstruction(action, taskID string) string {
 	if action == "task ready-for-live" {
-		return fmt.Sprintf("Run 'gg task get %s' before ready-for-live; 'gg context --for-task %s' alone is not enough.", taskID, taskID)
+		return fmt.Sprintf("Run 'gg task get %s' before ready-for-live so the handoff evidence is grounded in the full task detail; 'gg context --for-task %s' alone is not enough.", taskID, taskID)
 	}
-	return fmt.Sprintf("Compact/list/search output is an index view, not source-of-truth. Run 'gg task get %s' and read the full detail before retrying.", taskID)
+	return fmt.Sprintf("Compact/list/search output is an index view, not source-of-truth; reviewers may miss acceptance criteria or prior context. Run 'gg task get %s' and read the full detail before retrying.", taskID)
 }
 
 func enforceTaskHydrationGate(w io.Writer, cache *hookConfig, taskID, action, bypassGate string) error {

@@ -41,8 +41,8 @@ if [ "$count" -gt 0 ]; then
   exit 0
 fi
 
-msg="[decide-gate] ⚠ $GG_TASK_ID closing without a linked decision.
-  If this task made a design choice, record it:
+msg="[decide-gate] ⚠ $GG_TASK_ID closing without a linked decision record.
+  If this task made a design choice, future agents need the durable reason:
     gg record \"<what you decided>\" --task $GG_TASK_ID --reason \"<why>\"
   For small bugfixes with no design choice, skip with:
     GG_DECIDE_GATE=off gg task done $GG_TASK_ID ..."

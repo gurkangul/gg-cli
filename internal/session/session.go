@@ -1,10 +1,11 @@
 // Package session renders the session-start briefing shown to agents when
-// they enter a gg-enforced project — invoked either by an agent's native
+// they enter a gg shared-memory project — invoked either by an agent's native
 // SessionStart hook (installed via `gg doctor --install-agent-hooks`) or
 // manually by running `gg session-start`.
 //
 // The briefing is deliberately short. Full rules live in AGENTS.md; this
-// package only reminds agents the protocol exists and where to find it.
+// package only reminds agents that durable memory sync exists and where to
+// find the current project state.
 package session
 
 import (
@@ -38,7 +39,7 @@ type Briefing struct {
 //	project_id: <uuid>        (optional)
 //	project_root: <path>      (optional)
 //
-//	You are operating inside a gg-cli enforced project. Before acting:
+//	You are operating inside a gg shared-memory project. Before durable work:
 //	  1. Read AGENTS.md …
 //	  …
 func (b Briefing) Render(w io.Writer) error {
@@ -69,7 +70,7 @@ func (b Briefing) Render(w io.Writer) error {
 	if role == "" {
 		role = "$GG_ROLE"
 	}
-	sb.WriteString("You are operating inside a gg-cli managed project. Use gg as the shared project brain.\n")
+	sb.WriteString("You are operating inside a gg-cli shared-memory project. Use gg for durable decisions, evidence, and handoffs.\n")
 	sb.WriteString("Next:\n")
 	fmt.Fprintf(&sb, "  gg next --agent %s --role %s\n", b.Agent, role)
 	sb.WriteString("Fallback:\n")
@@ -95,14 +96,14 @@ func PasteBlock(agentHint string) string {
 		agentHint = "agent"
 	}
 	var sb strings.Builder
-	sb.WriteString("I am operating inside a gg-cli enforced project.\n")
-	sb.WriteString("Before anything else:\n")
+	sb.WriteString("I am operating inside a gg-cli shared-memory project.\n")
+	sb.WriteString("Before durable project work:\n")
 	fmt.Fprintf(&sb, "  1. export GG_AGENT=%s   # unique agent_id, e.g. omo-slim or codex-1\n", agentHint)
 	sb.WriteString("  2. export GG_ROLE=implementer   # role, e.g. implementer/reviewer/planner\n")
 	sb.WriteString("  3. Run: gg session-start --agent \"$GG_AGENT\" --role \"$GG_ROLE\"\n")
 	sb.WriteString("  4. Run: gg inbox --role \"$GG_ROLE\" --peek\n")
 	sb.WriteString("  5. Read AGENTS.md at the repo root.\n")
-	sb.WriteString("  6. From now on use gg for every decision, task, rejection,\n")
-	sb.WriteString("     and cross-agent handoff. No exceptions.\n")
+	sb.WriteString("  6. Use your native workflow, and write anything future agents need\n")
+	sb.WriteString("     to gg: decisions, rejections, tasks, bugs, evidence, and handoffs.\n")
 	return sb.String()
 }

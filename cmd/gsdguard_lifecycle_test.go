@@ -52,6 +52,9 @@ func TestAgentLifecycleGate_DeveloperRoleBlockedForDone(t *testing.T) {
 	if !strings.Contains(rej.Message, "done") {
 		t.Errorf("message should name the verb, got %q", rej.Message)
 	}
+	if !strings.Contains(rej.Message, "independent review evidence") || !strings.Contains(rej.Message, "not your native workflow") {
+		t.Errorf("message should explain the missing evidence, not ritual compliance, got %q", rej.Message)
+	}
 }
 
 func TestAgentLifecycleGate_AgentBrandAloneDoesNotBlockReadyForLive(t *testing.T) {

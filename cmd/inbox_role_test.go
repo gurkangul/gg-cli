@@ -124,11 +124,19 @@ func TestInbox_FlatList_WhenGGRoleUnset(t *testing.T) {
 
 func TestInbox_ContractContainsInboxObeyRule(t *testing.T) {
 	contract := templates.AgentContract
-	if !strings.Contains(contract, "Before starting any new task") {
-		t.Errorf("agent-contract.md missing Inbox Obey rule 'Before starting any new task':\n%s", contract)
+	checks := []struct {
+		name string
+		want string
+	}{
+		{"durable memory sync framing", "The mandatory rule is durable memory sync"},
+		{"future-agent continuity", "anything future agents must know goes into gg"},
+		{"handoff capture", "handoffs"},
+		{"role-scoped inbox orientation", "gg inbox --role \"$GG_ROLE\" --peek"},
 	}
-	if !strings.Contains(contract, "Silent skip") && !strings.Contains(contract, "silent skip") {
-		t.Errorf("agent-contract.md missing 'silent skip' violation language:\n%s", contract)
+	for _, check := range checks {
+		if !strings.Contains(contract, check.want) {
+			t.Errorf("agent-contract.md missing %s %q:\n%s", check.name, check.want, contract)
+		}
 	}
 }
 

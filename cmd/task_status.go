@@ -22,26 +22,25 @@ WHEN TO USE: you have finished the work described in the task. The summary is st
 and surfaced in 'gg status' and 'gg search' — write it for the next agent that reads it.
 
 VERIFY GATE: before writing the new state, gg runs every executable *.sh in
-.gg/hooks/pre-task-done.d/ in lexicographic order. Any non-zero exit aborts
-the transition with exit code 7 (ExitVerifyFailed); the task stays in its
-current state and a machine-parseable {"event":"verify_failed",...} line is
-emitted to stderr along with an internal 'gg tell' to all agents.
-Install starter scripts with 'gg doctor --install-task-hooks' (auto-detects
-Go and Node/Bun).
+.gg/hooks/pre-task-done.d/ in lexicographic order. Any non-zero exit means a
+required durable evidence check failed; the transition aborts with exit code 7
+(ExitVerifyFailed), the task stays in its current state, and a machine-parseable
+{"event":"verify_failed",...} line is emitted to stderr along with an internal
+'gg tell' to all agents. Install starter scripts with 'gg doctor --install-task-hooks'
+(auto-detects Go and Node/Bun).
 
 READY-FOR-LIVE GATE (opt-in): when .gg/config.yaml has
-tasks.require_ready_for_live: true, this command refuses unless the task is
-already in status "ready_for_live" (transition it with 'gg task ready-for-live'
-after local checks pass). Combined with tasks.verifier_separation: true the
-command also requires --verifier <role> and rejects when the verifier is the
-same actor that performed the ready-for-live transition. Prevents the
-premature-closure / same-actor-verification pattern surfaced by the
-dogfood audit 2026-04-19.
+tasks.require_ready_for_live: true, closure requires a stored ready-for-live
+handoff/evidence packet (record it with 'gg task ready-for-live' after local
+checks pass). Combined with tasks.verifier_separation: true the command also
+requires --verifier <role> and rejects when the verifier is the same actor that
+recorded the ready-for-live handoff. This protects reviewability by ensuring a
+future agent can see both implementer evidence and independent verifier evidence.
 
-COMPACT HYDRATION GATE: tagged agent sessions (GG_AGENT or GG_ROLE set) must run
-'gg task get TASK-ID' shortly before 'gg task done'. Compact list/search rows are
-scan/index views only; the targeted full task read writes a local hydration proof
-so agents cannot close work from omitted detail.
+COMPACT HYDRATION GATE: tagged agent sessions (GG_AGENT or GG_ROLE set) require
+a recent 'gg task get TASK-ID' hydration proof before 'gg task done'. Compact
+list/search rows are scan/index views only; the targeted full task read writes a
+local proof that reviewers had access to acceptance criteria and prior context.
 
 See also: gg task review (request peer review), gg record (capture design decisions made during the work)`,
 	Args: cobra.ExactArgs(2),
@@ -97,8 +96,8 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	// we return ExitVerifyFailed so agents can detect the blocked transition.
 	//
 	// Opt-out: skipped when GG_ENFORCEMENT=off. Set it to opt out for a session.
-	// Agent lifecycle gate: implementation roles are not permitted to close
-	// tasks, regardless of which agent runtime they use.
+	// Reviewer-evidence gate: implementation roles may record ready-for-live
+	// evidence, but close/review transitions need a separate reviewer/verifier.
 	if !enforcement.Enabled() {
 		if rej := emitGuardSkipEvent("agent-lifecycle-done", taskID); rej != nil {
 			return rej

@@ -52,9 +52,10 @@ if [ "${CHANGED_COUNT:-0}" -eq 0 ] 2>/dev/null; then
   exit 0
 fi
 
-msg="[review-convergence] ✗ ${GG_TASK_ID}: Review-Convergence trailer missing from commit ${COMMIT}
+msg="[review-convergence] ✗ ${GG_TASK_ID}: Review-Convergence evidence trailer missing from commit ${COMMIT}
 
-Before claiming done, run the convergence matrix and amend the commit body:
+Future reviewers are missing the compact behavior/diff/test evidence summary.
+Record the convergence evidence in the commit body:
   1. behavior matrix: default / configured / invalid / edge inputs
   2. negative path: unconfigured, missing env, bad args, store/tool failure
   3. legacy compatibility: old config, old command names, migration path

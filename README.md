@@ -23,6 +23,9 @@ gg impact path/to/file.go --compact
 No hosted service. No gg daemon. No agent-specific SDK. If an agent can run a
 terminal command, it can use gg.
 
+gg does not own or run the agent's workflow. Agents keep their native flow;
+gg stores the durable shared memory and evidence that future agents need.
+
 > **Status:** pre-1.0 and actively dogfooded. The CLI is usable as a local
 > product today, while command details and storage formats may still evolve
 > before a stable 1.0 release.
@@ -39,7 +42,7 @@ Multi-agent development is powerful, but the default experience is messy:
 - fixes land without impact analysis
 - “done” is claimed without an independent review or live smoke test
 
-gg turns that chaos into a shared operating system for agents.
+gg gives that work a shared memory layer.
 
 | What usually breaks | What gg gives you |
 |---|---|
@@ -73,13 +76,14 @@ gg turns that chaos into a shared operating system for agents.
 - **Safer edits**
   `gg impact` shows what a file or task touches before an agent changes it.
 
-- **Clear ownership**
-  Agents claim tasks with leases, renew work they still own, release work they
-  abandon, and hand off review explicitly.
+- **Optional task ownership**
+  When a project uses gg-managed tasks, agents can claim tasks with leases,
+  renew work they still own, release work they abandon, and hand off review
+  explicitly.
 
-- **Reviewer-verified completion**
-  Implementers can mark work ready for live verification, but a separate
-  reviewer closes it.
+- **Reviewer-verified completion where configured**
+  Implementers can mark work ready for live verification, while a separate
+  reviewer closes it in projects that enforce verifier separation.
 
 - **Local-first privacy**
   Data stays on your machine. gg uses local Docker services for search,
@@ -193,7 +197,7 @@ gg update --from-source --skip-sync
 
 ## Quick start for agents
 
-At the start of every agent session:
+At the start of an agent session, orient with gg when shell access is available:
 
 ```sh
 export GG_AGENT="codex-1"          # unique runtime instance
@@ -201,33 +205,60 @@ export GG_ROLE="implementer"       # role/authority for this session
 
 gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 gg inbox --role "$GG_ROLE" --peek
-gg task list --ready --compact
 gg context --compact
 ```
 
-Before changing a file:
+These commands do not replace the agent's native workflow. Use BMAD, GSD, OMO
+Slim, Antigravity, Codex, Claude Code, Cursor, Aider, or a manual shell as
+appropriate. Sync durable outputs into gg. For per-agent capture examples, see
+[`docs/native-workflow-capture.md`](docs/native-workflow-capture.md).
+
+Before changing important behavior:
 
 ```sh
 gg search "topic or feature" --compact
+gg context "topic or feature" --compact
+```
+
+Before editing source files where impact matters:
+
+```sh
 gg impact path/to/file.go --compact
 ```
 
-When starting work:
+When a durable output exists:
 
 ```sh
+gg record "decision text" --reason "why"
+gg record "rejected approach" --decision-status rejected --reason "why not"
+gg tell reviewer \
+  "TASK-123 handoff. Evidence: commands run: go test ./... -count=1; live smoke: not applicable; impacted files: cmd/foo.go (gg impact checked); known gaps: none; artifacts: .artifacts/TASK-123-diff.txt" \
+  --from "$GG_ROLE" --task TASK-123
+```
+
+Minimal evidence packet: commands run, live smoke result, impacted files, known
+gaps, and artifact paths. Keep bulky logs/screenshots/traces in their native
+location; store the summary and reference in gg.
+
+If the project uses gg-managed tasks:
+
+```sh
+gg task list --ready --compact
 gg task start TASK-123 --owner "$GG_AGENT" --lease 30m
 gg tell all "TASK-123 started by $GG_AGENT ($GG_ROLE)" \
   --from "$GG_ROLE" --audience agents --task TASK-123
 ```
 
-When implementation is locally verified:
+When implementation is locally verified and configured gates require review:
 
 ```sh
 gg task ready-for-live TASK-123 \
-  "Reviewer: inspect diff, run tests, and perform live smoke" \
+  --plan "Reviewer: inspect diff and rerun smoke. Evidence: commands=go test ./... -count=1; live=CLI smoke passed; impact=cmd/foo.go checked with gg impact; gaps=none; artifacts=.artifacts/TASK-123-smoke.txt" \
   --from "$GG_ROLE"
 
-gg tell reviewer "TASK-123 ready for review" --from "$GG_ROLE" --task TASK-123
+gg tell reviewer \
+  "TASK-123 ready. Evidence: commands run: go test ./... -count=1; live smoke: CLI smoke passed; impacted files: cmd/foo.go (gg impact checked); known gaps: none; artifacts: .artifacts/TASK-123-smoke.txt" \
+  --from "$GG_ROLE" --task TASK-123
 ```
 
 The implementer should not close their own task in projects that enforce
@@ -323,10 +354,10 @@ Important guardrails:
 - search previous decisions before proposing a new direction
 - record rejected approaches so they do not come back later
 - run impact checks before editing source files
-- use task ownership and leases to avoid parallel collisions
+- use gg-managed task ownership and leases when the project needs collision avoidance
 - use role-scoped inbox reads for assignments and review handoffs
 - keep broadcasts agent-only unless the human needs to see them
-- run tests and live-shaped smoke checks before ready-for-live
+- run tests and live-shaped smoke checks before recording ready-for-live evidence
 - let a different reviewer close the task when verifier separation is enabled
 - reconcile after crashes or suspected store drift
 
@@ -389,6 +420,7 @@ crash-safety, and indexing details.
 | [`docs/commands.md`](docs/commands.md) | command overview |
 | [`docs/cli/`](docs/cli/) | generated per-command help |
 | [`docs/agent-protocol-v1.md`](docs/agent-protocol-v1.md) | multi-agent operating protocol |
+| [`docs/native-workflow-capture.md`](docs/native-workflow-capture.md) | capture points for BMAD, GSD2, OMO Slim, Antigravity, Codex, Claude Code, Cursor, and Aider |
 | [`docs/architecture.md`](docs/architecture.md) | internals and data model |
 | [`docs/adapters.md`](docs/adapters.md) | agent integrations and hooks |
 | [`docs/verify-gate.md`](docs/verify-gate.md) | task-close verification gates |

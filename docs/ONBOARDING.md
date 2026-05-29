@@ -30,11 +30,11 @@ gg doctor
 gg doctor --install-agent-hooks
 
 # Start an agent session briefing
-GG_AGENT=codex gg session-start --agent=codex
+GG_AGENT=codex GG_ROLE=implementer gg session-start --agent=codex --role=implementer
 ```
 
 `gg init` starts the local Docker services through gg's shared compose file.
-Memgraph-backed code indexing is optional; the decision/task/search workflow
+Memgraph-backed code indexing is optional; the decision/task/search memory
 works without running `gg index`.
 
 ---
@@ -109,7 +109,7 @@ gg status
 
 ## Multi-agent setup
 
-Set `GG_AGENT` and `GG_ROLE` so messages are attributed to the right agent:
+Set `GG_AGENT` and `GG_ROLE` so durable records are attributed to the right agent:
 
 ```sh
 export GG_AGENT=codex
@@ -122,6 +122,11 @@ Send a message to another role:
 gg tell architect "Rate limiter is unblocked — proceeding with in-memory backend" \
   --from developer
 ```
+
+gg does not replace the agent's native workflow. Use `gg record`, `gg task`,
+`gg bug`, and `gg tell` when decisions, rejected approaches, shared work items,
+root causes, evidence summaries, blockers, or handoffs need to survive the
+current session.
 
 ---
 

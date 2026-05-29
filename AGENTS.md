@@ -12,11 +12,11 @@ the same decisions, tasks, rejections, discussions, notes, and code graph
 through gg — no agent starts from a blank slate.
 
 > **Note on GSD:** GSD may be run manually by the human or by an agent in its
-> own terminal, but gg remains the canonical tracker. What is forbidden is using
-> GSD's own planner/tracker state as the source of truth: do not create
-> milestones/tasks with `gsd_plan_*` or treat `.gsd/gsd.db` as canonical.
-> Mirror any meaningful GSD outcome into gg with `gg task`, `gg record`,
-> `gg bug`, or `gg tell`.
+> own terminal, but gg remains the canonical shared memory/evidence ledger.
+> What is forbidden is treating GSD's own planner state as durable shared
+> memory: do not create shared project tasks with `gsd_plan_*` or treat
+> `.gsd/gsd.db` as canonical. Mirror any meaningful GSD outcome into gg with
+> `gg task`, `gg record`, `gg bug`, or `gg tell`.
 
 **Who it's for:** Developers running 2+ AI agents in parallel terminals who
 keep hitting the same three pains:
@@ -60,15 +60,25 @@ committed. Outbox pattern in
 ## How agents work in this project
 
 This project uses a shared knowledge base CLI: **gg** (the project itself).
-All decisions, tasks, inter-agent messages, and rejected approaches are
-recorded via the `gg` command.
+gg does not own the agent's workflow; agents may use BMAD, GSD, OMO Slim,
+Antigravity, Codex, Claude Code, Cursor, Aider, a manual shell, or another
+local process.
+
+The mandatory rule is durable memory sync: anything future agents need to know
+is recorded via `gg` — decisions, rejected approaches, task/story outputs,
+bugs, root causes, evidence summaries, artifact references, blockers, and
+handoffs.
+
+Minimal evidence packet for review or handoff: commands run, live smoke result,
+impacted files, known gaps, and artifact paths. Keep bulky logs/screenshots/traces
+in their native location and write only the compact summary/reference into gg.
 
 Every agent runs independently in its own terminal but they all write to the
 same Qdrant + Ollama backend. A decision made by one agent is immediately
 visible to the others through shared memory.
 
-> The user will NEVER ask you to run `gg`. You detect the intent and invoke it
-> automatically.
+> The user will NEVER ask you to run `gg`. You detect the durable-memory moment
+> and invoke it automatically.
 
 ---
 
@@ -143,14 +153,16 @@ These rules are individually recorded via `gg record` (tags:
 `process`, `discipline`) so they appear in `gg search --compact
 "process discipline"` and cannot be quietly ignored.
 
-## SESSION START
+## RECOMMENDED ORIENTATION
 
-The very first thing to do at the start of any conversation:
+At the start of a session, orient yourself with gg when shell access is
+available:
 ```
 export GG_AGENT=omo-slim     # unique agent_id (omo-slim, codex-1, claude-planner, ...)
 export GG_ROLE=implementer   # role (implementer, reviewer, planner, ...)
 gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 gg inbox --role "$GG_ROLE" --peek
+gg context --compact
 ```
 
 The `GG_AGENT` export tags every subsequent gg call as agent-initiated in
@@ -160,22 +172,22 @@ different runtime.
 
 Set `GG_AGENT` to the runtime that is actually executing commands. If a side
 pane is a real GSD runtime, `GG_AGENT=gsd` is valid. If Claude Code, Codex,
-Cursor, or another runtime is orchestrating GSD work, keep that runtime's
-identity in `GG_AGENT` and use `GG_ROLE` for authority (`master`, `developer`,
-`reviewer`, etc.).
+Cursor, or another runtime is driving GSD work, keep that runtime's identity in
+`GG_AGENT` and use `GG_ROLE` for authority (`master`, `developer`, `reviewer`,
+etc.).
 
 Terms: `agent_id` is the unique runtime instance name; `role` is the authority
-for the current work; task `owner` is the `agent_id` holding the lease; inbox
-`role` / `audience` route messages. Use a unique `GG_AGENT` per runtime, even
-when two agents share one `GG_ROLE`.
+for the current work; task `owner` is the `agent_id` holding a gg-managed task
+lease; inbox `role` / `audience` route messages. Use a unique `GG_AGENT` per
+runtime, even when two agents share one `GG_ROLE`.
 
 Role inbox reads should use `--role "$GG_ROLE" --peek`. Do not run role-less
 `gg inbox --advance-cursor`; the CLI rejects it because it can hide role-targeted
 assignments from a future agent.
 
-After `gg session-start`, summarize the open tasks, unread messages, and recent
-decisions for the user. See `docs/agent-protocol-v1.md` for the full
-multi-agent flow.
+After orientation, summarize the open tasks, unread messages, and recent
+decisions for the user when useful. See `docs/agent-protocol-v1.md` for the
+full native-workflow + durable-memory protocol.
 
 ## DURING DISCUSSION
 
@@ -226,19 +238,23 @@ gg record "short decision text" --reason "why" --tags "tag1,tag2"
 ```
 Tell the user: "Recorded that decision."
 
-## TASK CREATION
+## DURABLE WORK ITEMS
 
-When a unit of work is clearly needed:
+When a unit of work, story output, or follow-up must be visible outside one
+agent session:
 ```
 gg task create "title" --detail "description" --priority high --requester user --tags "tag1,tag2"
 ```
 Tell the user: "Opened task TASK-XXX."
 
-## WORKING TASKS
+Do not create gg tasks for private scratchpad steps that do not matter to future
+agents.
+
+## WHEN USING GG-MANAGED TASKS
 
 When the user says "work on the tasks", "continue", "keep going", "devam et",
-or gives no specific instruction but implies "do the next thing" — select
-autonomously:
+or names a specific `TASK-XXX`, use the gg task lifecycle because this project
+uses gg-managed tasks:
 
 1. `gg inbox --role "$GG_ROLE" --peek` — handle role-targeted assignments.
 2. `gg status` — see pending tasks + open discussions + inbox.
@@ -249,26 +265,25 @@ autonomously:
    `gg task ready` subcommand in the current CLI).
 5. Check recent agent broadcasts with `gg inbox --include-agents --since 2h --peek` —
    has another agent already claimed a task? If yes, skip those.
-6. Pick the highest-priority unclaimed pending task (`high` before `medium`
-   before `low`; among equal priority, lowest TASK-NNN wins).
+6. Pick the highest-priority unclaimed pending task unless the user named one.
 7. Claim it with an owner lease and status broadcast:
    `gg task start TASK-XXX --owner "$GG_AGENT" --lease 30m`
    `gg tell "all" "TASK-XXX started by $GG_AGENT ($GG_ROLE)" --from "$GG_ROLE" --audience agents --task TASK-XXX`
 8. Hydrate before work: `gg task get TASK-XXX` and
    `gg context --for-task TASK-XXX`.
-9. Before editing each file, run `gg impact <file> --compact`.
-10. Write code and test. Renew long leases with
+9. Before editing each source file, run `gg impact <file> --compact`.
+10. Work in the native tool of choice and test. Renew long leases with
     `gg task renew TASK-XXX --owner "$GG_AGENT" --lease 30m`.
-11. Implementers do **not** close tasks. After local verification, run
+11. Implementers do **not** close tasks in this project. After local verification, run
     `gg task get TASK-XXX` (required hydration; `gg context` alone is not enough), then
-    `gg task ready-for-live TASK-XXX "reviewer verify plan" --from "$GG_ROLE"`
-    and `gg tell reviewer "TASK-XXX ready for review" --from "$GG_ROLE" --task TASK-XXX`.
+    `gg task ready-for-live TASK-XXX --plan "Reviewer: inspect diff and rerun smoke. Evidence: commands=<cmds run>; live=<smoke result>; impact=<files checked with gg impact>; gaps=<none|known gap>; artifacts=<paths>" --from "$GG_ROLE"`
+    and `gg tell reviewer "TASK-XXX ready. Evidence: commands run: <cmds>; live smoke: <result>; impacted files: <files>; known gaps: <none|gap>; artifacts: <paths>" --from "$GG_ROLE" --task TASK-XXX`.
 12. Release only when abandoning or handing off unfinished `in_progress` work:
     `gg task release TASK-XXX --owner "$GG_AGENT"`. Do not release after
     `ready-for-live`; the current CLI only releases `in_progress` tasks.
 
-When the user says "do TASK-XXX" specifically, skip selection and claim that
-task with `gg task start TASK-XXX --owner "$GG_AGENT" --lease 30m` before work.
+If another native tool owns local planning, keep using it and mirror durable
+outputs into gg instead of forcing every scratchpad step into `gg task`.
 
 ## PRE-DONE VERIFY GATE
 
@@ -396,10 +411,10 @@ Modes (env `GG_AC_ATTESTATION`): `on` (default, blocking) | `warn` | `off`
 Bypass: `GG_ALLOW_INCOMPLETE_AC="<reason>" gg task done TASK-NNN ...` — the
 bypass is audited via `gg record` so it appears in future `gg search` results.
 
-## BUG FIX PRE-FLIGHT (mandatory before `gg bug fix`)
+## BUG FIX DURABLE CONTEXT PRE-FLIGHT
 
 Bugs regress when agents edit code without knowing the blast radius. These
-three queries take under a minute and prevent re-opening the same bug:
+three queries take under a minute and preserve durable fix context:
 
 1. `gg bug triage BUG-NNN --compact`
    — surfaces prior decisions, rejections, and tasks semantically near this
@@ -505,144 +520,117 @@ When you spawn subagents (BMAD party mode, Task-type subagents, role simulations
 like Winston/Amelia/John, etc.), those subagents usually cannot invoke `gg`
 themselves — they run in isolated prompts that don't read AGENTS.md.
 
-You, as the orchestrator, are responsible for **extracting gg-relevant actions
-from their output and executing the `gg` calls yourself** as soon as the round
-completes. Concretely:
+The host agent is responsible for **extracting durable outputs from their result
+and executing the `gg` calls** as soon as the round completes. Concretely:
 
 - A subagent says "we should reject X because Y" → you run `gg record "X" --decision-status rejected --reason "Y"`
-- A subagent proposes action items / a punch list → you run `gg task create` for each
+- A subagent proposes durable project work / a punch list → you run `gg task create` for each item future agents need
 - A subagent reaches a conclusion the user accepts → you run `gg record "conclusion" --reason "why"`
 
-Do this BEFORE asking the user "should I save these?" — the AGENTS.md rule is
-to capture decisions automatically. Asking first violates the contract.
+Do this before moving on; otherwise the knowledge stays trapped in one prompt.
 
 ## NEVER
 
-- Make decisions without `gg`
+- Make durable decisions without `gg`
 - Re-propose a previously rejected approach (search first)
-- Say "we'll do that later" without opening a task
+- Say "we'll do that later" for durable work without opening a task
 - Ask the user to run `gg` commands — you run them
-- Finish a subagent round without persisting its decisions/tasks/rejections to `gg`
+- Finish a subagent round without persisting its durable decisions/tasks/rejections to `gg`
 - Broadcast every step — only broadcast moments other agents genuinely need
-- Run `gg bug fix` without the BUG FIX PRE-FLIGHT section output pasted in
-  the commit footer — unobserved blast radius is how bugs keep regressing
+- Run `gg bug fix` without durable impact/root-cause evidence — unobserved blast radius is how bugs keep regressing
 
 <!-- gg-managed:start -->
-## Mandatory gg-cli Protocol (managed by gg — do not edit this block)
+## gg Durable Memory Protocol (managed by gg — do not edit this block)
 
-Before acting in this project:
+gg-cli does not own the agent's workflow. Use the native workflow that fits
+the work, and sync durable outputs into gg so future agents can retrieve them.
+
+Durable outputs include decisions, rejected approaches, shared work items,
+bugs/root causes, blockers, handoffs, evidence summaries, and artifact references.
+Evidence summaries should stay compact: commands run, live smoke result, impacted files, known gaps, and artifact paths.
+
+Recommended orientation:
 
 1. Read this entire AGENTS.md file.
-2. Run `gg search --compact <topic>` before proposing anything new.
-3. Record every decision/task/rejection with gg — no exceptions.
-4. Broadcast agent-status work via `gg tell all ... --from <role> --audience agents`.
+2. Run `gg session-start --agent <agent_id> --role <role>` when available.
+3. Run `gg search --compact <topic>` before changing important behavior.
+4. Record durable decisions/rejections/evidence with `gg record`, `gg task`, `gg bug`, or `gg tell`.
 
 ### GSD usage (if this project uses GSD)
 
-GSD is a planning workflow with its own SQLite state in `.gsd/gsd.db`.
-Other agents (Claude Code, Cursor, Aider) **cannot read GSD state** — they
-only see what's in gg. Treat GSD as a local scratchpad or manual helper, not
-as the team tracker.
+GSD is a native planning or execution workflow with its own SQLite state in `.gsd/gsd.db`.
+Other agents (Claude Code, Cursor, Aider) cannot read that state; they only
+see what is written to gg. Treat GSD as a local scratchpad/helper, not shared memory.
 
-GSD itself is **not banned**. What is removed is gg-owned orchestration of GSD
-tabs, panes, queues, nudges, heartbeats, and worker routing. If you run GSD,
-run it manually and copy durable outcomes into gg.
+GSD itself is allowed. Run it when useful, and copy durable outcomes into gg.
 
 Rules when GSD is in use:
 
-- Use `gg task create` for work items that matter to the project.
-- Use `gg record` for decisions and `gg tell` for cross-agent messages.
-- Summarize useful GSD output back into gg; do not rely on `.gsd/gsd.db` for
-  shared memory.
-- If you must pick between the two stores, **gg is canonical**. GSD state
-  is a planning scratchpad; gg is the shared brain every agent reads.
+- Create gg tasks only for durable work items that future agents need.
+- Use `gg record` for decisions and rejected approaches.
+- Use `gg tell` for cross-agent handoffs and blockers.
+- Summarize useful GSD output back into gg; do not rely on `.gsd/gsd.db` for shared memory.
 
-**Tracker rule — gg is canonical:** never call
-`mcp__gsd-workflow__gsd_plan_milestone`, `gsd_plan_slice`, or `gsd_plan_task`
-in a project that uses gg. Those tools write to `.gsd/gsd.db`; gg reads
-none of that, so the two stores diverge silently. Use `gg task create` for
-every work item and `gg record` for decisions.
+**Shared-memory rule:** do not use `mcp__gsd-workflow__gsd_plan_milestone`,
+`gsd_plan_slice`, or `gsd_plan_task` as the durable memory source in a project that
+uses gg. Those tools write to `.gsd/gsd.db`; gg reads none of that, so the
+state is invisible to other agents unless durable outcomes are mirrored into gg.
 
-### Gate workflow (check `.gg/config.yaml` for which are active)
+### Configured evidence gates
+
+Projects may configure review/evidence gates around `gg task done` and `gg bug fix`.
+These gates protect durable memory quality; they do not require a particular native workflow.
 
 **Task close — when `tasks.require_ready_for_live: true`:**
 `gg task done` is refused until the task first transitions via
-`gg task ready-for-live TASK-NNN "verify plan sentence" --from <your-role>`.
+`gg task ready-for-live TASK-NNN --plan "Reviewer: inspect diff and rerun smoke. Evidence: commands=<cmds>; live=<smoke>; impact=<files>; gaps=<none|gap>; artifacts=<paths>" --from <your-role>`.
 Then close with `gg task done TASK-NNN "summary" --verifier <different-role>`.
-When `verifier_separation: true`, the verifier role MUST differ from the
-actor that set ready_for_live — this blocks single-agent self-certification
-(the TASK-200→207 class of premature-close bugs).
+When `verifier_separation: true`, closure also needs durable verification
+evidence from a different role than the actor that set ready_for_live.
 
 **Bug fix — when `bugs.require_broken_ref: true`:**
-`gg bug fix BUG-NNN --repro <path> --repro-broken-ref <SHA>` is mandatory.
-The CLI creates a worktree at <SHA> and asserts the repro exits non-zero
-there (bug existed), then asserts it exits 0 at HEAD (fix works). A repro
-that passes at the broken ref is rejected — it means the test never
-exercised the failing path.
+`gg bug fix BUG-NNN --repro <path> --repro-broken-ref <SHA>` verifies the
+repro fails at the broken ref and passes at HEAD, proving the bug existed and the fix works.
 
-**Before editing any file (mandatory pre-flight):** run `gg impact <file>`
-to see historical bugs that have touched it + 1-hop code dependents. Paste
-a one-line summary per file into the commit footer.
-
-**`gg impact` accepts three argument types:**
-`<file-path>` → file blast radius; `BUG-NNN` → affected files/symbols;
-`TASK-NNN` → downstream dependents via DEPENDS_ON/BLOCKS edges.
-
-**When reporting a bug, always pass `--affected-files` + `--affected-symbols`**
-so the Bug→File AFFECTS edges land in Memgraph. Without them the bug node
-exists but is invisible to `gg impact <file>` queries.
+**Before source edits where impact matters:** run `gg impact <file>` to see
+historical bugs, dependents, exported symbols, and related decisions. Capture
+the impact/evidence summary where future agents can find it.
 
 <!-- gg-managed:end -->
 
 <!-- gg-bmad:start -->
-## BMAD Skill Agents — gg Protocol Relay
+## BMAD Skill Agents — gg Durable Memory Relay
 
-AUTHORITY: When BMAD party rules (in _bmad/) conflict with gg-cli protocol
-(this AGENTS.md, .gg/), gg-cli wins. BMAD agents are subagents inside the
-gg-orchestrated session — every decision/task/rejection MUST be
-persisted via gg before the next round.
+BMAD rounds may run normally. gg-cli does not own BMAD's workflow; it only
+stores durable outputs that future agents need.
 
 BMAD agents (Mary, John, Winston, Amelia, Paige, Sally, and others) run
-inside Claude Code sessions. They cannot call gg directly. As the
-orchestrating agent you MUST:
+inside Claude Code sessions. They usually cannot call gg directly. The host
+agent must persist durable round outputs into gg:
 
-- After each BMAD round: extract any decisions, task proposals, or
-  rejected approaches and persist them with gg immediately.
-- Do NOT wait for the user to ask — capture before moving on.
+- After each BMAD round: extract accepted decisions, task proposals, blockers,
+  compact evidence summaries, artifact references, handoffs, and rejected approaches that future agents need.
 - If a BMAD agent says 'reject X' → `gg record "X" --decision-status=rejected --reason "why"`
-- If a BMAD agent proposes a task → `gg task create "title" ...`
-- If a BMAD agent reaches a conclusion the user accepts → `gg record "conclusion" --reason "..."``
+- If a BMAD agent proposes durable project work → `gg task create "title" ...`
+- If a BMAD agent reaches a conclusion the user accepts → `gg record "conclusion" --reason "..."`
+
+Do this before moving on; otherwise the knowledge stays trapped in one prompt.
 
 <!-- gg-bmad:end -->
 
 <!-- gg:contract:begin v1 -->
-## GG MANDATORY CONTRACT
+## GG DURABLE MEMORY CONTRACT
 
-gg-cli is the mandatory coordination channel for this project.
+gg-cli does not own the agent's workflow. Use the native workflow that fits the work: BMAD, GSD, OMO Slim, Antigravity, Codex, Claude Code, Cursor, Aider, a manual shell, or another local process.
 
-- All tasks, decisions, bugs, and broadcasts go through gg: `gg task`, `gg record`, `gg bug`, `gg tell`
-- Agent identity terms are generic: `agent_id` is the unique runtime instance (for example `omo-slim`, `codex-1`, `claude-planner`), `role` is the work authority (for example `implementer`, `reviewer`, `planner`), and task `owner` is the leasing `agent_id`.
-- Before starting new work, run: `gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"`, then `gg inbox --role "$GG_ROLE" --peek`, `gg task list --ready --compact`, and `gg context --compact` for project-level onboarding.
-- Never call `gsd_plan_*` tools in projects using gg — use `gg task create` instead
-- Before starting any new task or reasoning step, run: `gg inbox --role "$GG_ROLE" --peek`.
-  Use a unique `GG_AGENT` per runtime. Do not run role-less `gg inbox --advance-cursor`; it is rejected because it can hide role-targeted assignments.
-  If role-targeted unread messages exist, you MUST either:
-    (a) start the referenced runnable task via `gg task start <id> --owner "$GG_AGENT" --lease 30m`, OR
-    (b) if the task is already `ready_for_live` and your role is reviewer/verifier, hydrate with `gg task get <id> --review` and review it, OR
-    (c) if the linked task is already closed, treat it as stale assignment noise, OR
-    (d) reply with `gg tell <sender> <deferral reason>`
-  Silent skip = protocol violation. It will be caught by structural gates.
-- Source files (.go/.ts/.js/.py/.rs/.java): max 500 lines. Test files (*_test.go, *.test.*, *.spec.*): max 800 lines.
-  Oversized files must be split into cohesive modules — extract helpers, split by concern, no god-objects.
-  The pre-task-done gate (30-file-size.sh) surfaces violations; GG_FILE_SIZE_GATE=block escalates to hard fail.
-- Before claiming done, run the review convergence matrix and put the evidence in the commit body as
-  `Review-Convergence: ...`. The matrix is: behavior matrix, negative path, legacy compatibility,
-  stale-string sweep, docs/templates/generated artifacts, live smoke, and test/diff evidence.
-  The pre-task-done gate (70-review-convergence.sh) blocks task close when this attestation is missing.
-- No sycophancy. When the user asserts a factually wrong technical claim (API semantics, framework behavior,
-  security, deployment model, etc.), DO NOT silently comply. Verify via code/docs, state the correction directly
-  with evidence (file:line, doc link, or runnable repro), propose the correct approach, then ask the user to
-  confirm direction. If the user insists after seeing the evidence, proceed but `gg record` the disagreement so
-  future sessions can trace the call. This rule is factual claims only — subjective preferences (style, naming,
-  layout) are the user's call.
+The mandatory rule is durable memory sync: anything future agents must know goes into gg.
+
+- Record durable decisions, rejections, bugs, blockers, handoffs, evidence summaries, artifact references, and shared work items with `gg record`, `gg task`, `gg bug`, and `gg tell`.
+- Use `gg search --compact <topic>` and `gg context --compact` before changing important project behavior so prior decisions and rejected approaches are visible.
+- `gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"`, `gg inbox --role "$GG_ROLE" --peek`, and `gg next --agent "$GG_AGENT" --role "$GG_ROLE"` are orientation helpers. They do not replace the agent's native planning or execution workflow.
+- If the project uses gg-managed tasks, use `gg task start/renew/release/ready-for-live/done` according to the configured ownership and review gates. When handing off for review, include a compact evidence packet in `gg task ready-for-live --plan` or `gg tell --task`: commands run, live smoke result, impacted files, known gaps, and artifact paths. If another tool owns local planning, mirror durable outcomes back into gg instead of creating a parallel hidden tracker.
+- GSD may be a native scratchpad/helper, but `.gsd/gsd.db` is not canonical shared memory. Do not call `gsd_plan_*` as the durable memory source in projects using gg; record durable GSD outcomes in gg.
+- Source files (.go/.ts/.js/.py/.rs/.java): max 500 lines. Test files (*_test.go, *.test.*, *.spec.*): max 800 lines. Oversized files must be split into cohesive modules — extract helpers, split by concern, no god-objects. The pre-task-done gate (30-file-size.sh) surfaces violations; GG_FILE_SIZE_GATE=block escalates to hard fail.
+- Before claiming completion, capture evidence that a future agent can inspect: commands run, live smoke result, impacted files, known gaps, artifact paths, and any required behavior matrix / negative path / legacy compatibility / stale-string / docs/templates/generated artifact checks. When project hooks require it, put the evidence in the commit body as `Review-Convergence: ...`.
+- No sycophancy. When the user asserts a factually wrong technical claim (API semantics, framework behavior, security, deployment model, etc.), verify via code/docs, state the correction directly with evidence (file:line, doc link, or runnable repro), propose the correct approach, then ask the user to confirm direction. If the user insists after seeing the evidence, proceed but `gg record` the disagreement so future sessions can trace the call. This rule is factual claims only — subjective preferences (style, naming, layout) are the user's call.
 <!-- gg:contract:end -->
