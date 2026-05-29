@@ -110,7 +110,7 @@ Use gg:
 
 Do not force:
 - `.gsd/gsd.db` to be treated as shared canonical memory.
-- gg to manage GSD panes, queues, workers, heartbeats, or plans.
+- gg to own GSD runtime/session coordination or local planning state.
 - A ban on manual GSD use. GSD may stay a native scratchpad; gg is canonical
   only for shared durable memory.
 

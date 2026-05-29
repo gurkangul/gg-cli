@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.25] - 2026-05-30
+
+### Added
+
+- Document native workflow capture points for BMAD, GSD2, OMO Slim, Antigravity, Codex, Claude Code, Cursor, and Aider.
+- Add native-workflow memory-sync smoke coverage for decisions, rejections, and handoff retrieval.
+
+### Changed
+
+- Reframe agent protocol, templates, and gate wording around durable shared memory and evidence capture instead of gg-owned workflow orchestration.
+
+### Fixed
+
+- Remove retired orchestration wording from active docs and tests while preserving stale-wording absence coverage.
+
 ## [0.3.24] - 2026-05-28
 
 ### Added

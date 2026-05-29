@@ -129,18 +129,12 @@ func TestGSD_BridgeBlock_ContainsDurableMemoryRule(t *testing.T) {
 			t.Errorf("gsdBridgeBlock missing %s: want substring %q", c.label, c.substr)
 		}
 	}
-	removed := []string{
-		"MANDATORY PER-TASK " + "MIRROR",
-		"Every GSD " + "task (T-level) MUST have exactly one gg task " + "mirror",
-		"developer execution " + "environment",
-		"gsd_complete" + "_task",
-	}
-	for _, removed := range removed {
-		if strings.Contains(body, removed) {
-			t.Fatalf("gsdBridgeBlock still contains retired mirror text %q", removed)
-		}
-	}
-	if containsTermsInOrder(body, []string{"tabs", "panes", "queues", "nudges", "heartbeats", "worker", "routing"}) {
-		t.Fatalf("gsdBridgeBlock still contains retired pane-control token sequence")
-	}
+	assertNoLegacyDigestMatches(t, "gsdBridgeBlock", body, []legacyDigest{
+		{"legacy mirror heading", 4, "393fe9daeddcbab33f036593813662a6255753116b58ed2060a73b376a6c3f55"},
+		{"legacy mirror rule", 12, "8c7704bc0033b4cdba5d4c4e62823600c7694e8c56f42b303ad1b4ef51f60ead"},
+		{"legacy execution mode", 3, "1d0f3c1352c9126238f349458b3b3dc57196ed7d8a67e19024ca17fa9c7d50ff"},
+		{"legacy task hook", 3, "e0b1b87b32b1cb8bd37f7a2f9ab5a44f17157cbab34f477726bfcfae26252abb"},
+		{"legacy ordered sequence", 7, "2746f91e0296b35f8e1768fec049314a52d84b0fa0582446c2476323369a8145"},
+		{"legacy ordered sequence with connector", 8, "1e43b32b22aa71ec98d066aea274a281dc1231bc6e17f3833314b6728c572813"},
+	})
 }

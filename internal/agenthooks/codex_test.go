@@ -1,10 +1,13 @@
 package agenthooks
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 func TestCodex_Detect(t *testing.T) {
@@ -119,33 +122,48 @@ func TestCodex_ManagedBody_AllowsNativeGSDScratchpad(t *testing.T) {
 			t.Fatalf("codex managed body missing %q", want)
 		}
 	}
-	removed := []string{
-		"developer execution " + "worker",
-		"gg " + "spawn",
-		"gg gsd " + "open",
-		"developer" + ".command",
-		"Every GSD " + "task (T-level, not milestone or slice) MUST have a gg task",
-		"Mirror at " + "pickup",
-	}
-	for _, removed := range removed {
-		if strings.Contains(body, removed) {
-			t.Fatalf("codex managed body still contains retired managed-block text %q", removed)
+	assertNoLegacyDigestMatches(t, "codex managed body", body, []legacyDigest{
+		{"legacy execution role", 3, "9dee7f158e99b1c042cd2d01f84586560e9bdf9e78682401c443f0658e499592"},
+		{"legacy command one", 2, "f7ffc78c762a1e5203a39a4b3cdbfafbb69039ea0959b46f36dd1691ba3f27fd"},
+		{"legacy command two", 3, "7bac59500df4734f6ca58fcc50632f8dca25ba6d008e26fc2d546a7e5d949f2a"},
+		{"legacy API knob", 2, "e96f3c45d60ba01ce93392fa9ad32880863163fa8ffa456a0d60e09df307a160"},
+		{"legacy mirror rule", 14, "e923edc7c589de6b848c191a2d592d7c3ac4c3d69c78847568b1ba95b9ec32a7"},
+		{"legacy handoff rule", 3, "fb8dc76e6f12fd5047bedb23d996b6da46f95c70f4ff4809e92aaa2cdb27a16f"},
+		{"legacy ordered sequence", 7, "2746f91e0296b35f8e1768fec049314a52d84b0fa0582446c2476323369a8145"},
+		{"legacy ordered sequence with connector", 8, "1e43b32b22aa71ec98d066aea274a281dc1231bc6e17f3833314b6728c572813"},
+	})
+}
+
+type legacyDigest struct {
+	label string
+	words int
+	sha   string
+}
+
+// The hashes are SHA-256 of normalized legacy snippets. Keep them as hashes so
+// active tests can preserve absence coverage without storing the old wording.
+func assertNoLegacyDigestMatches(t *testing.T, label, text string, digests []legacyDigest) {
+	t.Helper()
+	tokens := normalizedTokens(text)
+	for _, digest := range digests {
+		if digest.words <= 0 || digest.words > len(tokens) {
+			continue
 		}
-	}
-	if containsTermsInOrder(body, []string{"tabs", "panes", "queues", "nudges", "heartbeats", "worker", "routing"}) {
-		t.Fatalf("codex managed body still contains retired pane-control token sequence")
+		for i := 0; i <= len(tokens)-digest.words; i++ {
+			if sha256Hex(strings.Join(tokens[i:i+digest.words], " ")) == digest.sha {
+				t.Fatalf("%s still contains retired text matching %s", label, digest.label)
+			}
+		}
 	}
 }
 
-func containsTermsInOrder(text string, terms []string) bool {
-	pos := 0
-	lower := strings.ToLower(text)
-	for _, term := range terms {
-		idx := strings.Index(lower[pos:], strings.ToLower(term))
-		if idx < 0 {
-			return false
-		}
-		pos += idx + len(term)
-	}
-	return true
+func normalizedTokens(text string) []string {
+	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+}
+
+func sha256Hex(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return fmt.Sprintf("%x", sum)
 }
