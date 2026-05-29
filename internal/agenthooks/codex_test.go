@@ -126,7 +126,7 @@ func TestCodex_ManagedBody_AllowsNativeGSDScratchpad(t *testing.T) {
 		"developer" + ".command",
 		"Every GSD " + "task (T-level, not milestone or slice) MUST have a gg task",
 		"Mirror at " + "pickup",
-		"tabs, panes, queues, nudges, heartbeats, and worker routing",
+		"tabs, panes, queues, nudges, " + "heartbeats, and worker routing",
 	}
 	for _, removed := range removed {
 		if strings.Contains(body, removed) {
