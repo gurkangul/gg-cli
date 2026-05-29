@@ -138,7 +138,7 @@ func TestGSD_BridgeBlock_ContainsDurableMemoryRule(t *testing.T) {
 	}
 	for _, removed := range removed {
 		if strings.Contains(body, removed) {
-			t.Fatalf("gsdBridgeBlock still contains strict mirror text %q", removed)
+			t.Fatalf("gsdBridgeBlock still contains retired mirror text %q", removed)
 		}
 	}
 }

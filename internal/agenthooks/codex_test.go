@@ -130,7 +130,7 @@ func TestCodex_ManagedBody_AllowsNativeGSDScratchpad(t *testing.T) {
 	}
 	for _, removed := range removed {
 		if strings.Contains(body, removed) {
-			t.Fatalf("codex managed body still contains removed control text %q", removed)
+			t.Fatalf("codex managed body still contains retired managed-block text %q", removed)
 		}
 	}
 }

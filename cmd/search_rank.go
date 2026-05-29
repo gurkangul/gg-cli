@@ -26,6 +26,7 @@ type searchResult struct {
 	Task            *store.Task      `json:"task,omitempty"`
 	Bug             *store.Bug       `json:"bug,omitempty"`
 	Note            *store.Note      `json:"note,omitempty"`
+	Message         *store.Message   `json:"message,omitempty"`
 }
 
 type searchScoreOverrides map[string]int
@@ -54,6 +55,10 @@ func buildSearchResultsWithBackend(query string, decisions []store.Decision, rej
 }
 
 func buildSearchResultsWithBackendAndScores(query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, backend string, scores searchScoreOverrides) []searchResult {
+	return buildSearchResultsWithBackendScoresAndMessages(query, decisions, rejections, tasks, bugs, notes, nil, backend, scores)
+}
+
+func buildSearchResultsWithBackendScoresAndMessages(query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, messages []store.Message, backend string, scores searchScoreOverrides) []searchResult {
 	var out []searchResult
 	rank := 0
 	for i := range decisions {
@@ -62,7 +67,7 @@ func buildSearchResultsWithBackendAndScores(query string, decisions []store.Deci
 		if override, ok := scores.get("decision", d.ID); ok {
 			score = override
 		}
-		out = append(out, newSearchResult("decision", rank, score, d.SemanticScore, backend, &d, nil, nil, nil, nil))
+		out = append(out, newSearchResult("decision", rank, score, d.SemanticScore, backend, &d, nil, nil, nil, nil, nil))
 		rank++
 	}
 	for i := range rejections {
@@ -71,7 +76,7 @@ func buildSearchResultsWithBackendAndScores(query string, decisions []store.Deci
 		if override, ok := scores.get("rejection", r.ID); ok {
 			score = override
 		}
-		out = append(out, newSearchResult("rejection", rank, score, r.SemanticScore, backend, nil, &r, nil, nil, nil))
+		out = append(out, newSearchResult("rejection", rank, score, r.SemanticScore, backend, nil, &r, nil, nil, nil, nil))
 		rank++
 	}
 	for i := range tasks {
@@ -80,7 +85,7 @@ func buildSearchResultsWithBackendAndScores(query string, decisions []store.Deci
 		if override, ok := scores.get("task", t.ID); ok {
 			score = override
 		}
-		out = append(out, newSearchResult("task", rank, score, t.SemanticScore, backend, nil, nil, &t, nil, nil))
+		out = append(out, newSearchResult("task", rank, score, t.SemanticScore, backend, nil, nil, &t, nil, nil, nil))
 		rank++
 	}
 	for i := range bugs {
@@ -89,7 +94,7 @@ func buildSearchResultsWithBackendAndScores(query string, decisions []store.Deci
 		if override, ok := scores.get("bug", b.ID); ok {
 			score = override
 		}
-		out = append(out, newSearchResult("bug", rank, score, b.SemanticScore, backend, nil, nil, nil, &b, nil))
+		out = append(out, newSearchResult("bug", rank, score, b.SemanticScore, backend, nil, nil, nil, &b, nil, nil))
 		rank++
 	}
 	for i := range notes {
@@ -98,13 +103,22 @@ func buildSearchResultsWithBackendAndScores(query string, decisions []store.Deci
 		if override, ok := scores.get("note", n.ID); ok {
 			score = override
 		}
-		out = append(out, newSearchResult("note", rank, score, n.SemanticScore, backend, nil, nil, nil, nil, &n))
+		out = append(out, newSearchResult("note", rank, score, n.SemanticScore, backend, nil, nil, nil, nil, &n, nil))
+		rank++
+	}
+	for i := range messages {
+		m := messages[i]
+		score := lexicalScoreWithPrimary(query, m.ID, messageSearchText(m))
+		if override, ok := scores.get("message", m.ID); ok {
+			score = override
+		}
+		out = append(out, newSearchResult("message", rank, score, 0, backend, nil, nil, nil, nil, nil, &m))
 		rank++
 	}
 	return rankSearchResults(out)
 }
 
-func newSearchResult(kind string, rank, lexicalScore int, semanticScore float32, backend string, d *store.Decision, r *store.Rejection, t *store.Task, b *store.Bug, n *store.Note) searchResult {
+func newSearchResult(kind string, rank, lexicalScore int, semanticScore float32, backend string, d *store.Decision, r *store.Rejection, t *store.Task, b *store.Bug, n *store.Note, m *store.Message) searchResult {
 	if backend == "" {
 		backend = "qdrant"
 	}
@@ -120,6 +134,7 @@ func newSearchResult(kind string, rank, lexicalScore int, semanticScore float32,
 		Task:          t,
 		Bug:           b,
 		Note:          n,
+		Message:       m,
 	}
 }
 
@@ -215,6 +230,10 @@ func noteSearchText(n store.Note) string {
 	return strings.Join(append([]string{n.ID, n.Text, n.TaskID}, n.Tags...), " ")
 }
 
+func messageSearchText(m store.Message) string {
+	return strings.Join([]string{m.ID, m.FromRole, m.ToRole, m.Content, m.Audience, m.TaskID, m.CreatedAt}, " ")
+}
+
 func compactSearchResultLine(r searchResult) string {
 	switch {
 	case r.Decision != nil:
@@ -227,6 +246,8 @@ func compactSearchResultLine(r searchResult) string {
 		return compactBugLine(*r.Bug) + sourceSuffix(r.SourceProjectID)
 	case r.Note != nil:
 		return compactNoteLine(*r.Note) + sourceSuffix(r.SourceProjectID)
+	case r.Message != nil:
+		return compactMessageLine(*r.Message) + sourceSuffix(r.SourceProjectID)
 	default:
 		return fmt.Sprintf("?  %s", r.Kind)
 	}

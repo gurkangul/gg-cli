@@ -25,7 +25,7 @@ func TestGSDAuditHelp_IsAdvisoryScratchpadContract(t *testing.T) {
 	}
 	for _, removed := range removed {
 		if strings.Contains(text, removed) {
-			t.Fatalf("gsd audit help still contains strict mirror text %q in:\n%s", removed, text)
+			t.Fatalf("gsd audit help still contains retired mirror text %q in:\n%s", removed, text)
 		}
 	}
 }

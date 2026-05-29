@@ -96,6 +96,28 @@ func TestAC1AC2AC3AC4AC5NativeWorkflowMemorySyncSmoke(t *testing.T) {
 		t.Fatalf("AC-2 mirrored GSD record not surfaced by search:\n%s", gsdSearchOut)
 	}
 
+	rejectionSearchOut := captureStdout(t, func() {
+		if _, _, err := execCmd(t, "search", "rejected execution controller "+token, "--compact"); err != nil {
+			t.Fatalf("AC-4 gg search rejection %s: %v", token, err)
+		}
+	})
+	for _, want := range []string{token, "AC-1 BMAD round rejected execution controller"} {
+		if !strings.Contains(rejectionSearchOut, want) {
+			t.Fatalf("AC-4 search output missing rejected approach %q:\n%s", want, rejectionSearchOut)
+		}
+	}
+
+	handoffSearchOut := captureStdout(t, func() {
+		if _, _, err := execCmd(t, "search", "handoff "+token, "--compact"); err != nil {
+			t.Fatalf("AC-4 gg search handoff %s: %v", token, err)
+		}
+	})
+	for _, want := range []string{token, "AC-1 handoff"} {
+		if !strings.Contains(handoffSearchOut, want) {
+			t.Fatalf("AC-4 search output missing handoff message %q:\n%s", want, handoffSearchOut)
+		}
+	}
+
 	unmirroredOut := captureStdout(t, func() {
 		if _, _, err := execCmd(t, "search", unmirroredToken, "--compact"); err != nil {
 			t.Fatalf("AC-2 gg search %s: %v", unmirroredToken, err)
@@ -110,7 +132,7 @@ func TestAC1AC2AC3AC4AC5NativeWorkflowMemorySyncSmoke(t *testing.T) {
 			t.Fatalf("AC-4 gg context --for-task %s: %v", taskID, err)
 		}
 	})
-	for _, want := range []string{taskID, token, gsdToken} {
+	for _, want := range []string{taskID, token, gsdToken, "AC-1 BMAD round rejected execution controller", "AC-1 handoff"} {
 		if !strings.Contains(contextOut, want) {
 			t.Fatalf("AC-4 context output missing %q:\n%s", want, contextOut)
 		}

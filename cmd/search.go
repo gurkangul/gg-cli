@@ -32,9 +32,11 @@ See also: gg status (project overview), gg task get (task details)`,
 	RunE: runSearch,
 }
 
-var searchLimit uint64
-var searchCompact bool
-var searchIncludeLinked bool
+var (
+	searchLimit         uint64
+	searchCompact       bool
+	searchIncludeLinked bool
+)
 
 func init() {
 	searchCmd.Flags().Uint64Var(&searchLimit, "limit", 5, "max results to return")
@@ -50,6 +52,7 @@ type searchPayload struct {
 	Tasks      []store.Task      `json:"tasks"`
 	Bugs       []store.Bug       `json:"bugs"`
 	Notes      []store.Note      `json:"notes"`
+	Messages   []store.Message   `json:"messages"`
 }
 
 func runSearch(cmd *cobra.Command, args []string) error {
@@ -156,9 +159,10 @@ func serveSearchFromJSONL(cmd *cobra.Command, query string) error {
 	taskEntries, taskErr := brain.SearchByTextScored(ggDir, "tasks", query)
 	bugEntries, bugErr := brain.SearchByTextScored(ggDir, "bugs", query)
 	noteEntries, noteErr := brain.SearchByTextScored(ggDir, "notes", query)
+	msgEntries, msgErr := brain.SearchByTextScored(ggDir, "messages", query)
 
 	// All absent → fall through to LKG cache (pre-JSONL brain).
-	if decErr != nil && rejErr != nil && taskErr != nil && bugErr != nil && noteErr != nil {
+	if decErr != nil && rejErr != nil && taskErr != nil && bugErr != nil && noteErr != nil && msgErr != nil {
 		return serveSearchFromCache(cmd, query)
 	}
 
@@ -197,7 +201,14 @@ func serveSearchFromJSONL(cmd *cobra.Command, query string) error {
 		scores.set("note", n.ID, match.Score)
 	}
 
-	return printSearchResultsWithBackendAndScores(cmd, query, decisions, rejections, tasks, bugs, notes, banner, time.Time{}, "jsonl", scores)
+	var messages []store.Message
+	for _, match := range msgEntries {
+		m := messageFromJSONLEntry(match.Entry)
+		messages = append(messages, m)
+		scores.set("message", m.ID, match.Score)
+	}
+
+	return printSearchResultsWithBackendScoresAndMessages(cmd, query, decisions, rejections, tasks, bugs, notes, messages, banner, time.Time{}, "jsonl", scores)
 }
 
 // serveSearchFromCache looks up the last-known-good cache entry for query
@@ -222,7 +233,7 @@ func serveSearchFromCache(cmd *cobra.Command, query string) error {
 	}
 
 	banner := fmt.Sprintf("⚠ Qdrant unreachable — cache may be stale; last update at %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
-	return printSearchResultsWithBackend(cmd, query, payload.Decisions, payload.Rejections, payload.Tasks, payload.Bugs, payload.Notes, banner, cachedAt, "cache")
+	return printSearchResultsWithBackendScoresAndMessages(cmd, query, payload.Decisions, payload.Rejections, payload.Tasks, payload.Bugs, payload.Notes, payload.Messages, banner, cachedAt, "cache", nil)
 }
 
 func printSearchResults(cmd *cobra.Command, query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, banner string, cachedAt time.Time) error {
@@ -234,13 +245,18 @@ func printSearchResultsWithBackend(cmd *cobra.Command, query string, decisions [
 }
 
 func printSearchResultsWithBackendAndScores(cmd *cobra.Command, query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, banner string, cachedAt time.Time, backend string, scores searchScoreOverrides) error {
-	results := trimSearchResults(buildSearchResultsWithBackendAndScores(query, decisions, rejections, tasks, bugs, notes, backend, scores), searchLimit)
+	return printSearchResultsWithBackendScoresAndMessages(cmd, query, decisions, rejections, tasks, bugs, notes, nil, banner, cachedAt, backend, scores)
+}
+
+func printSearchResultsWithBackendScoresAndMessages(cmd *cobra.Command, query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, messages []store.Message, banner string, cachedAt time.Time, backend string, scores searchScoreOverrides) error {
+	results := trimSearchResults(buildSearchResultsWithBackendScoresAndMessages(query, decisions, rejections, tasks, bugs, notes, messages, backend, scores), searchLimit)
 	jsonMap := map[string]any{
 		"decisions":      decisions,
 		"rejections":     rejections,
 		"tasks":          tasks,
 		"bugs":           bugs,
 		"notes":          notes,
+		"messages":       messages,
 		"matches":        results,
 		"ranking":        "semantic results with deterministic lexical exact-match boost; BM25/sparse fallback not required",
 		"source_backend": backend,
@@ -318,6 +334,12 @@ func renderSearchResultsDefault(w io.Writer, results []searchResult) {
 			if b.Detail != "" {
 				fmt.Fprintf(w, "    %s\n", compactTrim(b.Detail, 120))
 			}
+		case result.Message != nil:
+			m := *result.Message
+			fmt.Fprintf(w, "  M %s→%s %s\n", m.FromRole, m.ToRole, m.Content)
+			if m.TaskID != "" {
+				fmt.Fprintf(w, "    Task: %s\n", m.TaskID)
+			}
 		case result.Note != nil:
 			n := *result.Note
 			fmt.Fprintf(w, "  %s[%s]", sourcePrefix(result.SourceProjectID), shortDate(n.CreatedAt))
@@ -338,7 +360,11 @@ func renderSearchResultsCompact(w io.Writer, results []searchResult) {
 	for _, r := range results {
 		counts[r.Kind]++
 	}
-	fmt.Fprintf(w, "search — %dD %dR %dT %dB %dN\n\n", counts["decision"], counts["rejection"], counts["task"], counts["bug"], counts["note"])
+	header := fmt.Sprintf("search — %dD %dR %dT %dB %dN", counts["decision"], counts["rejection"], counts["task"], counts["bug"], counts["note"])
+	if counts["message"] > 0 {
+		header += fmt.Sprintf(" %dM", counts["message"])
+	}
+	fmt.Fprintf(w, "%s\n\n", header)
 	if len(results) == 0 {
 		fmt.Fprintln(w, "(no results)")
 		return
