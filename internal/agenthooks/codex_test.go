@@ -126,11 +126,26 @@ func TestCodex_ManagedBody_AllowsNativeGSDScratchpad(t *testing.T) {
 		"developer" + ".command",
 		"Every GSD " + "task (T-level, not milestone or slice) MUST have a gg task",
 		"Mirror at " + "pickup",
-		"tabs, panes, queues, nudges, " + "heartbeats, and worker routing",
 	}
 	for _, removed := range removed {
 		if strings.Contains(body, removed) {
 			t.Fatalf("codex managed body still contains retired managed-block text %q", removed)
 		}
 	}
+	if containsTermsInOrder(body, []string{"tabs", "panes", "queues", "nudges", "heartbeats", "worker", "routing"}) {
+		t.Fatalf("codex managed body still contains retired pane-control token sequence")
+	}
+}
+
+func containsTermsInOrder(text string, terms []string) bool {
+	pos := 0
+	lower := strings.ToLower(text)
+	for _, term := range terms {
+		idx := strings.Index(lower[pos:], strings.ToLower(term))
+		if idx < 0 {
+			return false
+		}
+		pos += idx + len(term)
+	}
+	return true
 }

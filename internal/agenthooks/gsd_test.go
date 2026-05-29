@@ -134,11 +134,13 @@ func TestGSD_BridgeBlock_ContainsDurableMemoryRule(t *testing.T) {
 		"Every GSD " + "task (T-level) MUST have exactly one gg task " + "mirror",
 		"developer execution " + "environment",
 		"gsd_complete" + "_task",
-		"tabs, panes, queues, nudges, " + "heartbeats, and worker routing",
 	}
 	for _, removed := range removed {
 		if strings.Contains(body, removed) {
 			t.Fatalf("gsdBridgeBlock still contains retired mirror text %q", removed)
 		}
+	}
+	if containsTermsInOrder(body, []string{"tabs", "panes", "queues", "nudges", "heartbeats", "worker", "routing"}) {
+		t.Fatalf("gsdBridgeBlock still contains retired pane-control token sequence")
 	}
 }
