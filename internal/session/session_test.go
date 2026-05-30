@@ -57,24 +57,33 @@ func TestBriefing_Render_IncludesProtocolSteps(t *testing.T) {
 
 func TestPasteBlock_DefaultAgent(t *testing.T) {
 	got := PasteBlock("")
-	if !strings.Contains(got, "GG_AGENT=agent") {
+	if !strings.Contains(got, "Suggested for this hook context: agent") {
 		t.Errorf("empty hint should default to generic agent, got %q", got)
 	}
 }
 
 func TestPasteBlock_CustomAgent(t *testing.T) {
-	got := PasteBlock("omo-slim")
-	if !strings.Contains(got, "GG_AGENT=omo-slim") {
-		t.Errorf("hint=omo-slim should appear in paste block, got %q", got)
+	got := PasteBlock("claude-code")
+	if !strings.Contains(got, "Suggested for this hook context: claude-code") {
+		t.Errorf("hint=claude-code should appear in paste block, got %q", got)
 	}
 	if !strings.Contains(got, "--role \"$GG_ROLE\"") {
 		t.Errorf("paste block should use session-start --role, got %q", got)
+	}
+	if strings.Contains(got, "export GG_AGENT=") {
+		t.Errorf("paste block should not contain a copyable GG_AGENT assignment, got %q", got)
+	}
+	if !strings.Contains(got, "do not continue with a placeholder") {
+		t.Errorf("paste block should forbid placeholder identities, got %q", got)
+	}
+	if !strings.Contains(got, "If this shell is GSD, use a unique gsd-* id") {
+		t.Errorf("paste block should explain GSD shell identity, got %q", got)
 	}
 }
 
 func TestPasteBlock_TrimsWhitespaceHint(t *testing.T) {
 	got := PasteBlock("   ")
-	if !strings.Contains(got, "GG_AGENT=agent") {
+	if !strings.Contains(got, "Suggested for this hook context: agent") {
 		t.Errorf("whitespace hint should fall back to generic agent, got %q", got)
 	}
 }

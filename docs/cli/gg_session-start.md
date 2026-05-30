@@ -29,8 +29,9 @@ background graph refresh; repair is explicit via gg doctor --fix-index, and
 foreground active mode is gg index --watch / gg watch --index.
 
 Examples:
-  gg session-start --agent=<agent-id> --role=implementer
-  GG_AGENT=cursor GG_ROLE=reviewer gg session-start
+  gg session-start --agent=gsd-myproject-1 --role=planner
+  gg session-start --agent=codex-1 --role=implementer
+  GG_AGENT=cursor-1 GG_ROLE=reviewer gg session-start
 
 ```
 gg session-start [flags]
@@ -39,7 +40,7 @@ gg session-start [flags]
 ### Options
 
 ```
-      --agent string   agent_id for this agent instance (for example omo-slim, codex-1, claude-planner) — overrides $GG_AGENT
+      --agent string   agent_id for this runtime instance (for example gsd-myproject-1, codex-1, claude-planner) — overrides $GG_AGENT
       --bench          print timing for the managed-block resync step to stderr
   -h, --help           help for session-start
       --role string    agent role for this session (for example implementer, reviewer, planner) — overrides $GG_ROLE in briefing output

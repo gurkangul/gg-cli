@@ -107,8 +107,9 @@ The CLI gives agents common verbs:
 
 ## Terms
 
-- `agent_id`: unique agent instance name, for example `omo-slim`, `codex-1`,
-  `claude-planner`, `hermes-reviewer`.
+- `agent_id`: unique agent instance name for the runtime actually executing gg
+  commands, for example `gsd-qrmenu-1`, `codex-1`, `claude-planner`,
+  `omo-slim-1`.
 - `role`: work authority, for example `implementer`, `reviewer`, `planner`,
   `researcher`, `maintainer`.
 - `owner`: the gg-managed task lease holder; use the `agent_id`, not the role.
@@ -120,9 +121,13 @@ The CLI gives agents common verbs:
 
 Use this at the start of an agent session when the agent can run shell commands:
 
+Pick `GG_AGENT` for the runtime actually executing the shell. Do not copy an
+example from another runtime: a real GSD shell should use a `gsd-*` id, while a
+host agent relaying GSD output should keep the host agent id.
+
 ```bash
-export GG_AGENT=omo-slim
-export GG_ROLE=implementer
+export GG_AGENT="${GG_AGENT:?set GG_AGENT to this runtime, e.g. gsd-myproject-1 or codex-1}"
+export GG_ROLE="${GG_ROLE:-implementer}"
 gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 gg inbox --role "$GG_ROLE" --peek
 gg context --compact
@@ -136,6 +141,9 @@ Guidelines:
 
 - `GG_AGENT` / `--agent` should identify the actual runtime doing the command.
   Do not leave a stale value from another agent.
+- If GSD itself runs the shell, use a unique GSD agent id such as
+  `gsd-qrmenu-1`. If Claude, Codex, Cursor, OMO Slim, or another host runtime
+  writes gg records based on GSD output, use the host runtime's id.
 - If two agents have the same role, keep `GG_ROLE` the same but make
   `GG_AGENT` unique, for example `codex-1` and `codex-2`.
 - `gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"` is a briefing and
@@ -145,8 +153,8 @@ Guidelines:
   fallback:
 
 ```bash
-export GG_AGENT=codex
-export GG_ROLE=implementer
+export GG_AGENT="${GG_AGENT:?set GG_AGENT to this runtime, e.g. gsd-myproject-1 or codex-1}"
+export GG_ROLE="${GG_ROLE:-implementer}"
 gg status
 gg inbox --role "$GG_ROLE" --peek
 ```
@@ -400,8 +408,8 @@ gg CLI.
 Native workflow with durable sync:
 
 ```bash
-export GG_AGENT=codex
-export GG_ROLE=implementer
+export GG_AGENT="${GG_AGENT:?set GG_AGENT to this runtime, e.g. gsd-myproject-1 or codex-1}"
+export GG_ROLE="${GG_ROLE:-implementer}"
 
 gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 gg inbox --role "$GG_ROLE" --peek
@@ -419,8 +427,8 @@ gg tell reviewer \
 gg-managed task path:
 
 ```bash
-export GG_AGENT=codex
-export GG_ROLE=implementer
+export GG_AGENT="${GG_AGENT:?set GG_AGENT to this runtime, e.g. gsd-<project>-1 or codex-1}"
+export GG_ROLE="${GG_ROLE:-implementer}"
 
 gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 gg inbox --role "$GG_ROLE" --peek

@@ -23,17 +23,21 @@ and run it.
 ## RECOMMENDED ORIENTATION
 
 At session start, orient yourself when shell access is available:
-```
-export GG_AGENT=omo-slim     # unique agent_id (omo-slim, codex-1, claude-planner, ...)
-export GG_ROLE=implementer   # role (implementer, reviewer, planner, ...)
+Set `GG_AGENT` to the runtime actually executing gg commands. Do not copy an
+example from another runtime; a real GSD shell should use a unique `gsd-*` id.
+
+```sh
+export GG_AGENT="${GG_AGENT:?set GG_AGENT to this runtime, e.g. gsd-myproject-1 or codex-1}"
+export GG_ROLE="${GG_ROLE:-implementer}"
 gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 gg inbox --role "$GG_ROLE" --peek
 gg context --compact
 ```
 Summarize open tasks, unread messages, and recent decisions for the user when
-useful. Use unique `GG_AGENT` values when two agents share the same role. Do not
-run role-less `gg inbox --advance-cursor`; role-scoped `--peek` is the safe
-default.
+useful. Use unique `GG_AGENT` values when two agents share the same role. If a
+host runtime mirrors GSD output into gg, keep the host runtime's id; if GSD
+itself runs the shell, use `gsd-*`. Do not run role-less
+`gg inbox --advance-cursor`; role-scoped `--peek` is the safe default.
 
 ## DURING DISCUSSION
 

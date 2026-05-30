@@ -157,9 +157,13 @@ These rules are individually recorded via `gg record` (tags:
 
 At the start of a session, orient yourself with gg when shell access is
 available:
-```
-export GG_AGENT=omo-slim     # unique agent_id (omo-slim, codex-1, claude-planner, ...)
-export GG_ROLE=implementer   # role (implementer, reviewer, planner, ...)
+Set `GG_AGENT` to the runtime that is actually executing gg commands. Do not
+copy an example from another runtime. Examples: `gsd-myproject-1` for a real
+GSD shell, `codex-1`, `claude-planner`, `cursor-1`, `omo-slim-1`.
+
+```sh
+export GG_AGENT="${GG_AGENT:?set GG_AGENT to this runtime, e.g. gsd-myproject-1 or codex-1}"
+export GG_ROLE="${GG_ROLE:-implementer}"
 gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 gg inbox --role "$GG_ROLE" --peek
 gg context --compact
@@ -171,10 +175,10 @@ about adoption. Set it once per shell and do not leave a stale value from a
 different runtime.
 
 Set `GG_AGENT` to the runtime that is actually executing commands. If a side
-pane is a real GSD runtime, `GG_AGENT=gsd` is valid. If Claude Code, Codex,
-Cursor, or another runtime is driving GSD work, keep that runtime's identity in
-`GG_AGENT` and use `GG_ROLE` for authority (`master`, `developer`, `reviewer`,
-etc.).
+pane is a real GSD runtime, use a unique `gsd-*` value such as
+`GG_AGENT=gsd-gg-cli-1`. If Claude Code, Codex, Cursor, or another runtime is
+driving GSD work, keep that runtime's identity in `GG_AGENT` and use `GG_ROLE`
+for authority (`master`, `developer`, `reviewer`, etc.).
 
 Terms: `agent_id` is the unique runtime instance name; `role` is the authority
 for the current work; task `owner` is the `agent_id` holding a gg-managed task

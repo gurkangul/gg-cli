@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.26] - 2026-05-30
+
+### Fixed
+
+- Clarify `GG_AGENT` examples so GSD shells use a `gsd-*` runtime identity instead of copying a host-agent example literally.
+
 ## [0.3.25] - 2026-05-30
 
 ### Added

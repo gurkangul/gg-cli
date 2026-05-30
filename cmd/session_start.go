@@ -65,15 +65,16 @@ background graph refresh; repair is explicit via gg doctor --fix-index, and
 foreground active mode is gg index --watch / gg watch --index.
 
 Examples:
-  gg session-start --agent=<agent-id> --role=implementer
-  GG_AGENT=cursor GG_ROLE=reviewer gg session-start`,
+  gg session-start --agent=gsd-myproject-1 --role=planner
+  gg session-start --agent=codex-1 --role=implementer
+  GG_AGENT=cursor-1 GG_ROLE=reviewer gg session-start`,
 	Args: cobra.NoArgs,
 	RunE: runSessionStart,
 }
 
 func init() {
 	sessionStartCmd.Flags().StringVar(&sessionStartAgent, "agent", "",
-		"agent_id for this agent instance (for example omo-slim, codex-1, claude-planner) — overrides $GG_AGENT")
+		"agent_id for this runtime instance (for example gsd-myproject-1, codex-1, claude-planner) — overrides $GG_AGENT")
 	sessionStartCmd.Flags().StringVar(&sessionStartRole, "role", "",
 		"agent role for this session (for example implementer, reviewer, planner) — overrides $GG_ROLE in briefing output")
 	sessionStartCmd.Flags().BoolVar(&sessionStartBench, "bench", false,
@@ -87,7 +88,7 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	agent := resolveSessionAgent()
 	if agent == "" {
 		fmt.Fprintln(os.Stderr, "error: no agent identity — set GG_AGENT or pass --agent=<name>")
-		fmt.Fprintln(os.Stderr, "       examples: codex, cursor, gsd, aider")
+		fmt.Fprintln(os.Stderr, "       examples: gsd-myproject-1, codex-1, cursor-1, aider-1")
 		fmt.Fprintln(os.Stderr, "       agents must self-identify so telemetry can distinguish")
 		fmt.Fprintln(os.Stderr, "       agent-initiated calls from human ones.")
 		return configErr("agent identity required (set GG_AGENT or pass --agent)")

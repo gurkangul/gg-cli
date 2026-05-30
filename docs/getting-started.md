@@ -61,12 +61,15 @@ gg status
 ## Setting up for multi-agent use
 
 gg does not replace each agent's native workflow. Set `GG_AGENT` / `GG_ROLE` in
-each agent's environment so durable records are attributed correctly:
+each agent's environment so durable records are attributed to the runtime that
+actually writes them. Do not copy another runtime's example: a real GSD shell
+should use a unique `gsd-*` id, while a host agent relaying GSD output should
+keep the host agent id.
 
 ```sh
-export GG_AGENT=codex
-export GG_ROLE=developer   # or architect, reviewer, etc.
-gg session-start --agent=codex --role=developer
+export GG_AGENT="${GG_AGENT:?set GG_AGENT to this runtime, e.g. gsd-myproject-1 or codex-1}"
+export GG_ROLE="${GG_ROLE:-developer}"   # or architect, reviewer, etc.
+gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 ```
 
 Use `gg record`, `gg task`, `gg bug`, and `gg tell` when a durable decision,

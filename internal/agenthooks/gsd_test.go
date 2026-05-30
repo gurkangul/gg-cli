@@ -123,6 +123,8 @@ func TestGSD_BridgeBlock_ContainsDurableMemoryRule(t *testing.T) {
 		{"canonical cross-agent memory", "canonical memory clause"},
 		{"`.gsd/gsd.db` as shared memory", "gsd db non-canonical clause"},
 		{"`gg gsd audit` is advisory", "advisory audit guidance"},
+		{"use a unique `gsd-*` id", "unique GSD agent identity guidance"},
+		{"if a host agent mirrors GSD output", "host relay identity guidance"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(body, c.substr) {
@@ -137,4 +139,7 @@ func TestGSD_BridgeBlock_ContainsDurableMemoryRule(t *testing.T) {
 		{"legacy ordered sequence", 7, "2746f91e0296b35f8e1768fec049314a52d84b0fa0582446c2476323369a8145"},
 		{"legacy ordered sequence with connector", 8, "1e43b32b22aa71ec98d066aea274a281dc1231bc6e17f3833314b6728c572813"},
 	})
+	if strings.Contains(body, "usually") && strings.Contains(body, "`gsd`") {
+		t.Fatalf("gsdBridgeBlock still suggests non-unique manual GSD identity")
+	}
 }

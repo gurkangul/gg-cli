@@ -30,7 +30,9 @@ gg doctor
 gg doctor --install-agent-hooks
 
 # Start an agent session briefing
-GG_AGENT=codex GG_ROLE=implementer gg session-start --agent=codex --role=implementer
+export GG_AGENT="${GG_AGENT:?set GG_AGENT to this runtime, e.g. gsd-myproject-1 or codex-1}"
+export GG_ROLE="${GG_ROLE:-implementer}"
+gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 ```
 
 `gg init` starts the local Docker services through gg's shared compose file.
@@ -109,11 +111,14 @@ gg status
 
 ## Multi-agent setup
 
-Set `GG_AGENT` and `GG_ROLE` so durable records are attributed to the right agent:
+Set `GG_AGENT` and `GG_ROLE` so durable records are attributed to the runtime
+that actually writes them. Do not copy another runtime's example: a real GSD
+shell should use a unique `gsd-*` id, while a host agent relaying GSD output
+should keep the host agent id.
 
 ```sh
-export GG_AGENT=codex
-export GG_ROLE=developer   # or: architect, reviewer, agent
+export GG_AGENT="${GG_AGENT:?set GG_AGENT to this runtime, e.g. gsd-myproject-1 or codex-1}"
+export GG_ROLE="${GG_ROLE:-developer}"   # or: architect, reviewer, agent
 ```
 
 Send a message to another role:

@@ -88,7 +88,7 @@ func (b Briefing) Render(w io.Writer) error {
 // agent's chat to kickstart compliance when no SessionStart hook is
 // available (Codex, generic CLIs) or as reinforcement.
 //
-// agentHint seeds the example GG_AGENT value; if empty, "agent" is used.
+// agentHint seeds the suggested GG_AGENT value; if empty, "agent" is used.
 // The block is plain ASCII — no markdown fences, no emojis —
 // so it survives terminal paste across every agent we care about.
 func PasteBlock(agentHint string) string {
@@ -98,12 +98,15 @@ func PasteBlock(agentHint string) string {
 	var sb strings.Builder
 	sb.WriteString("I am operating inside a gg-cli shared-memory project.\n")
 	sb.WriteString("Before durable project work:\n")
-	fmt.Fprintf(&sb, "  1. export GG_AGENT=%s   # unique agent_id, e.g. omo-slim or codex-1\n", agentHint)
-	sb.WriteString("  2. export GG_ROLE=implementer   # role, e.g. implementer/reviewer/planner\n")
-	sb.WriteString("  3. Run: gg session-start --agent \"$GG_AGENT\" --role \"$GG_ROLE\"\n")
-	sb.WriteString("  4. Run: gg inbox --role \"$GG_ROLE\" --peek\n")
-	sb.WriteString("  5. Read AGENTS.md at the repo root.\n")
-	sb.WriteString("  6. Use your native workflow, and write anything future agents need\n")
+	sb.WriteString("  1. Choose GG_AGENT for the runtime actually executing gg commands.\n")
+	sb.WriteString("     If this shell is GSD, use a unique gsd-* id such as gsd-<project>-1.\n")
+	fmt.Fprintf(&sb, "     Suggested for this hook context: %s. Do not copy another runtime's id.\n", agentHint)
+	sb.WriteString("  2. Export that chosen value before gg calls; do not continue with a placeholder.\n")
+	sb.WriteString("  3. export GG_ROLE=implementer   # role, e.g. implementer/reviewer/planner\n")
+	sb.WriteString("  4. Run: gg session-start --agent \"$GG_AGENT\" --role \"$GG_ROLE\"\n")
+	sb.WriteString("  5. Run: gg inbox --role \"$GG_ROLE\" --peek\n")
+	sb.WriteString("  6. Read AGENTS.md at the repo root.\n")
+	sb.WriteString("  7. Use your native workflow, and write anything future agents need\n")
 	sb.WriteString("     to gg: decisions, rejections, tasks, bugs, evidence, and handoffs.\n")
 	return sb.String()
 }
