@@ -21,6 +21,7 @@ type Decision struct {
 	Tags                 []string
 	TaskID               string
 	Author               string // agent role or user that recorded this decision (e.g. "developer")
+	Evidence             string // BUG-071: how this was verified (commands/smoke/source) — empty = unverified
 	CreatedAt            string
 	SemanticScore        float32 `json:"semantic_score,omitempty"`
 }
@@ -47,6 +48,7 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 		"tags":                  toAnySlice(d.Tags),
 		"task_id":               d.TaskID,
 		"author":                d.Author,
+		"evidence":              d.Evidence,
 		"created_at":            d.CreatedAt,
 		"version":               int64(1),
 	}
@@ -171,6 +173,7 @@ func decisionFromPayload(id string, pay map[string]*qdrant.Value) Decision {
 		Tags:                 extractStringList(pay["tags"]),
 		TaskID:               pay["task_id"].GetStringValue(),
 		Author:               pay["author"].GetStringValue(),
+		Evidence:             pay["evidence"].GetStringValue(),
 		CreatedAt:            pay["created_at"].GetStringValue(),
 	}
 }

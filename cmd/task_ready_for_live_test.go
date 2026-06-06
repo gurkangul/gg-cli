@@ -18,7 +18,7 @@ import (
 func TestReadyForLiveGate_OptOut_AlwaysAllows(t *testing.T) {
 	cfg := &config.TasksConfig{RequireReadyForLive: false, VerifierSeparation: true}
 	task := &store.Task{ID: "TASK-001", Status: "in_progress"}
-	if rej := checkReadyForLiveGate(task, cfg, ""); rej != nil {
+	if rej := checkReadyForLiveGate(task, cfg, "", ""); rej != nil {
 		t.Fatalf("opt-out path must allow the transition, got refusal: %v", rej)
 	}
 }
@@ -29,7 +29,7 @@ func TestReadyForLiveGate_OptOut_AlwaysAllows(t *testing.T) {
 func TestReadyForLiveGate_On_WrongStatus_Rejected(t *testing.T) {
 	cfg := &config.TasksConfig{RequireReadyForLive: true}
 	task := &store.Task{ID: "TASK-042", Status: "in_progress"}
-	rej := checkReadyForLiveGate(task, cfg, "")
+	rej := checkReadyForLiveGate(task, cfg, "", "")
 	if rej == nil {
 		t.Fatal("expected refusal when status != ready_for_live")
 		return
@@ -49,7 +49,7 @@ func TestReadyForLiveGate_On_SeparationOff_AllowsAnyVerifier(t *testing.T) {
 	cfg := &config.TasksConfig{RequireReadyForLive: true, VerifierSeparation: false}
 	task := &store.Task{ID: "TASK-100", Status: "ready_for_live", ReadyForLiveBy: "implementer"}
 	for _, verifier := range []string{"", "implementer", "someone-else"} {
-		if rej := checkReadyForLiveGate(task, cfg, verifier); rej != nil {
+		if rej := checkReadyForLiveGate(task, cfg, verifier, ""); rej != nil {
 			t.Errorf("verifier=%q must pass when separation is off, got %v", verifier, rej)
 		}
 	}
@@ -60,7 +60,7 @@ func TestReadyForLiveGate_On_SeparationOff_AllowsAnyVerifier(t *testing.T) {
 func TestReadyForLiveGate_SeparationOn_EmptyVerifier_Rejected(t *testing.T) {
 	cfg := &config.TasksConfig{RequireReadyForLive: true, VerifierSeparation: true}
 	task := &store.Task{ID: "TASK-200", Status: "ready_for_live", ReadyForLiveBy: "implementer"}
-	rej := checkReadyForLiveGate(task, cfg, "   ")
+	rej := checkReadyForLiveGate(task, cfg, "   ", "")
 	if rej == nil {
 		t.Fatal("expected refusal when --verifier is empty/whitespace")
 		return
@@ -79,7 +79,7 @@ func TestReadyForLiveGate_SeparationOn_EmptyVerifier_Rejected(t *testing.T) {
 func TestReadyForLiveGate_SeparationOn_SameActor_Rejected(t *testing.T) {
 	cfg := &config.TasksConfig{RequireReadyForLive: true, VerifierSeparation: true}
 	task := &store.Task{ID: "TASK-220", Status: "ready_for_live", ReadyForLiveBy: "claude-code"}
-	rej := checkReadyForLiveGate(task, cfg, "claude-code")
+	rej := checkReadyForLiveGate(task, cfg, "claude-code", "")
 	if rej == nil {
 		t.Fatal("expected refusal when verifier matches ready_for_live_by")
 		return
@@ -97,7 +97,7 @@ func TestReadyForLiveGate_SeparationOn_SameActor_Rejected(t *testing.T) {
 func TestReadyForLiveGate_SeparationOn_DifferentActor_Allowed(t *testing.T) {
 	cfg := &config.TasksConfig{RequireReadyForLive: true, VerifierSeparation: true}
 	task := &store.Task{ID: "TASK-221", Status: "ready_for_live", ReadyForLiveBy: "claude-code"}
-	if rej := checkReadyForLiveGate(task, cfg, "live-verifier"); rej != nil {
+	if rej := checkReadyForLiveGate(task, cfg, "live-verifier", ""); rej != nil {
 		t.Fatalf("different verifier must be allowed, got refusal: %v", rej)
 	}
 }
@@ -108,8 +108,28 @@ func TestReadyForLiveGate_SeparationOn_DifferentActor_Allowed(t *testing.T) {
 func TestReadyForLiveGate_VerifierTrimmed(t *testing.T) {
 	cfg := &config.TasksConfig{RequireReadyForLive: true, VerifierSeparation: true}
 	task := &store.Task{ID: "TASK-300", Status: "ready_for_live", ReadyForLiveBy: "claude-code"}
-	if rej := checkReadyForLiveGate(task, cfg, "  claude-code  "); rej == nil {
+	if rej := checkReadyForLiveGate(task, cfg, "  claude-code  ", ""); rej == nil {
 		t.Fatal("whitespace-padded same-actor must still be rejected after trim")
+	}
+}
+
+// BUG-067: a single runtime cannot be both implementer and verifier. When the
+// closing identity matches the one that set ready_for_live, the gate refuses
+// even if the --verifier role string differs (the spoofing path).
+func TestReadyForLiveGate_SameRuntimeIdentity_Rejected(t *testing.T) {
+	cfg := &config.TasksConfig{RequireReadyForLive: true, VerifierSeparation: true}
+	task := &store.Task{
+		ID: "TASK-401", Status: "ready_for_live",
+		ReadyForLiveBy:    "implementer",
+		ReadyForLiveAgent: "claude-code-sess1",
+	}
+	// Different role string ("reviewer") but SAME runtime identity -> reject.
+	if rej := checkReadyForLiveGate(task, cfg, "reviewer", "claude-code-sess1"); rej == nil {
+		t.Fatal("same runtime closing its own ready-for-live must be rejected (BUG-067)")
+	}
+	// Different runtime identity -> allowed.
+	if rej := checkReadyForLiveGate(task, cfg, "reviewer", "claude-code-sess2"); rej != nil {
+		t.Fatalf("independent runtime must be allowed, got: %v", rej)
 	}
 }
 

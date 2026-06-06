@@ -44,7 +44,14 @@ func ReadMeta(ggDir string) (*Meta, error) {
 }
 
 // WriteMeta persists embedding metadata. Overwrites any existing file.
+//
+// BUG-078: a persisted Dim:0 permanently disabled the dimension-mismatch guard
+// (CheckMeta skips the dim check when stored Dim==0). Refuse to write a
+// non-positive dimension so the guard can never be silently turned off.
 func WriteMeta(ggDir string, m *Meta) error {
+	if m.Dim <= 0 {
+		return fmt.Errorf("refusing to write embedding meta with non-positive dim %d (would disable the dimension-mismatch guard)", m.Dim)
+	}
 	if m.CreatedAt == "" {
 		m.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
@@ -65,6 +72,9 @@ func WriteMeta(ggDir string, m *Meta) error {
 //   - If metadata exists and the model differs, returns ErrModelMismatch (wrapped),
 //     describing both the stored and the configured model.
 func CheckMeta(ggDir, modelName string, dim int) error {
+	if dim <= 0 {
+		return fmt.Errorf("invalid configured embedding dim %d — cannot validate semantic memory", dim)
+	}
 	meta, err := ReadMeta(ggDir)
 	if err != nil {
 		return err
@@ -81,7 +91,13 @@ func CheckMeta(ggDir, modelName string, dim int) error {
 			ErrModelMismatch, meta.ModelName, meta.Dim, modelName,
 		)
 	}
-	if meta.Dim != 0 && meta.Dim != dim {
+	if meta.Dim == 0 {
+		// BUG-078: a legacy/corrupt Dim:0 meta silently disabled the dimension
+		// guard. The model matches, so the dim must be the configured one —
+		// self-heal by rewriting it, re-enabling the guard for future runs.
+		return WriteMeta(ggDir, &Meta{ModelName: meta.ModelName, Dim: dim, CreatedAt: meta.CreatedAt})
+	}
+	if meta.Dim != dim {
 		return fmt.Errorf(
 			"%w: Qdrant collections were created with model %q at dim %d, "+
 				"but the configured model %q now returns dim %d — "+

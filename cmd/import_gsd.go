@@ -165,8 +165,9 @@ func runImportFromGSD(cmd *cobra.Command, projectDir string) error {
 			return fmt.Errorf("embed slice %s: %w", sourceID, err)
 		}
 		n := store.Note{
-			Text: text,
-			Tags: tags,
+			Text:   text,
+			Tags:   tags,
+			Author: "gsd-import",
 		}
 		if _, err := d.store.AddNote(ctx, n, vector); err != nil {
 			return fmt.Errorf("store note for slice %s: %w", sourceID, err)

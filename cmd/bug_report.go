@@ -11,6 +11,7 @@ import (
 
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/graph"
+	"github.com/gurkangul/gg-cli/internal/identity"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
@@ -199,8 +200,9 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 // "dupe-of" so it surfaces in semantic searches near the original bug.
 func addDupeNote(ctx context.Context, d *deps, bugID, title string, vector []float32) error {
 	n := store.Note{
-		Text: title,
-		Tags: []string{bugID, "dupe-of"},
+		Text:   title,
+		Tags:   []string{bugID, "dupe-of"},
+		Author: identity.Agent(),
 	}
 	_, err := d.store.AddNote(ctx, n, vector)
 	var oq *store.OutboxQueued
