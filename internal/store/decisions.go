@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -47,6 +48,7 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 		"task_id":               d.TaskID,
 		"author":                d.Author,
 		"created_at":            d.CreatedAt,
+		"version":               int64(1),
 	}
 
 	// AC-1: JSONL write is the primary source of truth.
@@ -180,22 +182,24 @@ var ValidDecisionStatuses = map[string]bool{
 	"rejected":   true,
 }
 
-// UpdateDecisionStatus sets the status field on an existing decision point.
+// UpdateDecisionStatus sets the status field on an existing decision.
+//
+// JSONL-first with version/CAS (BUG-062/063): the status change is appended to
+// .gg/brain/decisions.jsonl as a new full-payload line under an optimistic
+// version guard, then mirrored to Qdrant. A concurrent writer that advanced the
+// version first yields ErrMutationConflict and writes nothing. The decision's
+// point UUID equals its decision ID (see AddDecision).
 func (c *Client) UpdateDecisionStatus(ctx context.Context, decisionID, status string) error {
 	if !ValidDecisionStatuses[status] {
 		return fmt.Errorf("invalid decision status %q — use active, superseded, or rejected", status)
 	}
-	payload, err := qdrant.TryValueMap(map[string]any{"status": status})
-	if err != nil {
-		return fmt.Errorf("build payload: %w", err)
-	}
-	wait := true
-	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
-		CollectionName: c.collDecisions(),
-		Wait:           &wait,
-		Payload:        payload,
-		PointsSelector: qdrant.NewPointsSelector(qdrant.NewID(decisionID)),
+	err := c.applyBrainMutation(ctx, "decisions", c.collDecisions(), OutboxKindDecision, decisionID, "", func(raw map[string]any) error {
+		raw["status"] = status
+		return nil
 	})
+	if errors.Is(err, ErrRecordNotFound) {
+		return fmt.Errorf("decision %s not found", decisionID)
+	}
 	return err
 }
 

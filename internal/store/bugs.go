@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -96,6 +97,7 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 		"by":               b.By,
 		"created_at":       b.CreatedAt,
 		"updated_at":       b.UpdatedAt,
+		"version":          int64(1),
 	}
 
 	// AC-1: JSONL write first.
@@ -189,121 +191,65 @@ func (c *Client) StartFixingBug(ctx context.Context, bugID string) error {
 	return c.updateBugStatus(ctx, bugID, "fixing", "", "", "")
 }
 
+// updateBugStatus transitions a bug and records root cause / fix summary / repro.
+//
+// JSONL-first with version/CAS (BUG-062/063): the full updated payload is
+// appended to .gg/brain/bugs.jsonl under an optimistic version guard, then
+// mirrored to Qdrant. On a rebuild the fixed/wontfix state and root_cause are
+// recovered from JSONL instead of reverting to the create-time "open" state.
 func (c *Client) updateBugStatus(ctx context.Context, bugID, status, rootCause, fixSummary, reproScript string) error {
-	pointID := qdrant.NewID(pointUUIDForBugID(bugID))
-	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
-		CollectionName: c.collBugs(),
-		Ids:            []*qdrant.PointId{pointID},
-		WithPayload:    qdrant.NewWithPayloadInclude("bug_id", "status"),
+	brainUUID := pointUUIDForBugID(bugID)
+	err := c.applyBrainMutation(ctx, "bugs", c.collBugs(), OutboxKindBug, brainUUID, "", func(raw map[string]any) error {
+		currentStatus, _ := raw["status"].(string)
+		if currentStatus == status {
+			return fmt.Errorf("%w: bug %s already %s — refusing to overwrite root_cause/summary (concurrent update?)", ErrAlreadyInState, bugID, status)
+		}
+		raw["status"] = status
+		raw["root_cause"] = rootCause
+		raw["fix_summary"] = fixSummary
+		raw["repro_script"] = reproScript
+		return nil
 	})
-	if err != nil {
-		return err
-	}
-	if len(existing) == 0 {
+	if errors.Is(err, ErrRecordNotFound) {
 		return fmt.Errorf("bug %s not found", bugID)
 	}
-	currentStatus := existing[0].GetPayload()["status"].GetStringValue()
-	if currentStatus == status {
-		return fmt.Errorf("%w: bug %s already %s — refusing to overwrite root_cause/summary (concurrent update?)", ErrAlreadyInState, bugID, status)
-	}
-
-	statusVal, _ := qdrant.NewValue(status)
-	rootVal, _ := qdrant.NewValue(rootCause)
-	fixVal, _ := qdrant.NewValue(fixSummary)
-	reproVal, _ := qdrant.NewValue(reproScript)
-	updVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
-
-	payload := map[string]*qdrant.Value{
-		"status":       statusVal,
-		"root_cause":   rootVal,
-		"fix_summary":  fixVal,
-		"repro_script": reproVal,
-		"updated_at":   updVal,
-	}
-
-	wait := true
-	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
-		CollectionName: c.collBugs(),
-		Wait:           &wait,
-		Payload:        payload,
-		PointsSelector: qdrant.NewPointsSelector(pointID),
-	})
 	return err
 }
 
 // ReopenBug transitions a fixed or wontfix bug back to "reopened" and records
 // the reason. The reopen_count is incremented and the reason is appended to
-// reopen_reasons so the full history is preserved.
+// reopen_reasons so the full history is preserved. JSONL-first with CAS so the
+// increment cannot be lost to a concurrent writer (BUG-063).
 func (c *Client) ReopenBug(ctx context.Context, bugID, reason string) error {
-	pointID := qdrant.NewID(pointUUIDForBugID(bugID))
-	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
-		CollectionName: c.collBugs(),
-		Ids:            []*qdrant.PointId{pointID},
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+	brainUUID := pointUUIDForBugID(bugID)
+	err := c.applyBrainMutation(ctx, "bugs", c.collBugs(), OutboxKindBug, brainUUID, "", func(raw map[string]any) error {
+		currentStatus, _ := raw["status"].(string)
+		if currentStatus != "fixed" && currentStatus != "wontfix" {
+			return fmt.Errorf("bug %s is %s — can only reopen a fixed or wontfix bug", bugID, currentStatus)
+		}
+		raw["status"] = "reopened"
+		raw["reopen_count"] = float64(anyInt(raw["reopen_count"]) + 1)
+		reasons := append(anyStringList(raw["reopen_reasons"]), reason)
+		raw["reopen_reasons"] = toAnySlice(reasons)
+		return nil
 	})
-	if err != nil {
-		return err
-	}
-	if len(existing) == 0 {
+	if errors.Is(err, ErrRecordNotFound) {
 		return fmt.Errorf("bug %s not found", bugID)
 	}
-	pay := existing[0].GetPayload()
-	currentStatus := pay["status"].GetStringValue()
-	if currentStatus != "fixed" && currentStatus != "wontfix" {
-		return fmt.Errorf("bug %s is %s — can only reopen a fixed or wontfix bug", bugID, currentStatus)
-	}
-
-	newCount := int(pay["reopen_count"].GetDoubleValue()) + 1
-	existingReasons := extractStringList(pay["reopen_reasons"])
-	existingReasons = append(existingReasons, reason)
-
-	statusVal, _ := qdrant.NewValue("reopened")
-	countVal, _ := qdrant.NewValue(float64(newCount))
-	reasonsVal, _ := qdrant.NewValue(toAnySlice(existingReasons))
-	updVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
-
-	wait := true
-	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
-		CollectionName: c.collBugs(),
-		Wait:           &wait,
-		Payload: map[string]*qdrant.Value{
-			"status":         statusVal,
-			"reopen_count":   countVal,
-			"reopen_reasons": reasonsVal,
-			"updated_at":     updVal,
-		},
-		PointsSelector: qdrant.NewPointsSelector(pointID),
-	})
 	return err
 }
 
 // SetBugReproScript attaches or replaces the repro_script field on an existing
 // bug without changing its status. Used to backfill repros on already-fixed bugs.
 func (c *Client) SetBugReproScript(ctx context.Context, bugID, reproScript string) error {
-	pointID := qdrant.NewID(pointUUIDForBugID(bugID))
-	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
-		CollectionName: c.collBugs(),
-		Ids:            []*qdrant.PointId{pointID},
-		WithPayload:    qdrant.NewWithPayloadInclude("bug_id"),
+	brainUUID := pointUUIDForBugID(bugID)
+	err := c.applyBrainMutation(ctx, "bugs", c.collBugs(), OutboxKindBug, brainUUID, "", func(raw map[string]any) error {
+		raw["repro_script"] = reproScript
+		return nil
 	})
-	if err != nil {
-		return err
-	}
-	if len(existing) == 0 {
+	if errors.Is(err, ErrRecordNotFound) {
 		return fmt.Errorf("bug %s not found", bugID)
 	}
-	reproVal, _ := qdrant.NewValue(reproScript)
-	updVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
-	wait := true
-	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
-		CollectionName: c.collBugs(),
-		Wait:           &wait,
-		Payload: map[string]*qdrant.Value{
-			"repro_script": reproVal,
-			"updated_at":   updVal,
-		},
-		PointsSelector: qdrant.NewPointsSelector(pointID),
-	})
 	return err
 }
 
