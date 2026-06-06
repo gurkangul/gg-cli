@@ -148,7 +148,7 @@ func runAuditRepeatWork(cmd *cobra.Command, _ []string) error {
 	// Pull all decisions, tasks, and bugs into memory. The window is short
 	// (7 days by default) but Qdrant returns unsorted so we filter in code.
 	// For projects with >10k decisions this is still <1s.
-	decisions, err := d.store.ListDecisions(ctx, 0)
+	decisions, err := d.store.ListDecisions(ctx, 0, true)
 	if err != nil {
 		return fmt.Errorf("list decisions: %w", err)
 	}

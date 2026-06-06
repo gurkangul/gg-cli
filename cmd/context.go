@@ -91,7 +91,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 
 	go func() {
 		defer wg.Done()
-		bundle.decisions, bundle.decErr = d.store.SearchDecisions(ctx, vector, contextLimit)
+		bundle.decisions, bundle.decErr = d.store.SearchDecisions(ctx, vector, contextLimit, false)
 	}()
 	go func() {
 		defer wg.Done()
@@ -272,7 +272,7 @@ func runContextForTask(cmd *cobra.Command, taskID string) error {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		bundle.decisions, bundle.decErr = d.store.SearchDecisions(ctx, vector, contextLimit)
+		bundle.decisions, bundle.decErr = d.store.SearchDecisions(ctx, vector, contextLimit, false)
 	}()
 	go func() {
 		defer wg.Done()

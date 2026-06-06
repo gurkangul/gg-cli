@@ -32,7 +32,7 @@ func runProjectContext(cmd *cobra.Command) error {
 
 	limit := projectContextLimit()
 	var bundle contextBundle
-	if decisions, err := d.store.ListDecisions(ctx, limit); err == nil {
+	if decisions, err := d.store.ListDecisions(ctx, limit, false); err == nil {
 		bundle.decisions = decisions
 	} else {
 		bundle.decErr = err

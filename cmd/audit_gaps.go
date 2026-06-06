@@ -106,7 +106,7 @@ func buildGGCorpus(d *deps) ([]string, error) {
 		corpus = append(corpus, strings.ToLower(t.Title+" "+t.Detail))
 	}
 
-	decisions, err := d.store.ListDecisions(ctx, 0)
+	decisions, err := d.store.ListDecisions(ctx, 0, true)
 	if err != nil {
 		return nil, fmt.Errorf("list decisions: %w", err)
 	}

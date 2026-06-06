@@ -106,16 +106,22 @@ func isCompactActive(cmd *cobra.Command) bool {
 // compactDecisionLine renders a decision as:
 //
 //	D  YYYY-MM-DD  text[…]  [→TASK-NNN]
+//
+// Non-active decisions also include a status badge, e.g. [superseded] or [rejected].
 func compactDecisionLine(d store.Decision) string {
 	suffix := ""
 	if d.TaskID != "" {
 		suffix = " →" + d.TaskID
 	}
-	return fmt.Sprintf("D  %s  %s%s%s",
+	statusBadge := ""
+	if d.Status != "" && d.Status != "active" {
+		statusBadge = " [" + d.Status + "]"
+	}
+	return fmt.Sprintf("D  %s  %s%s%s%s",
 		shortDate(d.CreatedAt), compactTrim(d.Text, compactLineWidth), compactHiddenMarker(
 			hiddenField{label: "reason", present: d.Reason != ""},
 			hiddenField{label: "tags", present: len(d.Tags) > 0},
-		), suffix)
+		), statusBadge, suffix)
 }
 
 // compactRejectionLine renders a rejection as:

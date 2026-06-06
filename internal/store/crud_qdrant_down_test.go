@@ -77,7 +77,7 @@ func TestSearchDecisions_QdrantDown(t *testing.T) {
 	ctx, cancel := shortCtx(t)
 	defer cancel()
 
-	_, err := c.SearchDecisions(ctx, make([]float32, VectorSize), 5)
+	_, err := c.SearchDecisions(ctx, make([]float32, VectorSize), 5, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -88,7 +88,7 @@ func TestListDecisions_QdrantDown(t *testing.T) {
 	ctx, cancel := shortCtx(t)
 	defer cancel()
 
-	_, err := c.ListDecisions(ctx, 10)
+	_, err := c.ListDecisions(ctx, 10, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -397,7 +397,7 @@ func TestSearchBugs_QdrantDown(t *testing.T) {
 	ctx, cancel := shortCtx(t)
 	defer cancel()
 
-	_, err := c.SearchBugs(ctx, make([]float32, VectorSize), 5)
+	_, err := c.SearchBugs(ctx, make([]float32, VectorSize), 5, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

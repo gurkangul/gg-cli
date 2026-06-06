@@ -49,7 +49,7 @@ func runBrainReindexDecisions(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	decisions, err := d.store.ListDecisions(ctx, brainReindexDecisionsLimit)
+	decisions, err := d.store.ListDecisions(ctx, brainReindexDecisionsLimit, true)
 	if err != nil {
 		return fmt.Errorf("list decisions: %w", err)
 	}

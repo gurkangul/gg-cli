@@ -92,7 +92,7 @@ func runMetricsDogfood(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("list done tasks: %w", err)
 	}
-	decisions, err := d.store.ListDecisions(ctx, 0)
+	decisions, err := d.store.ListDecisions(ctx, 0, true)
 	if err != nil {
 		return fmt.Errorf("list decisions: %w", err)
 	}

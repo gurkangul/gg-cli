@@ -69,7 +69,7 @@ func runImpactBug(cmd *cobra.Command, bugID string) error {
 		wg.Add(3)
 		go func() {
 			defer wg.Done()
-			result.Decisions, decErr = d.store.SearchDecisions(ctx, vector, impactKBLimit)
+			result.Decisions, decErr = d.store.SearchDecisions(ctx, vector, impactKBLimit, true)
 		}()
 		go func() {
 			defer wg.Done()

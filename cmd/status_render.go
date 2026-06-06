@@ -53,7 +53,7 @@ func runStatusRender(cmd *cobra.Command, _ []string) error {
 
 	// Gather data — each call is independent; partial failures degrade gracefully.
 	tasks, _ := d.store.ListTasks(ctx, "")
-	decisions, _ := d.store.ListDecisions(ctx, 10)
+	decisions, _ := d.store.ListDecisions(ctx, 10, false)
 	rejections, _ := d.store.ListRejections(ctx, 5)
 	messages, _ := d.store.GetInbox(ctx, "", true)
 

@@ -109,7 +109,7 @@ func runAuditDecideGaps(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list messages: %w", err)
 	}
 
-	decisions, err := d.store.ListDecisions(ctx, 0)
+	decisions, err := d.store.ListDecisions(ctx, 0, true)
 	if err != nil {
 		return fmt.Errorf("list decisions: %w", err)
 	}

@@ -371,7 +371,7 @@ func fetchRelatedContext(d *deps, t *store.Task) *relatedContext {
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		rc.decisions, _ = d.store.SearchDecisions(ctx, vector, withContextLimit)
+		rc.decisions, _ = d.store.SearchDecisions(ctx, vector, withContextLimit, false)
 	}()
 	go func() {
 		defer wg.Done()

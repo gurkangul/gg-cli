@@ -33,15 +33,17 @@ See also: gg status (project overview), gg task get (task details)`,
 }
 
 var (
-	searchLimit         uint64
-	searchCompact       bool
-	searchIncludeLinked bool
+	searchLimit              uint64
+	searchCompact            bool
+	searchIncludeLinked      bool
+	searchIncludeSuperseded  bool
 )
 
 func init() {
 	searchCmd.Flags().Uint64Var(&searchLimit, "limit", 5, "max results to return")
 	searchCmd.Flags().BoolVar(&searchCompact, "compact", false, "one line per item — drops reasons/tags/author to preserve agent context window")
 	searchCmd.Flags().BoolVar(&searchIncludeLinked, "include-linked", false, "also search read-only linked projects from .gg/config.yaml")
+	searchCmd.Flags().BoolVar(&searchIncludeSuperseded, "include-superseded", false, "include superseded/rejected decisions and fixed/wontfix bugs in results")
 	rootCmd.AddCommand(searchCmd)
 }
 
@@ -95,10 +97,16 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	var decErr, rejErr, taskErr, bugErr, noteErr error
 	var wg sync.WaitGroup
 	wg.Add(5)
-	go func() { defer wg.Done(); decisions, decErr = d.store.SearchDecisions(ctx, vector, semanticLimit) }()
+	go func() {
+		defer wg.Done()
+		decisions, decErr = d.store.SearchDecisions(ctx, vector, semanticLimit, searchIncludeSuperseded)
+	}()
 	go func() { defer wg.Done(); rejections, rejErr = d.store.SearchRejections(ctx, vector, semanticLimit) }()
 	go func() { defer wg.Done(); tasks, taskErr = d.store.SearchTasks(ctx, vector, semanticLimit, false) }()
-	go func() { defer wg.Done(); bugs, bugErr = d.store.SearchBugs(ctx, vector, semanticLimit) }()
+	go func() {
+		defer wg.Done()
+		bugs, bugErr = d.store.SearchBugs(ctx, vector, semanticLimit, searchIncludeSuperseded)
+	}()
 	go func() { defer wg.Done(); notes, noteErr = d.store.SearchNotes(ctx, vector, semanticLimit) }()
 	wg.Wait()
 	if decErr != nil {
@@ -295,6 +303,9 @@ func renderSearchResultsDefault(w io.Writer, results []searchResult) {
 		case result.Decision != nil:
 			dec := *result.Decision
 			fmt.Fprintf(w, "  • %s%s\n", sourcePrefix(result.SourceProjectID), dec.Text)
+			if dec.Status != "" && dec.Status != "active" {
+				fmt.Fprintf(w, "    Status: %s\n", dec.Status)
+			}
 			if dec.Reason != "" {
 				fmt.Fprintf(w, "    Reason: %s\n", dec.Reason)
 			}

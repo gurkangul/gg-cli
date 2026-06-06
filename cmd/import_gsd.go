@@ -197,7 +197,7 @@ func gsdImportedSourceIDs(ctx context.Context, d *deps, kind string) (map[string
 			items = append(items, t.Tags)
 		}
 	case "decisions":
-		decs, err := d.store.ListDecisions(ctx, 10000)
+		decs, err := d.store.ListDecisions(ctx, 10000, true)
 		if err != nil {
 			return nil, err
 		}

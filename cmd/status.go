@@ -88,7 +88,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Recent decisions
-	decisions, decisionsErr := d.store.ListDecisions(ctx, 5)
+	decisions, decisionsErr := d.store.ListDecisions(ctx, 5, false)
 	if decisionsErr != nil {
 		fmt.Fprintln(os.Stderr, "warning: list decisions:", decisionsErr)
 	}

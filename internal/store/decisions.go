@@ -80,13 +80,32 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 	return nil
 }
 
-func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit uint64) ([]Decision, error) {
-	results, err := c.qdrantQuery(ctx, &qdrant.QueryPoints{
+// ActiveDecisionsFilter returns the Qdrant filter that restricts results to
+// active decisions only (status="active"). Superseded and rejected decisions
+// are excluded from default retrieval — they remain queryable with includeAll=true.
+func ActiveDecisionsFilter() *qdrant.Filter {
+	return &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			qdrant.NewMatchKeyword("status", "active"),
+		},
+	}
+}
+
+// SearchDecisions performs a semantic search across the decisions collection.
+// When includeAll is false (the default for agent consumption), only active
+// decisions are returned — superseded and rejected decisions are suppressed so
+// agents don't surface stale or overridden context.
+func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit uint64, includeAll bool) ([]Decision, error) {
+	req := &qdrant.QueryPoints{
 		CollectionName: c.collDecisions(),
 		Query:          qdrant.NewQuery(vector...),
 		Limit:          qdrant.PtrOf(limit),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
-	})
+	}
+	if !includeAll {
+		req.Filter = ActiveDecisionsFilter()
+	}
+	results, err := c.qdrantQuery(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -103,11 +122,16 @@ func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit ui
 // ListDecisions returns the most recently created decisions, sorted descending
 // by created_at. It paginates internally and then trims to limit — Qdrant's
 // scroll itself has no time-ordering guarantee.
-func (c *Client) ListDecisions(ctx context.Context, limit int) ([]Decision, error) {
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+// When includeAll is false, only active decisions are returned.
+func (c *Client) ListDecisions(ctx context.Context, limit int, includeAll bool) ([]Decision, error) {
+	req := &qdrant.ScrollPoints{
 		CollectionName: c.collDecisions(),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
-	})
+	}
+	if !includeAll {
+		req.Filter = ActiveDecisionsFilter()
+	}
+	points, err := c.scrollAll(ctx, req)
 	if err != nil {
 		return nil, err
 	}

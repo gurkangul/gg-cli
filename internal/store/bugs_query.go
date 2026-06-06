@@ -6,13 +6,32 @@ import (
 	"github.com/qdrant/go-client/qdrant"
 )
 
-func (c *Client) SearchBugs(ctx context.Context, vector []float32, limit uint64) ([]Bug, error) {
-	results, err := c.qdrantQuery(ctx, &qdrant.QueryPoints{
+// ActiveBugsFilter returns the Qdrant filter that restricts results to bugs
+// in an active state (open, fixing, or reopened). Fixed and wontfix bugs are
+// excluded from default retrieval.
+func ActiveBugsFilter() *qdrant.Filter {
+	return &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			qdrant.NewMatchKeywords("status", "open", "fixing", "reopened"),
+		},
+	}
+}
+
+// SearchBugs performs a semantic search across the bugs collection.
+// When includeAll is false (the default for agent consumption), only active
+// bugs are returned — fixed and wontfix bugs are suppressed so agents don't
+// surface resolved issues as current context.
+func (c *Client) SearchBugs(ctx context.Context, vector []float32, limit uint64, includeAll bool) ([]Bug, error) {
+	req := &qdrant.QueryPoints{
 		CollectionName: c.collBugs(),
 		Query:          qdrant.NewQuery(vector...),
 		Limit:          qdrant.PtrOf(limit),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
-	})
+	}
+	if !includeAll {
+		req.Filter = ActiveBugsFilter()
+	}
+	results, err := c.qdrantQuery(ctx, req)
 	if err != nil {
 		return nil, err
 	}

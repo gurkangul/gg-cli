@@ -151,10 +151,10 @@ func searchResultsForProject(ctx context.Context, client *store.Client, query st
 	var decErr, rejErr, taskErr, bugErr, noteErr error
 	var wg sync.WaitGroup
 	wg.Add(5)
-	go func() { defer wg.Done(); decisions, decErr = client.SearchDecisions(ctx, vector, limit) }()
+	go func() { defer wg.Done(); decisions, decErr = client.SearchDecisions(ctx, vector, limit, false) }()
 	go func() { defer wg.Done(); rejections, rejErr = client.SearchRejections(ctx, vector, limit) }()
 	go func() { defer wg.Done(); tasks, taskErr = client.SearchTasks(ctx, vector, limit, false) }()
-	go func() { defer wg.Done(); bugs, bugErr = client.SearchBugs(ctx, vector, limit) }()
+	go func() { defer wg.Done(); bugs, bugErr = client.SearchBugs(ctx, vector, limit, false) }()
 	go func() { defer wg.Done(); notes, noteErr = client.SearchNotes(ctx, vector, limit) }()
 	wg.Wait()
 
@@ -199,7 +199,7 @@ func contextBundleForProject(ctx context.Context, client *store.Client, vector [
 	wg.Add(5)
 	go func() {
 		defer wg.Done()
-		bundle.decisions, bundle.decErr = client.SearchDecisions(ctx, vector, contextLimit)
+		bundle.decisions, bundle.decErr = client.SearchDecisions(ctx, vector, contextLimit, false)
 	}()
 	go func() {
 		defer wg.Done()

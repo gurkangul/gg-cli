@@ -78,7 +78,7 @@ func runImpactTask(cmd *cobra.Command, taskID string) error {
 		wg.Add(4)
 		go func() {
 			defer wg.Done()
-			result.Decisions, decErr = d.store.SearchDecisions(ctx, vector, impactKBLimit)
+			result.Decisions, decErr = d.store.SearchDecisions(ctx, vector, impactKBLimit, true)
 		}()
 		go func() {
 			defer wg.Done()
@@ -86,7 +86,7 @@ func runImpactTask(cmd *cobra.Command, taskID string) error {
 		}()
 		go func() {
 			defer wg.Done()
-			result.Bugs, bugErr = d.store.SearchBugs(ctx, vector, impactKBLimit)
+			result.Bugs, bugErr = d.store.SearchBugs(ctx, vector, impactKBLimit, true)
 		}()
 		go func() {
 			defer wg.Done()
