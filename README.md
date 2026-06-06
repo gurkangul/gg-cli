@@ -61,6 +61,17 @@ gg gives that work a shared memory layer.
   Decisions, tasks, bugs, handoffs, rejections, discussions, and notes live in
   one project brain instead of scattered chat windows.
 
+- **Consistent, durable memory under concurrency**
+  Mutations are JSONL-first with optimistic version/CAS, so state survives a
+  Qdrant rebuild and parallel writers don't silently clobber each other. Inbox
+  read-state is per-recipient — one agent reading never consumes another's
+  message — and concurrent Claude tabs get a unique per-session identity.
+
+- **Evidence-aware records**
+  Attach how a decision was verified with `gg record --evidence "…"`; unproven
+  records surface as `[unverified]`, and every note carries its author — so a
+  checked fact and a guess aren't stored with equal weight.
+
 - **Model-agnostic collaboration**
   gg does not care whether the caller is Claude, Codex, Cursor, Aider, a
   DeepSeek/Qwen agent, or a human shell. The contract is the CLI.
@@ -273,6 +284,12 @@ reviewer separation.
 gg record "use JWT for auth" \
   --reason "stateless, simple to deploy" \
   --tags "auth,api"
+
+# Attach evidence when the decision is something you verified
+gg record "switch to connection pooling" \
+  --reason "cuts p99 latency" \
+  --evidence "load test 320ms->90ms p99; live smoke passed" \
+  --tags "perf,db"
 
 # Capture rejected approaches too
 gg record "store sessions in Redis" \

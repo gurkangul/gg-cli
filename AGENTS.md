@@ -185,6 +185,17 @@ for the current work; task `owner` is the `agent_id` holding a gg-managed task
 lease; inbox `role` / `audience` route messages. Use a unique `GG_AGENT` per
 runtime, even when two agents share one `GG_ROLE`.
 
+Per-session identity (auto): under Claude Code, when `GG_AGENT` is unset or left
+at the generic `claude-code`, gg derives a unique `claude-code-<session>` from
+`CLAUDE_SESSION_ID`, so two concurrent tabs no longer collapse into one owner /
+verifier. You still SHOULD export an explicit `GG_AGENT` for non-Claude runtimes
+(GSD/Codex/Cursor); the auto-derivation is only a safety net for shared defaults.
+
+Inbox read-state is per-recipient: another agent (or you) reading a role's inbox
+no longer marks those messages read for the intended recipient. `--peek` is still
+the right habit when inspecting an inbox you do not own, but a non-peek read can
+no longer silently consume someone else's mail.
+
 Role inbox reads should use `--role "$GG_ROLE" --peek`. Do not run role-less
 `gg inbox --advance-cursor`; the CLI rejects it because it can hide role-targeted
 assignments from a future agent.
@@ -241,6 +252,17 @@ As soon as you detect it:
 gg record "short decision text" --reason "why" --tags "tag1,tag2"
 ```
 Tell the user: "Recorded that decision."
+
+When the decision rests on something you actually verified, attach the proof with
+`--evidence` so a future agent can tell a checked fact from an unverified claim
+(decisions surface as `[unverified]` when it is empty):
+```
+gg record "use connection pooling" --reason "cuts p99 latency" \
+  --evidence "load test 320ms→90ms p99; bench cmd/foo_bench_test.go; live smoke passed"
+```
+Use it for load-bearing claims (perf, security/behavior, "X works"); skip it for
+pure preferences. The same provenance now applies to notes — `gg` records the
+author on every note automatically.
 
 ## DURABLE WORK ITEMS
 
