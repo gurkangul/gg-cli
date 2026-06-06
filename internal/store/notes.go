@@ -95,6 +95,7 @@ func (c *Client) SearchNotes(ctx context.Context, vector []float32, limit uint64
 		Query:          qdrant.NewQuery(vector...),
 		Limit:          qdrant.PtrOf(limit),
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Filter:         &qdrant.Filter{Must: []*qdrant.Condition{nonDegradedVectorCondition()}},
 	})
 	if err != nil {
 		return nil, err

@@ -37,6 +37,7 @@ type Bug struct {
 	CreatedAt       string
 	UpdatedAt       string
 	SemanticScore   float32 `json:"semantic_score,omitempty"`
+	VectorDegraded  bool    `json:"vector_degraded,omitempty"`
 }
 
 func pointUUIDForBugID(id string) string {

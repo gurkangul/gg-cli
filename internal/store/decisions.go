@@ -22,6 +22,7 @@ type Decision struct {
 	Author               string // agent role or user that recorded this decision (e.g. "developer")
 	CreatedAt            string
 	SemanticScore        float32 `json:"semantic_score,omitempty"`
+	VectorDegraded       bool    `json:"vector_degraded,omitempty"`
 }
 
 // AddDecision writes the decision to .gg/brain/decisions.jsonl first (durable,
@@ -80,6 +81,13 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 	return nil
 }
 
+// nonDegradedVectorCondition excludes zero-vector records from semantic search.
+// Records tagged gg_vector_degraded have a zero vector and produce meaningless
+// cosine similarity scores — they must not appear in ranked results.
+func nonDegradedVectorCondition() *qdrant.Condition {
+	return qdrant.NewIsNull("gg_vector_degraded")
+}
+
 // ActiveDecisionsFilter returns the Qdrant filter that restricts results to
 // active decisions only (status="active"). Superseded and rejected decisions
 // are excluded from default retrieval — they remain queryable with includeAll=true.
@@ -103,7 +111,11 @@ func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit ui
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	}
 	if !includeAll {
-		req.Filter = ActiveDecisionsFilter()
+		f := ActiveDecisionsFilter()
+		f.Must = append(f.Must, nonDegradedVectorCondition())
+		req.Filter = f
+	} else {
+		req.Filter = &qdrant.Filter{Must: []*qdrant.Condition{nonDegradedVectorCondition()}}
 	}
 	results, err := c.qdrantQuery(ctx, req)
 	if err != nil {
@@ -194,6 +206,7 @@ func decisionFromPayload(id string, pay map[string]*qdrant.Value) Decision {
 		TaskID:               pay["task_id"].GetStringValue(),
 		Author:               pay["author"].GetStringValue(),
 		CreatedAt:            pay["created_at"].GetStringValue(),
+		VectorDegraded:       pay["gg_vector_degraded"].GetStringValue() != "",
 	}
 }
 

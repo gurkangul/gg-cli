@@ -29,7 +29,11 @@ func (c *Client) SearchBugs(ctx context.Context, vector []float32, limit uint64,
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	}
 	if !includeAll {
-		req.Filter = ActiveBugsFilter()
+		f := ActiveBugsFilter()
+		f.Must = append(f.Must, nonDegradedVectorCondition())
+		req.Filter = f
+	} else {
+		req.Filter = &qdrant.Filter{Must: []*qdrant.Condition{nonDegradedVectorCondition()}}
 	}
 	results, err := c.qdrantQuery(ctx, req)
 	if err != nil {
@@ -85,5 +89,6 @@ func bugFromPayload(pay map[string]*qdrant.Value) Bug {
 		By:              pay["by"].GetStringValue(),
 		CreatedAt:       pay["created_at"].GetStringValue(),
 		UpdatedAt:       pay["updated_at"].GetStringValue(),
+		VectorDegraded:  pay["gg_vector_degraded"].GetStringValue() != "",
 	}
 }

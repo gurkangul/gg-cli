@@ -241,7 +241,11 @@ func (c *Client) SearchDiscussions(ctx context.Context, vector []float32, limit 
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	}
 	if !includeResolved {
-		req.Filter = OpenDiscussionsFilter()
+		f := OpenDiscussionsFilter()
+		f.Must = append(f.Must, nonDegradedVectorCondition())
+		req.Filter = f
+	} else {
+		req.Filter = &qdrant.Filter{Must: []*qdrant.Condition{nonDegradedVectorCondition()}}
 	}
 	results, err := c.qdrantQuery(ctx, req)
 	if err != nil {

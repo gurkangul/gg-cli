@@ -47,6 +47,7 @@ type Task struct {
 	ReadyForLiveAt   string  // RFC3339 timestamp of the transition
 	ReadyForLivePlan string  // short verify plan written by the implementer
 	SemanticScore    float32 `json:"semantic_score,omitempty"`
+	VectorDegraded   bool    `json:"vector_degraded,omitempty"`
 }
 
 // scrollAll paginates through every point matching the given request template.
@@ -392,7 +393,11 @@ func (c *Client) SearchTasks(ctx context.Context, vector []float32, limit uint64
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
 	}
 	if !includeAll {
-		req.Filter = ActiveTasksFilter()
+		f := ActiveTasksFilter()
+		f.Must = append(f.Must, nonDegradedVectorCondition())
+		req.Filter = f
+	} else {
+		req.Filter = &qdrant.Filter{Must: []*qdrant.Condition{nonDegradedVectorCondition()}}
 	}
 	results, err := c.qdrantQuery(ctx, req)
 	if err != nil {
@@ -439,5 +444,6 @@ func taskFromPayload(pay map[string]*qdrant.Value) Task {
 		ReadyForLiveBy:   pay["ready_for_live_by"].GetStringValue(),
 		ReadyForLiveAt:   pay["ready_for_live_at"].GetStringValue(),
 		ReadyForLivePlan: pay["ready_for_live_plan"].GetStringValue(),
+		VectorDegraded:   pay["gg_vector_degraded"].GetStringValue() != "",
 	}
 }
