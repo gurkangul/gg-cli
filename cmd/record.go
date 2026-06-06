@@ -189,6 +189,17 @@ func runRecord(cmd *cobra.Command, args []string) error {
 	// errors (Qdrant remains source of truth).
 	implementsRef := strings.TrimSpace(recordImplements)
 	rejectsRef := strings.TrimSpace(recordRejects)
+
+	// BUG-068: mark the superseded decision as such so BUG-064 filter excludes it.
+	// Best-effort — warn but don't fail the command; JSONL durability via BUG-062.
+	if rejectsRef != "" && !d.qdrantDown {
+		if sErr := d.store.UpdateDecisionStatus(ctx, rejectsRef, "superseded"); sErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ --rejects: could not mark %s as superseded: %v\n", rejectsRef, sErr)
+		} else {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  Store: decision %s marked superseded\n", rejectsRef)
+		}
+	}
+
 	writeGraphEdges(cmd, ctx, dec, implementsRef, rejectsRef)
 
 	return printJSON(dec, func() {
