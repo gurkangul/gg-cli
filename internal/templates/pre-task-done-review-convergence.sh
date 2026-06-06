@@ -21,6 +21,19 @@ set -e
 
 MODE="${GG_REVIEW_CONVERGENCE:-on}"
 if [ "$MODE" = "off" ]; then
+  # BUG-079: disabling a gate must be rationalized + durably audited, never a
+  # silent env switch. Require a reason and append a searchable brain event so
+  # future agents can see enforcement was lowered.
+  REASON="${GG_REVIEW_CONVERGENCE_REASON:-$GG_ALLOW_INCOMPLETE_REVIEW}"
+  if [ -z "$REASON" ]; then
+    echo "[review-convergence] ✗ GG_REVIEW_CONVERGENCE=off requires a rationale — set GG_REVIEW_CONVERGENCE_REASON=\"why\" (durably audited via gg record)" >&2
+    exit 7
+  fi
+  gg record "review-convergence gate disabled (off) for ${GG_TASK_ID:-unknown}" \
+    --decision-status rejected \
+    --reason "GG_REVIEW_CONVERGENCE=off: ${REASON}" \
+    --tags "bypass,review-convergence,enforcement-off,${GG_TASK_ID:-}" >/dev/null 2>&1 || true
+  printf '[review-convergence] gate disabled (audited): %s\n' "$REASON" >&2
   exit 0
 fi
 
@@ -41,9 +54,23 @@ if [ -z "$COMMIT" ]; then
 fi
 
 COMMIT_MSG=$(git log -1 --format=%B "$COMMIT" 2>/dev/null || true)
-if printf '%s\n' "$COMMIT_MSG" | grep -Eiq '^Review-Convergence:[[:space:]]*.+'; then
-  echo "[review-convergence] ✓ Review-Convergence trailer found"
-  exit 0
+# BUG-077: a bare "Review-Convergence:" token is cargo-cult-gameable. Require the
+# trailer to actually enumerate >=3 of the convergence matrix categories. This is
+# advisory, not semantic proof (commit text is inherently gameable), but it raises
+# the bar from "any text present" to "names the matrix it claims to have run".
+TRAILER=$(printf '%s\n' "$COMMIT_MSG" | grep -Ei '^Review-Convergence:' | head -1 || true)
+if [ -n "$TRAILER" ]; then
+  CATS=0
+  for kw in behavior negative legacy stale docs smoke test; do
+    if printf '%s' "$TRAILER" | grep -qi "$kw"; then
+      CATS=$((CATS + 1))
+    fi
+  done
+  if [ "$CATS" -ge 3 ]; then
+    echo "[review-convergence] ✓ Review-Convergence trailer enumerates ${CATS} matrix categories"
+    exit 0
+  fi
+  echo "[review-convergence] ⚠ Review-Convergence trailer names only ${CATS} matrix category(ies); need >=3 (behavior/negative/legacy/stale-string/docs/smoke/tests)" >&2
 fi
 
 CHANGED_FILES=$(git show --name-only --pretty="" "$COMMIT" 2>/dev/null | sed '/^[[:space:]]*$/d' || true)

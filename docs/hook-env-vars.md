@@ -356,6 +356,7 @@ and merges it over `os.Environ()`. This is the correct pattern.
 | `GG_ACTOR` | `taskHookEnv` (runner, derived from `GG_ROLE`/`GG_AGENT`) | all hooks |
 | `GG_INSIDE_HOOK` | `taskHookEnv` (runner) | `10-go-verify.sh`, test helpers |
 | `GG_AC_ATTESTATION` | caller / session | `50-ac-attestation.sh` |
+| `GG_AC_ATTESTATION_REASON` | caller / required rationale for `=off` (audited) | `50-ac-attestation.sh` |
 | `GG_ALLOW_INCOMPLETE_AC` | caller / one-shot bypass | `50-ac-attestation.sh` |
 | `GG_DECIDE_GATE` | caller / session | `20-decide-capture.sh` |
 | `GG_REVIEW_GATE` | caller / session | `40-review-required.sh` |
@@ -367,6 +368,7 @@ and merges it over `os.Environ()`. This is the correct pattern.
 | `GG_ALLOW_LINT_REGRESSIONS` | caller / one-shot bypass | `60-lint-gate.sh` |
 | `GG_IMPACT_ATTESTATION` | caller / session | `60-impact-attestation.sh` |
 | `GG_REVIEW_CONVERGENCE` | caller / session | `70-review-convergence.sh` |
+| `GG_REVIEW_CONVERGENCE_REASON` | caller / required rationale for `=off` (audited) | `70-review-convergence.sh` |
 | `GG_ALLOW_INCOMPLETE_REVIEW` | caller / one-shot bypass | `70-review-convergence.sh` |
 | `GG_ENFORCEMENT` | caller / session | `90-bug-repros.sh`, CLI gate runner |
 | `GG_BUG_REPRO_BUDGET` | caller / session | `90-bug-repros.sh` |
