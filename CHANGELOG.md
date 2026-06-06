@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.28] - 2026-06-07
+
+Ships local fixes that were committed in parallel and merged with the v0.3.27
+memory-integrity cluster.
+
+### Fixed
+
+- Active-status filter on `SearchDecisions`/`SearchBugs` with a status badge in
+  renderers (BUG-064).
+- Strict mode fails closed on non-executable hooks (BUG-065).
+- Exclude degraded zero-vector records from all `Search*` queries (BUG-066).
+- `gg record --rejects` supersedes the rejected decision in the store (BUG-068).
+- Inbox gate preflight added to `gg task done` (BUG-072).
+- Restored the permanent repro for BUG-061 (BUG-081).
+
 ## [0.3.27] - 2026-06-06
 
 Memory-integrity bug cluster (17 bugs, PR #1) — restores the "one consistent
