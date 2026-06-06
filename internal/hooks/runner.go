@@ -49,8 +49,14 @@ func RunHooks(ggDir, name string, env map[string]string, strict bool, out io.Wri
 		if statErr != nil {
 			continue
 		}
-		// Only run executable scripts.
+		// Only run executable scripts.  In strict mode a non-executable script is a
+		// configuration error — it signals intent to enforce but missing chmod +x.
+		// Fail closed so the gate cannot be silently bypassed by accident.
 		if info.Mode()&0o111 == 0 {
+			if strict {
+				return nil, fmt.Errorf("hook %s is not executable (mode %s): run 'chmod +x .gg/hooks/%s.d/%s' to fix, or delete the file to remove it",
+					e.Name(), info.Mode(), name, e.Name())
+			}
 			continue
 		}
 		scripts = append(scripts, filepath.Join(hookDir, e.Name()))

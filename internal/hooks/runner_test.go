@@ -98,22 +98,43 @@ func TestRunHooks_Strict(t *testing.T) {
 	}
 }
 
-func TestRunHooks_NonExecutableSkipped(t *testing.T) {
+func TestRunHooks_NonExecutableSkipped_WarnOnly(t *testing.T) {
 	root := t.TempDir()
 	hookDir := filepath.Join(root, ".gg", "hooks", "task-done.d")
 	if err := os.MkdirAll(hookDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	// Write a non-executable script.
 	if err := os.WriteFile(filepath.Join(hookDir, "01-nope.sh"), []byte("#!/bin/sh\nexit 1\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	ggDir := filepath.Join(root, ".gg")
-	results, err := hooks.RunHooks(ggDir, "task-done", nil, true, &bytes.Buffer{})
+	// In warn-only mode, non-executable scripts are silently skipped.
+	results, err := hooks.RunHooks(ggDir, "task-done", nil, false, &bytes.Buffer{})
 	if err != nil {
-		t.Errorf("non-executable hook should be skipped, got error: %v", err)
+		t.Errorf("warn-only: non-executable hook should be skipped, got error: %v", err)
 	}
 	if len(results) != 0 {
-		t.Errorf("expected 0 results (non-executable skipped), got %d", len(results))
+		t.Errorf("warn-only: expected 0 results (non-executable skipped), got %d", len(results))
+	}
+}
+
+func TestRunHooks_NonExecutableStrict_FailsClosed(t *testing.T) {
+	root := t.TempDir()
+	hookDir := filepath.Join(root, ".gg", "hooks", "task-done.d")
+	if err := os.MkdirAll(hookDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Write a non-executable script — simulates chmod +x forgotten.
+	if err := os.WriteFile(filepath.Join(hookDir, "50-ac-attestation.sh"), []byte("#!/bin/sh\nexit 1\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	ggDir := filepath.Join(root, ".gg")
+	// In strict mode, a non-executable script must fail closed (not silently pass).
+	_, err := hooks.RunHooks(ggDir, "task-done", nil, true, &bytes.Buffer{})
+	if err == nil {
+		t.Error("strict mode: non-executable hook should fail closed, got nil error")
+	}
+	if !strings.Contains(err.Error(), "not executable") {
+		t.Errorf("error should mention 'not executable', got: %v", err)
 	}
 }
