@@ -56,3 +56,10 @@ vendor/
 coverage/
 .cache/
 tmp/
+
+# Agent harness / tooling runtime artifacts (per-user, not part of the product)
+/.cline/
+/bash_events/
+/conversations/
+/project/
+/skills-lock.json
