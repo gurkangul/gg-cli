@@ -37,8 +37,11 @@ const (
 	claudeMatcherWriteTools     = "Edit|Write|MultiEdit"
 	claudeCommand               = "gg session-start --agent=claude-code"
 	claudeCommandMarker         = "gg session-start"
-	claudeInboxCommand          = `OUT=$(gg inbox --peek --since-cursor --advance-cursor --role "${GG_ROLE:-}" --include-agents 2>/dev/null); echo "$OUT" | grep -qE 'INBOX \(([1-9][0-9]*) unread\)' && jq -n --arg ctx "$OUT" '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:$ctx}}' || true`
-	claudeInboxCommandMarker    = "--since-cursor"
+	claudeInboxCommand          = `OUT=$(gg inbox --peek --since-cursor --advance-cursor --role "${GG_ROLE:-}" --include-agents 2>/dev/null); echo "$OUT" | grep -qE '[1-9][0-9]* unread' && jq -n --arg ctx "$OUT" '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:$ctx}}' || true`
+	// Marker matches ONLY the current (fixed) command's grep pattern, so installs
+	// carrying the old broken grep ('INBOX (N unread)', which never matched the
+	// real 'inbox — N unread' header) are detected as stale and rewritten on sync.
+	claudeInboxCommandMarker    = "[1-9][0-9]* unread'"
 	// claudeInboxStaleMarker matches the old hook command so stale installs can
 	// be detected and rewritten to the current format on next `gg doctor`.
 	claudeInboxStaleMarker      = "gg inbox"
