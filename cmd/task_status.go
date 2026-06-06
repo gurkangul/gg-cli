@@ -133,6 +133,12 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
+	// BUG-072: inbox gate must run at task-done, not only at task-create/record.
+	// An unread '@reviewer: wait, impact not reviewed' blocks task closure here.
+	if err := runInboxGatePreflight(ctx, d.store, "task-done"); err != nil {
+		return err
+	}
+
 	// Ready-for-live gate (opt-in via .gg/config.yaml tasks.*). Runs AFTER
 	// pre-task-done.d hooks so callers see hook failures before state-machine
 	// complaints — cheaper feedback when both would reject. Same
