@@ -12,7 +12,7 @@ import (
 // inboxChecker is a narrow interface satisfied by *store.Client. Injected in
 // tests to avoid real Qdrant calls.
 type inboxChecker interface {
-	GetInbox(ctx context.Context, role string, humanOnly bool) ([]store.Message, error)
+	GetInbox(ctx context.Context, role string, humanOnly bool, reader string) ([]store.Message, error)
 	GetTask(ctx context.Context, taskID string) (*store.Task, error)
 }
 
@@ -46,7 +46,7 @@ func CheckInboxGate(ctx context.Context, client inboxChecker, role string) (Inbo
 		return InboxGateResult{Bypassed: true, BypassReason: reason}, nil
 	}
 
-	msgs, err := client.GetInbox(ctx, role, false)
+	msgs, err := client.GetInbox(ctx, role, false, "")
 	if err != nil {
 		// Store unreachable — fail open so a down Qdrant doesn't block work.
 		return InboxGateResult{}, nil

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gurkangul/gg-cli/internal/identity"
 	"github.com/spf13/cobra"
 )
 
@@ -60,7 +61,9 @@ func resolveTaskOwner(flagValue string) string {
 	if owner := strings.TrimSpace(flagValue); owner != "" {
 		return owner
 	}
-	if owner := strings.TrimSpace(os.Getenv("GG_AGENT")); owner != "" {
+	// BUG-084: derive a per-session identity so two Claude tabs sharing the
+	// generic GG_AGENT=claude-code do not collapse into one task owner.
+	if owner := strings.TrimSpace(identity.Agent()); owner != "" {
 		return owner
 	}
 	return strings.TrimSpace(os.Getenv("GG_ROLE"))

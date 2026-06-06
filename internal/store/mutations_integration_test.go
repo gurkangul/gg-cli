@@ -130,6 +130,54 @@ func TestBugFixIsJSONLFirst_Integration(t *testing.T) {
 	}
 }
 
+// BUG-082: inbox read-state is per-recipient. One agent reading a role's inbox
+// must not consume the message for another agent reading the same role.
+func TestInboxReadStateIsPerRecipient_Integration(t *testing.T) {
+	c, ctx := newIntegrationClient(t, "inbox-recip")
+	if err := c.SendMessage(ctx, Message{FromRole: "master", ToRole: "implementer", Content: "handoff", Audience: "all"}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	// Agent A sees it, then marks it read.
+	aBefore, err := c.GetInbox(ctx, "implementer", false, "agent-A")
+	if err != nil {
+		t.Fatalf("GetInbox A: %v", err)
+	}
+	if len(aBefore) != 1 {
+		t.Fatalf("agent A inbox before = %d, want 1", len(aBefore))
+	}
+	if err := c.MarkMessagesRead(ctx, []string{aBefore[0].ID}, "agent-A"); err != nil {
+		t.Fatalf("MarkMessagesRead A: %v", err)
+	}
+
+	// Agent A no longer sees it.
+	aAfter, err := c.GetInbox(ctx, "implementer", false, "agent-A")
+	if err != nil {
+		t.Fatalf("GetInbox A after: %v", err)
+	}
+	if len(aAfter) != 0 {
+		t.Fatalf("agent A inbox after read = %d, want 0", len(aAfter))
+	}
+
+	// Agent B MUST still see it (the BUG-082 fix: A's read did not consume B's).
+	bInbox, err := c.GetInbox(ctx, "implementer", false, "agent-B")
+	if err != nil {
+		t.Fatalf("GetInbox B: %v", err)
+	}
+	if len(bInbox) != 1 {
+		t.Fatalf("agent B inbox = %d, want 1 (A's read consumed B's message = BUG-082)", len(bInbox))
+	}
+
+	// read_by persisted to JSONL (ties to BUG-062).
+	latest, err := brain.ReadLatest(c.dataDir, "messages")
+	if err != nil {
+		t.Fatalf("ReadLatest: %v", err)
+	}
+	if len(latest) != 1 || len(anyStringList(latest[0].Payload["read_by"])) != 1 {
+		t.Fatalf("read_by not persisted to JSONL: %+v", latest)
+	}
+}
+
 // BUG-069: reembed must source from JSONL — it must keep a JSONL-only record and
 // prefer the JSONL-mutated state over a stale Qdrant payload.
 func TestReembedPrefersJSONLSourceOfTruth_Integration(t *testing.T) {

@@ -83,7 +83,7 @@ func runNext(cmd *cobra.Command, _ []string) error {
 		snap.StateWarnings = append(snap.StateWarnings, warning)
 	}
 
-	if msgs, msgErr := d.store.GetInbox(ctx, roleForQuery(role), true); msgErr == nil {
+	if msgs, msgErr := d.store.GetInbox(ctx, roleForQuery(role), true, ""); msgErr == nil {
 		snap.InboxCount = len(msgs)
 	} else {
 		snap.StateWarnings = append(snap.StateWarnings, fmt.Sprintf("inbox unavailable: %v", msgErr))

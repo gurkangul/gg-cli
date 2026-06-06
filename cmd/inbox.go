@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/identity"
 	"github.com/gurkangul/gg-cli/internal/session"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/spf13/cobra"
@@ -61,11 +62,13 @@ func init() {
 	rootCmd.AddCommand(inboxCmd)
 }
 
-// resolveInboxAgent returns the agent identity for cursor operations.
-// Returns empty string when identity cannot be determined — callers treat
-// empty as "skip cursor logic silently" (backwards-compatible).
+// resolveInboxAgent returns the agent identity for cursor + per-recipient
+// read-state operations. Returns empty string when identity cannot be
+// determined — callers treat empty as "skip cursor logic silently"
+// (backwards-compatible). BUG-084: resolves a per-session id under Claude Code
+// so two tabs do not share one inbox read-state (ties to BUG-082).
 func resolveInboxAgent() string {
-	return strings.TrimSpace(os.Getenv("GG_AGENT"))
+	return strings.TrimSpace(identity.Agent())
 }
 
 func runInbox(cmd *cobra.Command, args []string) error {
@@ -83,9 +86,11 @@ func runInbox(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
+	reader := resolveInboxAgent()
+
 	// --dismiss-all: mark everything as read and exit.
 	if inboxDismissAll {
-		n, err := d.store.DismissAll(ctx, inboxRole)
+		n, err := d.store.DismissAll(ctx, inboxRole, reader)
 		if err != nil {
 			return fmt.Errorf("dismiss all: %w", err)
 		}
@@ -100,7 +105,7 @@ func runInbox(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	messages, err := d.store.GetInbox(ctx, inboxRole, !inboxIncludeAgents)
+	messages, err := d.store.GetInbox(ctx, inboxRole, !inboxIncludeAgents, reader)
 	if err != nil {
 		return fmt.Errorf("get inbox: %w", err)
 	}
@@ -146,7 +151,7 @@ func runInbox(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if len(oldIDs) > 0 {
-			if markErr := d.store.MarkMessagesRead(ctx, oldIDs); markErr != nil {
+			if markErr := d.store.MarkMessagesRead(ctx, oldIDs, reader); markErr != nil {
 				return fmt.Errorf("dismiss old: %w", markErr)
 			}
 			fmt.Printf("✓ Dismissed %d message(s) older than %s.\n", len(oldIDs), inboxOlderThan)
@@ -206,7 +211,7 @@ func runInbox(cmd *cobra.Command, args []string) error {
 	for i, m := range messages {
 		ids[i] = m.ID
 	}
-	if err := d.store.MarkMessagesRead(ctx, ids); err != nil {
+	if err := d.store.MarkMessagesRead(ctx, ids, reader); err != nil {
 		return fmt.Errorf("mark read: %w", err)
 	}
 	return nil
