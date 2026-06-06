@@ -41,6 +41,27 @@ type taskContextBundle struct {
 	messages []store.Message
 }
 
+// bundleCollectionErrors returns a per-collection error map (BUG-076). A --json
+// consumer uses it to tell an authoritative-empty list (collection queried OK,
+// no matches) from a partial-failure empty list (the query for that collection
+// errored). Empty map => every collection was queried successfully.
+func bundleCollectionErrors(bundle contextBundle) map[string]string {
+	out := map[string]string{}
+	for name, err := range map[string]error{
+		"decisions":   bundle.decErr,
+		"rejections":  bundle.rejErr,
+		"tasks":       bundle.taskErr,
+		"discussions": bundle.discErr,
+		"notes":       bundle.noteErr,
+		"artifacts":   bundle.artifactErr,
+	} {
+		if err != nil {
+			out[name] = err.Error()
+		}
+	}
+	return out
+}
+
 // collectBundleErrors returns a slice of warning strings for any non-nil errors in bundle.
 func collectBundleErrors(bundle contextBundle) []string {
 	var errs []string

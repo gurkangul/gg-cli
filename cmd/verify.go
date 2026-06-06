@@ -172,4 +172,3 @@ func outputVerify(r verifyResult) error {
 		}
 	})
 }
-

@@ -71,9 +71,42 @@ func (c *Client) ExportBrainCollection(ctx context.Context, kind string) ([]Brai
 		offset = next
 	}
 
-	// Stable sort by UUID string — determinism guarantee.
-	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
+	// Deterministic order. UUIDs sort lexically; human-prefixed IDs
+	// (TASK-/BUG-/DISC-N) sort by numeric suffix so TASK-1000 follows TASK-999
+	// rather than preceding it (BUG-080 L1).
+	sort.Slice(all, func(i, j int) bool { return brainIDLess(all[i].ID, all[j].ID) })
 	return all, nil
+}
+
+// brainIDLess orders two record IDs. When both share the same non-numeric
+// prefix and have a numeric suffix (e.g. "TASK-12" vs "TASK-3"), it compares the
+// numbers; otherwise it falls back to a stable lexical compare (UUIDs).
+func brainIDLess(a, b string) bool {
+	pa, na, oka := splitPrefixNum(a)
+	pb, nb, okb := splitPrefixNum(b)
+	if oka && okb && pa == pb {
+		if na != nb {
+			return na < nb
+		}
+	}
+	return a < b
+}
+
+// splitPrefixNum splits "TASK-123" into ("TASK-", 123, true). Returns ok=false
+// when the string has no trailing digit run after a non-digit prefix.
+func splitPrefixNum(s string) (prefix string, num int, ok bool) {
+	i := len(s)
+	for i > 0 && s[i-1] >= '0' && s[i-1] <= '9' {
+		i--
+	}
+	if i == len(s) || i == 0 {
+		return "", 0, false
+	}
+	n, err := strconv.Atoi(s[i:])
+	if err != nil {
+		return "", 0, false
+	}
+	return s[:i], n, true
 }
 
 // CanonicalJSON encodes v as compact JSON with:

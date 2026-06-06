@@ -178,7 +178,9 @@ func SearchByText(ggDir, kind, query string) ([]Entry, error) {
 // SearchByTextScored is SearchByText plus the score used for ordering so CLI
 // JSON output can expose the same fallback ranking signal it actually used.
 func SearchByTextScored(ggDir, kind, query string) ([]ScoredEntry, error) {
-	all, err := ReadAll(ggDir, kind)
+	// Fold to current state (BUG-062): mutations append new lines per uuid, so a
+	// raw ReadAll would surface superseded/duplicate versions in offline search.
+	all, err := ReadLatest(ggDir, kind)
 	if err != nil {
 		return nil, err
 	}

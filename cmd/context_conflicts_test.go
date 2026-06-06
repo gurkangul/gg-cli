@@ -8,10 +8,10 @@ import (
 
 func TestDetectConflicts(t *testing.T) {
 	tests := []struct {
-		name      string
-		bundle    contextBundle
-		wantIDs   []string // IDs expected to appear in conflicts
-		wantNone  bool     // expect zero conflicts
+		name     string
+		bundle   contextBundle
+		wantIDs  []string // IDs expected to appear in conflicts
+		wantNone bool     // expect zero conflicts
 	}{
 		{
 			name: "mismatch fires — decision says done, task is pending",

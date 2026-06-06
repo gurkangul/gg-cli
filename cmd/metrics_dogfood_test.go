@@ -270,13 +270,13 @@ func TestVelocityIcon(t *testing.T) {
 func TestRenderDogfoodCompact_Format(t *testing.T) {
 	var sb strings.Builder
 	m := dogfoodMetrics{
-		WindowDays:    14,
-		WeeksInWindow: 2.0,
-		Velocity:      3.5,
-		ReworkRate:    0.25,
+		WindowDays:     14,
+		WeeksInWindow:  2.0,
+		Velocity:       3.5,
+		ReworkRate:     0.25,
 		TotalDecisions: 8,
-		GapRate:       0.33,
-		DoneTaskIDs:   3,
+		GapRate:        0.33,
+		DoneTaskIDs:    3,
 	}
 	renderDogfoodCompact(&sb, m)
 	out := sb.String()

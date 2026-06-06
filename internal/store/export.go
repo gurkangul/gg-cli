@@ -15,9 +15,9 @@ import (
 // Note: Memgraph graph data (gg index) is not included — it is derived from
 // source code and can be rebuilt by running 'gg index' after import.
 type Bundle struct {
-	Version         string                 `json:"version"`
-	ExportedAt      string                 `json:"exported_at"`
-	SourceProjectID string                 `json:"source_project_id"`
+	Version         string                   `json:"version"`
+	ExportedAt      string                   `json:"exported_at"`
+	SourceProjectID string                   `json:"source_project_id"`
 	Collections     map[string][]BundlePoint `json:"collections"`
 }
 

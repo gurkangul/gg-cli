@@ -92,6 +92,11 @@ func Read(runtimeDir string) (State, error) {
 // Write atomically persists the State to <runtimeDir>/state.json.
 // UpdatedAt is always set to now. Multi-step read/modify/write callers should
 // prefer Update so concurrent writers cannot clobber unrelated state fields.
+//
+// BUG-080 L3: Write does NOT take the file lock that Update holds — it overwrites
+// the whole state with the caller's snapshot. It is safe only for a full,
+// freshly-built State (e.g. first init). Any read-modify-write MUST go through
+// Update; calling Write after a separate Read is a lost-update foot-gun.
 func Write(runtimeDir string, s State) error {
 	return writeUnlocked(runtimeDir, s)
 }

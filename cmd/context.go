@@ -73,7 +73,10 @@ func runContext(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status")
 	}
 	if d.qdrantDown {
-		return serveContextFromCache(cmd, query)
+		// BUG-075: prefer a live JSONL scan over the up-to-7-day LKG cache,
+		// matching `gg search`'s offline behaviour. Falls back to cache when
+		// JSONL has nothing for the query.
+		return serveContextFromJSONL(cmd, query)
 	}
 
 	ctx, cancel := withTimeout(cmd.Context())

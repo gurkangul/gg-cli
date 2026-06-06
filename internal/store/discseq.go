@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/gurkangul/gg-cli/internal/brain"
 )
 
 const discSeqFile = ".disc-seq"
@@ -45,12 +47,20 @@ func (c *Client) allocDiscID(ctx context.Context) (string, error) {
 		n = parsed
 	}
 
+	// Bootstrap: seq file empty. Try Qdrant; if unavailable, fall back to the
+	// JSONL source of truth (BUG-080 L4) — mirrors task/bug seq so the first DISC
+	// allocation works while Qdrant is down.
 	if n == 0 {
 		existingMax, err := c.maxDiscIDNumber(ctx)
 		if err != nil {
-			return "", fmt.Errorf("bootstrap disc seq from qdrant: %w", err)
+			jsonlMax, jsonlErr := maxDiscIDFromBrainJSONL(c.dataDir)
+			if jsonlErr != nil {
+				return "", fmt.Errorf("bootstrap disc seq (qdrant down, jsonl fallback failed): %w", jsonlErr)
+			}
+			n = jsonlMax
+		} else {
+			n = existingMax
 		}
-		n = existingMax
 	}
 
 	n++
@@ -69,4 +79,23 @@ func (c *Client) allocDiscID(ctx context.Context) (string, error) {
 	}
 
 	return fmt.Sprintf("DISC-%03d", n), nil
+}
+
+// maxDiscIDFromBrainJSONL scans .gg/brain/discussions.jsonl for the highest
+// numeric DISC suffix. Qdrant-free bootstrap for allocDiscID (BUG-080 L4).
+// Returns 0 when the file is absent or empty.
+func maxDiscIDFromBrainJSONL(ggDir string) (int, error) {
+	entries, err := brain.ReadAll(ggDir, "discussions")
+	if err != nil {
+		return 0, err
+	}
+	maxNum := 0
+	for _, e := range entries {
+		if id, ok := e.Payload["disc_id"].(string); ok {
+			if n, parseErr := ParseDiscID(id); parseErr == nil && n > maxNum {
+				maxNum = n
+			}
+		}
+	}
+	return maxNum, nil
 }
