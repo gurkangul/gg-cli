@@ -19,7 +19,7 @@ import (
 // ExitVerifyFailed and a machine-parseable message describing why the
 // transition is refused. The pure signature lets tests exercise every
 // branch without a live store or hook runtime.
-func checkReadyForLiveGate(t *store.Task, tasksCfg *config.TasksConfig, verifier string) *ExitError {
+func checkReadyForLiveGate(t *store.Task, tasksCfg *config.TasksConfig, verifier, currentAgent string) *ExitError {
 	if t == nil || tasksCfg == nil || !tasksCfg.RequireReadyForLive {
 		return nil
 	}
@@ -49,6 +49,21 @@ func checkReadyForLiveGate(t *store.Task, tasksCfg *config.TasksConfig, verifier
 			Message: fmt.Sprintf(
 				"missing independent verification for %s: --verifier=%q matches the actor that set ready_for_live; durable review evidence must come from a different role before closure (task state unchanged)",
 				t.ID, v),
+		}
+	}
+	// BUG-067: role strings are self-declared and spoofable (one runtime can set
+	// --from implementer then --verifier reviewer). Reject when the runtime
+	// identity closing the task is the same one that set ready_for_live — a
+	// single process cannot be both implementer and independent verifier. This
+	// is an advisory (not cryptographic) separation; with per-session GG_AGENT
+	// (BUG-084) two real tabs have distinct identities and pass.
+	ca := strings.TrimSpace(currentAgent)
+	if ca != "" && t.ReadyForLiveAgent != "" && ca == t.ReadyForLiveAgent {
+		return &ExitError{
+			Code: ExitVerifyFailed,
+			Message: fmt.Sprintf(
+				"missing independent verification for %s: closer identity %q is the same runtime that set ready_for_live; an independent verifier (different runtime/agent) must close it (task state unchanged)",
+				t.ID, ca),
 		}
 	}
 	return nil

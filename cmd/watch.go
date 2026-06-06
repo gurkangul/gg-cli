@@ -127,7 +127,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 		if icErr == nil {
 			// Pre-seed seen IDs from the lookback window so we only emit truly new messages.
 			seedCtx, seedCancel := context.WithTimeout(cmd.Context(), 5*time.Second)
-			existing, seedErr := ic.GetInbox(seedCtx, watchRole, false)
+			existing, seedErr := ic.GetInbox(seedCtx, watchRole, false, "")
 			seedCancel()
 			if seedErr == nil {
 				for _, m := range existing {
@@ -169,7 +169,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 			}
 			if !watchNoInbox && inboxClient != nil {
 				pollCtx, pollCancel := context.WithTimeout(cmd.Context(), 5*time.Second)
-				msgs, pollErr := inboxClient.GetInbox(pollCtx, watchRole, false)
+				msgs, pollErr := inboxClient.GetInbox(pollCtx, watchRole, false, "")
 				pollCancel()
 				if pollErr == nil {
 					for _, m := range msgs {

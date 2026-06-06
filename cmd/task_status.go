@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/enforcement"
+	"github.com/gurkangul/gg-cli/internal/identity"
 )
 
 // taskDoneVerifier is the role flag for the verifier-separation gate in
@@ -153,7 +154,7 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 			if getErr != nil {
 				return getErr
 			}
-			if rej := checkReadyForLiveGate(t, &cfg.Tasks, taskDoneVerifier); rej != nil {
+			if rej := checkReadyForLiveGate(t, &cfg.Tasks, taskDoneVerifier, identity.Agent()); rej != nil {
 				return rej
 			}
 		}

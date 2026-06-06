@@ -43,6 +43,7 @@ var (
 	recordRejectedAlternatives string
 	recordImplements           string // TASK-X that implements this decision → (Decision)-[:DECIDES]->(Task)
 	recordRejects              string // DEC-UUID that this decision supersedes → (Decision)-[:REJECTS]->(Decision)
+	recordEvidence             string // BUG-071: how the decision was verified (commands/smoke/source)
 )
 
 func init() {
@@ -54,6 +55,7 @@ func init() {
 	recordCmd.Flags().StringVar(&recordRejectedAlternatives, "rejected-alternatives", "", "comma-separated approaches that were considered and rejected")
 	recordCmd.Flags().StringVar(&recordImplements, "implements", "", "TASK-X that implements this decision (writes Memgraph edge)")
 	recordCmd.Flags().StringVar(&recordRejects, "rejects", "", "decision UUID superseded by this one (writes Memgraph edge)")
+	recordCmd.Flags().StringVar(&recordEvidence, "evidence", "", "how this was verified (commands run, live smoke, source ref) — empty surfaces as [unverified]")
 	addFromFlag(recordCmd)
 	rootCmd.AddCommand(recordCmd)
 }
@@ -169,6 +171,7 @@ func runRecord(cmd *cobra.Command, args []string) error {
 		Tags:                 parseTags(recordTags),
 		TaskID:               taskRef,
 		Author:               resolveAuthor(cmd),
+		Evidence:             strings.TrimSpace(recordEvidence),
 	}
 	if addErr := d.store.AddDecision(ctx, dec, vector); addErr != nil {
 		var oq *store.OutboxQueued

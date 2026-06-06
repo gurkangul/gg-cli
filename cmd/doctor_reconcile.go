@@ -44,6 +44,18 @@ func runDoctorReconcile(cmd *cobra.Command) error {
 		return fmt.Errorf("find .gg dir: %w", err)
 	}
 
+	// BUG-073: serialise reconcile. Two concurrent reconcilers can clobber a
+	// healthy vector store, so take a non-blocking lock and bail if one is
+	// already running.
+	releaseLock, lockErr := brain.AcquireReconcileLock(ggDir)
+	if lockErr != nil {
+		if errors.Is(lockErr, brain.ErrReconcileLocked) {
+			return fmt.Errorf("another `gg doctor --reconcile` is already running — wait for it to finish")
+		}
+		return fmt.Errorf("acquire reconcile lock: %w", lockErr)
+	}
+	defer releaseLock()
+
 	// Load Qdrant client once — used by both outbox replay and JSONL scan.
 	var storeClient *store.Client
 	if d, dErr := loadDepsReadOnly(false); dErr == nil && !d.qdrantDown {
@@ -144,11 +156,18 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 	}
 	anyGap := false
 	for _, kind := range brainKinds {
-		entries, _, readErr := brain.ReadAllWithCount(ggDir, kind)
+		// Fold to current state (last-write-wins) so JSONL-first mutations are
+		// reflected, not reverted to create-time payloads (BUG-062).
+		entries, skipped, readErr := brain.ReadLatestWithCount(ggDir, kind)
 		if readErr != nil {
 			fmt.Printf("  ✗ %s: read error: %v\n", kind, readErr)
 			anyGap = true
 			continue
+		}
+		// BUG-070: surface corruption instead of silently dropping torn lines.
+		if skipped > 0 {
+			fmt.Printf("  ⚠ %s: %d malformed line(s) skipped — repair .gg/brain/%s.jsonl\n", kind, skipped, kind)
+			anyGap = true
 		}
 		if len(entries) == 0 {
 			continue
@@ -161,6 +180,7 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 		}
 
 		recovered := 0
+		synced := 0
 		failed := 0
 		invalidUUIDs := 0
 		for _, e := range entries {
@@ -169,6 +189,23 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 				continue
 			}
 			if _, exists := qdrantUUIDs[e.UUID]; exists {
+				// Present in both. If JSONL carries a versioned mutation
+				// (version > 1), push its payload to Qdrant so a stale index is
+				// repaired to the source-of-truth state (BUG-062). version 1 /
+				// unversioned legacy records are already create-time-consistent.
+				if brain.PayloadVersion(e.Payload) > 1 {
+					if syncErr := sc.SyncBrainPayload(ctx, kind, e.UUID, e.Payload); syncErr != nil {
+						if errors.Is(syncErr, store.ErrQdrantDown) {
+							fmt.Printf("  ~ %s: Qdrant went down mid-scan — deferred\n", kind)
+							anyGap = true
+							break
+						}
+						fmt.Printf("  ✗ %s: sync %s failed: %v\n", kind, shortBrainUUID(e.UUID), syncErr)
+						failed++
+					} else {
+						synced++
+					}
+				}
 				continue
 			}
 			// Entry is in JSONL but not in Qdrant — re-upsert.
@@ -183,6 +220,9 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 			} else {
 				recovered++
 			}
+		}
+		if synced > 0 {
+			fmt.Printf("  ⚠ %s: synced %d JSONL-newer payload(s) into Qdrant\n", kind, synced)
 		}
 		if recovered > 0 {
 			if kind == "messages" {
@@ -199,7 +239,7 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 			fmt.Printf("  ✗ %s: %d invalid UUID %s skipped — repair .gg/brain/%s.jsonl\n", kind, invalidUUIDs, reconcilePlural("entry", "entries", invalidUUIDs), kind)
 			anyGap = true
 		}
-		if recovered == 0 && failed == 0 && invalidUUIDs == 0 && len(entries) > 0 {
+		if recovered == 0 && synced == 0 && failed == 0 && invalidUUIDs == 0 && len(entries) > 0 {
 			fmt.Printf("  ✓ %s: %d entries consistent\n", kind, len(entries))
 		}
 	}

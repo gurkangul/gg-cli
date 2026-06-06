@@ -76,7 +76,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	// Messages — fetch once and derive the count from the result so we can't
 	// race with a concurrent `gg inbox` between Count and Scroll.
-	messages, messagesErr := d.store.GetInbox(ctx, "", true)
+	messages, messagesErr := d.store.GetInbox(ctx, "", true, "")
 	if messagesErr != nil {
 		fmt.Fprintln(os.Stderr, "warning: get inbox:", messagesErr)
 	}

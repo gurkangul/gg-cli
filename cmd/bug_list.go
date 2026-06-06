@@ -103,7 +103,11 @@ func runBugGet(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return notFound(err.Error())
 	}
-	recordBugFullHydration(b.ID)
+	// BUG-074: only a full (non-compact) read proves hydration. Compact drops
+	// reasons/details, so it must not satisfy the hydration gate.
+	if !isCompactActive(cmd) {
+		recordBugFullHydration(b.ID)
+	}
 
 	renderBugGet := func(w io.Writer) {
 		fmt.Fprintf(w, "%s %s [%s/%s] %s\n", bugStatusIcon(b.Status), b.ID, b.Severity, b.Status, b.Title)

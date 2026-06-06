@@ -124,6 +124,15 @@ func TestReviewConvergenceHook_AllowsTrailer(t *testing.T) {
 	}
 }
 
+// BUG-077: a bare Review-Convergence trailer that enumerates no matrix
+// categories is cargo-cult and must be refused (need >=3 categories named).
+func TestReviewConvergenceHook_RejectsThinTrailer(t *testing.T) {
+	r := runReviewConvergenceHook(t, "feat(TASK-399): change\n\nReview-Convergence: done", nil)
+	if r.exitCode != 7 {
+		t.Fatalf("exitCode=%d, want 7 for a thin trailer naming no categories\noutput:\n%s", r.exitCode, r.output)
+	}
+}
+
 func TestReviewConvergenceHook_WarnModeDoesNotBlock(t *testing.T) {
 	r := runReviewConvergenceHook(t, "feat(TASK-399): warn only", map[string]string{"GG_REVIEW_CONVERGENCE": "warn"})
 	if r.exitCode != 0 {

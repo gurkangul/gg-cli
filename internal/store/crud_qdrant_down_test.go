@@ -332,7 +332,7 @@ func TestGetInbox_QdrantDown(t *testing.T) {
 	ctx, cancel := shortCtx(t)
 	defer cancel()
 
-	_, err := c.GetInbox(ctx, "developer", false)
+	_, err := c.GetInbox(ctx, "developer", false, "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -344,10 +344,10 @@ func TestMarkMessagesRead_EmptyIDs(t *testing.T) {
 	ctx, cancel := shortCtx(t)
 	defer cancel()
 
-	if err := c.MarkMessagesRead(ctx, nil); err != nil {
+	if err := c.MarkMessagesRead(ctx, nil, ""); err != nil {
 		t.Errorf("MarkMessagesRead(nil): expected nil error, got %v", err)
 	}
-	if err := c.MarkMessagesRead(ctx, []string{}); err != nil {
+	if err := c.MarkMessagesRead(ctx, []string{}, ""); err != nil {
 		t.Errorf("MarkMessagesRead([]): expected nil error, got %v", err)
 	}
 }
@@ -510,7 +510,7 @@ func TestDismissAll_QdrantDown(t *testing.T) {
 	ctx, cancel := shortCtx(t)
 	defer cancel()
 
-	_, err := c.DismissAll(ctx, "developer")
+	_, err := c.DismissAll(ctx, "developer", "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

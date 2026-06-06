@@ -98,15 +98,12 @@ type ReembedResult struct {
 // and EnsureCollections before retrying ReembedAll.
 func (c *Client) ReembedAll(ctx context.Context, embedder Embedder, newVectorSize uint64) ([]ReembedResult, error) {
 	// --- Step 1: Read all existing points before dropping collections ---
-	type savedPoint struct {
-		id      string
-		payload map[string]*qdrant.Value
-		text    string
-	}
+	// Source of truth is JSONL (BUG-069): the Qdrant scroll is overlaid with the
+	// folded JSONL records so JSONL-only / mutated entries are not dropped.
 	type collectionData struct {
 		name      string
 		suffix    string
-		points    []savedPoint
+		points    []reembedPoint
 		extractor func(map[string]*qdrant.Value) string
 	}
 
@@ -117,27 +114,30 @@ func (c *Client) ReembedAll(ctx context.Context, embedder Embedder, newVectorSiz
 		if !ok {
 			continue
 		}
+		var saved []reembedPoint
 		points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
 			CollectionName: name,
 			WithPayload:    qdrant.NewWithPayloadEnable(true),
 		})
-		if err != nil {
-			// Collection may not exist yet; treat as empty.
-			collData = append(collData, collectionData{name: name, suffix: suffix, extractor: extractor})
-			continue
+		if err == nil {
+			saved = make([]reembedPoint, 0, len(points))
+			for _, p := range points {
+				saved = append(saved, reembedPoint{
+					id:      p.GetId().GetUuid(),
+					payload: p.GetPayload(),
+					text:    extractor(p.GetPayload()),
+				})
+			}
 		}
-		saved := make([]savedPoint, 0, len(points))
-		for _, p := range points {
-			saved = append(saved, savedPoint{
-				id:      p.GetId().GetUuid(),
-				payload: p.GetPayload(),
-				text:    extractor(p.GetPayload()),
-			})
+		// Overlay JSONL source of truth (handles missing collection too).
+		merged, mErr := c.mergeJSONLSource(suffix, extractor, saved)
+		if mErr != nil {
+			return nil, fmt.Errorf("reembed merge jsonl %s: %w", suffix, mErr)
 		}
 		collData = append(collData, collectionData{
 			name:      name,
 			suffix:    suffix,
-			points:    saved,
+			points:    merged,
 			extractor: extractor,
 		})
 	}

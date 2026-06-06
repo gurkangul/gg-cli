@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gurkangul/gg-cli/internal/brain"
+	"github.com/gurkangul/gg-cli/internal/identity"
 	"github.com/qdrant/go-client/qdrant"
 )
 
@@ -43,11 +44,12 @@ type Task struct {
 	ReviewNotes  string // optional reviewer notes
 	// ready_for_live metadata — set when status == "ready_for_live". Used by the
 	// verifier-separation gate to ensure a different actor calls `task done`.
-	ReadyForLiveBy   string  // role that performed the ready-for-live transition
-	ReadyForLiveAt   string  // RFC3339 timestamp of the transition
-	ReadyForLivePlan string  // short verify plan written by the implementer
-	SemanticScore    float32 `json:"semantic_score,omitempty"`
-	VectorDegraded   bool    `json:"vector_degraded,omitempty"`
+	ReadyForLiveBy    string  // role that performed the ready-for-live transition
+	ReadyForLiveAgent string  // BUG-067: resolved runtime identity that set ready-for-live
+	ReadyForLiveAt    string  // RFC3339 timestamp of the transition
+	ReadyForLivePlan  string  // short verify plan written by the implementer
+	SemanticScore     float32 `json:"semantic_score,omitempty"`
+	VectorDegraded    bool    `json:"vector_degraded,omitempty"`
 }
 
 // scrollAll paginates through every point matching the given request template.
@@ -296,12 +298,13 @@ func (c *Client) SetReadyForLive(ctx context.Context, taskID, readyBy, plan stri
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	payload := map[string]*qdrant.Value{
-		"status":              taskStringValue("ready_for_live"),
-		"ready_for_live_by":   taskStringValue(readyBy),
-		"ready_for_live_at":   taskStringValue(now),
-		"ready_for_live_plan": taskStringValue(plan),
-		"block_reason":        taskStringValue(""),
-		"done_summary":        taskStringValue(""),
+		"status":               taskStringValue("ready_for_live"),
+		"ready_for_live_by":    taskStringValue(readyBy),
+		"ready_for_live_agent": taskStringValue(identity.Agent()),
+		"ready_for_live_at":    taskStringValue(now),
+		"ready_for_live_plan":  taskStringValue(plan),
+		"block_reason":         taskStringValue(""),
+		"done_summary":         taskStringValue(""),
 	}
 	payload = taskVersionedPayload(current, payload, time.Now().UTC())
 	if err := c.setTaskPayloadByFilter(ctx, taskCurrentMutationFilter(current, currentStatus), payload); err != nil {
@@ -418,32 +421,33 @@ func taskFromPayload(pay map[string]*qdrant.Value) Task {
 		rs = "none"
 	}
 	return Task{
-		ID:               pay["task_id"].GetStringValue(),
-		Title:            pay["title"].GetStringValue(),
-		Detail:           pay["detail"].GetStringValue(),
-		Status:           pay["status"].GetStringValue(),
-		Priority:         pay["priority"].GetStringValue(),
-		DependsOn:        extractStringList(pay["depends_on"]),
-		Blocks:           extractStringList(pay["blocks"]),
-		Deadline:         pay["deadline"].GetStringValue(),
-		Tags:             extractStringList(pay["tags"]),
-		BlockReason:      pay["block_reason"].GetStringValue(),
-		DoneSummary:      pay["done_summary"].GetStringValue(),
-		Author:           pay["author"].GetStringValue(),
-		Requester:        pay["requester"].GetStringValue(),
-		CreatedAt:        pay["created_at"].GetStringValue(),
-		UpdatedAt:        pay["updated_at"].GetStringValue(),
-		Version:          pay["task_version"].GetIntegerValue(),
-		Owner:            pay["owner"].GetStringValue(),
-		ClaimedAt:        pay["claimed_at"].GetStringValue(),
-		LeaseUntil:       pay["lease_until"].GetStringValue(),
-		ReviewStatus:     rs,
-		ReviewedBy:       pay["reviewed_by"].GetStringValue(),
-		ReviewedAt:       pay["reviewed_at"].GetStringValue(),
-		ReviewNotes:      pay["review_notes"].GetStringValue(),
-		ReadyForLiveBy:   pay["ready_for_live_by"].GetStringValue(),
-		ReadyForLiveAt:   pay["ready_for_live_at"].GetStringValue(),
-		ReadyForLivePlan: pay["ready_for_live_plan"].GetStringValue(),
-		VectorDegraded:   pay["gg_vector_degraded"].GetStringValue() != "",
+		ID:                pay["task_id"].GetStringValue(),
+		Title:             pay["title"].GetStringValue(),
+		Detail:            pay["detail"].GetStringValue(),
+		Status:            pay["status"].GetStringValue(),
+		Priority:          pay["priority"].GetStringValue(),
+		DependsOn:         extractStringList(pay["depends_on"]),
+		Blocks:            extractStringList(pay["blocks"]),
+		Deadline:          pay["deadline"].GetStringValue(),
+		Tags:              extractStringList(pay["tags"]),
+		BlockReason:       pay["block_reason"].GetStringValue(),
+		DoneSummary:       pay["done_summary"].GetStringValue(),
+		Author:            pay["author"].GetStringValue(),
+		Requester:         pay["requester"].GetStringValue(),
+		CreatedAt:         pay["created_at"].GetStringValue(),
+		UpdatedAt:         pay["updated_at"].GetStringValue(),
+		Version:           pay["task_version"].GetIntegerValue(),
+		Owner:             pay["owner"].GetStringValue(),
+		ClaimedAt:         pay["claimed_at"].GetStringValue(),
+		LeaseUntil:        pay["lease_until"].GetStringValue(),
+		ReviewStatus:      rs,
+		ReviewedBy:        pay["reviewed_by"].GetStringValue(),
+		ReviewedAt:        pay["reviewed_at"].GetStringValue(),
+		ReviewNotes:       pay["review_notes"].GetStringValue(),
+		ReadyForLiveBy:    pay["ready_for_live_by"].GetStringValue(),
+		ReadyForLiveAgent: pay["ready_for_live_agent"].GetStringValue(),
+		ReadyForLiveAt:    pay["ready_for_live_at"].GetStringValue(),
+		ReadyForLivePlan:  pay["ready_for_live_plan"].GetStringValue(),
+		VectorDegraded:    pay["gg_vector_degraded"].GetStringValue() != "",
 	}
 }

@@ -40,8 +40,8 @@ var brainStatusCmd = &cobra.Command{
 }
 
 var (
-	brainExportDryRun bool
-	brainExportStrict bool
+	brainExportDryRun  bool
+	brainExportStrict  bool
 	brainExportIfStale string // "" means no staleness check; non-empty is a Go duration string
 	brainExportVerbose bool
 )

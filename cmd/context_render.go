@@ -103,6 +103,11 @@ func printContextBundle(cmd *cobra.Command, query string, bundle contextBundle, 
 		"conflicts":       conflicts,
 		"warnings":        errs,
 	}
+	// BUG-076: surface per-collection query failures so a partial-failure empty
+	// list (e.g. rejections errored) is not misread as authoritative-empty.
+	if collErrs := bundleCollectionErrors(bundle); len(collErrs) > 0 {
+		jsonPayload["collection_errors"] = collErrs
+	}
 	if !cachedAt.IsZero() {
 		jsonPayload["cached_at"] = cachedAt.UTC().Format(time.RFC3339)
 		jsonPayload["stale_seconds"] = int(time.Since(cachedAt).Seconds())

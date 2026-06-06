@@ -47,5 +47,21 @@ func Write(runtimeDir, agent string, ts time.Time) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, data, 0o644)
+	// BUG-080 L2: write atomically (tmp + rename) so a crash mid-write cannot
+	// leave a truncated cursor file that fails to parse on the next read.
+	tmp, err := os.CreateTemp(filepath.Dir(p), ".cursor-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, p)
 }

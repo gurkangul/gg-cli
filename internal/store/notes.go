@@ -19,6 +19,7 @@ type Note struct {
 	Text          string
 	Tags          []string
 	TaskID        string
+	Author        string // BUG-071: who wrote the note (role/agent) — provenance
 	CreatedAt     string
 	SemanticScore float32 `json:"semantic_score,omitempty"`
 }
@@ -35,9 +36,10 @@ func (c *Client) AddNote(ctx context.Context, n Note, vector []float32) (string,
 		"text":       n.Text,
 		"tags":       toAnySlice(n.Tags),
 		"task_id":    n.TaskID,
+		"author":     n.Author,
 		"created_at": n.CreatedAt,
 	}
-	if err := brain.Append(c.dataDir, "notes", n.ID, "", rawPayload); err != nil {
+	if err := brain.Append(c.dataDir, "notes", n.ID, n.Author, rawPayload); err != nil {
 		return "", fmt.Errorf("brain jsonl write: %w", err)
 	}
 	if len(vector) == 0 {
@@ -115,6 +117,7 @@ func noteFromPayload(id string, pay map[string]*qdrant.Value) Note {
 		Text:      pay["text"].GetStringValue(),
 		Tags:      extractStringList(pay["tags"]),
 		TaskID:    pay["task_id"].GetStringValue(),
+		Author:    pay["author"].GetStringValue(),
 		CreatedAt: pay["created_at"].GetStringValue(),
 	}
 }

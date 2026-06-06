@@ -127,9 +127,9 @@ func runBrainBackfill(cmd *cobra.Command, _ []string) error {
 
 	var tagLinks []backfillLink
 	type ambiguous struct {
-		tag          string
-		nDecisions   int
-		nTasks       int
+		tag        string
+		nDecisions int
+		nTasks     int
 	}
 	var ambiguousTags []ambiguous
 	var orphanTags []string // tags with decisions but no tasks (or vice versa)
@@ -303,4 +303,3 @@ func deduplicateStrings(ss []string) []string {
 	}
 	return out
 }
-
