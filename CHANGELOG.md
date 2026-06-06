@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.27] - 2026-06-06
+
+Memory-integrity bug cluster (17 bugs, PR #1) — restores the "one consistent
+shared brain" guarantee: every agent reads the same durable, current memory.
+
+### Fixed
+
+- **Durable-memory mutations are JSONL-first with version/CAS** (BUG-062, BUG-063):
+  decision/bug/message status updates were Qdrant-only with no concurrency guard,
+  so they silently reverted on any Qdrant rebuild and concurrent writers clobbered
+  each other. Mutations now append the full record to JSONL under an optimistic
+  version guard (last-write-wins fold), then mirror to Qdrant best-effort.
+- **reembed sources from JSONL** (BUG-069): no longer drops JSONL-only records or
+  prefers stale Qdrant payloads.
+- **reconcile** folds latest state into Qdrant, surfaces malformed JSONL lines
+  (BUG-070), and holds a non-blocking lock so two reconcilers can't clobber a
+  store (BUG-073).
+- **Per-recipient inbox read-state** (BUG-082): one agent reading no longer marks
+  a message read for everyone.
+- **Claude inbox-first hook** actually injects now (BUG-083): grep matches the
+  real (compact) header and only filters by role when `GG_ROLE` is set.
+- **Per-session agent identity** (BUG-084): a generic `GG_AGENT=claude-code`
+  under a Claude session derives a unique `claude-code-<session>` so concurrent
+  tabs don't collapse ownership/verifier separation.
+- **Identity-based verifier separation** (BUG-067): closure is refused when the
+  closing runtime is the one that set ready-for-live (role strings were spoofable).
+- **Embedding dimension guard** (BUG-078): refuse to persist `Dim:0` and self-heal
+  a corrupt zero-dim meta instead of silently disabling the mismatch check.
+- **Hook-level gate disable is audited** (BUG-079): `GG_AC_ATTESTATION=off` /
+  `GG_REVIEW_CONVERGENCE=off` now require a rationale and write a searchable
+  brain event.
+- **Review-convergence trailer** must enumerate >=3 matrix categories, not a bare
+  token (BUG-077).
+- **Hydration gate** is satisfied only by a full (non-compact) read (BUG-074).
+- **`gg context` offline** does a live JSONL scan before the stale LKG cache
+  (BUG-075) and reports per-collection query failures in `--json` (BUG-076).
+- Hardening (BUG-080): numeric ID export sort, atomic session-cursor write,
+  documented lock-bypassing `projectstate.Write`, and a JSONL bootstrap for the
+  discussion sequence.
+
+### Added
+
+- `gg record --evidence` and a Decision `Evidence` field; `Note` now records an
+  author — provenance so an unverified claim and a proven one are not stored with
+  identical weight (BUG-071).
+- `internal/identity` package resolving the effective per-runtime agent identity.
+
 ## [0.3.26] - 2026-05-30
 
 ### Fixed
