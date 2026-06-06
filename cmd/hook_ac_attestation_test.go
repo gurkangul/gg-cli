@@ -186,16 +186,29 @@ AC-3: integration test added in cmd/hook_ac_attestation_test.go`
 	}
 }
 
-// TestACAttestation_ModeOff_SkipsAlways: GG_AC_ATTESTATION=off → always exit 0.
-func TestACAttestation_ModeOff_SkipsAlways(t *testing.T) {
+// TestACAttestation_ModeOff_RequiresRationale: GG_AC_ATTESTATION=off without a
+// rationale is now refused (BUG-079 — no silent gate disable); with a rationale
+// it skips (exit 0) and is durably audited.
+func TestACAttestation_ModeOff_RequiresRationale(t *testing.T) {
 	detail := `ACCEPTANCE
 - This AC is definitely not covered`
 	json := taskJSONWith(detail)
+
+	// Without a reason -> refused (exit 7).
 	out, code := runACAttestationHook(t, json, "fix: unrelated commit", map[string]string{
 		"GG_AC_ATTESTATION": "off",
 	})
+	if code != 7 {
+		t.Errorf("expected exit 7 with GG_AC_ATTESTATION=off and no rationale, got %d\noutput:\n%s", code, out)
+	}
+
+	// With a reason -> skips (exit 0).
+	out, code = runACAttestationHook(t, json, "fix: unrelated commit", map[string]string{
+		"GG_AC_ATTESTATION":        "off",
+		"GG_AC_ATTESTATION_REASON": "emergency hotfix, follow-up TASK filed",
+	})
 	if code != 0 {
-		t.Errorf("expected exit 0 with GG_AC_ATTESTATION=off, got %d\noutput:\n%s", code, out)
+		t.Errorf("expected exit 0 with GG_AC_ATTESTATION=off + rationale, got %d\noutput:\n%s", code, out)
 	}
 }
 

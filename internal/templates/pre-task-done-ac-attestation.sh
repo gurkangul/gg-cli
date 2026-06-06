@@ -30,6 +30,18 @@ set -e
 
 MODE="${GG_AC_ATTESTATION:-on}"
 if [ "$MODE" = "off" ]; then
+  # BUG-079: disabling a gate must be rationalized + durably audited, never a
+  # silent env switch.
+  REASON="${GG_AC_ATTESTATION_REASON:-$GG_ALLOW_INCOMPLETE_AC}"
+  if [ -z "$REASON" ]; then
+    echo "[ac-attestation] ✗ GG_AC_ATTESTATION=off requires a rationale — set GG_AC_ATTESTATION_REASON=\"why\" (durably audited via gg record)" >&2
+    exit 7
+  fi
+  gg record "ac-attestation gate disabled (off) for ${GG_TASK_ID:-unknown}" \
+    --decision-status rejected \
+    --reason "GG_AC_ATTESTATION=off: ${REASON}" \
+    --tags "bypass,ac-attestation,enforcement-off,${GG_TASK_ID:-}" >/dev/null 2>&1 || true
+  printf '[ac-attestation] gate disabled (audited): %s\n' "$REASON" >&2
   exit 0
 fi
 

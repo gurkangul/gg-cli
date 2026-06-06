@@ -37,10 +37,17 @@ const (
 	claudeMatcherWriteTools     = "Edit|Write|MultiEdit"
 	claudeCommand               = "gg session-start --agent=claude-code"
 	claudeCommandMarker         = "gg session-start"
-	claudeInboxCommand          = `OUT=$(gg inbox --peek --since-cursor --advance-cursor --role "${GG_ROLE:-}" --include-agents 2>/dev/null); echo "$OUT" | grep -qE 'INBOX \(([1-9][0-9]*) unread\)' && jq -n --arg ctx "$OUT" '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:$ctx}}' || true`
-	claudeInboxCommandMarker    = "--since-cursor"
-	// claudeInboxStaleMarker matches the old hook command so stale installs can
-	// be detected and rewritten to the current format on next `gg doctor`.
+	// BUG-083: the v1 hook never injected — it grepped for the non-compact header
+	// 'INBOX (N unread)' but under env.GG_AGENT the inbox auto-compacts to
+	// 'inbox — N unread', and '--role "${GG_ROLE:-}"' filtered to an empty role
+	// (plus --advance-cursor errored when GG_ROLE was unset). v2 greps the digit
+	// regardless of header style, only passes --role when GG_ROLE is set, and
+	// drops --advance-cursor so a preview never mutates the cursor.
+	claudeInboxCommand          = `OUT=$(gg inbox --peek --since-cursor ${GG_ROLE:+--role "$GG_ROLE"} --include-agents 2>/dev/null); printf '%s' "$OUT" | grep -qE '[1-9][0-9]* unread' && jq -n --arg ctx "$OUT" '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:$ctx}}' || true # gg-inbox-hook-v2`
+	claudeInboxCommandMarker    = "gg-inbox-hook-v2"
+	// claudeInboxStaleMarker matches any older hook command (v1 included) so
+	// stale installs are detected and rewritten to the current format on next
+	// `gg doctor --install-agent-hooks`.
 	claudeInboxStaleMarker      = "gg inbox"
 	claudeGSDGuardCommand       = "gg gsd-guard"
 	claudeGSDGuardCommandMarker = "gg gsd-guard"

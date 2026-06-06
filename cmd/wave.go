@@ -24,14 +24,14 @@ They live in Memgraph only — no Qdrant collection is created.
 }
 
 var (
-	waveAddName       string
-	waveAddGoal       string
-	waveAddStart      string
-	waveAddEnd        string
-	waveAddStatus     string
-	waveListActive    bool
-	waveAssignWaveID  string
-	waveMigrateApply  bool
+	waveAddName      string
+	waveAddGoal      string
+	waveAddStart     string
+	waveAddEnd       string
+	waveAddStatus    string
+	waveListActive   bool
+	waveAssignWaveID string
+	waveMigrateApply bool
 )
 
 func init() {
@@ -282,4 +282,3 @@ func loadGraph() (*graph.Client, error) {
 	}
 	return graph.New(&cfg.Memgraph, cfg.ProjectID)
 }
-

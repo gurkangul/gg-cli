@@ -295,7 +295,9 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 		}
 		return false
 	}())
-	if !shortExplicit {
+	// BUG-074: only a full (non-compact) read proves hydration. Compact/--short
+	// drop reasons/details, so they must not satisfy the hydration gate.
+	if !shortExplicit && !isCompactActive(cmd) {
 		recordTaskFullHydration(t.ID)
 	}
 

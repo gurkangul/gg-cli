@@ -16,7 +16,7 @@ type fakeInboxChecker struct {
 	err      error
 }
 
-func (f *fakeInboxChecker) GetInbox(_ context.Context, role string, _ bool) ([]store.Message, error) {
+func (f *fakeInboxChecker) GetInbox(_ context.Context, role string, _ bool, _ string) ([]store.Message, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

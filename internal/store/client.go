@@ -26,8 +26,8 @@ const (
 	collSuffixMessages    = "messages"
 	collSuffixRejections  = "rejections"
 	collSuffixDiscussions = "discussions"
-	collSuffixNotes = "notes"
-	collSuffixBugs  = "bugs"
+	collSuffixNotes       = "notes"
+	collSuffixBugs        = "bugs"
 
 	VectorSize = 768 // nomic-embed-text dimension
 )
@@ -79,8 +79,8 @@ func (c *Client) collTasks() string       { return c.projectID + "-" + collSuffi
 func (c *Client) collMessages() string    { return c.projectID + "-" + collSuffixMessages }
 func (c *Client) collRejections() string  { return c.projectID + "-" + collSuffixRejections }
 func (c *Client) collDiscussions() string { return c.projectID + "-" + collSuffixDiscussions }
-func (c *Client) collNotes() string { return c.projectID + "-" + collSuffixNotes }
-func (c *Client) collBugs() string  { return c.projectID + "-" + collSuffixBugs }
+func (c *Client) collNotes() string       { return c.projectID + "-" + collSuffixNotes }
+func (c *Client) collBugs() string        { return c.projectID + "-" + collSuffixBugs }
 
 // CollectionStatus reports which of the expected Qdrant collections are
 // present vs. missing for this project. It returns (present, missing, error).

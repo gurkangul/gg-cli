@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -18,8 +19,9 @@ type Message struct {
 	FromRole  string
 	ToRole    string
 	Content   string
-	Audience  string // "all" | "human" | "agents"
-	Read      bool
+	Audience  string   // "all" | "human" | "agents"
+	Read      bool     // legacy global dismiss (read by everyone)
+	ReadBy    []string // BUG-082: per-recipient read set, keyed by reader identity
 	TaskID    string
 	CreatedAt string
 }
@@ -42,8 +44,10 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 		"content":    m.Content,
 		"audience":   audience,
 		"read":       false,
+		"read_by":    toAnySlice(nil),
 		"task_id":    m.TaskID,
 		"created_at": m.CreatedAt,
+		"version":    int64(1),
 	}
 	if err := brain.Append(c.dataDir, "messages", m.ID, m.FromRole, rawPayload); err != nil {
 		return fmt.Errorf("brain jsonl write: %w", err)
@@ -74,20 +78,28 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 	return nil
 }
 
-// GetInbox returns unread messages. When humanOnly is true, messages with
-// audience="agents" are excluded (human-facing inbox view).
-func (c *Client) GetInbox(ctx context.Context, role string, humanOnly bool) ([]Message, error) {
-	conditions := []*qdrant.Condition{
-		qdrant.NewMatchBool("read", false),
-	}
+// GetInbox returns messages unread by reader. When humanOnly is true, messages
+// with audience="agents" are excluded (human-facing inbox view).
+//
+// BUG-082: read-state is per-recipient. A message is hidden from reader only
+// when it carries the legacy global read=true flag OR reader appears in its
+// per-recipient read_by set. reader="" means an anonymous/preview view (status,
+// next) that never consumes another agent's message — it sees everything not
+// globally dismissed.
+func (c *Client) GetInbox(ctx context.Context, role string, humanOnly bool, reader string) ([]Message, error) {
+	conditions := []*qdrant.Condition{}
 	if role != "" {
 		conditions = append(conditions, qdrant.NewMatchKeyword("to_role", role))
 	}
 	filter := &qdrant.Filter{Must: conditions}
+	// Exclude legacy globally-dismissed messages and, for an identified reader,
+	// messages already in that reader's read_by set.
+	filter.MustNot = []*qdrant.Condition{qdrant.NewMatchBool("read", true)}
+	if reader != "" {
+		filter.MustNot = append(filter.MustNot, qdrant.NewMatchKeyword("read_by", reader))
+	}
 	if humanOnly {
-		filter.MustNot = []*qdrant.Condition{
-			qdrant.NewMatchKeyword("audience", "agents"),
-		}
+		filter.MustNot = append(filter.MustNot, qdrant.NewMatchKeyword("audience", "agents"))
 	}
 
 	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
@@ -133,8 +145,8 @@ func (c *Client) ListMessagesSince(ctx context.Context, since time.Time) ([]Mess
 	return out, nil
 }
 
-func (c *Client) DismissAll(ctx context.Context, role string) (int, error) {
-	msgs, err := c.GetInbox(ctx, role, false)
+func (c *Client) DismissAll(ctx context.Context, role, reader string) (int, error) {
+	msgs, err := c.GetInbox(ctx, role, false, reader)
 	if err != nil {
 		return 0, err
 	}
@@ -145,21 +157,57 @@ func (c *Client) DismissAll(ctx context.Context, role string) (int, error) {
 	for i, m := range msgs {
 		ids[i] = m.ID
 	}
-	if err := c.MarkMessagesRead(ctx, ids); err != nil {
+	if err := c.MarkMessagesRead(ctx, ids, reader); err != nil {
 		return 0, err
 	}
 	return len(msgs), nil
 }
 
-func (c *Client) MarkMessagesRead(ctx context.Context, ids []string) error {
+// MarkMessagesRead marks messages read for reader.
+//
+// BUG-082: when reader is identified (a GG_AGENT), the read is recorded in the
+// per-recipient read_by set (JSONL-first via applyBrainMutation) so it does NOT
+// consume the message for other recipients. An empty reader falls back to the
+// legacy global read=true flag (anonymous/operator dismiss visible to everyone).
+func (c *Client) MarkMessagesRead(ctx context.Context, ids []string, reader string) error {
 	if len(ids) == 0 {
 		return nil
 	}
+	if reader == "" {
+		return c.markMessagesGloballyRead(ctx, ids)
+	}
+	for _, id := range ids {
+		err := c.applyBrainMutation(ctx, "messages", c.collMessages(), OutboxKindMessage, id, "", func(raw map[string]any) error {
+			readers := anyStringList(raw["read_by"])
+			for _, r := range readers {
+				if r == reader {
+					return errMutationNoop
+				}
+			}
+			raw["read_by"] = toAnySlice(append(readers, reader))
+			return nil
+		})
+		switch {
+		case errors.Is(err, errMutationNoop), errors.Is(err, ErrRecordNotFound):
+			// Already read by this reader, or message only in Qdrant with no
+			// brain entry — nothing to persist.
+			continue
+		case err != nil:
+			return err
+		}
+	}
+	return nil
+}
+
+// errMutationNoop lets an apply func signal "no change needed" so
+// applyBrainMutation can be skipped without writing a redundant JSONL line.
+var errMutationNoop = errors.New("mutation noop")
+
+func (c *Client) markMessagesGloballyRead(ctx context.Context, ids []string) error {
 	pointIDs := make([]*qdrant.PointId, len(ids))
 	for i, id := range ids {
 		pointIDs[i] = qdrant.NewID(id)
 	}
-
 	wait := true
 	readVal, _ := qdrant.NewValue(true)
 	_, err := c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
@@ -186,6 +234,7 @@ func messageFromRetrieved(p *qdrant.RetrievedPoint) Message {
 		Content:   pay["content"].GetStringValue(),
 		Audience:  audience,
 		Read:      pay["read"].GetBoolValue(),
+		ReadBy:    extractStringList(pay["read_by"]),
 		TaskID:    pay["task_id"].GetStringValue(),
 		CreatedAt: pay["created_at"].GetStringValue(),
 	}

@@ -79,7 +79,6 @@ func (c *Client) allocBugID(ctx context.Context) (string, error) {
 	return fmt.Sprintf("BUG-%03d", n), nil
 }
 
-
 // maxBugIDFromBrainJSONL scans .gg/brain/bugs.jsonl for the highest numeric
 // suffix. Used as a Qdrant-free bootstrap for allocBugID.
 // Returns 0 when the file is absent or empty.
