@@ -28,6 +28,7 @@ gg record "text" [flags]
 
 ```
       --decision-status string         decision lifecycle status: active, superseded, rejected (default "active")
+      --evidence string                how this was verified (commands run, live smoke, source ref) — empty surfaces as [unverified]
       --from string                    author/role recording this (defaults to $GG_ROLE)
   -h, --help                           help for record
       --implements string              TASK-X that implements this decision (writes Memgraph edge)
