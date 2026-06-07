@@ -153,6 +153,13 @@ func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs 
 			if dec.Reason != "" {
 				fmt.Fprintf(w, "    Reason: %s\n", dec.Reason)
 			}
+			// BUG-086: surface evidence so a verified fact is distinguishable from
+			// an unverified claim.
+			if dec.Evidence != "" {
+				fmt.Fprintf(w, "    Evidence: %s\n", dec.Evidence)
+			} else {
+				fmt.Fprintln(w, "    [unverified]")
+			}
 			if len(dec.Tags) > 0 {
 				fmt.Fprintf(w, "    Tags: %s\n", strings.Join(dec.Tags, ", "))
 			}

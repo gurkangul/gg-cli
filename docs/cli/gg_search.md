@@ -20,10 +20,11 @@ gg search "query" [flags]
 ### Options
 
 ```
-      --compact          one line per item — drops reasons/tags/author to preserve agent context window
-  -h, --help             help for search
-      --include-linked   also search read-only linked projects from .gg/config.yaml
-      --limit uint       max results to return (default 5)
+      --compact              one line per item — drops reasons/tags/author to preserve agent context window
+  -h, --help                 help for search
+      --include-linked       also search read-only linked projects from .gg/config.yaml
+      --include-superseded   include superseded/rejected decisions and fixed/wontfix bugs in results
+      --limit uint           max results to return (default 5)
 ```
 
 ### Options inherited from parent commands

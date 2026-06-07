@@ -41,6 +41,7 @@ var (
 	taskListCompact     bool
 	taskGetCompact      bool
 	taskGetShort        bool
+	taskGetFull         bool
 	taskGetWithCtx      bool
 )
 
@@ -53,6 +54,7 @@ func init() {
 	taskListCmd.Flags().BoolVar(&taskListCompact, "compact", false, "one line per task — drops author + block-reason detail to preserve agent context window")
 	taskGetCmd.Flags().BoolVar(&taskGetCompact, "compact", false, "one line summary — drops detail/tags/author to preserve agent context window")
 	taskGetCmd.Flags().BoolVar(&taskGetShort, "short", false, "one line summary (alias for --compact)")
+	taskGetCmd.Flags().BoolVar(&taskGetFull, "full", false, "force full detail even under agent auto-compact; records the hydration proof needed by ready-for-live/done/block")
 	taskGetCmd.Flags().BoolVar(&taskGetWithCtx, "with-context", false, "append === Related Context === block with top-3 semantically related items from the knowledge base")
 	taskCmd.AddCommand(taskListCmd)
 	taskCmd.AddCommand(taskGetCmd)

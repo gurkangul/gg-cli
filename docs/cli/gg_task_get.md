@@ -10,6 +10,7 @@ gg task get TASK-ID [flags]
 
 ```
       --compact        one line summary — drops detail/tags/author to preserve agent context window
+      --full           force full detail even under agent auto-compact; records the hydration proof needed by ready-for-live/done/block
   -h, --help           help for get
       --review         render the reviewer handoff packet (alias for gg task packet TASK-ID)
       --short          one line summary (alias for --compact)

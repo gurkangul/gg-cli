@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.31] - 2026-06-07
+
+Found during a full end-to-end command QA sweep.
+
+### Fixed
+
+- **Task lifecycle was unsatisfiable for agents** (BUG-050 regression): under
+  `GG_AGENT` the inbox/`task get` auto-compacts, and the BUG-074 fix stopped
+  compact reads from recording a hydration proof — so `ready-for-live` / `done` /
+  `block` always refused with "no recent full task detail read" and there was no
+  in-flow override. Added `gg task get TASK-X --full`, which forces a full
+  (non-compact) render even under agent auto-compact and records the hydration
+  proof; the gate error messages now point at it. Bugs were unaffected
+  (`gg bug triage` records hydration unconditionally).
+- **Decision evidence was stored but never shown** (BUG-086, completes BUG-071):
+  `gg record --evidence` persisted evidence but no renderer displayed it. The
+  full context render now shows `Evidence: …`, and marks decisions with no
+  evidence as `[unverified]` (evidence was already present in `--json`).
+
+### Notes
+
+- v0.3.30's critical search fix (BUG-085) is included here; its release publish
+  was blocked by a transient GitHub 504.
+
 ## [0.3.30] - 2026-06-07
 
 ### Fixed

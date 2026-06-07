@@ -233,7 +233,10 @@ gg impact src/auth.go --compact  # what breaks if I change this?
 **Drop `--compact` only when you need the body:**
 - Reading a decision's *reason* before citing or contradicting it
 - Fetching the *full detail* of a task you're about to work on:
-  `gg task get TASK-042` (no flag → full output)
+  `gg task get TASK-042 --full` — agents auto-compact, so pass `--full` to force
+  the full body AND record the hydration proof that
+  `ready-for-live`/`done`/`block` require (a plain `gg task get` auto-compacts
+  for agents and will NOT satisfy the gate).
 
 `gg status` surfaces compact adoption (`Compact  N calls, X KB saved`).
 Skipping `--compact` on scans inflates the agent's context spend and
@@ -295,13 +298,15 @@ uses gg-managed tasks:
 7. Claim it with an owner lease and status broadcast:
    `gg task start TASK-XXX --owner "$GG_AGENT" --lease 30m`
    `gg tell "all" "TASK-XXX started by $GG_AGENT ($GG_ROLE)" --from "$GG_ROLE" --audience agents --task TASK-XXX`
-8. Hydrate before work: `gg task get TASK-XXX` and
-   `gg context --for-task TASK-XXX`.
+8. Hydrate before work: `gg task get TASK-XXX --full` and
+   `gg context --for-task TASK-XXX`. (`--full` is required for agents — a plain
+   `gg task get` auto-compacts and does not record the hydration proof.)
 9. Before editing each source file, run `gg impact <file> --compact`.
 10. Work in the native tool of choice and test. Renew long leases with
     `gg task renew TASK-XXX --owner "$GG_AGENT" --lease 30m`.
 11. Implementers do **not** close tasks in this project. After local verification, run
-    `gg task get TASK-XXX` (required hydration; `gg context` alone is not enough), then
+    `gg task get TASK-XXX --full` (required hydration; `--full` forces the full read
+    for agents, and `gg context` alone is not enough), then
     `gg task ready-for-live TASK-XXX --plan "Reviewer: inspect diff and rerun smoke. Evidence: commands=<cmds run>; live=<smoke result>; impact=<files checked with gg impact>; gaps=<none|known gap>; artifacts=<paths>" --from "$GG_ROLE"`
     and `gg tell reviewer "TASK-XXX ready. Evidence: commands run: <cmds>; live smoke: <result>; impacted files: <files>; known gaps: <none|gap>; artifacts: <paths>" --from "$GG_ROLE" --task TASK-XXX`.
 12. Release only when abandoning or handing off unfinished `in_progress` work:

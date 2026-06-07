@@ -59,6 +59,12 @@ const (
 // debugging.
 func isCompactActive(cmd *cobra.Command) bool {
 	if cmd != nil {
+		// BUG-050: --full forces a full (non-compact) render, overriding both an
+		// explicit --compact and agent auto-compact. It is the in-flow way for an
+		// agent to do a hydration-grade read of a single record.
+		if f := cmd.Flags().Lookup("full"); f != nil && f.Changed && f.Value.String() == "true" {
+			return false
+		}
 		if f := cmd.Flags().Lookup("compact"); f != nil && f.Changed {
 			return f.Value.String() == "true"
 		}

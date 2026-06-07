@@ -64,7 +64,7 @@ func checkTaskHydrationGate(runtimeDir, taskID, action string, now time.Time) *E
 			Code: ExitVerifyFailed,
 			Message: fmt.Sprintf(
 				"durable task-context gate could not verify full detail for %s before %s: %v\n"+
-					"Run 'gg task get %s' to record the full task context needed by reviewers, then retry.",
+					"Run 'gg task get %s --full' to record the full task context needed by reviewers, then retry.",
 				taskID, action, err, taskID),
 		}
 	}
@@ -83,9 +83,9 @@ func checkTaskHydrationGate(runtimeDir, taskID, action string, now time.Time) *E
 
 func taskHydrationInstruction(action, taskID string) string {
 	if action == "task ready-for-live" {
-		return fmt.Sprintf("Run 'gg task get %s' before ready-for-live so the handoff evidence is grounded in the full task detail; 'gg context --for-task %s' alone is not enough.", taskID, taskID)
+		return fmt.Sprintf("Run 'gg task get %s --full' before ready-for-live so the handoff evidence is grounded in the full task detail; a compact read or 'gg context --for-task %s' alone is not enough (agents auto-compact, so --full is required to record the hydration proof).", taskID, taskID)
 	}
-	return fmt.Sprintf("Compact/list/search output is an index view, not source-of-truth; reviewers may miss acceptance criteria or prior context. Run 'gg task get %s' and read the full detail before retrying.", taskID)
+	return fmt.Sprintf("Compact/list/search output is an index view, not source-of-truth; reviewers may miss acceptance criteria or prior context. Run 'gg task get %s --full' and read the full detail before retrying (agents auto-compact, so --full is required).", taskID)
 }
 
 func enforceTaskHydrationGate(w io.Writer, cache *hookConfig, taskID, action, bypassGate string) error {
