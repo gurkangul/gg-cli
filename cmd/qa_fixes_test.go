@@ -55,3 +55,22 @@ func TestContextRender_ShowsEvidenceAndUnverified(t *testing.T) {
 		t.Errorf("no-evidence decision must render [unverified]:\n%s", out)
 	}
 }
+
+// QA follow-up: project orientation must drop test/scrubber fixture notes.
+func TestFilterFixtureNotes(t *testing.T) {
+	in := []store.Note{
+		{Text: "real architectural observation about caching"},
+		{Text: "SMOKE-TEST-DO-NOT-USE: fake key sk-test-AAAA"},
+		{Text: "test banner"},
+		{Text: "[GSD] Slice M001/S01 pending"},
+	}
+	out := filterFixtureNotes(in)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 real notes, got %d: %+v", len(out), out)
+	}
+	for _, n := range out {
+		if strings.Contains(strings.ToLower(n.Text), "smoke-test") || strings.TrimSpace(strings.ToLower(n.Text)) == "test banner" {
+			t.Errorf("fixture note leaked: %q", n.Text)
+		}
+	}
+}

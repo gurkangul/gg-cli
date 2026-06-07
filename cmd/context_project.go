@@ -57,7 +57,7 @@ func runProjectContext(cmd *cobra.Command) error {
 		bundle.discErr = err
 	}
 	if notes, err := d.store.ListNotes(ctx, limit); err == nil {
-		bundle.notes = notes
+		bundle.notes = filterFixtureNotes(notes)
 	} else {
 		bundle.noteErr = err
 	}
@@ -145,4 +145,28 @@ func trimProjectDiscussions(in []store.Discussion, limit int) []store.Discussion
 		return in[:limit]
 	}
 	return in
+}
+
+// filterFixtureNotes drops notes that are clearly test/scrubber scaffolding so
+// they don't pollute a fresh agent's project orientation. These markers are
+// unambiguous gg-internal fixtures (secret-scanner canaries, smoke-test
+// banners); real project notes never carry them. Scoped to the project-overview
+// context — `gg search`/`gg context <topic>` still return everything.
+func filterFixtureNotes(notes []store.Note) []store.Note {
+	markers := []string{"smoke-test", "do-not-use", "scrubber verification", "sk-test-aaaa"}
+	out := notes[:0]
+	for _, n := range notes {
+		body := strings.ToLower(n.Text)
+		drop := strings.TrimSpace(body) == "test banner"
+		for _, m := range markers {
+			if strings.Contains(body, m) {
+				drop = true
+				break
+			}
+		}
+		if !drop {
+			out = append(out, n)
+		}
+	}
+	return out
 }

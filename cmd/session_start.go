@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -262,29 +263,26 @@ func emitBypassDelta(cfg *config.Config) {
 	for _, e := range entries {
 		perGate[e.Gate]++
 	}
-	fmt.Printf("─── BYPASS AUDIT (last 7d): %d %s ───\n", len(entries), pluralize("bypass", len(entries)))
-	for g, n := range perGate {
-		fmt.Printf("  %-40s %d\n", g, n)
+	// BUG-086 QA-followup: keep the briefing lean for a fresh agent — a per-gate
+	// count answers "which gate is under pressure?"; the per-entry task/actor
+	// detail is operator-grade and lives behind `gg doctor --bypass-audit`.
+	fmt.Printf("─── BYPASS AUDIT (last 7d): %d %s — ", len(entries), pluralize("bypass", len(entries)))
+	gates := make([]string, 0, len(perGate))
+	for g := range perGate {
+		gates = append(gates, g)
 	}
-	// Show the most recent 3 entries inline so the operator has concrete
-	// task/actor context without running `gg doctor --bypass-audit` first.
-	fmt.Println()
-	last := entries
-	if len(last) > 3 {
-		last = last[len(last)-3:]
-	}
-	for _, e := range last {
-		taskInfo := e.TaskID
-		if taskInfo == "" {
-			taskInfo = "(no task)"
+	sort.Slice(gates, func(i, j int) bool {
+		if perGate[gates[i]] != perGate[gates[j]] {
+			return perGate[gates[i]] > perGate[gates[j]]
 		}
-		actor := e.Actor
-		if actor == "" {
-			actor = "(unknown)"
-		}
-		fmt.Printf("  %s  %-28s  %-18s  %s\n", shortDate(e.TS), e.Gate, taskInfo, actor)
+		return gates[i] < gates[j]
+	})
+	parts := make([]string, 0, len(gates))
+	for _, g := range gates {
+		parts = append(parts, fmt.Sprintf("%s×%d", g, perGate[g]))
 	}
-	fmt.Println("  (full log: gg doctor --bypass-audit)")
+	fmt.Printf("%s ───\n", strings.Join(parts, ", "))
+	fmt.Println("  detail: gg doctor --bypass-audit")
 	fmt.Println()
 }
 
