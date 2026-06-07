@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.30] - 2026-06-07
+
+### Fixed
+
+- **Critical: semantic search returned zero results** (BUG-085). The
+  non-degraded-vector filter used Qdrant `is_null` on `gg_vector_degraded` as a
+  MUST condition across every `Search*` query, but normal records never set that
+  key and `is_null` matches only keys that exist and are explicitly null — so the
+  filter excluded the entire brain and `gg search` / `gg context` returned
+  nothing. Switched to `is_empty` (matches missing/null/empty), which keeps
+  normal records and excludes only explicitly-degraded ones. Regression covered
+  by TestSearchExcludesOnlyDegraded_Integration. Affected v0.3.27–v0.3.29.
+
 ## [0.3.29] - 2026-06-07
 
 ### Changed

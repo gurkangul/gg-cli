@@ -88,8 +88,14 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 // nonDegradedVectorCondition excludes zero-vector records from semantic search.
 // Records tagged gg_vector_degraded have a zero vector and produce meaningless
 // cosine similarity scores — they must not appear in ranked results.
+//
+// BUG-085: this MUST use is_empty, not is_null. Normal records never set the
+// gg_vector_degraded key at all, and Qdrant's is_null matches only keys that
+// exist AND are explicitly null — so is_null excluded EVERY record and made all
+// Search* queries return zero results. is_empty matches missing/null/empty, so
+// it keeps normal records and drops only the explicitly-marked degraded ones.
 func nonDegradedVectorCondition() *qdrant.Condition {
-	return qdrant.NewIsNull("gg_vector_degraded")
+	return qdrant.NewIsEmpty("gg_vector_degraded")
 }
 
 // ActiveDecisionsFilter returns the Qdrant filter that restricts results to
