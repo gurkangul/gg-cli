@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.32] - 2026-06-07
+
+Institutional-memory layer — gg moves from an append-only ledger toward a
+self-distilling project memory a new agent can inherit.
+
+### Added
+
+- **`gg canon`** (TASK-468): the agent-distilled "what every dev must know" layer.
+  `gg canon gather` dumps the raw material (active decisions, rejections,
+  fixed-bug root causes); `gg canon set <area> "…"` stores durable per-area
+  knowledge; `gg canon show` prints it; session-start injects it (like RULES) so
+  every new agent starts with it. Stored at `.gg/canon.jsonl` (outside the
+  export-managed `brain/` dir). Distillation is agent-driven (no-network: no
+  cloud LLM).
+- **`gg record --pin`** (TASK-469): pinned decisions surface first in the project
+  overview regardless of age, so important-but-old decisions are never buried by
+  recency. Rendered with 📌.
+- **`gg inbox archive`** (TASK-470): retire stale `audience=agents` status
+  broadcasts from the inbox (kept in JSONL, forward-only) so it stops bloating.
+- **`gg doctor --install-index-hooks`** (TASK-471): opt-in pre-push + post-merge
+  git hooks that run `gg index --changed` to keep the local CodeGraph fresh.
+  Foreground + non-blocking, not a daemon.
+
+### Changed
+
+- session-start bypass audit collapsed to a one-line per-gate summary; project
+  orientation no longer surfaces test/scrubber fixture notes.
+
 ## [0.3.31] - 2026-06-07
 
 Found during a full end-to-end command QA sweep.
