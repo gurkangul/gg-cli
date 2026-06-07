@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.29] - 2026-06-07
+
+### Changed
+
+- Document the v0.3.27 capabilities in the agent-facing docs so agents adopt them:
+  `gg record --evidence` in the durable-memory contract and `AGENTS.md`, plus
+  per-session identity auto-derivation and per-recipient inbox notes in the
+  orientation guidance. Propagates to registered projects via `gg system sync`.
+
 ## [0.3.28] - 2026-06-07
 
 Ships local fixes that were committed in parallel and merged with the v0.3.27
