@@ -48,3 +48,4 @@ gg inbox [flags]
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
+* [gg inbox archive](gg_inbox_archive.md)	 - Archive stale agent-to-agent status broadcasts (out of inbox, kept in JSONL)

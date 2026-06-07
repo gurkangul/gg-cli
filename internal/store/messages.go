@@ -92,9 +92,12 @@ func (c *Client) GetInbox(ctx context.Context, role string, humanOnly bool, read
 		conditions = append(conditions, qdrant.NewMatchKeyword("to_role", role))
 	}
 	filter := &qdrant.Filter{Must: conditions}
-	// Exclude legacy globally-dismissed messages and, for an identified reader,
-	// messages already in that reader's read_by set.
-	filter.MustNot = []*qdrant.Condition{qdrant.NewMatchBool("read", true)}
+	// Exclude legacy globally-dismissed messages, archived broadcasts (TASK-470),
+	// and, for an identified reader, messages already in that reader's read_by set.
+	filter.MustNot = []*qdrant.Condition{
+		qdrant.NewMatchBool("read", true),
+		qdrant.NewMatchBool("archived", true),
+	}
 	if reader != "" {
 		filter.MustNot = append(filter.MustNot, qdrant.NewMatchKeyword("read_by", reader))
 	}
@@ -202,6 +205,47 @@ func (c *Client) MarkMessagesRead(ctx context.Context, ids []string, reader stri
 // errMutationNoop lets an apply func signal "no change needed" so
 // applyBrainMutation can be skipped without writing a redundant JSONL line.
 var errMutationNoop = errors.New("mutation noop")
+
+// ArchiveAgentBroadcasts marks ephemeral audience="agents" status broadcasts
+// older than `before` as archived (TASK-470). Archived messages drop out of the
+// default inbox but stay in JSONL (forward-only — never deleted), so the inbox
+// stops bloating with stale "TASK-N started/done" pings. Returns the count.
+func (c *Client) ArchiveAgentBroadcasts(ctx context.Context, before time.Time) (int, error) {
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+		CollectionName: c.collMessages(),
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Filter: &qdrant.Filter{Must: []*qdrant.Condition{
+			qdrant.NewMatchKeyword("audience", "agents"),
+		}},
+	})
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, p := range points {
+		pay := p.GetPayload()
+		if pay["archived"].GetBoolValue() {
+			continue
+		}
+		ts, perr := time.Parse(time.RFC3339, pay["created_at"].GetStringValue())
+		if perr != nil || !ts.Before(before) {
+			continue
+		}
+		id := p.GetId().GetUuid()
+		mErr := c.applyBrainMutation(ctx, "messages", c.collMessages(), OutboxKindMessage, id, "", func(raw map[string]any) error {
+			raw["archived"] = true
+			return nil
+		})
+		if errors.Is(mErr, ErrRecordNotFound) {
+			continue
+		}
+		if mErr != nil {
+			return n, mErr
+		}
+		n++
+	}
+	return n, nil
+}
 
 func (c *Client) markMessagesGloballyRead(ctx context.Context, ids []string) error {
 	pointIDs := make([]*qdrant.PointId, len(ids))
