@@ -46,6 +46,7 @@ gg doctor [flags]
       --history                  with --check-secrets: run full git history scan only (gitleaks detect)
       --install-agent-hooks      write agent-side config (SessionStart hook / alwaysApply rule / read-preload) to enforce gg usage
       --install-agents-md        inject the gg tracker-rules managed block into AGENTS.md (idempotent; alias for --install-agent-hooks --agent codex)
+      --install-index-hooks      install opt-in git hooks (pre-push + post-merge) that run gg index --changed to keep the local CodeGraph fresh; foreground + non-blocking, not a daemon
       --install-indexers         install missing SCIP indexer binaries with maintained installers (scip-go, scip-typescript, scip-python)
       --install-secret-scanner   download and install the pinned gitleaks binary into ~/.gg/bin/gitleaks (checksum-verified)
       --install-task-hooks       install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)

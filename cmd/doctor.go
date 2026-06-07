@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/enforcement"
 	"github.com/gurkangul/gg-cli/internal/session"
 )
@@ -42,6 +43,7 @@ var (
 	doctorWipeBrain            bool
 	doctorWipeBrainYes         bool
 	doctorInstallTaskHooks     bool
+	doctorInstallIndexHooks    bool
 	doctorSyncArtifacts        bool
 	doctorSyncApply            bool
 	doctorBypassAudit          bool
@@ -84,6 +86,8 @@ func init() {
 		"with --wipe-brain: skip interactive confirmation")
 	doctorCmd.Flags().BoolVar(&doctorInstallTaskHooks, "install-task-hooks", false,
 		"install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)")
+	doctorCmd.Flags().BoolVar(&doctorInstallIndexHooks, "install-index-hooks", false,
+		"install opt-in git hooks (pre-push + post-merge) that run gg index --changed to keep the local CodeGraph fresh; foreground + non-blocking, not a daemon")
 	doctorCmd.Flags().BoolVar(&doctorInstallAgentsMD, "install-agents-md", false,
 		"inject the gg tracker-rules managed block into AGENTS.md (idempotent; alias for --install-agent-hooks --agent codex)")
 	doctorCmd.Flags().BoolVar(&doctorSyncArtifacts, "sync-artifacts", false,
@@ -211,6 +215,15 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 			return nil
 		}
 		return runDoctorInstallTaskHooks()
+	}
+	if doctorInstallIndexHooks {
+		root, err := config.FindRoot()
+		if err != nil {
+			return err
+		}
+		fmt.Println("GG Doctor — Install CodeGraph index hooks")
+		fmt.Println(strings.Repeat("─", 50))
+		return installGitIndexHooks(root)
 	}
 	if doctorSyncArtifacts {
 		return runDoctorSyncArtifacts(doctorSyncApply)
