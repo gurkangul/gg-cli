@@ -32,8 +32,28 @@ func runProjectContext(cmd *cobra.Command) error {
 
 	limit := projectContextLimit()
 	var bundle contextBundle
-	if decisions, err := d.store.ListDecisions(ctx, limit, false); err == nil {
-		bundle.decisions = decisions
+	// TASK-469: pinned decisions surface first, regardless of age, so important
+	// decisions are never buried by recency. Then fill with recent active ones.
+	var decs []store.Decision
+	seenDec := map[string]bool{}
+	if pinned, perr := d.store.ListPinnedDecisions(ctx); perr == nil {
+		for _, p := range pinned {
+			if !seenDec[p.ID] {
+				seenDec[p.ID] = true
+				decs = append(decs, p)
+			}
+		}
+	}
+	if recent, err := d.store.ListDecisions(ctx, limit, false); err == nil {
+		for _, r := range recent {
+			if !seenDec[r.ID] {
+				seenDec[r.ID] = true
+				decs = append(decs, r)
+			}
+		}
+		bundle.decisions = decs
+	} else if len(decs) > 0 {
+		bundle.decisions = decs
 	} else {
 		bundle.decErr = err
 	}

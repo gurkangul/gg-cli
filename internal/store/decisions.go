@@ -22,6 +22,7 @@ type Decision struct {
 	TaskID               string
 	Author               string // agent role or user that recorded this decision (e.g. "developer")
 	Evidence             string // BUG-071: how this was verified (commands/smoke/source) — empty = unverified
+	Pinned               bool   // TASK-469: surfaced first in overview regardless of age (important-old won't sink)
 	CreatedAt            string
 	SemanticScore        float32 `json:"semantic_score,omitempty"`
 	VectorDegraded       bool    `json:"vector_degraded,omitempty"`
@@ -50,6 +51,7 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 		"task_id":               d.TaskID,
 		"author":                d.Author,
 		"evidence":              d.Evidence,
+		"pinned":                d.Pinned,
 		"created_at":            d.CreatedAt,
 		"version":               int64(1),
 	}
@@ -168,6 +170,28 @@ func (c *Client) ListDecisions(ctx context.Context, limit int, includeAll bool) 
 	return decisions, nil
 }
 
+// ListPinnedDecisions returns active, pinned decisions (TASK-469). The project
+// overview surfaces these first so important decisions never sink under recency.
+func (c *Client) ListPinnedDecisions(ctx context.Context) ([]Decision, error) {
+	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+		CollectionName: c.collDecisions(),
+		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Filter: &qdrant.Filter{Must: []*qdrant.Condition{
+			qdrant.NewMatchKeyword("status", "active"),
+			qdrant.NewMatchBool("pinned", true),
+		}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	decisions := make([]Decision, 0, len(points))
+	for _, p := range points {
+		decisions = append(decisions, decisionFromPayload(p.GetId().GetUuid(), p.GetPayload()))
+	}
+	sortDecisionsDesc(decisions)
+	return decisions, nil
+}
+
 // ListDecisionsByTaskID returns every decision whose TaskID field matches
 // the given ID exactly. Semantic near-matches are deliberately excluded —
 // callers (notably the decision-capture gate) need structural proof that the
@@ -216,6 +240,7 @@ func decisionFromPayload(id string, pay map[string]*qdrant.Value) Decision {
 		TaskID:               pay["task_id"].GetStringValue(),
 		Author:               pay["author"].GetStringValue(),
 		Evidence:             pay["evidence"].GetStringValue(),
+		Pinned:               pay["pinned"].GetBoolValue(),
 		CreatedAt:            pay["created_at"].GetStringValue(),
 		VectorDegraded:       pay["gg_vector_degraded"].GetStringValue() != "",
 	}

@@ -149,7 +149,11 @@ func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs 
 	if len(bundle.decisions) > 0 {
 		fmt.Fprintln(w, "\nDECISIONS:")
 		for _, dec := range bundle.decisions {
-			fmt.Fprintf(w, "  • %s[%s] %s\n", sourcePrefix(bundle.sources.get("decision", dec.ID)), shortDate(dec.CreatedAt), dec.Text)
+			pin := ""
+			if dec.Pinned {
+				pin = "📌 "
+			}
+			fmt.Fprintf(w, "  • %s%s[%s] %s\n", pin, sourcePrefix(bundle.sources.get("decision", dec.ID)), shortDate(dec.CreatedAt), dec.Text)
 			if dec.Reason != "" {
 				fmt.Fprintf(w, "    Reason: %s\n", dec.Reason)
 			}

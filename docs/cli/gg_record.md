@@ -32,6 +32,7 @@ gg record "text" [flags]
       --from string                    author/role recording this (defaults to $GG_ROLE)
   -h, --help                           help for record
       --implements string              TASK-X that implements this decision (writes Memgraph edge)
+      --pin                            pin this decision so it surfaces first in gg context overview regardless of age (for canon-grade, must-not-be-buried decisions)
       --reason string                  why this decision was made (or rejected)
       --rejected-alternatives string   comma-separated approaches that were considered and rejected
       --rejects string                 decision UUID superseded by this one (writes Memgraph edge)
