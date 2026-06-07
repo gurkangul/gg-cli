@@ -18,6 +18,7 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg audit](gg_audit.md)	 - Session mutation audit (called by PostToolUse and Stop hooks)
 * [gg brain](gg_brain.md)	 - Portable brain snapshot (export / import / status)
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
+* [gg canon](gg_canon.md)	 - Distilled institutional memory — the durable knowledge every agent should start with
 * [gg check](gg_check.md)	 - Pre-push health check — open tasks, unresolved discussions
 * [gg config](gg_config.md)	 - Inspect or modify project configuration
 * [gg context](gg_context.md)	 - Fetch a unified context bundle for the project, a topic, or a task

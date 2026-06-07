@@ -18,6 +18,7 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/projectstate"
 	"github.com/gurkangul/gg-cli/internal/session"
+	"github.com/gurkangul/gg-cli/internal/store"
 )
 
 var (
@@ -106,6 +107,9 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 		br.ProjectID = cfg.ProjectID
 		loadedCfg = cfg
 	}
+	// Resolve the .gg dir NOW, before any resync step can change the working
+	// directory, so the canon read targets this project (TASK-468).
+	canonGGDir, _ := config.GGDir()
 
 	if err := br.Render(os.Stdout); err != nil {
 		return err
@@ -143,6 +147,10 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// Code graph notice: warn agents when impact data is missing/stale, but do
 	// not run an implicit refresh. The explicit safe path is gg doctor --fix-index.
 	emitCodeGraphNotice(cmd.Context(), os.Stdout, loadedCfg)
+
+	// TASK-468: inject the distilled project canon so a fresh agent starts with
+	// the senior-dev knowledge, not just a searchable ledger. Best-effort.
+	emitProjectCanon(canonGGDir)
 
 	// Inline `gg status` so the briefing carries the full current-state
 	// snapshot the agent would otherwise have to fetch separately. runStatus
@@ -239,6 +247,24 @@ func writeVersionDelta(w io.Writer, runtimeDir, curr string) {
 		fmt.Fprintln(w, "… (see CHANGELOG.md for full details)")
 	}
 	fmt.Fprintln(w)
+}
+
+// emitProjectCanon prints the distilled institutional-memory canon (TASK-468) so
+// a fresh agent inherits the senior-dev knowledge at session start. Best-effort
+// and JSONL-backed (works even when Qdrant is down); silent when no canon exists.
+func emitProjectCanon(ggDir string) {
+	if ggDir == "" {
+		return
+	}
+	entries, err := store.ReadCanon(ggDir)
+	if err != nil || len(entries) == 0 {
+		return
+	}
+	fmt.Println("─── PROJECT CANON (distilled institutional memory) ───")
+	for _, e := range entries {
+		fmt.Printf("## %s\n%s\n", e.Area, e.Text)
+	}
+	fmt.Println()
 }
 
 // emitBypassDelta surfaces a warning when GG_ENFORCEMENT=off bypasses have
