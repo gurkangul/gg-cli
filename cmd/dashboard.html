@@ -51,6 +51,12 @@
   .hint{color:var(--dim);font-size:12px;margin-bottom:14px}
   .canon h3{color:var(--accent);font-size:12px;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px}
   .canon .line{font-size:13px;padding:3px 0;border-bottom:1px solid var(--panel2)}
+  .kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:10px}
+  .kcol{flex:1;min-width:200px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px}
+  .khead{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);margin-bottom:10px;display:flex;justify-content:space-between}
+  .khead span{background:var(--panel2);border-radius:20px;padding:0 8px;color:var(--fg)}
+  .krow{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin-bottom:7px}
+  .kempty{color:var(--border);text-align:center;padding:14px;font-size:12px}
 </style>
 </head>
 <body>
@@ -63,9 +69,10 @@
   <button data-tab="overview" class="active">Overview</button>
   <button data-tab="search">Live Search</button>
   <button data-tab="decisions">Decisions</button>
-  <button data-tab="tasks">Work</button>
+  <button data-tab="tasks">Work (Kanban)</button>
   <button data-tab="bugs">Bugs</button>
-  <button data-tab="telemetry">Telemetry</button>
+  <button data-tab="files">Files</button>
+  <button data-tab="telemetry">Context &amp; Activity</button>
 </nav>
 <main id="view"><div class="empty">loading…</div></main>
 
@@ -129,19 +136,70 @@ const tabs = {
     return `<h2>${(d||[]).length} active decisions (noise-filtered)</h2>`+((d||[]).map(decisionRow).join('')||'<div class="empty">none</div>');
   },
   async tasks(){
-    const t = await j('/api/tasks');
-    return `<h2>${(t||[]).length} tasks</h2>`+((t||[]).map(x=>`<div class="row"><div class="meta"><span>${esc(x.ID)}</span><span class="st-${esc(x.Status)}">${esc(x.Status)}</span>${x.Priority?'<span class="pill">'+esc(x.Priority)+'</span>':''}${x.Owner?'<span>@'+esc(x.Owner)+'</span>':''}</div><div class="txt">${esc(x.Title)}</div></div>`).join('')||'<div class="empty">none</div>');
+    const t = await j('/api/tasks')||[];
+    const cols=[['pending','Pending'],['in_progress','In Progress'],['ready_for_live','Ready for Live'],['blocked','Blocked'],['done','Done']];
+    const by={}; cols.forEach(c=>by[c[0]]=[]); (t||[]).forEach(x=>{(by[x.Status]=by[x.Status]||[]).push(x)});
+    const card=(x)=>`<div class="krow"><div class="meta"><span>${esc(x.ID)}</span>${x.Priority?'<span class="pill">'+esc(x.Priority)+'</span>':''}${x.Owner?'<span>@'+esc(x.Owner)+'</span>':''}</div><div class="txt">${esc(x.Title)}</div></div>`;
+    return `<div class="hint">${(t||[]).length} tasks across the lifecycle (same data as <code>gg task list</code>).</div>
+    <div class="kanban">${cols.map(([k,l])=>`<div class="kcol"><div class="khead">${l} <span>${(by[k]||[]).length}</span></div>${(by[k]||[]).map(card).join('')||'<div class="kempty">—</div>'}</div>`).join('')}</div>`;
+  },
+  async files(){
+    const f = await j('/api/files')||[];
+    const kb=(b)=>b>=1048576?(b/1048576).toFixed(1)+'MB':(b/1024).toFixed(0)+'KB';
+    return `<div class="hint">The brain is plain JSONL on disk — the source of truth (Qdrant/Memgraph are derived indexes rebuilt from these). Click a file to see its most recent records.</div>
+    <div id="filelist">${(f||[]).map(x=>`<div class="row" style="cursor:pointer" onclick="viewFile('${esc(x.name)}')"><div class="meta"><span>.gg/${x.name==='canon'?'':'brain/'}${esc(x.name)}.jsonl</span></div><div class="txt">${x.records} records · ${kb(x.bytes)}</div></div>`).join('')||'<div class="empty">no files</div>'}</div>
+    <div id="fileview"></div>`;
   },
   async bugs(){
     const b = await j('/api/bugs');
     return `<h2>${(b||[]).length} bugs</h2>`+((b||[]).map(x=>`<div class="row"><div class="meta"><span>${esc(x.ID)}</span><span class="st-${esc(x.Status)}">${esc(x.Status)}</span><span class="sev-${esc(x.Severity)}">${esc(x.Severity)}</span></div><div class="txt">${esc(x.Title)}</div>${x.RootCause?`<div class="why">root cause: ${esc(x.RootCause)}</div>`:''}</div>`).join('')||'<div class="empty">none</div>');
   },
   async telemetry(){
-    const t = await j('/api/telemetry');
-    return `<h2>Telemetry (last 7d)</h2><div class="hint">Context economy + agent activity recorded locally.</div><pre>${esc(JSON.stringify(t,null,2))}</pre>`;
+    const t = await j('/api/telemetry'); const w=t.weekly||{}; const s=t.sessions||{};
+    const tok=(n)=>n==null?'0':(Math.abs(n)>=1000?(n/1000).toFixed(1)+'K':String(n));
+    const card=(n,l,sub)=>`<div class="card"><div class="n">${n}</div><div class="l">${l}</div>${sub?`<div class="sub">${sub}</div>`:''}</div>`;
+    const agentPct = w.total? Math.round((w.agent_calls/w.total)*100):0;
+    const refetchPct = w.compact_calls? Math.round((w.hydration_calls/w.compact_calls)*100):0;
+    const bar=(label,val,max,fmt,color)=>`<div style="display:flex;align-items:center;gap:10px;margin:5px 0"><div style="width:170px;color:var(--dim);font-size:12px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label)}</div><div style="flex:1;background:var(--panel2);border-radius:4px;overflow:hidden;height:16px"><i style="display:block;height:100%;width:${Math.max(2,Math.round(val/max*100))}%;background:${color||'var(--accent)'}"></i></div><div style="width:64px;font-size:12px">${fmt?fmt(val):val}</div></div>`;
+    const vc=w.verb_counts||{}; const verbs=Object.entries(vc).sort((a,b)=>b[1]-a[1]).slice(0,12); const vmax=Math.max(1,...verbs.map(v=>v[1]));
+    const cbv=w.compact_by_verb_bytes_saved||{}; const saved=Object.entries(cbv).sort((a,b)=>b[1]-a[1]).slice(0,8); const smax=Math.max(1,...saved.map(v=>v[1]));
+    const fix=(x)=>typeof x==='number'?x.toFixed(0):(x||0);
+    return `<div class="hint">All recorded locally — nothing leaves your machine. This is gg's context economy and exactly what it's doing.</div>
+    <div class="cards">
+      ${card(tok(w.net_tokens_saved),'net tokens saved','compact − hydration')}
+      ${card(tok(w.compact_tokens_saved),'compact saved','display truncation')}
+      ${card(w.total||0,'gg calls (7d)',agentPct+'% agent-initiated')}
+      ${card(refetchPct+'%','hydration re-fetch',refetchPct>50?'⚠ drop-list aggressive':'healthy')}
+    </div>
+    <h2>What gg is actually doing (top commands, 7d)</h2>
+    ${verbs.map(([k,v])=>bar(k,v,vmax)).join('')||'<div class="empty">no activity yet</div>'}
+    <h2>Where compaction saves the most</h2>
+    ${saved.map(([k,v])=>bar(k,v,smax,(b)=>tok(Math.round(b/4))+' tok','linear-gradient(90deg,var(--accent),var(--green))')).join('')||'<div class="empty">none</div>'}
+    <h2>Session context pressure (7d)</h2>
+    <div class="cards">
+      ${card(s.ActiveSessions||0,'active sessions')}
+      ${card(fix(s.P50CumulativeKB)+'KB','P50 / session','median compact output')}
+      ${card(fix(s.P95CumulativeKB)+'KB','P95 / session')}
+      ${card(s.OverThresholdCount||0,'over 100KB','high-pressure sessions')}
+    </div>
+    <h2>How gg feeds context — 3 tiers (the full project is never loaded)</h2>
+    <div class="canon">
+      <div class="line">🟢 <b>session-start</b> — orientation: compact canon + status — <b>~2.1K tok</b> (once/session, optional)</div>
+      <div class="line">🔵 <b>gg context --for-task TASK-X</b> — task + deps + related decisions — <b>~300 tok</b></div>
+      <div class="line">🟣 <b>gg search "q"</b> — semantic top-K over the whole archive — <b>~150 tok</b></div>
+      <div class="line" style="color:var(--dim)">The full ledger (hundreds of records) stays on disk/Qdrant — pulled in slices on demand, never dumped into the context window.</div>
+    </div>`;
   },
 };
 
+async function viewFile(name){
+  const box=document.getElementById('fileview'); if(!box) return;
+  box.innerHTML='<div class="empty">loading '+esc(name)+'…</div>';
+  const r=await j('/api/file?name='+encodeURIComponent(name)+'&tail=20');
+  const recs=(r.records||[]).slice().reverse();
+  box.innerHTML=`<h2>${esc(name)} — last ${recs.length} records (raw, newest first)</h2>`+
+    (recs.map(x=>`<pre>${esc(JSON.stringify(x.payload||x,null,2))}</pre>`).join('')||'<div class="empty">empty</div>');
+}
 async function runSearch(){
   const q = document.getElementById('q').value.trim(); if(!q) return;
   const box = document.getElementById('sresult'); box.innerHTML='<div class="empty">searching…</div>';

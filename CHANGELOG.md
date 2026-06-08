@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.37] - 2026-06-08
+
+Dashboard v1 complete (still the embedded vanilla build; the React SPA is next).
+
+### Added
+
+- **Kanban board** (`Work` tab) — tasks laid out in lifecycle columns
+  (pending / in progress / ready for live / blocked / done).
+- **Files tab** — browse the raw JSONL source-of-truth stores (name, record
+  count, size) and view the most recent records of any store. Path-traversal
+  guarded; new `/api/files` and `/api/file` endpoints.
+- **Context & Activity tab** — the telemetry view is now visual: net/compact
+  tokens saved, a per-command activity breakdown ("what gg is actually doing"),
+  compaction savings by verb, session context-pressure, and the 3-tier context
+  model (session-start / for-task / search) so the context economy is legible.
+
 ## [0.3.36] - 2026-06-08
 
 A way to *see* the project brain — and how it works.
