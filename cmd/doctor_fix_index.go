@@ -23,6 +23,21 @@ func runDoctorFixIndex(cmd *cobra.Command) error {
 	}
 	ggDir := filepath.Join(root, config.DirName)
 
+	// TASK-473 / BUG-088: heal the brain relationship graph too. The code-graph
+	// refresh below can early-return when already fresh, so reconcile the brain
+	// (Decision/Task nodes + DECIDES/DEPENDS_ON edges) first, on every explicit
+	// repair. Reuses the proven reindex paths; best-effort — failures warn, never
+	// block the code-graph repair.
+	if cfg.Memgraph.URI != "" {
+		fmt.Println("Reconciling brain graph (tasks → decisions)…")
+		if rErr := runTaskReindex(cmd, nil); rErr != nil {
+			fmt.Printf("warning: brain task reconcile: %v\n", rErr)
+		}
+		if rErr := runBrainReindexDecisions(cmd, nil); rErr != nil {
+			fmt.Printf("warning: brain decision reconcile: %v\n", rErr)
+		}
+	}
+
 	statusCtx, statusCancel := withTimeout(cmd.Context())
 	status := collectCodeGraphStatus(statusCtx, root, ggDir, cfg)
 	statusCancel()
