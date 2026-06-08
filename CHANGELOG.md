@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.33] - 2026-06-08
+
+Regression-gate repair found while closing the institutional-memory tasks
+through the gates (no bypass) — the pre-task-done repro gate was silently broken
+for every recent bug.
+
+### Fixed
+
+- **Regression gate ran `_test.go` repros as shell scripts.** `gg bug run-repros`
+  executed every registered repro via `sh <path>`. The 19 newer bugs
+  (BUG-062..086) register the locking `*_test.go` as their repro, so
+  `sh foo_test.go` failed in ~3ms — the `90-bug-repros` pre-task-done hook
+  reported 19 false failures and blocked every task close. A `*_test.go` repro
+  now runs via `go test -run ^(Test…)$ <dir>` scoped to that file's tests; shell
+  repros still run via `sh`. All 82 repros pass.
+
+### Changed
+
+- **Cleared lint debt (17 → 9 golangci issues).** Removed 3 dead functions
+  (`impactGraphFreshnessWarnings`, `goInstallGG`, `hasCodeGraphSourceFiles`) and
+  rewrote 5 gocritic if-else chains to `switch`/`else if` (impact, index_status,
+  task_list, task_create). Pure refactor, no behavior change — restores a green
+  `60-lint-gate`.
+
 ## [0.3.32] - 2026-06-07
 
 Institutional-memory layer — gg moves from an append-only ledger toward a
