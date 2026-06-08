@@ -79,6 +79,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	mux.HandleFunc("/api/file", srv.handleFile)
 	mux.HandleFunc("/api/graph", srv.handleGraph)
 	mux.HandleFunc("/api/messages", srv.handleMessages)
+	mux.HandleFunc("/api/stream", srv.handleStream)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", servePort)
 	ln, err := net.Listen("tcp", addr)
@@ -384,6 +385,64 @@ func (s *dashboardServer) handleGraph(w http.ResponseWriter, r *http.Request) {
 		addNode(b.ID, "Bug", b.Title)
 	}
 	writeJSONResp(w, map[string]any{"nodes": nodes, "edges": edges})
+}
+
+// handleStream is a Server-Sent Events endpoint (TASK-476) that emits a "change"
+// event whenever the JSONL brain changes, so the dashboard auto-refreshes as
+// agents write. It polls the brain dir's mtime while a browser is connected and
+// stops when the request context is cancelled — a foreground stream, not a
+// daemon (consistent with gg serve's no-daemon model).
+func (s *dashboardServer) handleStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ggDir, err := config.GGDir()
+	if err != nil {
+		return
+	}
+	brain := filepath.Join(ggDir, "brain")
+	last := brainMtime(brain)
+	fmt.Fprint(w, "event: ready\ndata: ok\n\n")
+	flusher.Flush()
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			if m := brainMtime(brain); m != last {
+				last = m
+				fmt.Fprintf(w, "event: change\ndata: %d\n\n", m)
+				flusher.Flush()
+			}
+		}
+	}
+}
+
+// brainMtime returns the newest modification time (unix nano) across the brain
+// JSONL files — a cheap change signal for the SSE stream.
+func brainMtime(dir string) int64 {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	var newest int64
+	for _, e := range entries {
+		if info, ierr := e.Info(); ierr == nil {
+			if t := info.ModTime().UnixNano(); t > newest {
+				newest = t
+			}
+		}
+	}
+	return newest
 }
 
 // handleMessages returns the recent agent-to-agent message stream (newest first,

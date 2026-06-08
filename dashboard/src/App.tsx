@@ -75,9 +75,9 @@ const H2 = ({ children }: { children: React.ReactNode }) => (
 )
 const Empty = ({ children }: { children: React.ReactNode }) => <div className="text-dim text-center py-8">{children}</div>
 
-function OverviewTab() {
+function OverviewTab({ rev }: { rev: number }) {
   const [o, setO] = useState<Overview | null>(null)
-  useEffect(() => { api.overview().then(setO) }, [])
+  useEffect(() => { api.overview().then(setO) }, [rev])
   if (!o) return <Empty>loading…</Empty>
   const c = o.counts || {}
   return (
@@ -158,9 +158,9 @@ function SearchTab() {
   )
 }
 
-function DecisionsTab() {
+function DecisionsTab({ rev }: { rev: number }) {
   const [d, setD] = useState<Decision[]>([])
-  useEffect(() => { api.decisions().then((x) => setD(x || [])) }, [])
+  useEffect(() => { api.decisions().then((x) => setD(x || [])) }, [rev])
   return (
     <>
       <H2>{d.length} active decisions (noise-filtered)</H2>
@@ -172,9 +172,9 @@ function DecisionsTab() {
 const COLS: [string, string][] = [
   ['pending', 'Pending'], ['in_progress', 'In Progress'], ['ready_for_live', 'Ready for Live'], ['blocked', 'Blocked'], ['done', 'Done'],
 ]
-function WorkTab() {
+function WorkTab({ rev }: { rev: number }) {
   const [t, setT] = useState<Task[]>([])
-  useEffect(() => { api.tasks().then((x) => setT(x || [])) }, [])
+  useEffect(() => { api.tasks().then((x) => setT(x || [])) }, [rev])
   const by: Record<string, Task[]> = {}
   COLS.forEach(([k]) => (by[k] = []))
   t.forEach((x) => (by[x.Status] = by[x.Status] || []).push(x))
@@ -206,9 +206,9 @@ function WorkTab() {
   )
 }
 
-function BugsTab() {
+function BugsTab({ rev }: { rev: number }) {
   const [b, setB] = useState<Bug[]>([])
-  useEffect(() => { api.bugs().then((x) => setB(x || [])) }, [])
+  useEffect(() => { api.bugs().then((x) => setB(x || [])) }, [rev])
   const sev = (s?: string) => (s === 'high' || s === 'critical' ? 'text-bad' : s === 'medium' ? 'text-warn' : 'text-dim')
   return (
     <>
@@ -229,10 +229,10 @@ function BugsTab() {
 }
 
 const AUD_COLOR: Record<string, string> = { agents: '#bc8cff', human: '#3fb950', all: '#8b949e' }
-function MessagesTab() {
+function MessagesTab({ rev }: { rev: number }) {
   const [m, setM] = useState<Message[]>([])
   const [loaded, setLoaded] = useState(false)
-  useEffect(() => { api.messages().then((x) => { setM(x || []); setLoaded(true) }) }, [])
+  useEffect(() => { api.messages().then((x) => { setM(x || []); setLoaded(true) }) }, [rev])
   if (!loaded) return <Empty>loading…</Empty>
   return (
     <>
@@ -455,13 +455,22 @@ function ContextTab() {
 export default function App() {
   const [tab, setTab] = useState<Tab>('Overview')
   const [project, setProject] = useState('')
+  const [rev, setRev] = useState(0)
+  const [live, setLive] = useState(false)
   useEffect(() => { api.overview().then((o) => setProject(o.project || '')) }, [])
+  useEffect(() => {
+    const es = new EventSource('/api/stream')
+    es.addEventListener('ready', () => setLive(true))
+    es.addEventListener('change', () => setRev((v) => v + 1))
+    es.onerror = () => setLive(false)
+    return () => es.close()
+  }, [])
   return (
     <div className="min-h-full">
       <header className="flex items-center gap-3.5 px-6 py-3.5 border-b border-border bg-panel">
         <h1 className="text-base font-semibold m-0"><span className="text-accent font-bold">gg</span> · project brain</h1>
         <span className="text-dim text-xs">{project}</span>
-        <span className="ml-auto text-[11px] text-good border border-border rounded-full px-2.5 py-0.5">● localhost · read-only</span>
+        <span className="ml-auto text-[11px] border border-border rounded-full px-2.5 py-0.5" style={{ color: live ? '#3fb950' : '#8b949e' }}>{live ? '● live' : '○ connecting'} · localhost · read-only</span>
       </header>
       <nav className="flex gap-1 px-6 py-2.5 border-b border-border bg-panel overflow-x-auto">
         {TABS.map((t) => (
@@ -480,12 +489,12 @@ export default function App() {
       <main className="p-6 max-w-[1100px] mx-auto">
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            {tab === 'Overview' && <OverviewTab />}
+            {tab === 'Overview' && <OverviewTab rev={rev} />}
             {tab === 'Live Search' && <SearchTab />}
-            {tab === 'Decisions' && <DecisionsTab />}
-            {tab === 'Work' && <WorkTab />}
-            {tab === 'Bugs' && <BugsTab />}
-            {tab === 'Messages' && <MessagesTab />}
+            {tab === 'Decisions' && <DecisionsTab rev={rev} />}
+            {tab === 'Work' && <WorkTab rev={rev} />}
+            {tab === 'Bugs' && <BugsTab rev={rev} />}
+            {tab === 'Messages' && <MessagesTab rev={rev} />}
             {tab === 'Graph' && <GraphTab />}
             {tab === 'Files' && <FilesTab />}
             {tab === 'Context' && <ContextTab />}
