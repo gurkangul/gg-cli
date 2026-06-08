@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-06-08
+
+### Fixed
+
+- **BUG-089: module/hook discovery descended into `.claude/worktrees`.** Nested
+  git worktrees there carry a `go.mod`, so discovery treated them as project
+  submodules and installed stale per-worktree hooks
+  (`10-go-verify-.claude-worktrees-agent-*.sh`) that regenerated after every
+  delete/sync. Added `.claude` to `DefaultHookInstallSkipDirs` (covers hook
+  install + code-graph discovery) and removed the leftover worktree.
+
 ## [0.4.5] - 2026-06-08
 
 ### Added
