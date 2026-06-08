@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RTooltip } from 'recharts'
 import { api, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData, type Message, type WriteResult } from './api'
 
-const TABS = ['Overview', 'Live Search', 'Decisions', 'Work', 'Bugs', 'Messages', 'Graph', 'Files', 'Context'] as const
+const TABS = ['Overview', 'Live Search', 'Decisions', 'Work', 'Bugs', 'Messages', 'Graph', 'Files', 'Context', 'About'] as const
 type Tab = (typeof TABS)[number]
 
 const date = (s?: string) => (s ? s.slice(0, 10) : '')
@@ -534,6 +534,72 @@ function ContextTab() {
   )
 }
 
+function AboutSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-6">
+      <h2 className="text-xs uppercase tracking-wider text-accent font-semibold mb-2">{title}</h2>
+      <div className="text-[13.5px] leading-relaxed text-fg">{children}</div>
+    </div>
+  )
+}
+
+function AboutTab() {
+  const [o, setO] = useState<Overview | null>(null)
+  useEffect(() => { api.overview().then(setO) }, [])
+  const c = o?.counts || {}
+  return (
+    <div className="max-w-[820px]">
+      <div className="text-[16px] leading-relaxed mb-2">
+        <b className="text-accent">gg</b> is a <b>per-project brain</b> — a shared, durable memory for the AI agents
+        and humans working on this codebase. Every agent reads the same memory and inherits what a senior dev here
+        already knows, instead of re-deriving it each session.
+      </div>
+      <div className="grid gap-3 my-5" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))' }}>
+        <Card n={c.decisions ?? 0} label="decisions" />
+        <Card n={c.tasks ?? 0} label="tasks" />
+        <Card n={c.bugsFixed ?? 0} label="bugs fixed" />
+        <Card n={c.rejections ?? 0} label="rejections" />
+      </div>
+
+      <AboutSection title="What it records">
+        Decisions, tasks, bugs, and agent-to-agent messages — append-only and never deleted. Plain JSONL files under{' '}
+        <code>.gg/brain/</code> are the source of truth; everything else is a rebuildable index.
+      </AboutSection>
+      <AboutSection title="How it recalls">
+        Ask a question and semantic search (Ollama embeddings → Qdrant vector search) returns the right records — even
+        ones from months ago. A code + relationship graph (Memgraph) links decisions ↔ tasks ↔ bugs and the codebase.
+      </AboutSection>
+      <AboutSection title="The canon (auto-distilled)">
+        gg continuously distills the most important decisions, rejected approaches, and fixed-bug lessons into a{' '}
+        <b>canon</b> a newcomer reads at session-start — no manual curation. Important records surface by pins, tags, or
+        how often they're referenced; routine noise is filtered out.
+      </AboutSection>
+      <AboutSection title="Quality gates — “done means verified”">
+        A task closes only when it's actually verified: acceptance-criteria attestation, review-convergence evidence, an
+        independent verifier (separation of duties), and regression repros that must pass. No silent “done”.
+      </AboutSection>
+      <AboutSection title="Context economy (3 tiers)">
+        The full ledger never loads into an agent's context. It's pulled in slices: <b>session-start</b> orientation
+        (~2K tokens), <b>gg context --for-task</b> (~300), <b>gg search</b> (~150). See the Context tab for live numbers.
+      </AboutSection>
+      <AboutSection title="Architecture">
+        A single Go binary, fully offline (<b>no-network</b>), with <b>no background daemon</b>. Local Docker provides
+        Qdrant (vectors), Ollama (embeddings), and Memgraph (graph). This dashboard is served foreground on 127.0.0.1
+        only — it stops when you press Ctrl-C.
+      </AboutSection>
+      <AboutSection title="Key commands">
+        <pre className="bg-panel border border-border rounded-lg p-3.5 text-xs text-dim overflow-auto mt-1">{`gg session-start --agent <id> --role <role>   # orient (reads the canon)
+gg search "<question>"                          # semantic recall
+gg context --for-task TASK-N                    # task-scoped context
+gg record "<decision>" --reason "…"             # remember a decision
+gg task create / start / ready-for-live / done  # tracked, gated work
+gg onboard                                      # the full newcomer briefing
+gg serve                                        # this dashboard`}</pre>
+      </AboutSection>
+    </div>
+  )
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('Overview')
   const [project, setProject] = useState('')
@@ -581,6 +647,7 @@ export default function App() {
             {tab === 'Graph' && <GraphTab />}
             {tab === 'Files' && <FilesTab />}
             {tab === 'Context' && <ContextTab />}
+            {tab === 'About' && <AboutTab />}
           </motion.div>
         </AnimatePresence>
       </main>
