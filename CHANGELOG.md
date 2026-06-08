@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.36] - 2026-06-08
+
+A way to *see* the project brain — and how it works.
+
+### Added
+
+- **`gg serve` — local dashboard.** A FOREGROUND, localhost-only web UI for the
+  project brain. Not a daemon: it binds 127.0.0.1 only, runs until Ctrl-C, and is
+  read-only (consistent with the no-daemon / no-network architecture; same
+  precedent as foreground `--watch`). Anyone who ran `gg init` opens it with
+  `gg serve` (`--port`, `--no-open` flags). The dashboard is a single embedded
+  page with no external assets (works fully offline). Views:
+  - **Overview** — counts + the auto-derived canon + recent decisions.
+  - **Live Search** — type a question and watch how gg answers it: the query is
+    embedded into a 768-dim vector (Ollama), then Qdrant returns nearest records
+    by cosine similarity, with embed/search timings and per-result score bars —
+    the same path an agent's `gg search` takes.
+  - **Decisions / Work / Bugs** — browse the memory (noise-filtered).
+  - **Telemetry** — local context-economy and activity stats.
+
 ## [0.3.35] - 2026-06-08
 
 Usability polish for the per-project brain — make the current form excellent to
