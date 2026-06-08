@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-06-08
+
+### Added
+
+- **Dashboard write actions** (TASK-477) — `gg serve --write` enables compose
+  forms (record decision on Overview, create task on Work) that run gg
+  in-process; read-only by default, POST + same-origin guarded.
+- **`gg onboard`** (TASK-478) — prints the distilled newcomer briefing (canon +
+  invariants + workflow) and its token cost; the "30-second senior-dev" proof.
+- **Task detail panel + list filters** (TASK-479) — click a task in Work to see
+  its full detail, dependencies and linked decisions; Decisions/Bugs tabs gain a
+  client-side filter.
+
 ## [0.4.7] - 2026-06-08
 
 ### Added
