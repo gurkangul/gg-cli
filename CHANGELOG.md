@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-06-08
+
+### Fixed
+
+- **BUG-088: brain→Memgraph relationship edges not synced per-project.**
+  `gg brain reindex-decisions` replayed Decision nodes but never rebuilt the
+  DECIDES edges, so after any Memgraph rebuild the per-project relationship graph
+  was effectively empty (gg-cli had 1 brain edge vs 278 links in the store). It
+  now reconciles the DECIDES edge from each decision's structured `TaskID`. Run
+  `gg task reindex` then `gg brain reindex-decisions` to heal — verified live on
+  gg-cli: 1 → DECIDES 194 + DEPENDS_ON 72.
+
 ## [0.4.3] - 2026-06-08
 
 Dashboard Phase 2 visual depth (TASK-472).
