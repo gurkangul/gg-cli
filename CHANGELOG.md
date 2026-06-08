@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-06-08
+
+### Added
+
+- **Dashboard: Messages tab + `/api/messages`** (TASK-474) — the recent
+  agent-to-agent message stream (from→to, audience, task link, read state, time),
+  newest-first. Surfaces how agents coordinate; previously invisible despite
+  thousands of stored messages.
+
+### Changed
+
+- **`gg doctor --fix-index` now reconciles the brain graph too** (TASK-473) —
+  it reindexes Decision/Task nodes + DECIDES/DEPENDS_ON edges before refreshing
+  the code graph, so the standard repair entry point (and the index git-hooks
+  that call it) keep Memgraph's brain relationships in sync — moving BUG-088's
+  reconcile toward automatic.
+
 ## [0.4.4] - 2026-06-08
 
 ### Fixed
