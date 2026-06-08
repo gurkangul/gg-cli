@@ -79,7 +79,7 @@ type HookInstallConfig struct {
 // get wired as pre-task-done hooks — a broken workspace there blocks every
 // `gg task done` via npm ci -w failure (BUG-017).
 var DefaultHookInstallSkipDirs = []string{
-	".git", ".gg", ".gsd",
+	".git", ".gg", ".gsd", ".claude",
 	"node_modules", "vendor", "dist", "build",
 	"_bmad", "_bmad-output",
 	// Framework build outputs (carry synthetic package.json files):
