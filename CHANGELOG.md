@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-06-08
+
+Dashboard Phase 2 visual depth (TASK-472).
+
+### Added
+
+- **Context tab: command-mix donut** (Recharts) on top of the existing bars.
+- **Graph: click a node** to open a side panel with the full record and every
+  relationship it participates in (incoming + outgoing, with the connected
+  record's title).
+- **Motion**: tab transitions now fade/slide (framer-motion).
+
 ## [0.4.2] - 2026-06-08
 
 ### Changed

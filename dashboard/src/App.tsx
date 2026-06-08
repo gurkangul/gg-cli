@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import ReactFlow, { Background, Controls, type Node, type Edge } from 'reactflow'
 import 'reactflow/dist/style.css'
 import dagre from '@dagrejs/dagre'
+import { motion, AnimatePresence } from 'framer-motion'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RTooltip } from 'recharts'
 import { api, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData } from './api'
 
 const TABS = ['Overview', 'Live Search', 'Decisions', 'Work', 'Bugs', 'Graph', 'Files', 'Context'] as const
@@ -265,9 +267,11 @@ function FilesTab() {
 
 const NODE_COLOR: Record<string, string> = { Decision: '#58a6ff', Task: '#3fb950', Bug: '#f85149', Rejection: '#bc8cff' }
 const EDGE_COLOR: Record<string, string> = { DECIDES: '#58a6ff', DEPENDS_ON: '#3fb950', REJECTS: '#bc8cff', BLOCKS: '#f85149', IMPLEMENTS: '#d29922' }
+const PIE_COLORS = ['#58a6ff', '#3fb950', '#bc8cff', '#d29922', '#f85149', '#39c5cf', '#db61a2', '#8b949e', '#6e7681', '#a371f7', '#56d364', '#e3b341']
 
 function GraphTab() {
   const [data, setData] = useState<GraphData | null>(null)
+  const [sel, setSel] = useState<string | null>(null)
   useEffect(() => { api.graph().then(setData) }, [])
   if (!data) return <Empty>loading…</Empty>
   if (data.error) return <Empty>{data.error}</Empty>
@@ -308,17 +312,44 @@ function GraphTab() {
     labelStyle: { fill: '#8b949e', fontSize: 10 },
     labelBgStyle: { fill: '#0d1117' },
   }))
+  const byId = new Map(data.nodes.map((n) => [n.id, n]))
+  const title = (id: string) => {
+    const n = byId.get(id)
+    return n ? `${n.label}: ${String(n.properties?.title || n.properties?.text || id).slice(0, 50)}` : id
+  }
+  const selNode = sel ? byId.get(sel) : null
+  const selEdges = sel ? rawEdges.filter((e) => e.src === sel || e.dst === sel) : []
+
   return (
     <>
       <div className="text-dim text-xs mb-3">
         {nodes.length} connected records · {edges.length} relationships — decision→task (DECIDES), task→task (DEPENDS_ON),
-        decision→rejected (REJECTS). The 37k-symbol code graph is intentionally excluded to keep this legible.
+        decision→rejected (REJECTS). Click a node for details. The 37k-symbol code graph is excluded to keep this legible.
       </div>
-      <div style={{ height: '72vh' }} className="bg-panel border border-border rounded-xl overflow-hidden">
-        <ReactFlow nodes={nodes} edges={edges} fitView minZoom={0.1} proOptions={{ hideAttribution: true }}>
+      <div style={{ height: '72vh' }} className="relative bg-panel border border-border rounded-xl overflow-hidden">
+        <ReactFlow nodes={nodes} edges={edges} fitView minZoom={0.1} onNodeClick={(_, n) => setSel(n.id)} proOptions={{ hideAttribution: true }}>
           <Background color="#2a3340" gap={22} />
           <Controls />
         </ReactFlow>
+        {selNode && (
+          <div className="absolute top-3 right-3 w-80 max-h-[90%] overflow-auto bg-bg border border-border rounded-xl p-4 shadow-xl">
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-[11px] uppercase tracking-wide" style={{ color: NODE_COLOR[selNode.label] || '#8b949e' }}>{selNode.label}</span>
+              <button onClick={() => setSel(null)} className="text-dim hover:text-fg text-xs">✕</button>
+            </div>
+            <div className="text-[13px] mb-3">{String(selNode.properties?.title || selNode.properties?.text || selNode.id)}</div>
+            <div className="text-dim text-[11px] uppercase tracking-wide mb-1">{selEdges.length} relationships</div>
+            {selEdges.map((e, i) => (
+              <div key={i} className="text-[12px] py-1 border-b border-panel2">
+                {e.src === sel ? (
+                  <span><span className="text-accent">{e.type}</span> → {title(e.dst)}</span>
+                ) : (
+                  <span>{title(e.src)} <span className="text-accent">{e.type}</span> → this</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   )
@@ -358,6 +389,19 @@ function ContextTab() {
         <Card n={w.total || 0} label="gg calls (7d)" sub={agentPct + '% agent-initiated'} />
         <Card n={refetch + '%'} label="hydration re-fetch" sub={refetch > 50 ? '⚠ drop-list aggressive' : 'healthy'} />
       </div>
+      <H2>Command mix (7d)</H2>
+      {verbs.length ? (
+        <div style={{ height: 260 }} className="bg-panel border border-border rounded-xl p-2">
+          <ResponsiveContainer>
+            <PieChart>
+              <Pie data={verbs.map(([k, v]) => ({ name: k, value: v }))} dataKey="value" nameKey="name" innerRadius={55} outerRadius={95} paddingAngle={2} stroke="#0d1117">
+                {verbs.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+              </Pie>
+              <RTooltip contentStyle={{ background: '#161b22', border: '1px solid #2a3340', borderRadius: 8, color: '#e6edf3' }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      ) : null}
       <H2>What gg is actually doing (top commands, 7d)</H2>
       {verbs.map(([k, v]) => <Bar key={k} label={k} val={v} max={vmax} />)}
       {!verbs.length && <Empty>no activity yet</Empty>}
@@ -407,14 +451,18 @@ export default function App() {
         ))}
       </nav>
       <main className="p-6 max-w-[1100px] mx-auto">
-        {tab === 'Overview' && <OverviewTab />}
-        {tab === 'Live Search' && <SearchTab />}
-        {tab === 'Decisions' && <DecisionsTab />}
-        {tab === 'Work' && <WorkTab />}
-        {tab === 'Bugs' && <BugsTab />}
-        {tab === 'Graph' && <GraphTab />}
-        {tab === 'Files' && <FilesTab />}
-        {tab === 'Context' && <ContextTab />}
+        <AnimatePresence mode="wait">
+          <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+            {tab === 'Overview' && <OverviewTab />}
+            {tab === 'Live Search' && <SearchTab />}
+            {tab === 'Decisions' && <DecisionsTab />}
+            {tab === 'Work' && <WorkTab />}
+            {tab === 'Bugs' && <BugsTab />}
+            {tab === 'Graph' && <GraphTab />}
+            {tab === 'Files' && <FilesTab />}
+            {tab === 'Context' && <ContextTab />}
+          </motion.div>
+        </AnimatePresence>
       </main>
     </div>
   )
