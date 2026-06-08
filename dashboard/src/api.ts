@@ -35,6 +35,8 @@ export type SearchResult = {
   error?: string
 }
 
+export type Message = { ID: string; FromRole: string; ToRole: string; Content: string; Audience: string; Read: boolean; TaskID?: string; CreatedAt: string }
+
 export type GraphNode = { id: string; label: string; properties: Record<string, any> }
 export type GraphEdge = { src: string; dst: string; type: string; properties?: Record<string, any> }
 export type GraphData = { nodes: GraphNode[]; edges: GraphEdge[]; error?: string }
@@ -54,6 +56,7 @@ export const api = {
   decisions: () => get<Decision[]>('/api/decisions'),
   tasks: () => get<Task[]>('/api/tasks'),
   bugs: () => get<Bug[]>('/api/bugs'),
+  messages: () => get<Message[]>('/api/messages'),
   graph: () => get<GraphData>('/api/graph'),
   files: () => get<FileInfo[]>('/api/files'),
   file: (name: string, tail = 20) => get<FileDump>(`/api/file?name=${encodeURIComponent(name)}&tail=${tail}`),

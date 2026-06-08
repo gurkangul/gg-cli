@@ -78,6 +78,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	mux.HandleFunc("/api/files", srv.handleFiles)
 	mux.HandleFunc("/api/file", srv.handleFile)
 	mux.HandleFunc("/api/graph", srv.handleGraph)
+	mux.HandleFunc("/api/messages", srv.handleMessages)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", servePort)
 	ln, err := net.Listen("tcp", addr)
@@ -383,6 +384,22 @@ func (s *dashboardServer) handleGraph(w http.ResponseWriter, r *http.Request) {
 		addNode(b.ID, "Bug", b.Title)
 	}
 	writeJSONResp(w, map[string]any{"nodes": nodes, "edges": edges})
+}
+
+// handleMessages returns the recent agent-to-agent message stream (newest first,
+// capped) so the dashboard can show how agents coordinate.
+func (s *dashboardServer) handleMessages(w http.ResponseWriter, r *http.Request) {
+	since := time.Now().AddDate(0, 0, -30)
+	msgs, err := s.d.store.ListMessagesSince(r.Context(), since)
+	if err != nil {
+		writeJSONResp(w, map[string]any{"error": err.Error()})
+		return
+	}
+	sort.Slice(msgs, func(i, j int) bool { return msgs[i].CreatedAt > msgs[j].CreatedAt })
+	if len(msgs) > 200 {
+		msgs = msgs[:200]
+	}
+	writeJSONResp(w, msgs)
 }
 
 func projectLabel(cfg *config.Config) string {

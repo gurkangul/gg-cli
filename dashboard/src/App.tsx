@@ -4,9 +4,9 @@ import 'reactflow/dist/style.css'
 import dagre from '@dagrejs/dagre'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RTooltip } from 'recharts'
-import { api, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData } from './api'
+import { api, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData, type Message } from './api'
 
-const TABS = ['Overview', 'Live Search', 'Decisions', 'Work', 'Bugs', 'Graph', 'Files', 'Context'] as const
+const TABS = ['Overview', 'Live Search', 'Decisions', 'Work', 'Bugs', 'Messages', 'Graph', 'Files', 'Context'] as const
 type Tab = (typeof TABS)[number]
 
 const date = (s?: string) => (s ? s.slice(0, 10) : '')
@@ -224,6 +224,33 @@ function BugsTab() {
           {x.RootCause && <div className="text-dim text-[12.5px] mt-1">root cause: {x.RootCause}</div>}
         </div>
       ))}
+    </>
+  )
+}
+
+const AUD_COLOR: Record<string, string> = { agents: '#bc8cff', human: '#3fb950', all: '#8b949e' }
+function MessagesTab() {
+  const [m, setM] = useState<Message[]>([])
+  const [loaded, setLoaded] = useState(false)
+  useEffect(() => { api.messages().then((x) => { setM(x || []); setLoaded(true) }) }, [])
+  if (!loaded) return <Empty>loading…</Empty>
+  return (
+    <>
+      <div className="text-dim text-xs mb-3.5">{m.length} most-recent agent-to-agent messages (last 30 days). How agents coordinate — broadcasts, hand-offs, and task pings.</div>
+      {m.map((x) => (
+        <div key={x.ID} className="bg-panel border border-border rounded-lg p-3 mb-2">
+          <div className="flex gap-2.5 flex-wrap items-center text-[11px] mb-1">
+            <span className="text-accent">{x.FromRole || '—'}</span>
+            <span className="text-dim">→ {x.ToRole || 'all'}</span>
+            <span className="text-[10.5px] border border-border rounded-full px-2" style={{ color: AUD_COLOR[x.Audience] || '#8b949e' }}>{x.Audience || 'all'}</span>
+            {x.TaskID && <span className="text-dim">→ {x.TaskID}</span>}
+            {x.Read && <span className="text-good">✓ read</span>}
+            <span className="text-dim ml-auto">{date(x.CreatedAt)}</span>
+          </div>
+          <div className="text-[13.5px] whitespace-pre-wrap">{x.Content}</div>
+        </div>
+      ))}
+      {!m.length && <Empty>no messages yet</Empty>}
     </>
   )
 }
@@ -458,6 +485,7 @@ export default function App() {
             {tab === 'Decisions' && <DecisionsTab />}
             {tab === 'Work' && <WorkTab />}
             {tab === 'Bugs' && <BugsTab />}
+            {tab === 'Messages' && <MessagesTab />}
             {tab === 'Graph' && <GraphTab />}
             {tab === 'Files' && <FilesTab />}
             {tab === 'Context' && <ContextTab />}
