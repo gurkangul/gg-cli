@@ -104,10 +104,11 @@ func autoCanonEntries(ctx context.Context, d *deps, compact bool) []store.CanonE
 	decs, _ := d.store.ListDecisions(ctx, 0, false)
 	rejs, _ := d.store.ListRejections(ctx, 0)
 	bugs, _ := d.store.ListBugs(ctx, "fixed")
+	tasks, _ := d.store.ListTasks(ctx, "")
 	if compact {
-		return store.BuildAutoCanonCompact(decs, rejs, bugs)
+		return store.BuildAutoCanonCompact(decs, rejs, bugs, tasks)
 	}
-	return store.BuildAutoCanon(decs, rejs, bugs)
+	return store.BuildAutoCanon(decs, rejs, bugs, tasks)
 }
 
 func filterCanonArea(entries []store.CanonEntry, want string) []store.CanonEntry {

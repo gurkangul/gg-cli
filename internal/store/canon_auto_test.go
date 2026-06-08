@@ -26,7 +26,7 @@ func TestBuildAutoCanon_FiltersNoiseDedupsKeepsImportant(t *testing.T) {
 	}
 
 	var all strings.Builder
-	for _, e := range BuildAutoCanon(decs, rejs, bugs) {
+	for _, e := range BuildAutoCanon(decs, rejs, bugs, nil) {
 		all.WriteString(e.Area + "\n" + e.Text + "\n")
 	}
 	got := all.String()
@@ -63,7 +63,7 @@ func TestBuildAutoCanon_CapsRoutineKeepsImportant(t *testing.T) {
 	}
 	decs = append(decs, Decision{ID: "imp", Text: "ancient architecture rule", Tags: []string{"architecture"}, Status: "active", CreatedAt: "2000-01-01"})
 
-	entries := BuildAutoCanon(decs, nil, nil)
+	entries := BuildAutoCanon(decs, nil, nil, nil)
 	if len(entries) == 0 {
 		t.Fatal("expected a key-decisions entry")
 	}
@@ -86,7 +86,7 @@ func TestBuildAutoCanonCompact_HardCapsDecisions(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		decs = append(decs, Decision{ID: fmt.Sprintf("rt%d", i), Text: fmt.Sprintf("routine rule %d", i), Status: "active", CreatedAt: fmt.Sprintf("2026-02-%02d", i+1)})
 	}
-	entries := BuildAutoCanonCompact(decs, nil, nil)
+	entries := BuildAutoCanonCompact(decs, nil, nil, nil)
 	if len(entries) == 0 {
 		t.Fatal("expected key-decisions")
 	}
@@ -107,6 +107,27 @@ func TestIsLowSignal_DropsReleaseNotes(t *testing.T) {
 	out := FilterDecisionNoise(in)
 	if len(out) != 1 || out[0].Text != "JSONL is the source of truth" {
 		t.Fatalf("release-note must be filtered, got %+v", out)
+	}
+}
+
+func TestBuildAutoCanon_ReferenceDegreeSurfacesImportant(t *testing.T) {
+	var decs []Decision
+	for i := 0; i < 20; i++ { // recent routine noise to exhaust the cap
+		decs = append(decs, Decision{ID: fmt.Sprintf("r%02d", i), Text: fmt.Sprintf("recent routine %02d", i), Status: "active", CreatedAt: fmt.Sprintf("2026-06-%02d", i+1)})
+	}
+	// Old, unpinned, untagged decision on a heavily-referenced ("hot") task.
+	decs = append(decs, Decision{ID: "imp", Text: "old central decision on a hot task", Status: "active", TaskID: "TASK-1", CreatedAt: "2000-01-01"})
+	decs = append(decs, Decision{ID: "x1", Text: "another decision on task one", Status: "active", TaskID: "TASK-1", CreatedAt: "2026-01-01"})
+	bugs := []Bug{{ID: "BUG-1", Title: "b", TaskID: "TASK-1", Status: "fixed"}}
+	tasks := []Task{{ID: "TASK-2", DependsOn: []string{"TASK-1"}}}
+	// TASK-1 reference degree = 2 decisions + 1 bug + 1 dependent = 4 (>= threshold 3).
+
+	var all strings.Builder
+	for _, e := range BuildAutoCanon(decs, nil, bugs, tasks) {
+		all.WriteString(e.Text + "\n")
+	}
+	if !strings.Contains(all.String(), "old central decision on a hot task") {
+		t.Errorf("reference-degree decision should auto-surface as important:\n%s", all.String())
 	}
 }
 

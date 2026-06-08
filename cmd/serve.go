@@ -157,7 +157,7 @@ func (s *dashboardServer) handleOverview(w http.ResponseWriter, r *http.Request)
 			"bugs": len(bugs), "bugsOpen": openBugs, "bugsFixed": len(fixed),
 			"tasks": len(tasks), "tasksDone": doneTasks, "tasksOpen": openTasks,
 		},
-		"canon":           store.BuildAutoCanon(decs, rejs, fixed),
+		"canon":           store.BuildAutoCanon(decs, rejs, fixed, tasks),
 		"recentDecisions": firstN(store.FilterDecisionNoise(decs), 25),
 	})
 }

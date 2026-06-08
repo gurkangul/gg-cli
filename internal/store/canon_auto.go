@@ -53,8 +53,9 @@ type canonLimits struct {
 
 // BuildAutoCanon returns the full auto-derived canon (gg canon show): every
 // important decision regardless of age, plus the most recent routine ones.
-func BuildAutoCanon(decs []Decision, rejs []Rejection, bugs []Bug) []CanonEntry {
-	return buildAutoCanon(decs, rejs, bugs, canonLimits{
+// tasks are used to compute reference-degree importance (TASK-475).
+func BuildAutoCanon(decs []Decision, rejs []Rejection, bugs []Bug, tasks []Task) []CanonEntry {
+	return buildAutoCanon(decs, rejs, bugs, tasks, canonLimits{
 		decisions: autoCanonDecisionCap, rejects: autoCanonRejectCap,
 		failures: autoCanonFailureCap, width: autoCanonTextWidth,
 	})
@@ -63,16 +64,42 @@ func BuildAutoCanon(decs []Decision, rejs []Rejection, bugs []Bug) []CanonEntry 
 // BuildAutoCanonCompact returns a tighter digest for session-start: a hard total
 // cap on decisions (important first) and shorter lines, so the per-session
 // briefing stays lean. Full depth remains available via `gg canon show`.
-func BuildAutoCanonCompact(decs []Decision, rejs []Rejection, bugs []Bug) []CanonEntry {
-	return buildAutoCanon(decs, rejs, bugs, canonLimits{
+func BuildAutoCanonCompact(decs []Decision, rejs []Rejection, bugs []Bug, tasks []Task) []CanonEntry {
+	return buildAutoCanon(decs, rejs, bugs, tasks, canonLimits{
 		decisions: autoCanonCompactDecisions, rejects: autoCanonCompactRejects,
 		failures: autoCanonCompactFailures, width: autoCanonCompactWidth, hardCap: true,
 	})
 }
 
-func buildAutoCanon(decs []Decision, rejs []Rejection, bugs []Bug, lim canonLimits) []CanonEntry {
+// taskReferenceDegree counts how many records point at each task — decisions and
+// bugs linked to it, plus tasks that depend on it. A decision attached to a
+// heavily-referenced task is on a central, high-impact part of the project, so
+// it is treated as important regardless of age (TASK-475: self-distilling canon
+// — important-old surfaces without anyone manually pinning it).
+func taskReferenceDegree(decs []Decision, bugs []Bug, tasks []Task) map[string]int {
+	ref := map[string]int{}
+	for _, d := range decs {
+		if d.TaskID != "" {
+			ref[d.TaskID]++
+		}
+	}
+	for _, b := range bugs {
+		if b.TaskID != "" {
+			ref[b.TaskID]++
+		}
+	}
+	for _, t := range tasks {
+		for _, dep := range t.DependsOn {
+			ref[dep]++
+		}
+	}
+	return ref
+}
+
+func buildAutoCanon(decs []Decision, rejs []Rejection, bugs []Bug, tasks []Task, lim canonLimits) []CanonEntry {
+	taskRef := taskReferenceDegree(decs, bugs, tasks)
 	var out []CanonEntry
-	if s := autoCanonDecisions(decs, lim); s != "" {
+	if s := autoCanonDecisions(decs, taskRef, lim); s != "" {
 		out = append(out, CanonEntry{Area: "key-decisions", Text: s, Author: "auto"})
 	}
 	if s := autoCanonRejections(rejs, lim); s != "" {
@@ -84,7 +111,11 @@ func buildAutoCanon(decs []Decision, rejs []Rejection, bugs []Bug, lim canonLimi
 	return out
 }
 
-func autoCanonDecisions(decs []Decision, lim canonLimits) string {
+// autoCanonRefThreshold: a decision whose linked task is referenced by at least
+// this many records is treated as important (auto-surfaced) even without a pin.
+const autoCanonRefThreshold = 3
+
+func autoCanonDecisions(decs []Decision, taskRef map[string]int, lim canonLimits) string {
 	seen := map[string]bool{}
 	var important, routine []Decision
 	for _, d := range decs {
@@ -99,7 +130,8 @@ func autoCanonDecisions(decs []Decision, lim canonLimits) string {
 			continue
 		}
 		seen[key] = true
-		if d.Pinned || hasImportantTag(d.Tags) {
+		highlyReferenced := d.TaskID != "" && taskRef[d.TaskID] >= autoCanonRefThreshold
+		if d.Pinned || hasImportantTag(d.Tags) || highlyReferenced {
 			important = append(important, d)
 		} else {
 			routine = append(routine, d)
