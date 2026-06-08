@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-06-08
+
+### Added
+
+- **Live dashboard via SSE** (TASK-476) — `/api/stream` emits change events; the
+  dashboard auto-refreshes data tabs as agents write, with a live indicator.
+- **Human-only commit identity rule** (TASK-480) — `gg doctor` checks the git
+  commit identity, warns at session-start, and `gg doctor --fix-git-identity`
+  resets a repo-local agent identity (e.g. `Hermes Agent <…@localhost>`) so
+  commits are attributed to you, not an agent. Detector flags `agent|bot` /
+  `@localhost` identities.
+
 ## [0.4.6] - 2026-06-08
 
 ### Fixed
