@@ -266,7 +266,7 @@ func emitProjectCanon(ctx context.Context, ggDir string) {
 		if !d.qdrantDown {
 			cctx, cancel := withTimeout(ctx)
 			defer cancel()
-			auto = autoCanonEntries(cctx, d)
+			auto = autoCanonEntries(cctx, d, true) // compact view for the per-session briefing
 		}
 	}
 	if len(manual) == 0 && len(auto) == 0 {
@@ -278,6 +278,9 @@ func emitProjectCanon(ctx context.Context, ggDir string) {
 	}
 	for _, e := range auto {
 		fmt.Printf("## %s\n%s\n", e.Area, e.Text)
+	}
+	if len(auto) > 0 {
+		fmt.Println("(compact view — full canon: gg canon show)")
 	}
 	fmt.Println()
 }

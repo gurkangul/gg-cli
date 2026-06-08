@@ -86,7 +86,7 @@ func runCanonShow(cmd *cobra.Command, args []string) error {
 	if !d.qdrantDown {
 		ctx, cancel := withTimeout(cmd.Context())
 		defer cancel()
-		auto = autoCanonEntries(ctx, d)
+		auto = autoCanonEntries(ctx, d, false)
 	}
 	if len(args) == 1 {
 		want := strings.ToLower(strings.TrimSpace(args[0]))
@@ -97,11 +97,16 @@ func runCanonShow(cmd *cobra.Command, args []string) error {
 	return printJSON(combined, func() { writeCanonView(cmd.OutOrStdout(), manual, auto) })
 }
 
-// autoCanonEntries computes the auto-derived canon from the live ledger.
-func autoCanonEntries(ctx context.Context, d *deps) []store.CanonEntry {
+// autoCanonEntries computes the auto-derived canon from the live ledger. The
+// compact view (hard-capped, shorter) is used at session-start; the full view by
+// `gg canon show`.
+func autoCanonEntries(ctx context.Context, d *deps, compact bool) []store.CanonEntry {
 	decs, _ := d.store.ListDecisions(ctx, 0, false)
 	rejs, _ := d.store.ListRejections(ctx, 0)
 	bugs, _ := d.store.ListBugs(ctx, "fixed")
+	if compact {
+		return store.BuildAutoCanonCompact(decs, rejs, bugs)
+	}
 	return store.BuildAutoCanon(decs, rejs, bugs)
 }
 

@@ -12,15 +12,25 @@ import (
 //
 // Two invariants make this safe as institutional memory:
 //   - Important decisions (pinned, or tagged architecture/constraint/etc.) are
-//     ALWAYS included regardless of age — important-old must never be summarized
-//     away. Only the routine tail is capped.
-//   - Low-signal audit cruft (bypass-rationale records and the like) is filtered
-//     out, so a newcomer sees knowledge, not noise.
+//     preferred and, in the full view, always included regardless of age —
+//     important-old must never be summarized away. Only the routine tail is
+//     capped.
+//   - Low-signal records (bypass-rationale audit rows, operational release logs,
+//     and near-duplicates) are filtered out, so a newcomer sees knowledge, not
+//     noise.
+//
+// Two views exist: the full canon (gg canon show) and a tighter compact canon
+// (injected at session-start, where a hard total cap keeps the briefing lean).
 const (
 	autoCanonDecisionCap = 12
 	autoCanonRejectCap   = 8
 	autoCanonFailureCap  = 10
 	autoCanonTextWidth   = 240
+
+	autoCanonCompactDecisions = 8
+	autoCanonCompactRejects   = 5
+	autoCanonCompactFailures  = 5
+	autoCanonCompactWidth     = 140
 )
 
 // importantDecisionTags mark durable architecture/constraint knowledge that must
@@ -33,24 +43,48 @@ var importantDecisionTags = map[string]bool{
 	"security":     true,
 }
 
-// BuildAutoCanon distills decisions, rejections and fixed-bug root causes into
-// the auto-derived canon. Pure and deterministic so it is unit-testable and
-// produces identical output for identical input.
+type canonLimits struct {
+	decisions int // routine cap (full) or hard total cap (compact)
+	rejects   int
+	failures  int
+	width     int
+	hardCap   bool // compact: cap importance+routine together at `decisions`
+}
+
+// BuildAutoCanon returns the full auto-derived canon (gg canon show): every
+// important decision regardless of age, plus the most recent routine ones.
 func BuildAutoCanon(decs []Decision, rejs []Rejection, bugs []Bug) []CanonEntry {
+	return buildAutoCanon(decs, rejs, bugs, canonLimits{
+		decisions: autoCanonDecisionCap, rejects: autoCanonRejectCap,
+		failures: autoCanonFailureCap, width: autoCanonTextWidth,
+	})
+}
+
+// BuildAutoCanonCompact returns a tighter digest for session-start: a hard total
+// cap on decisions (important first) and shorter lines, so the per-session
+// briefing stays lean. Full depth remains available via `gg canon show`.
+func BuildAutoCanonCompact(decs []Decision, rejs []Rejection, bugs []Bug) []CanonEntry {
+	return buildAutoCanon(decs, rejs, bugs, canonLimits{
+		decisions: autoCanonCompactDecisions, rejects: autoCanonCompactRejects,
+		failures: autoCanonCompactFailures, width: autoCanonCompactWidth, hardCap: true,
+	})
+}
+
+func buildAutoCanon(decs []Decision, rejs []Rejection, bugs []Bug, lim canonLimits) []CanonEntry {
 	var out []CanonEntry
-	if s := autoCanonDecisions(decs); s != "" {
+	if s := autoCanonDecisions(decs, lim); s != "" {
 		out = append(out, CanonEntry{Area: "key-decisions", Text: s, Author: "auto"})
 	}
-	if s := autoCanonRejections(rejs); s != "" {
+	if s := autoCanonRejections(rejs, lim); s != "" {
 		out = append(out, CanonEntry{Area: "rejected-approaches", Text: s, Author: "auto"})
 	}
-	if s := autoCanonFailures(bugs); s != "" {
+	if s := autoCanonFailures(bugs, lim); s != "" {
 		out = append(out, CanonEntry{Area: "failure-modes", Text: s, Author: "auto"})
 	}
 	return out
 }
 
-func autoCanonDecisions(decs []Decision) string {
+func autoCanonDecisions(decs []Decision, lim canonLimits) string {
 	seen := map[string]bool{}
 	var important, routine []Decision
 	for _, d := range decs {
@@ -73,20 +107,36 @@ func autoCanonDecisions(decs []Decision) string {
 	}
 	sortByRecency(important)
 	sortByRecency(routine)
-	if len(routine) > autoCanonDecisionCap {
-		routine = routine[:autoCanonDecisionCap]
+
+	var chosen []Decision
+	if lim.hardCap {
+		// Compact: cap important + routine together, important prioritized.
+		chosen = important
+		if len(chosen) > lim.decisions {
+			chosen = chosen[:lim.decisions]
+		}
+		for _, d := range routine {
+			if len(chosen) >= lim.decisions {
+				break
+			}
+			chosen = append(chosen, d)
+		}
+	} else {
+		// Full: every important one, routine tail capped.
+		if len(routine) > lim.decisions {
+			routine = routine[:lim.decisions]
+		}
+		chosen = append(append([]Decision{}, important...), routine...)
 	}
+
 	var b strings.Builder
-	for _, d := range important {
-		writeDecisionBullet(&b, d)
-	}
-	for _, d := range routine {
-		writeDecisionBullet(&b, d)
+	for _, d := range chosen {
+		writeDecisionBullet(&b, d, lim.width)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func writeDecisionBullet(b *strings.Builder, d Decision) {
+func writeDecisionBullet(b *strings.Builder, d Decision, width int) {
 	marker := "•"
 	if d.Pinned {
 		marker = "📌"
@@ -95,10 +145,10 @@ func writeDecisionBullet(b *strings.Builder, d Decision) {
 	if d.Reason != "" {
 		line += " — " + d.Reason
 	}
-	b.WriteString(marker + " " + truncateCanon(line) + "\n")
+	b.WriteString(marker + " " + truncateCanon(line, width) + "\n")
 }
 
-func autoCanonRejections(rejs []Rejection) string {
+func autoCanonRejections(rejs []Rejection, lim canonLimits) string {
 	seen := map[string]bool{}
 	var kept []Rejection
 	for _, r := range rejs {
@@ -110,8 +160,8 @@ func autoCanonRejections(rejs []Rejection) string {
 		kept = append(kept, r)
 	}
 	sort.SliceStable(kept, func(i, j int) bool { return kept[i].CreatedAt > kept[j].CreatedAt })
-	if len(kept) > autoCanonRejectCap {
-		kept = kept[:autoCanonRejectCap]
+	if len(kept) > lim.rejects {
+		kept = kept[:lim.rejects]
 	}
 	var b strings.Builder
 	for _, r := range kept {
@@ -119,12 +169,12 @@ func autoCanonRejections(rejs []Rejection) string {
 		if r.Reason != "" {
 			line += " — " + r.Reason
 		}
-		b.WriteString("✗ " + truncateCanon(line) + "\n")
+		b.WriteString("✗ " + truncateCanon(line, lim.width) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func autoCanonFailures(bugs []Bug) string {
+func autoCanonFailures(bugs []Bug, lim canonLimits) string {
 	seen := map[string]bool{}
 	var kept []Bug
 	for _, bg := range bugs {
@@ -139,22 +189,27 @@ func autoCanonFailures(bugs []Bug) string {
 		kept = append(kept, bg)
 	}
 	sort.SliceStable(kept, func(i, j int) bool { return kept[i].CreatedAt > kept[j].CreatedAt })
-	if len(kept) > autoCanonFailureCap {
-		kept = kept[:autoCanonFailureCap]
+	if len(kept) > lim.failures {
+		kept = kept[:lim.failures]
 	}
 	var b strings.Builder
 	for _, bg := range kept {
-		b.WriteString("✓ " + truncateCanon(bg.Title+" [root cause: "+bg.RootCause+"]") + "\n")
+		b.WriteString("✓ " + truncateCanon(bg.Title+" [root cause: "+bg.RootCause+"]", lim.width) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// isLowSignalDecision drops audit/bookkeeping records that are not durable
-// project knowledge — chiefly the bypass-rationale decisions written when a gate
-// is overridden, which otherwise dominate a newcomer's first view.
+// isLowSignalDecision drops records that are not durable project knowledge:
+// bypass-rationale audit rows written when a gate is overridden, and operational
+// release logs ("Release vX shipped…"). These otherwise crowd out real knowledge.
 func isLowSignalDecision(d Decision) bool {
 	t := strings.ToLower(strings.TrimSpace(d.Text))
-	if strings.HasPrefix(t, "bypass rationale") || strings.HasPrefix(t, "bypass:") {
+	switch {
+	case strings.HasPrefix(t, "bypass rationale"), strings.HasPrefix(t, "bypass:"):
+		return true
+	case strings.HasPrefix(t, "release v") || strings.HasPrefix(t, "released v"):
+		return true
+	case strings.Contains(t, "shipped and synced"):
 		return true
 	}
 	for _, tag := range d.Tags {
@@ -165,10 +220,10 @@ func isLowSignalDecision(d Decision) bool {
 	return false
 }
 
-// FilterDecisionNoise drops low-signal audit records (bypass rationales) and
-// collapses near-identical duplicates, preserving input order. Used to keep the
-// project overview free of the cruft that otherwise dominates a newcomer's first
-// screen (e.g. four identical bypass-rationale rows).
+// FilterDecisionNoise drops low-signal audit/operational records and collapses
+// near-identical duplicates, preserving input order. Used to keep the project
+// overview free of the cruft that otherwise dominates a newcomer's first screen
+// (e.g. four identical bypass-rationale rows).
 func FilterDecisionNoise(decs []Decision) []Decision {
 	seen := map[string]bool{}
 	out := make([]Decision, 0, len(decs))
@@ -206,13 +261,13 @@ func normalizeForDedup(s string) string {
 	return string(r)
 }
 
-func truncateCanon(s string) string {
+func truncateCanon(s string, width int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	r := []rune(s)
-	if len(r) <= autoCanonTextWidth {
+	if len(r) <= width {
 		return s
 	}
-	return strings.TrimSpace(string(r[:autoCanonTextWidth])) + "…"
+	return strings.TrimSpace(string(r[:width])) + "…"
 }
 
 func sortByRecency(d []Decision) {

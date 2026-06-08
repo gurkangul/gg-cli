@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.35] - 2026-06-08
+
+Usability polish for the per-project brain — make the current form excellent to
+use day to day (scope stays single-project; no cross-project/user brain).
+
+### Changed
+
+- **Leaner session-start canon.** The canon injected at session-start now uses a
+  compact view (hard total cap on decisions, shorter lines) with a
+  `gg canon show` pointer for full depth. Dropped the per-session briefing from
+  ~13.7 KB to ~8.3 KB (~3.4K → ~2.1K tokens) while keeping the full institutional
+  briefing. `gg canon show` is unchanged (full depth).
+- **Release logs no longer pollute the canon.** Operational decisions
+  ("Release vX shipped and synced…") are filtered as low-signal alongside
+  bypass-rationale rows, so the canon and overview carry durable knowledge only.
+
 ## [0.3.34] - 2026-06-08
 
 Canon goes fully automatic — institutional memory with zero manual upkeep. A new

@@ -77,6 +77,39 @@ func TestBuildAutoCanon_CapsRoutineKeepsImportant(t *testing.T) {
 	}
 }
 
+func TestBuildAutoCanonCompact_HardCapsDecisions(t *testing.T) {
+	var decs []Decision
+	// 6 important (architecture-tagged) + 6 routine = 12 candidates; compact caps at 8.
+	for i := 0; i < 6; i++ {
+		decs = append(decs, Decision{ID: fmt.Sprintf("imp%d", i), Text: fmt.Sprintf("architecture rule %d", i), Tags: []string{"architecture"}, Status: "active", CreatedAt: fmt.Sprintf("2026-01-%02d", i+1)})
+	}
+	for i := 0; i < 6; i++ {
+		decs = append(decs, Decision{ID: fmt.Sprintf("rt%d", i), Text: fmt.Sprintf("routine rule %d", i), Status: "active", CreatedAt: fmt.Sprintf("2026-02-%02d", i+1)})
+	}
+	entries := BuildAutoCanonCompact(decs, nil, nil)
+	if len(entries) == 0 {
+		t.Fatal("expected key-decisions")
+	}
+	bullets := strings.Count(entries[0].Text, "\n") + 1
+	if bullets > autoCanonCompactDecisions {
+		t.Errorf("compact must hard-cap decisions at %d, got %d", autoCanonCompactDecisions, bullets)
+	}
+	if !strings.Contains(entries[0].Text, "architecture rule") {
+		t.Error("important decisions must be prioritized under the hard cap")
+	}
+}
+
+func TestIsLowSignal_DropsReleaseNotes(t *testing.T) {
+	in := []Decision{
+		{ID: "1", Text: "Release v0.3.25 shipped and synced across registered projects"},
+		{ID: "2", Text: "JSONL is the source of truth"},
+	}
+	out := FilterDecisionNoise(in)
+	if len(out) != 1 || out[0].Text != "JSONL is the source of truth" {
+		t.Fatalf("release-note must be filtered, got %+v", out)
+	}
+}
+
 func TestFilterDecisionNoise(t *testing.T) {
 	in := []Decision{
 		{ID: "1", Text: "bypass rationale: foo"},
