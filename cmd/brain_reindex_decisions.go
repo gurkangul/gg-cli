@@ -60,10 +60,20 @@ func runBrainReindexDecisions(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = gc.Close(ctx) }()
 
-	var replayed, failed int
+	var replayed, failed, edges int
 	for _, dec := range decisions {
 		gctx, gcancel := withTimeout(cmd.Context())
 		upErr := gc.UpsertDecisionNode(gctx, dec.ID, dec.Text)
+		if upErr == nil && dec.TaskID != "" {
+			// BUG-088: reconcile the DECIDES edge from the structured TaskID link so
+			// historical decisions regain their graph edge after a Memgraph rebuild —
+			// previously only nodes were replayed, leaving the relationship graph
+			// empty. The Task node must exist (run `gg task reindex` first); a missing
+			// task MATCHes nothing and is a safe no-op.
+			if eErr := gc.UpsertDecidesEdge(gctx, dec.ID, dec.TaskID); eErr == nil {
+				edges++
+			}
+		}
 		gcancel()
 		if upErr != nil {
 			fmt.Printf("~ %s: %v\n", dec.ID, upErr)
@@ -76,7 +86,8 @@ func runBrainReindexDecisions(cmd *cobra.Command, _ []string) error {
 	return printJSON(map[string]any{
 		"replayed": replayed,
 		"failed":   failed,
+		"edges":    edges,
 	}, func() {
-		fmt.Printf("decision reindex complete: %d replayed, %d failed\n", replayed, failed)
+		fmt.Printf("decision reindex complete: %d replayed, %d failed, %d DECIDES edges\n", replayed, failed, edges)
 	})
 }
