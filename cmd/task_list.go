@@ -427,11 +427,12 @@ func renderTaskGetDefault(w io.Writer, t *store.Task) {
 
 func renderTaskGetCompact(w io.Writer, t *store.Task) {
 	suffix := ""
-	if t.Status == "blocked" && t.BlockReason != "" {
+	switch {
+	case t.Status == "blocked" && t.BlockReason != "":
 		suffix = " ⚠" + compactTrim(t.BlockReason, 60)
-	} else if t.Status == "done" && t.DoneSummary != "" {
+	case t.Status == "done" && t.DoneSummary != "":
 		suffix = " ✓" + compactTrim(t.DoneSummary, 60)
-	} else if t.Owner != "" {
+	case t.Owner != "":
 		suffix = " @" + compactTrim(t.Owner, 24)
 	}
 	fmt.Fprintf(w, "%s %s [%s] %s%s\n",

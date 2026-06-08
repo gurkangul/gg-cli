@@ -176,11 +176,12 @@ func (s *codeGraphStatus) fillLegacyGitFreshness(ctx context.Context, root strin
 		if fingerprint != s.WorkingTreeFingerprint {
 			s.applyChangeSummary(summary)
 			s.Status = "stale"
-			if summary.hasChanges() {
+			switch {
+			case summary.hasChanges():
 				s.Detail = summary.detail("gg index --lang go")
-			} else if fingerprint == "" {
+			case fingerprint == "":
 				s.Detail = "working tree is clean but index-state records dirty indexed content - run gg index --lang go"
-			} else {
+			default:
 				s.Detail = "working tree has changed or untracked source files after last index - run gg index --lang go"
 			}
 			return
@@ -273,11 +274,12 @@ func (s *codeGraphStatus) fillLanguageGitFreshness(ctx context.Context, root str
 			if fingerprint != entry.WorkingTreeFingerprint {
 				s.applyChangeSummary(summary)
 				s.Status = "stale"
-				if summary.hasChanges() {
+				switch {
+				case summary.hasChanges():
 					s.Detail = summary.detail(command)
-				} else if fingerprint == "" {
+				case fingerprint == "":
 					s.Detail = fmt.Sprintf("%s working tree is clean but index-state records dirty indexed content - run gg index --lang %s --changed", lang, lang)
-				} else {
+				default:
 					s.Detail = fmt.Sprintf("%s working tree has changed or untracked source files after last index - run gg index --lang %s --changed", lang, lang)
 				}
 				return

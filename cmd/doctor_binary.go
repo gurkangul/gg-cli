@@ -405,8 +405,3 @@ func headCommitEpoch(srcDir string) (int64, error) {
 	}
 	return epoch, nil
 }
-
-func goInstallGG(srcDir string) error {
-	_, err := runGoInstallSource(context.Background(), srcDir, os.Stdout, os.Stderr)
-	return err
-}

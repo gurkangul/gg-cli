@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -286,14 +285,6 @@ func runImpact(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func impactGraphFreshnessWarnings(ctx context.Context, root string, cfg *config.Config) []string {
-	if cfg == nil {
-		return []string{"code graph freshness unknown: config unavailable"}
-	}
-	status := collectCodeGraphStatus(ctx, root, filepath.Join(root, config.DirName), cfg)
-	return impactGraphFreshnessWarningsForStatus(status, "")
-}
-
 func impactGraphFreshnessWarningsForStatus(status codeGraphStatus, file string) []string {
 	if msg := codeGraphNoticeOneLine(status); msg != "" {
 		if file != "" {
@@ -387,11 +378,12 @@ func renderImpactDefault(w io.Writer, result impactResult) {
 	}
 
 	fmt.Fprintf(w, "\nExported Symbols (%d):\n", len(result.Symbols))
-	if len(result.Symbols) == 0 && graphWarning {
+	switch {
+	case len(result.Symbols) == 0 && graphWarning:
 		fmt.Fprintln(w, "  (unavailable — code graph missing/stale; see Warnings)")
-	} else if len(result.Symbols) == 0 {
+	case len(result.Symbols) == 0:
 		fmt.Fprintln(w, "  (none — or graph not indexed)")
-	} else {
+	default:
 		for _, s := range result.Symbols {
 			name, _ := s["name"].(string)
 			kind, _ := s["kind"].(string)

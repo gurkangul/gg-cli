@@ -123,12 +123,11 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		vector, err = d.embedder.Generate(ctx, embedText)
 		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ embedding unavailable — JSONL write will continue and semantic indexing will be queued: %v\n", err)
-		} else {
-			// AC-4: skip dedup prompt when Qdrant is down or embedding failed.
-			if promptIfDuplicate(ctx, d, "tasks", vector) {
-				fmt.Println("Aborted — no task created.")
-				return nil
-			}
+		} else if promptIfDuplicate(ctx, d, "tasks", vector) {
+			// AC-4: dedup prompt fired (skipped automatically when Qdrant is down
+			// or embedding failed, since vector is nil there).
+			fmt.Println("Aborted — no task created.")
+			return nil
 		}
 	} else {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)")

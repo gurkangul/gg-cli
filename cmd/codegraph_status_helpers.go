@@ -187,11 +187,6 @@ func detectCodeGraphSourceLanguages(root string) ([]runner.Lang, bool, error) {
 	return langs, len(langs) > 0, nil
 }
 
-func hasCodeGraphSourceFiles(root string) (bool, error) {
-	_, ok, err := detectCodeGraphSourceLanguages(root)
-	return ok, err
-}
-
 func codeGraphMissingDetail(langs []runner.Lang, hasSupportedSource bool) string {
 	if len(langs) > 0 {
 		return fmt.Sprintf("project gained code since init; detected language(s): %s - run %s", strings.Join(langNames(langs), ", "), codeGraphIndexSuggestion(langs))
