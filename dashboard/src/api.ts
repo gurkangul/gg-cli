@@ -8,12 +8,24 @@ export type Decision = {
   Evidence?: string
   Pinned?: boolean
   Tags?: string[]
+  TaskID?: string
   CreatedAt?: string
   Approach?: string
   Title?: string
   semantic_score?: number
 }
-export type Task = { ID: string; Title: string; Status: string; Priority?: string; Owner?: string }
+export type Task = {
+  ID: string
+  Title: string
+  Status: string
+  Priority?: string
+  Owner?: string
+  Detail?: string
+  DependsOn?: string[]
+  Blocks?: string[]
+  ReviewStatus?: string
+  CreatedAt?: string
+}
 export type Bug = { ID: string; Title: string; Status: string; Severity?: string; RootCause?: string }
 export type CanonEntry = { area: string; text: string }
 

@@ -184,13 +184,28 @@ function SearchTab() {
   )
 }
 
+function FilterInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full bg-panel border border-border rounded-lg text-fg px-3.5 py-2 mb-3 outline-none focus:border-accent text-[13px]"
+    />
+  )
+}
+
 function DecisionsTab({ rev }: { rev: number }) {
   const [d, setD] = useState<Decision[]>([])
+  const [q, setQ] = useState('')
   useEffect(() => { api.decisions().then((x) => setD(x || [])) }, [rev])
+  const f = q.trim().toLowerCase()
+  const shown = f ? d.filter((x) => (x.Text + ' ' + (x.Reason || '') + ' ' + (x.Tags || []).join(' ')).toLowerCase().includes(f)) : d
   return (
     <>
-      <H2>{d.length} active decisions (noise-filtered)</H2>
-      {d.map((x, i) => <DecisionRow key={i} d={x} />)}
+      <FilterInput value={q} onChange={setQ} placeholder="filter decisions by text / reason / tag…" />
+      <H2>{shown.length} / {d.length} active decisions</H2>
+      {shown.map((x, i) => <DecisionRow key={i} d={x} />)}
     </>
   )
 }
@@ -200,7 +215,10 @@ const COLS: [string, string][] = [
 ]
 function WorkTab({ rev, writable }: { rev: number; writable: boolean }) {
   const [t, setT] = useState<Task[]>([])
+  const [decs, setDecs] = useState<Decision[]>([])
+  const [sel, setSel] = useState<Task | null>(null)
   useEffect(() => { api.tasks().then((x) => setT(x || [])) }, [rev])
+  useEffect(() => { api.decisions().then((x) => setDecs(x || [])) }, [rev])
   const by: Record<string, Task[]> = {}
   COLS.forEach(([k]) => (by[k] = []))
   t.forEach((x) => (by[x.Status] = by[x.Status] || []).push(x))
@@ -216,7 +234,7 @@ function WorkTab({ rev, writable }: { rev: number; writable: boolean }) {
               <span className="bg-panel2 rounded-full px-2 text-fg">{(by[k] || []).length}</span>
             </div>
             {(by[k] || []).map((x) => (
-              <div key={x.ID} className="bg-panel2 border border-border rounded-lg px-2.5 py-2 mb-1.5">
+              <div key={x.ID} onClick={() => setSel(x)} className="bg-panel2 border border-border rounded-lg px-2.5 py-2 mb-1.5 cursor-pointer hover:border-accent">
                 <div className="flex gap-2 flex-wrap items-center text-dim text-[11px] mb-1">
                   <span>{x.ID}</span>
                   {x.Priority && <span className="border border-border rounded-full px-1.5">{x.Priority}</span>}
@@ -229,18 +247,55 @@ function WorkTab({ rev, writable }: { rev: number; writable: boolean }) {
           </div>
         ))}
       </div>
+      {sel && (
+        <div className="fixed top-0 right-0 h-full w-96 max-w-[92vw] overflow-auto bg-bg border-l border-border p-5 shadow-2xl z-50">
+          <div className="flex justify-between items-start mb-2">
+            <span className="text-[11px] uppercase tracking-wide text-dim">{sel.ID} · {sel.Status}</span>
+            <button onClick={() => setSel(null)} className="text-dim hover:text-fg">✕</button>
+          </div>
+          <div className="text-[15px] font-semibold mb-3">{sel.Title}</div>
+          <div className="flex gap-2 flex-wrap text-[11px] mb-3">
+            {sel.Priority && <span className="border border-border rounded-full px-2 py-0.5">{sel.Priority}</span>}
+            {sel.Owner && <span className="border border-border rounded-full px-2 py-0.5">@{sel.Owner}</span>}
+            {sel.ReviewStatus && sel.ReviewStatus !== 'none' && <span className="border border-border rounded-full px-2 py-0.5">review: {sel.ReviewStatus}</span>}
+          </div>
+          {sel.Detail && (
+            <>
+              <div className="text-dim text-[11px] uppercase mb-1">Detail</div>
+              <div className="text-[13px] whitespace-pre-wrap mb-3">{sel.Detail}</div>
+            </>
+          )}
+          {!!sel.DependsOn?.length && <div className="text-[12px] mb-1"><span className="text-dim">depends on:</span> {sel.DependsOn.join(', ')}</div>}
+          {!!sel.Blocks?.length && <div className="text-[12px] mb-1"><span className="text-dim">blocks:</span> {sel.Blocks.join(', ')}</div>}
+          {(() => {
+            const linked = decs.filter((d) => d.TaskID === sel.ID)
+            return linked.length ? (
+              <>
+                <div className="text-dim text-[11px] uppercase mt-3 mb-1">{linked.length} linked decisions</div>
+                {linked.map((d, i) => (
+                  <div key={i} className="text-[12.5px] py-1 border-b border-panel2">{d.Text}</div>
+                ))}
+              </>
+            ) : null
+          })()}
+        </div>
+      )}
     </>
   )
 }
 
 function BugsTab({ rev }: { rev: number }) {
   const [b, setB] = useState<Bug[]>([])
+  const [q, setQ] = useState('')
   useEffect(() => { api.bugs().then((x) => setB(x || [])) }, [rev])
   const sev = (s?: string) => (s === 'high' || s === 'critical' ? 'text-bad' : s === 'medium' ? 'text-warn' : 'text-dim')
+  const f = q.trim().toLowerCase()
+  const shown = f ? b.filter((x) => (x.ID + ' ' + x.Title + ' ' + (x.Status || '') + ' ' + (x.Severity || '') + ' ' + (x.RootCause || '')).toLowerCase().includes(f)) : b
   return (
     <>
-      <H2>{b.length} bugs</H2>
-      {b.map((x) => (
+      <FilterInput value={q} onChange={setQ} placeholder="filter bugs by id / title / status / root cause…" />
+      <H2>{shown.length} / {b.length} bugs</H2>
+      {shown.map((x) => (
         <div key={x.ID} className="bg-panel border border-border rounded-lg p-3 mb-2">
           <div className="flex gap-2.5 flex-wrap items-center text-[11px] mb-1">
             <span className="text-dim">{x.ID}</span>
