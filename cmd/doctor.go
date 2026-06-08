@@ -63,6 +63,7 @@ var (
 	doctorRefreshHooks         bool
 	doctorRefreshHooksForce    bool
 	doctorFixIndex             bool
+	doctorFixGitIdentity       bool
 )
 
 func init() {
@@ -128,6 +129,8 @@ func init() {
 		"with --refresh-hooks: also overwrite user-customized hooks that lack gg-template markers")
 	doctorCmd.Flags().BoolVar(&doctorFixIndex, "fix-index", false,
 		"refresh a missing or stale code graph by running the recommended gg index command(s)")
+	doctorCmd.Flags().BoolVar(&doctorFixGitIdentity, "fix-git-identity", false,
+		"reset a repo-local agent git identity so commits are attributed to you (the human)")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -258,6 +261,9 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	if doctorFixIndex {
 		return runDoctorFixIndex(cmd)
 	}
+	if doctorFixGitIdentity {
+		return runDoctorFixGitIdentity(cmd)
+	}
 
 	fmt.Println("GG Doctor")
 	fmt.Println(strings.Repeat("─", 50))
@@ -269,6 +275,14 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 
 	// 1. Config validation
 	cfg := doctorCheckConfig(report)
+
+	// 1b. Git commit identity (TASK-480): warn if commits would be attributed to
+	// an agent instead of the human.
+	if warn := gitCommitIdentityWarning(); warn != "" {
+		fmt.Printf("  ⚠ git commit identity     %s\n", warn)
+	} else {
+		fmt.Printf("  ✓ %-28s %s\n", "git commit identity", "human ("+gitConfigValue("user.name")+")")
+	}
 
 	// 2. Indexer binaries
 	fmt.Println("\nIndexer Binaries:")

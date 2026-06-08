@@ -127,6 +127,11 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// never disrupts the session.
 	emitVersionDelta(loadedCfg)
 
+	// TASK-480: warn if commits would be attributed to an agent, not the human.
+	if warn := gitCommitIdentityWarning(); warn != "" {
+		fmt.Printf("⚠ %s\n", warn)
+	}
+
 	// Public update notice: opt-in only because it performs a network-backed
 	// Go module lookup. Silent on errors and when the current binary is fresh.
 	emitUpdateNotice(os.Stdout)
