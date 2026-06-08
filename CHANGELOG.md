@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.34] - 2026-06-08
+
+Canon goes fully automatic — institutional memory with zero manual upkeep. A new
+agent now inherits the distilled senior-dev knowledge at session-start without
+anyone ever running `gg canon set`.
+
+### Added
+
+- **Auto-derived canon (`BuildAutoCanon`).** `gg canon show` and session-start
+  now compute the canon live from the ledger — no manual curation. Three
+  sections, distilled deterministically (gg is no-network/no-LLM, so
+  "summarization" = selection + dedup + ranking):
+  - **key-decisions** — active decisions, deduplicated, with pinned and
+    architecture/constraint-tagged ones always included regardless of age
+    (important-old is never summarized away); the routine tail is capped.
+  - **rejected-approaches** — what not to re-propose, deduplicated.
+  - **failure-modes** — fixed-bug root causes (the lessons).
+  Manual `gg canon set` still works and now renders as a "Curated" layer above
+  the auto-derived digest.
+
+### Changed
+
+- **Noise no longer dominates a newcomer's first screen.** Low-signal
+  bypass-rationale records and near-identical duplicate decisions are filtered
+  out of both the canon and the `gg context` project overview
+  (`FilterDecisionNoise`). In dogfooding, the overview's top went from four
+  identical bypass-rationale rows to the real architectural decisions.
+
 ## [0.3.33] - 2026-06-08
 
 Regression-gate repair found while closing the institutional-memory tasks

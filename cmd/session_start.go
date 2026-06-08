@@ -150,7 +150,7 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 
 	// TASK-468: inject the distilled project canon so a fresh agent starts with
 	// the senior-dev knowledge, not just a searchable ledger. Best-effort.
-	emitProjectCanon(canonGGDir)
+	emitProjectCanon(cmd.Context(), canonGGDir)
 
 	// Inline `gg status` so the briefing carries the full current-state
 	// snapshot the agent would otherwise have to fetch separately. runStatus
@@ -252,16 +252,31 @@ func writeVersionDelta(w io.Writer, runtimeDir, curr string) {
 // emitProjectCanon prints the distilled institutional-memory canon (TASK-468) so
 // a fresh agent inherits the senior-dev knowledge at session start. Best-effort
 // and JSONL-backed (works even when Qdrant is down); silent when no canon exists.
-func emitProjectCanon(ggDir string) {
+func emitProjectCanon(ctx context.Context, ggDir string) {
 	if ggDir == "" {
 		return
 	}
-	entries, err := store.ReadCanon(ggDir)
-	if err != nil || len(entries) == 0 {
+	// Curated canon is JSONL-backed (works even when Qdrant is down). The
+	// auto-derived canon is computed live from the ledger so it requires no
+	// manual upkeep — a fresh agent gets it automatically with zero curation.
+	manual, _ := store.ReadCanon(ggDir)
+	var auto []store.CanonEntry
+	if d, err := loadDepsReadOnly(false); err == nil {
+		defer d.Close()
+		if !d.qdrantDown {
+			cctx, cancel := withTimeout(ctx)
+			defer cancel()
+			auto = autoCanonEntries(cctx, d)
+		}
+	}
+	if len(manual) == 0 && len(auto) == 0 {
 		return
 	}
 	fmt.Println("─── PROJECT CANON (distilled institutional memory) ───")
-	for _, e := range entries {
+	for _, e := range manual {
+		fmt.Printf("## %s\n%s\n", e.Area, e.Text)
+	}
+	for _, e := range auto {
 		fmt.Printf("## %s\n%s\n", e.Area, e.Text)
 	}
 	fmt.Println()

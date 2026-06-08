@@ -51,9 +51,9 @@ func runProjectContext(cmd *cobra.Command) error {
 				decs = append(decs, r)
 			}
 		}
-		bundle.decisions = decs
+		bundle.decisions = store.FilterDecisionNoise(decs)
 	} else if len(decs) > 0 {
-		bundle.decisions = decs
+		bundle.decisions = store.FilterDecisionNoise(decs)
 	} else {
 		bundle.decErr = err
 	}

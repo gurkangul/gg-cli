@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -75,31 +76,62 @@ func runCanonShow(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer d.Close()
-	entries, err := d.store.ListCanon()
+	manual, err := d.store.ListCanon()
 	if err != nil {
 		return err
 	}
+	// Auto-derived canon is computed live from the ledger so it never needs
+	// manual upkeep; it requires Qdrant, so it is simply omitted when down.
+	var auto []store.CanonEntry
+	if !d.qdrantDown {
+		ctx, cancel := withTimeout(cmd.Context())
+		defer cancel()
+		auto = autoCanonEntries(ctx, d)
+	}
 	if len(args) == 1 {
 		want := strings.ToLower(strings.TrimSpace(args[0]))
-		filtered := entries[:0]
-		for _, e := range entries {
-			if strings.ToLower(e.Area) == want {
-				filtered = append(filtered, e)
-			}
-		}
-		entries = filtered
+		manual = filterCanonArea(manual, want)
+		auto = filterCanonArea(auto, want)
 	}
-	return printJSON(entries, func() { writeCanon(cmd.OutOrStdout(), entries) })
+	combined := append(append([]store.CanonEntry{}, manual...), auto...)
+	return printJSON(combined, func() { writeCanonView(cmd.OutOrStdout(), manual, auto) })
 }
 
-func writeCanon(w io.Writer, entries []store.CanonEntry) {
-	if len(entries) == 0 {
-		fmt.Fprintln(w, "No canon yet. Distill it: gg canon gather  →  gg canon set <area> \"…\"")
+// autoCanonEntries computes the auto-derived canon from the live ledger.
+func autoCanonEntries(ctx context.Context, d *deps) []store.CanonEntry {
+	decs, _ := d.store.ListDecisions(ctx, 0, false)
+	rejs, _ := d.store.ListRejections(ctx, 0)
+	bugs, _ := d.store.ListBugs(ctx, "fixed")
+	return store.BuildAutoCanon(decs, rejs, bugs)
+}
+
+func filterCanonArea(entries []store.CanonEntry, want string) []store.CanonEntry {
+	var out []store.CanonEntry
+	for _, e := range entries {
+		if strings.ToLower(e.Area) == want {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func writeCanonView(w io.Writer, manual, auto []store.CanonEntry) {
+	if len(manual) == 0 && len(auto) == 0 {
+		fmt.Fprintln(w, "No canon and no ledger to distill yet.")
 		return
 	}
 	fmt.Fprintln(w, "PROJECT CANON (distilled institutional memory):")
-	for _, e := range entries {
-		fmt.Fprintf(w, "\n## %s\n%s\n", e.Area, e.Text)
+	if len(manual) > 0 {
+		fmt.Fprintln(w, "\n=== Curated ===")
+		for _, e := range manual {
+			fmt.Fprintf(w, "\n## %s\n%s\n", e.Area, e.Text)
+		}
+	}
+	if len(auto) > 0 {
+		fmt.Fprintln(w, "\n=== Auto-derived (live digest of the ledger; no manual upkeep) ===")
+		for _, e := range auto {
+			fmt.Fprintf(w, "\n## %s\n%s\n", e.Area, e.Text)
+		}
 	}
 }
 
