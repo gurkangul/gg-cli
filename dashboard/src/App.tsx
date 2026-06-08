@@ -4,7 +4,7 @@ import 'reactflow/dist/style.css'
 import dagre from '@dagrejs/dagre'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RTooltip } from 'recharts'
-import { api, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData, type Message } from './api'
+import { api, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData, type Message, type WriteResult } from './api'
 
 const TABS = ['Overview', 'Live Search', 'Decisions', 'Work', 'Bugs', 'Messages', 'Graph', 'Files', 'Context'] as const
 type Tab = (typeof TABS)[number]
@@ -75,13 +75,39 @@ const H2 = ({ children }: { children: React.ReactNode }) => (
 )
 const Empty = ({ children }: { children: React.ReactNode }) => <div className="text-dim text-center py-8">{children}</div>
 
-function OverviewTab({ rev }: { rev: number }) {
+function Composer({ title, f1, f2, onSubmit }: { title: string; f1: string; f2: string; onSubmit: (a: string, b: string) => Promise<WriteResult> }) {
+  const [a, setA] = useState('')
+  const [b, setB] = useState('')
+  const [msg, setMsg] = useState('')
+  const submit = async () => {
+    if (!a.trim()) return
+    setMsg('saving…')
+    const r = await onSubmit(a, b)
+    setMsg(r.error ? r.error : r.ok ? '✓ saved' : r.output || 'done')
+    if (r.ok) { setA(''); setB('') }
+  }
+  const inp = 'w-full bg-bg border border-border rounded-md text-fg px-3 py-2 mb-2 outline-none focus:border-accent text-[13px]'
+  return (
+    <div className="bg-panel border border-border rounded-xl p-3 mb-5">
+      <div className="text-dim text-[11px] uppercase tracking-wide mb-2">{title}</div>
+      <input value={a} onChange={(e) => setA(e.target.value)} placeholder={f1} className={inp} />
+      <textarea value={b} onChange={(e) => setB(e.target.value)} placeholder={f2} rows={2} className={inp} />
+      <div className="flex items-center gap-3">
+        <button onClick={submit} className="bg-accent text-[#04121f] font-semibold rounded-md px-4 py-1.5 text-[13px]">Save</button>
+        {msg && <span className="text-dim text-xs">{msg}</span>}
+      </div>
+    </div>
+  )
+}
+
+function OverviewTab({ rev, writable }: { rev: number; writable: boolean }) {
   const [o, setO] = useState<Overview | null>(null)
   useEffect(() => { api.overview().then(setO) }, [rev])
   if (!o) return <Empty>loading…</Empty>
   const c = o.counts || {}
   return (
     <>
+      {writable && <Composer title="Record a decision" f1="Decision" f2="Why (reason)" onSubmit={(t, r) => api.recordDecision(t, r)} />}
       <div className="grid gap-3 mb-2" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
         <Card n={c.decisions ?? 0} label="active decisions" sub="memory, never deleted" />
         <Card n={`${c.tasksDone ?? 0}/${c.tasks ?? 0}`} label="work done" sub="tasks completed" />
@@ -172,7 +198,7 @@ function DecisionsTab({ rev }: { rev: number }) {
 const COLS: [string, string][] = [
   ['pending', 'Pending'], ['in_progress', 'In Progress'], ['ready_for_live', 'Ready for Live'], ['blocked', 'Blocked'], ['done', 'Done'],
 ]
-function WorkTab({ rev }: { rev: number }) {
+function WorkTab({ rev, writable }: { rev: number; writable: boolean }) {
   const [t, setT] = useState<Task[]>([])
   useEffect(() => { api.tasks().then((x) => setT(x || [])) }, [rev])
   const by: Record<string, Task[]> = {}
@@ -180,6 +206,7 @@ function WorkTab({ rev }: { rev: number }) {
   t.forEach((x) => (by[x.Status] = by[x.Status] || []).push(x))
   return (
     <>
+      {writable && <Composer title="Create a task" f1="Title" f2="Detail (optional)" onSubmit={(t2, d) => api.createTask(t2, d)} />}
       <div className="text-dim text-xs mb-3.5">{t.length} tasks across the lifecycle (same data as <code>gg task list</code>).</div>
       <div className="flex gap-3 overflow-x-auto pb-2.5">
         {COLS.map(([k, label]) => (
@@ -457,7 +484,8 @@ export default function App() {
   const [project, setProject] = useState('')
   const [rev, setRev] = useState(0)
   const [live, setLive] = useState(false)
-  useEffect(() => { api.overview().then((o) => setProject(o.project || '')) }, [])
+  const [writable, setWritable] = useState(false)
+  useEffect(() => { api.overview().then((o) => { setProject(o.project || ''); setWritable(!!o.writable) }) }, [])
   useEffect(() => {
     const es = new EventSource('/api/stream')
     es.addEventListener('ready', () => setLive(true))
@@ -489,10 +517,10 @@ export default function App() {
       <main className="p-6 max-w-[1100px] mx-auto">
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            {tab === 'Overview' && <OverviewTab rev={rev} />}
+            {tab === 'Overview' && <OverviewTab rev={rev} writable={writable} />}
             {tab === 'Live Search' && <SearchTab />}
             {tab === 'Decisions' && <DecisionsTab rev={rev} />}
-            {tab === 'Work' && <WorkTab rev={rev} />}
+            {tab === 'Work' && <WorkTab rev={rev} writable={writable} />}
             {tab === 'Bugs' && <BugsTab rev={rev} />}
             {tab === 'Messages' && <MessagesTab rev={rev} />}
             {tab === 'Graph' && <GraphTab />}

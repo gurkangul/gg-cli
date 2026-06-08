@@ -22,7 +22,10 @@ export type Overview = {
   counts: Record<string, number>
   canon: CanonEntry[]
   recentDecisions: Decision[]
+  writable?: boolean
 }
+
+export type WriteResult = { ok?: boolean; output?: string; error?: string }
 
 export type SearchResult = {
   query: string
@@ -50,6 +53,11 @@ async function get<T>(url: string): Promise<T> {
   return (await r.json()) as T
 }
 
+async function post<T>(url: string, body: unknown): Promise<T> {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  return (await r.json()) as T
+}
+
 export const api = {
   overview: () => get<Overview>('/api/overview'),
   search: (q: string) => get<SearchResult>('/api/search?q=' + encodeURIComponent(q)),
@@ -61,4 +69,6 @@ export const api = {
   files: () => get<FileInfo[]>('/api/files'),
   file: (name: string, tail = 20) => get<FileDump>(`/api/file?name=${encodeURIComponent(name)}&tail=${tail}`),
   telemetry: () => get<Telemetry>('/api/telemetry'),
+  recordDecision: (text: string, reason: string) => post<WriteResult>('/api/write/decision', { Text: text, Reason: reason }),
+  createTask: (title: string, detail: string) => post<WriteResult>('/api/write/task', { Title: title, Detail: detail }),
 }

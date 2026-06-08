@@ -30,6 +30,7 @@ import (
 var (
 	servePort   int
 	serveNoOpen bool
+	serveWrite  bool
 )
 
 var serveCmd = &cobra.Command{
@@ -50,6 +51,7 @@ CLI reads. Anyone who ran 'gg init' can open it with 'gg serve'.
 func init() {
 	serveCmd.Flags().IntVar(&servePort, "port", 7777, "localhost port to bind")
 	serveCmd.Flags().BoolVar(&serveNoOpen, "no-open", false, "do not open the browser automatically")
+	serveCmd.Flags().BoolVar(&serveWrite, "write", false, "enable write actions (record decision / create task) via POST — off by default")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -80,6 +82,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	mux.HandleFunc("/api/graph", srv.handleGraph)
 	mux.HandleFunc("/api/messages", srv.handleMessages)
 	mux.HandleFunc("/api/stream", srv.handleStream)
+	mux.HandleFunc("/api/write/decision", srv.handleWriteDecision)
+	mux.HandleFunc("/api/write/task", srv.handleWriteTask)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", servePort)
 	ln, err := net.Listen("tcp", addr)
@@ -160,6 +164,7 @@ func (s *dashboardServer) handleOverview(w http.ResponseWriter, r *http.Request)
 		},
 		"canon":           store.BuildAutoCanon(decs, rejs, fixed, tasks),
 		"recentDecisions": firstN(store.FilterDecisionNoise(decs), 25),
+		"writable":        serveWrite,
 	})
 }
 
@@ -459,6 +464,71 @@ func (s *dashboardServer) handleMessages(w http.ResponseWriter, r *http.Request)
 		msgs = msgs[:200]
 	}
 	writeJSONResp(w, msgs)
+}
+
+// requireWrite gates the write endpoints: POST only, opt-in via --write, and a
+// same-origin (localhost) check to block cross-site writes against the local server.
+func (s *dashboardServer) requireWrite(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return false
+	}
+	if !serveWrite {
+		writeJSONResp(w, map[string]any{"error": "read-only — start with 'gg serve --write' to enable write actions"})
+		return false
+	}
+	if o := r.Header.Get("Origin"); o != "" && !strings.HasPrefix(o, "http://127.0.0.1") && !strings.HasPrefix(o, "http://localhost") {
+		http.Error(w, "cross-origin write rejected", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// ggExec runs this same gg binary as a subprocess so write actions reuse the
+// exact CLI logic (embedding, JSONL, Qdrant, graph, gates) — the server is gg.
+func (s *dashboardServer) ggExec(ctx context.Context, args ...string) (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "gg"
+	}
+	c := exec.CommandContext(ctx, exe, args...) //nolint:gosec // fixed gg subcommands; values come from validated JSON
+	c.Env = os.Environ()
+	out, cerr := c.CombinedOutput()
+	return strings.TrimSpace(string(out)), cerr
+}
+
+func (s *dashboardServer) handleWriteDecision(w http.ResponseWriter, r *http.Request) {
+	if !s.requireWrite(w, r) {
+		return
+	}
+	var body struct{ Text, Reason string }
+	if json.NewDecoder(r.Body).Decode(&body) != nil || strings.TrimSpace(body.Text) == "" {
+		writeJSONResp(w, map[string]any{"error": "text is required"})
+		return
+	}
+	args := []string{"record", body.Text}
+	if strings.TrimSpace(body.Reason) != "" {
+		args = append(args, "--reason", body.Reason)
+	}
+	out, err := s.ggExec(r.Context(), args...)
+	writeJSONResp(w, map[string]any{"ok": err == nil, "output": out})
+}
+
+func (s *dashboardServer) handleWriteTask(w http.ResponseWriter, r *http.Request) {
+	if !s.requireWrite(w, r) {
+		return
+	}
+	var body struct{ Title, Detail string }
+	if json.NewDecoder(r.Body).Decode(&body) != nil || strings.TrimSpace(body.Title) == "" {
+		writeJSONResp(w, map[string]any{"error": "title is required"})
+		return
+	}
+	args := []string{"task", "create", body.Title, "--requester", "agent"}
+	if strings.TrimSpace(body.Detail) != "" {
+		args = append(args, "--detail", body.Detail)
+	}
+	out, err := s.ggExec(r.Context(), args...)
+	writeJSONResp(w, map[string]any{"ok": err == nil, "output": out})
 }
 
 func projectLabel(cfg *config.Config) string {
