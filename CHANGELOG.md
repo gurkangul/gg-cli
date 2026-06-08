@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-08
+
+### Changed
+
+- **Graph tab now uses a dagre DAG layout** (left-to-right: decision → task →
+  dependency) instead of naive columns, so the relationship web is readable even
+  at hundreds of nodes.
+- Overview "decisions" card relabeled **active decisions** to make clear it
+  counts active records (vs the full ledger incl. superseded/rejected).
+
 ## [0.4.1] - 2026-06-08
 
 ### Added

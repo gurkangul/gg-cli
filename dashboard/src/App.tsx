@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import ReactFlow, { Background, Controls, type Node, type Edge } from 'reactflow'
 import 'reactflow/dist/style.css'
+import dagre from '@dagrejs/dagre'
 import { api, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData } from './api'
 
 const TABS = ['Overview', 'Live Search', 'Decisions', 'Work', 'Bugs', 'Graph', 'Files', 'Context'] as const
@@ -80,7 +81,7 @@ function OverviewTab() {
   return (
     <>
       <div className="grid gap-3 mb-2" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
-        <Card n={c.decisions ?? 0} label="decisions" sub="memory, never deleted" />
+        <Card n={c.decisions ?? 0} label="active decisions" sub="memory, never deleted" />
         <Card n={`${c.tasksDone ?? 0}/${c.tasks ?? 0}`} label="work done" sub="tasks completed" />
         <Card n={c.bugsFixed ?? 0} label="bugs fixed" sub={`${c.bugsOpen ?? 0} open`} />
         <Card n={c.rejections ?? 0} label="rejections" sub="what not to do" />
@@ -263,7 +264,6 @@ function FilesTab() {
 }
 
 const NODE_COLOR: Record<string, string> = { Decision: '#58a6ff', Task: '#3fb950', Bug: '#f85149', Rejection: '#bc8cff' }
-const COL_X: Record<string, number> = { Decision: 0, Task: 440, Bug: 880, Rejection: 1240 }
 const EDGE_COLOR: Record<string, string> = { DECIDES: '#58a6ff', DEPENDS_ON: '#3fb950', REJECTS: '#bc8cff', BLOCKS: '#f85149', IMPLEMENTS: '#d29922' }
 
 function GraphTab() {
@@ -273,31 +273,41 @@ function GraphTab() {
   if (data.error) return <Empty>{data.error}</Empty>
   if (!data.nodes?.length) return <Empty>no brain relationships yet — link tasks/decisions and they'll appear here</Empty>
 
-  const counts: Record<string, number> = {}
+  const W = 220
+  const H = 46
+  const ids = new Set(data.nodes.map((n) => n.id))
+  const rawEdges = data.edges.filter((e) => ids.has(e.src) && ids.has(e.dst))
+
+  // dagre lays the relationships out as a left-to-right DAG (decision → task →
+  // dependency) instead of naive columns, so the web is actually readable.
+  const dg = new dagre.graphlib.Graph()
+  dg.setGraph({ rankdir: 'LR', nodesep: 24, ranksep: 90 })
+  dg.setDefaultEdgeLabel(() => ({}))
+  data.nodes.forEach((n) => dg.setNode(n.id, { width: W, height: H }))
+  rawEdges.forEach((e) => dg.setEdge(e.src, e.dst))
+  dagre.layout(dg)
+
   const nodes: Node[] = data.nodes.map((n) => {
-    const i = (counts[n.label] = (counts[n.label] || 0) + 1) - 1
+    const p = dg.node(n.id)
     const title = n.properties?.title || n.properties?.text || n.id
     const color = NODE_COLOR[n.label] || '#8b949e'
     return {
       id: n.id,
-      position: { x: COL_X[n.label] ?? 0, y: i * 84 },
+      position: { x: (p?.x ?? 0) - W / 2, y: (p?.y ?? 0) - H / 2 },
       data: { label: `${n.label}: ${String(title).slice(0, 38)}` },
-      style: { background: '#161b22', color: '#e6edf3', border: `1px solid ${color}`, borderRadius: 8, fontSize: 11, width: 210, padding: 6 },
+      style: { background: '#161b22', color: '#e6edf3', border: `1px solid ${color}`, borderRadius: 8, fontSize: 11, width: W, padding: 6 },
     }
   })
-  const ids = new Set(nodes.map((n) => n.id))
-  const edges: Edge[] = data.edges
-    .filter((e) => ids.has(e.src) && ids.has(e.dst))
-    .map((e, i) => ({
-      id: `${e.src}-${e.dst}-${i}`,
-      source: e.src,
-      target: e.dst,
-      label: e.type,
-      animated: e.type === 'DEPENDS_ON',
-      style: { stroke: EDGE_COLOR[e.type] || '#8b949e' },
-      labelStyle: { fill: '#8b949e', fontSize: 10 },
-      labelBgStyle: { fill: '#0d1117' },
-    }))
+  const edges: Edge[] = rawEdges.map((e, i) => ({
+    id: `${e.src}-${e.dst}-${i}`,
+    source: e.src,
+    target: e.dst,
+    label: e.type,
+    animated: e.type === 'DEPENDS_ON',
+    style: { stroke: EDGE_COLOR[e.type] || '#8b949e' },
+    labelStyle: { fill: '#8b949e', fontSize: 10 },
+    labelBgStyle: { fill: '#0d1117' },
+  }))
   return (
     <>
       <div className="text-dim text-xs mb-3">
