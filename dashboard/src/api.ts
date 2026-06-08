@@ -35,6 +35,10 @@ export type SearchResult = {
   error?: string
 }
 
+export type GraphNode = { id: string; label: string; properties: Record<string, any> }
+export type GraphEdge = { src: string; dst: string; type: string; properties?: Record<string, any> }
+export type GraphData = { nodes: GraphNode[]; edges: GraphEdge[]; error?: string }
+
 export type FileInfo = { name: string; records: number; bytes: number }
 export type FileDump = { name: string; records: any[] }
 export type Telemetry = { weekly?: any; sessions?: any }
@@ -50,6 +54,7 @@ export const api = {
   decisions: () => get<Decision[]>('/api/decisions'),
   tasks: () => get<Task[]>('/api/tasks'),
   bugs: () => get<Bug[]>('/api/bugs'),
+  graph: () => get<GraphData>('/api/graph'),
   files: () => get<FileInfo[]>('/api/files'),
   file: (name: string, tail = 20) => get<FileDump>(`/api/file?name=${encodeURIComponent(name)}&tail=${tail}`),
   telemetry: () => get<Telemetry>('/api/telemetry'),

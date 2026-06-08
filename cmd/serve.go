@@ -77,6 +77,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	mux.HandleFunc("/api/telemetry", srv.handleTelemetry)
 	mux.HandleFunc("/api/files", srv.handleFiles)
 	mux.HandleFunc("/api/file", srv.handleFile)
+	mux.HandleFunc("/api/graph", srv.handleGraph)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", servePort)
 	ln, err := net.Listen("tcp", addr)
@@ -305,6 +306,83 @@ func tailFileLines(path string, n int) []string {
 		lines = lines[len(lines)-n:]
 	}
 	return lines
+}
+
+type graphNode struct {
+	ID         string         `json:"id"`
+	Label      string         `json:"label"`
+	Properties map[string]any `json:"properties"`
+}
+type graphEdge struct {
+	Src  string `json:"src"`
+	Dst  string `json:"dst"`
+	Type string `json:"type"`
+}
+
+// handleGraph builds the brain relationship graph from the store (not Memgraph,
+// whose brain edges aren't reliably synced per project): task↔task dependencies
+// and the decisions/bugs linked to tasks. Only connected records are returned,
+// so the view stays legible and excludes the huge code graph entirely.
+func (s *dashboardServer) handleGraph(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	tasks, _ := s.d.store.ListTasks(ctx, "")
+	decs, _ := s.d.store.ListDecisions(ctx, 0, false)
+	bugs, _ := s.d.store.ListBugs(ctx, "")
+
+	taskExists := map[string]bool{}
+	for _, t := range tasks {
+		taskExists[t.ID] = true
+	}
+
+	var edges []graphEdge
+	used := map[string]bool{}
+	add := func(src, dst, typ string) {
+		edges = append(edges, graphEdge{Src: src, Dst: dst, Type: typ})
+		used[src] = true
+		used[dst] = true
+	}
+	for _, t := range tasks {
+		for _, dep := range t.DependsOn {
+			if taskExists[dep] {
+				add(t.ID, dep, "DEPENDS_ON")
+			}
+		}
+		for _, blk := range t.Blocks {
+			if taskExists[blk] {
+				add(t.ID, blk, "BLOCKS")
+			}
+		}
+	}
+	for _, d := range decs {
+		if d.TaskID != "" && taskExists[d.TaskID] {
+			add(d.ID, d.TaskID, "DECIDES")
+		}
+	}
+	for _, b := range bugs {
+		if b.TaskID != "" && taskExists[b.TaskID] {
+			add(b.ID, b.TaskID, "AFFECTS")
+		}
+	}
+
+	var nodes []graphNode
+	seen := map[string]bool{}
+	addNode := func(id, label, title string) {
+		if !used[id] || seen[id] {
+			return
+		}
+		seen[id] = true
+		nodes = append(nodes, graphNode{ID: id, Label: label, Properties: map[string]any{"title": title}})
+	}
+	for _, t := range tasks {
+		addNode(t.ID, "Task", t.Title)
+	}
+	for _, d := range decs {
+		addNode(d.ID, "Decision", d.Text)
+	}
+	for _, b := range bugs {
+		addNode(b.ID, "Bug", b.Title)
+	}
+	writeJSONResp(w, map[string]any{"nodes": nodes, "edges": edges})
 }
 
 func projectLabel(cfg *config.Config) string {

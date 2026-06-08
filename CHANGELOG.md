@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-08
+
+### Added
+
+- **Graph tab** (react-flow) — visualize the brain's relationship web:
+  decision→task (DECIDES), task→task (DEPENDS_ON / BLOCKS), bug→task (AFFECTS).
+  Built from the store (`Task.DependsOn/Blocks`, `Decision/Bug.TaskID`), not
+  Memgraph — gg-cli's per-project brain edges aren't reliably synced to Memgraph,
+  and the store always has the links. Only connected records are shown; the
+  37k-symbol code graph is excluded to stay legible. New `/api/graph` endpoint.
+
 ## [0.4.0] - 2026-06-08
 
 The dashboard becomes a real React SPA — without giving up the single-binary,
