@@ -120,8 +120,7 @@ func runBugRunRepros(cmd *cobra.Command, _ []string) error {
 
 func runSingleRepro(ctx context.Context, bugID, path string) reproResult {
 	start := time.Now()
-	//nolint:gosec // path is validated at attach time
-	c := exec.CommandContext(ctx, "sh", path)
+	c := reproCommand(ctx, path)
 	c.Env = scrubReproEnv(os.Environ())
 	out, err := c.CombinedOutput()
 	dur := time.Since(start)
@@ -131,6 +130,46 @@ func runSingleRepro(ctx context.Context, bugID, path string) reproResult {
 		tail = strings.Join(lines[len(lines)-10:], "\n")
 	}
 	return reproResult{bugID: bugID, path: path, passed: passed, output: tail, dur: dur}
+}
+
+// reproCommand builds the command that runs a registered repro. Shell scripts
+// run via `sh`; Go test files run via `go test -run` scoped to the test
+// functions declared in that file, so a repro can point directly at the
+// *_test.go that locks in the fix (the convention for newer regressions)
+// instead of needing a separate shell wrapper.
+func reproCommand(ctx context.Context, path string) *exec.Cmd {
+	if strings.HasSuffix(path, "_test.go") {
+		args := []string{"test", "-count=1"}
+		if names := testFuncNames(path); len(names) > 0 {
+			args = append(args, "-run", "^("+strings.Join(names, "|")+")$")
+		}
+		args = append(args, filepath.Dir(path))
+		return exec.CommandContext(ctx, "go", args...)
+	}
+	//nolint:gosec // path is validated at attach time
+	return exec.CommandContext(ctx, "sh", path)
+}
+
+// testFuncNames returns the names of top-level `func TestXxx(` declarations in a
+// Go test file so a repro runs only that file's tests, not the whole package.
+func testFuncNames(path string) []string {
+	data, err := os.ReadFile(path) //nolint:gosec // path is a registered repro, validated at attach time
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.HasPrefix(line, "func Test") {
+			continue
+		}
+		rest := strings.TrimPrefix(line, "func ")
+		if i := strings.Index(rest, "("); i > 0 {
+			if name := strings.TrimSpace(rest[:i]); name != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }
 
 func scrubReproEnv(env []string) []string {
