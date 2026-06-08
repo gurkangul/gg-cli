@@ -43,6 +43,10 @@ _bmad-output/
 node_modules/
 .next/
 dist/
+# Exception: the dashboard's compiled bundle is committed so `go build` (go:embed)
+# works without a Node toolchain. CI/local rebuilds it fresh before release.
+!dashboard/dist/
+!dashboard/dist/**
 build/
 __pycache__/
 *.pyc

@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -21,13 +21,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/dashboard"
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
-
-//go:embed dashboard.html
-var dashboardHTML []byte
 
 var (
 	servePort   int
@@ -64,8 +62,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	cfg, _ := config.Load()
 	srv := &dashboardServer{d: d, cfg: cfg}
 
+	dist, err := fs.Sub(dashboard.FS, "dist")
+	if err != nil {
+		d.Close()
+		return fmt.Errorf("dashboard assets: %w", err)
+	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", srv.handleIndex)
+	mux.Handle("/", http.FileServer(http.FS(dist)))
 	mux.HandleFunc("/api/overview", srv.handleOverview)
 	mux.HandleFunc("/api/search", srv.handleSearch)
 	mux.HandleFunc("/api/decisions", srv.handleDecisions)
@@ -116,15 +119,6 @@ func runServe(cmd *cobra.Command, _ []string) error {
 type dashboardServer struct {
 	d   *deps
 	cfg *config.Config
-}
-
-func (s *dashboardServer) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(dashboardHTML)
 }
 
 func writeJSONResp(w http.ResponseWriter, v any) {

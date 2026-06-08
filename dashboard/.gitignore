@@ -1,0 +1,4 @@
+node_modules/
+*.log
+.DS_Store
+# dist/ is committed so `go build` (go:embed) always works without a Node toolchain.

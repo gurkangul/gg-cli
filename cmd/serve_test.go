@@ -1,29 +1,19 @@
 package cmd
 
 import (
-	"net/http/httptest"
-	"strings"
+	"io/fs"
 	"testing"
+
+	"github.com/gurkangul/gg-cli/dashboard"
 )
 
-func TestServe_IndexServesDashboard(t *testing.T) {
-	s := &dashboardServer{}
-	rec := httptest.NewRecorder()
-	s.handleIndex(rec, httptest.NewRequest("GET", "/", nil))
-	if rec.Code != 200 {
-		t.Fatalf("status = %d, want 200", rec.Code)
+func TestServe_EmbeddedDashboardHasIndex(t *testing.T) {
+	dist, err := fs.Sub(dashboard.FS, "dist")
+	if err != nil {
+		t.Fatalf("dist sub: %v", err)
 	}
-	if !strings.Contains(rec.Body.String(), "project brain") {
-		t.Error("embedded dashboard HTML not served")
-	}
-}
-
-func TestServe_IndexNotFoundForOtherPaths(t *testing.T) {
-	s := &dashboardServer{}
-	rec := httptest.NewRecorder()
-	s.handleIndex(rec, httptest.NewRequest("GET", "/secret", nil))
-	if rec.Code != 404 {
-		t.Errorf("status = %d, want 404 for non-root path", rec.Code)
+	if _, err := fs.Stat(dist, "index.html"); err != nil {
+		t.Errorf("embedded dashboard missing dist/index.html: %v", err)
 	}
 }
 

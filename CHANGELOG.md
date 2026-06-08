@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-08
+
+The dashboard becomes a real React SPA — without giving up the single-binary,
+offline, no-daemon architecture.
+
+### Changed
+
+- **`gg serve` now serves a React + Vite + TypeScript + Tailwind dashboard**,
+  replacing the hand-rolled vanilla page. The compiled bundle is embedded in the
+  Go binary via `go:embed` (committed `dashboard/dist`), so end users still get a
+  single binary with no Node runtime, fully offline, served foreground on
+  127.0.0.1 only. Node is a build/dev dependency only.
+  - Tabs: Overview (+ auto-canon), Live Search (embed→Qdrant pipeline with
+    timings + score bars), Decisions, Work (Kanban), Bugs, Files (raw JSONL
+    browser), Context (visual telemetry).
+  - Dev DX: `cd dashboard && npm run dev` with `/api` proxied to a running
+    `gg serve` (hot reload). Production: `npm run build` → embedded `dist`.
+  - This unblocks rich visual libraries (react-flow graph, charts, drag-drop
+    Kanban) for future iterations without an architecture change.
+
 ## [0.3.37] - 2026-06-08
 
 Dashboard v1 complete (still the embedded vanilla build; the React SPA is next).
