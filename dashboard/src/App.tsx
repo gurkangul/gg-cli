@@ -350,12 +350,16 @@ const AUD_COLOR: Record<string, string> = { agents: '#bc8cff', human: '#3fb950',
 function MessagesTab({ rev }: { rev: number }) {
   const [m, setM] = useState<Message[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [q, setQ] = useState('')
   useEffect(() => { api.messages().then((x) => { setM(x || []); setLoaded(true) }) }, [rev])
   if (!loaded) return <Empty>loading…</Empty>
+  const f = q.trim().toLowerCase()
+  const shown = f ? m.filter((x) => (x.FromRole + ' ' + x.ToRole + ' ' + x.Content + ' ' + (x.Audience || '') + ' ' + (x.TaskID || '')).toLowerCase().includes(f)) : m
   return (
     <>
-      <div className="text-dim text-xs mb-3.5">{m.length} most-recent agent-to-agent messages (last 30 days). How agents coordinate — broadcasts, hand-offs, and task pings.</div>
-      {m.map((x) => (
+      <FilterInput value={q} onChange={setQ} placeholder="filter messages by from / to / content / audience / task…" />
+      <div className="text-dim text-xs mb-3.5">{shown.length} / {m.length} agent-to-agent messages (last 30 days). How agents coordinate — broadcasts, hand-offs, and task pings.</div>
+      {shown.map((x) => (
         <div key={x.ID} className="bg-panel border border-border rounded-lg p-3 mb-2">
           <div className="flex gap-2.5 flex-wrap items-center text-[11px] mb-1">
             <span className="text-accent">{x.FromRole || '—'}</span>
@@ -368,7 +372,7 @@ function MessagesTab({ rev }: { rev: number }) {
           <div className="text-[13.5px] whitespace-pre-wrap">{x.Content}</div>
         </div>
       ))}
-      {!m.length && <Empty>no messages yet</Empty>}
+      {!shown.length && <Empty>{m.length ? 'no messages match the filter' : 'no messages yet'}</Empty>}
     </>
   )
 }
