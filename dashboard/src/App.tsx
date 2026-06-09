@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import ReactFlow, { Background, Controls, type Node, type Edge } from 'reactflow'
 import 'reactflow/dist/style.css'
 import dagre from '@dagrejs/dagre'
+import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RTooltip } from 'recharts'
 import { api, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData, type Message, type WriteResult } from './api'
@@ -213,6 +214,36 @@ function DecisionsTab({ rev }: { rev: number }) {
 const COLS: [string, string][] = [
   ['pending', 'Pending'], ['in_progress', 'In Progress'], ['ready_for_live', 'Ready for Live'], ['blocked', 'Blocked'], ['done', 'Done'],
 ]
+function DragCard({ task, onOpen, enabled }: { task: Task; onOpen: () => void; enabled: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.ID, disabled: !enabled })
+  const style: React.CSSProperties = transform
+    ? { transform: `translate(${transform.x}px, ${transform.y}px)`, opacity: isDragging ? 0.4 : 1, zIndex: isDragging ? 50 : undefined }
+    : {}
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={onOpen} className="bg-panel2 border border-border rounded-lg px-2.5 py-2 mb-1.5 cursor-pointer hover:border-accent">
+      <div className="flex gap-2 flex-wrap items-center text-dim text-[11px] mb-1">
+        <span>{task.ID}</span>
+        {task.Priority && <span className="border border-border rounded-full px-1.5">{task.Priority}</span>}
+        {task.Owner && <span>@{task.Owner}</span>}
+      </div>
+      <div className="text-[13px]">{task.Title}</div>
+    </div>
+  )
+}
+
+function DropCol({ id, label, count, children }: { id: string; label: string; count: number; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id })
+  return (
+    <div ref={setNodeRef} className={'flex-1 min-w-[200px] bg-panel border rounded-xl p-2.5 ' + (isOver ? 'border-accent' : 'border-border')}>
+      <div className="flex justify-between text-xs uppercase tracking-wide text-dim mb-2.5">
+        <span>{label}</span>
+        <span className="bg-panel2 rounded-full px-2 text-fg">{count}</span>
+      </div>
+      {children}
+    </div>
+  )
+}
+
 function WorkTab({ rev, writable }: { rev: number; writable: boolean }) {
   const [t, setT] = useState<Task[]>([])
   const [decs, setDecs] = useState<Decision[]>([])
@@ -222,31 +253,36 @@ function WorkTab({ rev, writable }: { rev: number; writable: boolean }) {
   const by: Record<string, Task[]> = {}
   COLS.forEach(([k]) => (by[k] = []))
   t.forEach((x) => (by[x.Status] = by[x.Status] || []).push(x))
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const onDragEnd = async (e: DragEndEvent) => {
+    const id = String(e.active.id)
+    const target = e.over ? String(e.over.id) : ''
+    const task = t.find((x) => x.ID === id)
+    if (!task || !target || task.Status === target) return
+    // Only the gate-free transition is drag-driven; gated ones stay in the CLI.
+    if (writable && task.Status === 'pending' && target === 'in_progress') {
+      await api.startTask(id) // SSE refreshes the board
+    }
+  }
   return (
     <>
       {writable && <Composer title="Create a task" f1="Title" f2="Detail (optional)" onSubmit={(t2, d) => api.createTask(t2, d)} />}
-      <div className="text-dim text-xs mb-3.5">{t.length} tasks across the lifecycle (same data as <code>gg task list</code>).</div>
-      <div className="flex gap-3 overflow-x-auto pb-2.5">
-        {COLS.map(([k, label]) => (
-          <div key={k} className="flex-1 min-w-[200px] bg-panel border border-border rounded-xl p-2.5">
-            <div className="flex justify-between text-xs uppercase tracking-wide text-dim mb-2.5">
-              <span>{label}</span>
-              <span className="bg-panel2 rounded-full px-2 text-fg">{(by[k] || []).length}</span>
-            </div>
-            {(by[k] || []).map((x) => (
-              <div key={x.ID} onClick={() => setSel(x)} className="bg-panel2 border border-border rounded-lg px-2.5 py-2 mb-1.5 cursor-pointer hover:border-accent">
-                <div className="flex gap-2 flex-wrap items-center text-dim text-[11px] mb-1">
-                  <span>{x.ID}</span>
-                  {x.Priority && <span className="border border-border rounded-full px-1.5">{x.Priority}</span>}
-                  {x.Owner && <span>@{x.Owner}</span>}
-                </div>
-                <div className="text-[13px]">{x.Title}</div>
-              </div>
-            ))}
-            {!(by[k] || []).length && <div className="text-border text-center py-3.5 text-xs">—</div>}
-          </div>
-        ))}
+      <div className="text-dim text-xs mb-3.5">
+        {writable ? 'Drag a Pending task to In Progress to start it. ' : ''}
+        {t.length} tasks across the lifecycle (same data as <code>gg task list</code>).
       </div>
+      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+        <div className="flex gap-3 overflow-x-auto pb-2.5">
+          {COLS.map(([k, label]) => (
+            <DropCol key={k} id={k} label={label} count={(by[k] || []).length}>
+              {(by[k] || []).map((x) => (
+                <DragCard key={x.ID} task={x} onOpen={() => setSel(x)} enabled={writable && x.Status === 'pending'} />
+              ))}
+              {!(by[k] || []).length && <div className="text-border text-center py-3.5 text-xs">—</div>}
+            </DropCol>
+          ))}
+        </div>
+      </DndContext>
       {sel && (
         <div className="fixed top-0 right-0 h-full w-96 max-w-[92vw] overflow-auto bg-bg border-l border-border p-5 shadow-2xl z-50">
           <div className="flex justify-between items-start mb-2">
