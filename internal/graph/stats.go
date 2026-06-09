@@ -31,6 +31,21 @@ func (c *Client) Stats(ctx context.Context) (Stats, error) {
 	return Stats{Files: files, Symbols: symbols, Edges: edges}, nil
 }
 
+// BrainGraphStats returns Decision-node and brain-relationship-edge counts — a
+// cheap drift signal (TASK-482): decision nodes present but zero brain edges
+// means the relationship graph needs reconciling via gg doctor --fix-index.
+func (c *Client) BrainGraphStats(ctx context.Context) (decisionNodes, brainEdges int64, err error) {
+	decisionNodes, err = c.countScalar(ctx, "MATCH (n:Decision {project_id: $pid}) RETURN count(n) AS n")
+	if err != nil {
+		return 0, 0, fmt.Errorf("count decision nodes: %w", err)
+	}
+	brainEdges, err = c.countScalar(ctx, "MATCH (a {project_id: $pid})-[r]->(b {project_id: $pid}) WHERE type(r) IN ['DECIDES','DEPENDS_ON','BLOCKS','IMPLEMENTS','REJECTS'] RETURN count(r) AS n")
+	if err != nil {
+		return decisionNodes, 0, fmt.Errorf("count brain edges: %w", err)
+	}
+	return decisionNodes, brainEdges, nil
+}
+
 func (c *Client) countScalar(ctx context.Context, cypher string) (int64, error) {
 	result, cleanup, err := c.runQuery(ctx, cypher, nil)
 	if err != nil {

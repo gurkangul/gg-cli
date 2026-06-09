@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/index/changed"
 	"github.com/gurkangul/gg-cli/internal/index/runner"
 )
@@ -273,6 +274,31 @@ func emitCodeGraphNotice(ctx context.Context, w io.Writer, cfg *config.Config) {
 		fmt.Fprintln(w, line)
 	}
 	fmt.Fprintln(w)
+}
+
+// emitBrainGraphNotice warns when the per-project brain relationship graph in
+// Memgraph is stale — decision nodes present but no edges — so staleness
+// auto-surfaces like the code-graph notice (TASK-482). Silent when healthy or
+// Memgraph is unreachable.
+func emitBrainGraphNotice(ctx context.Context, w io.Writer, cfg *config.Config) {
+	if cfg == nil || cfg.Memgraph.URI == "" {
+		return
+	}
+	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	if err != nil {
+		return
+	}
+	cctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	defer func() { _ = gc.Close(cctx) }()
+	nodes, edges, err := gc.BrainGraphStats(cctx)
+	if err != nil {
+		return
+	}
+	if nodes > 0 && edges == 0 {
+		fmt.Fprintln(w, "─── BRAIN GRAPH NOTICE ───")
+		fmt.Fprintf(w, "brain relationship graph is stale: %d decision nodes but 0 edges.\nRun: gg doctor --fix-index\n\n", nodes)
+	}
 }
 
 func langsFromNames(names []string) []runner.Lang {
