@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-06-09
+
+### Added
+
+- **Dashboard: About tab** (TASK-481) — a plain-language page explaining what gg
+  is and does for anyone who opens the dashboard: the per-project brain, what it
+  records (JSONL source of truth), how it recalls (Qdrant semantic + Memgraph
+  graph), the auto-distilled canon, the "done = verified" gates, the 3-tier
+  context economy, the no-network / no-daemon / single-binary architecture, key
+  commands, and live project stats.
+
 ## [0.4.8] - 2026-06-08
 
 ### Added
