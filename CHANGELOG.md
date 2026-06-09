@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-06-09
+
+### Added
+
+- **Brain-graph drift notice** (TASK-482) — session-start warns when the
+  per-project Memgraph relationship graph is stale (decision nodes but no edges),
+  pointing to `gg doctor --fix-index`; mirrors the code-graph notice.
+- **Drag-and-drop Kanban** (TASK-483) — with `gg serve --write`, drag a Pending
+  task onto In Progress to start it (`gg task start`, in-process). Gated
+  transitions stay in the CLI.
+- **Messages tab filter** (TASK-485) — client-side filter (from / to / content /
+  audience / task), matching Decisions and Bugs.
+
+### Verified
+
+- **Dashboard is project-agnostic** (TASK-484) — `gg serve` + all dashboard APIs
+  verified on a second project (rising-demo); data correctly project-scoped.
+
 ## [0.4.9] - 2026-06-09
 
 ### Added
