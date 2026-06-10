@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-10
+
+### Added
+
+- **Launcher portfolio** (TASK-488) — the dashboard gains a **Projects** tab
+  listing every registered gg project with quick health (open tasks / open bugs /
+  decisions), loaded lazily per project via `/api/project-health`. Click a card
+  to open that project. Navigation metadata only — brains stay isolated.
+
+### Changed
+
+- **Brain graph self-heals** (TASK-489) — when a new shell opens and the
+  per-project relationship graph has drifted (decision nodes but no edges), gg
+  now reconciles it automatically (task + decision reindex) instead of printing a
+  "run `gg doctor --fix-index`" notice. Healthy projects stay silent; the
+  reconcile is bounded and non-fatal. No manual upkeep.
+
 ## [0.5.0] - 2026-06-10
 
 ### Added
