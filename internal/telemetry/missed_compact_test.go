@@ -3,6 +3,8 @@ package telemetry
 import "testing"
 
 func TestMissedCompactByVerb_AggregatesPerVerb(t *testing.T) {
+	// Entries must be agent-origin so MissedCompactByVerb counts them as misses.
+	t.Setenv("GG_ROLE", "implementer")
 	dir := t.TempDir()
 	// "context": 1 compact (saved 800), 4 default — 4 missed × 800 = 3200 est
 	RecordCompact(dir, "context", "", 200, 1000, 1, "")
@@ -48,6 +50,8 @@ func TestMissedCompactByVerb_AggregatesPerVerb(t *testing.T) {
 }
 
 func TestMissedCompactByVerb_BoundedByLimit(t *testing.T) {
+	// Entries must be agent-origin so MissedCompactByVerb counts them as misses.
+	t.Setenv("GG_ROLE", "implementer")
 	dir := t.TempDir()
 	// 5 verbs, each with 1 compact + N defaults so each appears in rows.
 	for i, v := range []string{"a", "b", "c", "d", "e"} {

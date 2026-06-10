@@ -33,12 +33,13 @@ var telemetrySummaryCmd = &cobra.Command{
 
 var telemetryCompactMissedCmd = &cobra.Command{
 	Use:   "compact-missed",
-	Short: "Show per-verb missed compact savings (last 7 days)",
+	Short: "Show per-verb missed compact savings (last 7 days, agent-origin only)",
 	Long: `For each verb that has at least one compact-mode call (i.e. the
-command has a working compact render path), report how many calls still ran
-default and the estimated bytes/tokens that would have been saved if those
-calls had used --compact. The estimate is per-verb and conservative: it uses
-each verb's own observed avg-bytes-saved-per-compact-call.`,
+command has a working compact render path), report how many agent-origin calls
+still ran default and the estimated bytes/tokens that would have been saved if
+those calls had used --compact. Human full-reads are excluded — they are not
+missed compact opportunities. The estimate is per-verb and conservative: it
+uses each verb's own observed avg-bytes-saved-per-compact-call.`,
 	RunE: runTelemetryCompactMissed,
 }
 
@@ -222,8 +223,8 @@ func runTelemetryCompactMissed(cmd *cobra.Command, _ []string) error {
 		fmt.Println("(A verb appears here only after at least one --compact call has measured per-call savings for it.)")
 		return nil
 	}
-	fmt.Printf("Missed compact savings — last 7 days (%d verbs with measurable savings):\n", len(rows))
-	fmt.Printf("  %-16s %10s %10s %12s %12s\n", "verb", "missed", "total", "avg-saved", "est. missed")
+	fmt.Printf("Missed compact savings — last 7 days (%d verbs, agent-origin calls only):\n", len(rows))
+	fmt.Printf("  %-16s %10s %10s %12s %12s\n", "verb", "missed", "agent-total", "avg-saved", "est. missed")
 	for _, r := range rows {
 		estTok := r.EstimatedBytesMissed / telemetry.BytesPerToken
 		fmt.Printf("  %-16s %10d %10d %12s %s / ~%s tok\n",
@@ -232,6 +233,7 @@ func runTelemetryCompactMissed(cmd *cobra.Command, _ []string) error {
 			humanFileSize(int64(r.EstimatedBytesMissed)),
 			humanTokenCount(estTok))
 	}
-	fmt.Println("\nEstimates are conservative: they multiply missed-call counts by each verb's own observed avg-bytes-saved-per-compact-call.")
+	fmt.Println("\nEstimates are conservative: they multiply agent-origin missed-call counts by each verb's own observed avg-bytes-saved-per-compact-call.")
+	fmt.Println("Human full-reads are excluded from missed counts — only agent-origin calls are expected to use --compact.")
 	return nil
 }

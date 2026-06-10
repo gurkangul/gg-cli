@@ -270,6 +270,7 @@ func renderNorthStarBlock(rtDir string) {
 					humanFileSize(int64(r.EstimatedBytesMissed)), humanTokenCount(estTok))
 			}
 			fmt.Println("    (run 'gg telemetry compact-missed' for full breakdown)")
+			fmt.Println("    (agent-origin misses only — human full-reads excluded)")
 		}
 	}
 	if ssum, sErr := telemetry.SummarizeSessions(rtDir, time.Now().UTC().AddDate(0, 0, -7)); sErr == nil && ssum.ActiveSessions > 0 {

@@ -76,6 +76,11 @@ type WeeklySummary struct {
 	// existed.
 	CompactByVerbCalls      map[string]int `json:"compact_by_verb_calls"`
 	CompactByVerbBytesSaved map[string]int `json:"compact_by_verb_bytes_saved"`
+	// AgentVerbCounts counts per-verb calls from agent-origin entries only.
+	// MissedCompactByVerb uses this so that human full-reads are not counted as
+	// missed compact opportunities (TASK-490). Additive field — recomputed from
+	// the existing Origin field on every Entry, so old telemetry.jsonl is safe.
+	AgentVerbCounts map[string]int `json:"agent_verb_counts"`
 }
 
 // MissedCompactRow is one row in the missed-savings breakdown — a verb that has
@@ -94,10 +99,11 @@ type MissedCompactRow struct {
 
 // MissedCompactByVerb returns missed-savings rows sorted by EstimatedBytesMissed
 // descending. Only verbs with ≥1 compact call are included (otherwise we can't
-// estimate per-call savings without extrapolating across verbs). limit caps the
-// number of returned rows; a non-positive limit returns all rows. Returns an
-// empty slice when no verb has compact data — callers should treat this as
-// "nothing to show", not an error.
+// estimate per-call savings without extrapolating across verbs). Missed calls are
+// counted against agent-origin calls only — human full-reads are not missed
+// opportunities (TASK-490). limit caps the number of returned rows; a
+// non-positive limit returns all rows. Returns an empty slice when no verb has
+// compact data — callers should treat this as "nothing to show", not an error.
 func (s *WeeklySummary) MissedCompactByVerb(limit int) []MissedCompactRow {
 	if s == nil || len(s.CompactByVerbCalls) == 0 {
 		return nil
@@ -107,7 +113,10 @@ func (s *WeeklySummary) MissedCompactByVerb(limit int) []MissedCompactRow {
 		if compactCalls <= 0 {
 			continue
 		}
-		total := s.VerbCounts[verb]
+		// Use agent-origin totals only: human full-reads are not "missed"
+		// compact calls. CompactByVerbCalls counts all compact renders
+		// (agent + human), so clamp against negative.
+		total := s.AgentVerbCounts[verb]
 		missed := total - compactCalls
 		if missed <= 0 {
 			continue
@@ -156,6 +165,7 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 			MissingHandlerVerbCounts: map[string]int{},
 			CompactByVerbCalls:       map[string]int{},
 			CompactByVerbBytesSaved:  map[string]int{},
+			AgentVerbCounts:          map[string]int{},
 		}, nil
 	}
 	if err != nil {
@@ -168,6 +178,7 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 		MissingHandlerVerbCounts: map[string]int{},
 		CompactByVerbCalls:       map[string]int{},
 		CompactByVerbBytesSaved:  map[string]int{},
+		AgentVerbCounts:          map[string]int{},
 	}
 
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
@@ -187,6 +198,7 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 		sum.VerbCounts[e.Verb]++
 		if e.Origin == originAgent {
 			sum.AgentCalls++
+			sum.AgentVerbCounts[e.Verb]++
 		} else {
 			sum.HumanCalls++
 		}
