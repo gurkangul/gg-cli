@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/index/changed"
@@ -276,11 +278,13 @@ func emitCodeGraphNotice(ctx context.Context, w io.Writer, cfg *config.Config) {
 	fmt.Fprintln(w)
 }
 
-// emitBrainGraphNotice warns when the per-project brain relationship graph in
-// Memgraph is stale — decision nodes present but no edges — so staleness
-// auto-surfaces like the code-graph notice (TASK-482). Silent when healthy or
-// Memgraph is unreachable.
-func emitBrainGraphNotice(ctx context.Context, w io.Writer, cfg *config.Config) {
+// healBrainGraphIfDrifted auto-reconciles the per-project brain relationship
+// graph when it has drifted — decision nodes present but no edges — so no human
+// ever has to run `gg doctor --fix-index`; staleness self-heals on the next
+// shell (TASK-489, the everything-automatic principle). Silent when healthy or
+// Memgraph is unreachable; the reconcile is bounded and non-fatal, falling back
+// to a one-line hint if it cannot complete (e.g. Qdrant down).
+func healBrainGraphIfDrifted(cmd *cobra.Command, w io.Writer, cfg *config.Config) {
 	if cfg == nil || cfg.Memgraph.URI == "" {
 		return
 	}
@@ -288,17 +292,26 @@ func emitBrainGraphNotice(ctx context.Context, w io.Writer, cfg *config.Config) 
 	if err != nil {
 		return
 	}
-	cctx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-	defer func() { _ = gc.Close(cctx) }()
-	nodes, edges, err := gc.BrainGraphStats(cctx)
-	if err != nil {
+	cctx, cancel := context.WithTimeout(cmd.Context(), 4*time.Second)
+	nodes, edges, statErr := gc.BrainGraphStats(cctx)
+	cancel()
+	_ = gc.Close(cmd.Context())
+	if statErr != nil || nodes == 0 || edges > 0 {
+		return // unreachable, empty, or already healthy — nothing to do
+	}
+	// Drift detected: reconcile inline, mirroring `gg doctor --fix-index` (task
+	// nodes first so DECIDES edges have something to attach to).
+	fmt.Fprintln(w, "─── BRAIN GRAPH AUTO-HEAL ───")
+	fmt.Fprintf(w, "stale relationship graph (%d decision nodes, 0 edges) — reconciling automatically…\n", nodes)
+	healErr := runTaskReindex(cmd, nil)
+	if healErr == nil {
+		healErr = runBrainReindexDecisions(cmd, nil)
+	}
+	if healErr != nil {
+		fmt.Fprintf(w, "⚠ auto-heal incomplete (%v) — run: gg doctor --fix-index\n\n", healErr)
 		return
 	}
-	if nodes > 0 && edges == 0 {
-		fmt.Fprintln(w, "─── BRAIN GRAPH NOTICE ───")
-		fmt.Fprintf(w, "brain relationship graph is stale: %d decision nodes but 0 edges.\nRun: gg doctor --fix-index\n\n", nodes)
-	}
+	fmt.Fprint(w, "✓ brain graph reconciled\n\n")
 }
 
 func langsFromNames(names []string) []runner.Lang {

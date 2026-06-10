@@ -153,9 +153,10 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// not run an implicit refresh. The explicit safe path is gg doctor --fix-index.
 	emitCodeGraphNotice(cmd.Context(), os.Stdout, loadedCfg)
 
-	// TASK-482: surface brain relationship-graph drift (decisions present but no
-	// edges) the same way as the code-graph notice.
-	emitBrainGraphNotice(cmd.Context(), os.Stdout, loadedCfg)
+	// TASK-489: auto-heal brain relationship-graph drift (decision nodes present
+	// but no edges) instead of asking the human to run gg doctor --fix-index —
+	// the brain self-maintains. Silent when healthy; non-fatal.
+	healBrainGraphIfDrifted(cmd, os.Stdout, loadedCfg)
 
 	// TASK-468: inject the distilled project canon so a fresh agent starts with
 	// the senior-dev knowledge, not just a searchable ledger. Best-effort.
