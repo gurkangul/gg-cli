@@ -132,10 +132,14 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 				netStr = fmt.Sprintf(", net %s overfetch", humanFileSize(int64(-sum.NetSavingsBytes)))
 			}
 			refetchPct := 0
+			discretionaryPct := 0
 			if sum.CompactCalls > 0 {
 				refetchPct = 100 * sum.HydrationCalls / sum.CompactCalls
+				discretionaryPct = 100 * sum.AgentDiscretionaryHydration / sum.CompactCalls
 			}
-			fmt.Printf("re-fetch: %d calls (%d%% of compact%s)", sum.HydrationCalls, refetchPct, netStr)
+			fmt.Printf("re-fetch: %d calls (%d%% of compact; %d mandated by gate / %d discretionary%s)",
+				sum.HydrationCalls, refetchPct,
+				sum.AgentMandatedHydrationCalls, sum.AgentDiscretionaryHydration, netStr)
 			if len(sum.HydrationVerbCounts) > 0 {
 				var hvc []vc
 				for v, c := range sum.HydrationVerbCounts {
@@ -157,8 +161,16 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 				fmt.Printf(")")
 			}
 			fmt.Println()
-			if refetchPct > 50 {
-				fmt.Printf("  warning: re-fetch rate >50%% — compact may be inducing more fetches than it saves\n")
+			// TASK-491: warn only on the DISCRETIONARY agent rate. Gate-mandated
+			// --full reads (hydration gate / bug triage) and human full-reads are
+			// reported in the split but never trigger the drop-list warning — they
+			// are required first reads, not a compact-induced overfetch.
+			if discretionaryPct > 50 {
+				fmt.Printf("  warning: discretionary re-fetch rate >50%% — compact drop-list may be dropping fields agents need\n")
+			}
+			if sum.AgentMandatedHydrationCalls > 0 {
+				fmt.Printf("  note: %d mandated re-fetch(es) are required by the hydration/bug gates, not a compact problem\n",
+					sum.AgentMandatedHydrationCalls)
 			}
 		}
 		if sum.WithContextCalls > 0 {

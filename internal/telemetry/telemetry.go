@@ -70,6 +70,16 @@ type Entry struct {
 	// Omitted on non-hydration entries so the JSONL stays clean.
 	Hydration     bool `json:"hydration,omitempty"`
 	BytesHydrated int  `json:"bytes_hydrated,omitempty"`
+	// Mandated marks a hydration full-read that was REQUIRED by a gate rather
+	// than a discretionary agent re-fetch (TASK-491). It is set true when the
+	// read was driven by an explicit `--full` flag (the hydration-gate path
+	// that ready-for-live/done/block enforce) or by the bug-fix triage
+	// pre-flight. Such reads are frequently the FIRST read of a record — they
+	// never undid a compact view, so they must NOT feed the "drop-list
+	// agresif" risk heuristic. Additive JSON: old entries decode as false
+	// (discretionary), which is the conservative pre-TASK-491 behaviour.
+	// Omitted on non-mandated entries so the JSONL stays clean.
+	Mandated bool `json:"mandated,omitempty"`
 	// Dupe-check fields (TASK-268). Set by RecordDupeCheck when `gg bug
 	// report` runs its advisory near-duplicate search. Omitted on all other
 	// entries so the JSONL stays clean.
@@ -243,13 +253,18 @@ func RecordMissingHandler(runtimeDir, verb, fromFlag string) {
 // RecordHydration appends a telemetry entry for a full-record re-fetch that
 // follows compact display. bytesHydrated is the full-render size of the fetched
 // record — this is charged against gross compact savings to compute net savings.
-func RecordHydration(runtimeDir, verb, fromFlag string, bytesHydrated int) {
+// mandated is true when the read was REQUIRED by a gate (explicit `--full`
+// flag / hydration-gate path, or bug-fix triage pre-flight) rather than a
+// discretionary agent re-fetch; mandated reads are excluded from the
+// "drop-list agresif" risk signal (TASK-491).
+func RecordHydration(runtimeDir, verb, fromFlag string, bytesHydrated int, mandated bool) {
 	recordEntry(runtimeDir, Entry{
 		Verb:          verb,
 		Origin:        classify(fromFlag),
 		Timestamp:     time.Now().UTC().Format(time.RFC3339),
 		Hydration:     true,
 		BytesHydrated: bytesHydrated,
+		Mandated:      mandated,
 	})
 }
 

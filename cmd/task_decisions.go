@@ -58,6 +58,8 @@ func runTaskDecisions(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-	emitHydration(cmd, "decisions", renderDecisions)
+	// TASK-491: `gg decisions` is a discretionary agent lookup (no explicit
+	// --full gate path), so it counts toward the discretionary drop-list signal.
+	emitHydration(cmd, "decisions", false, renderDecisions)
 	return printJSON(decisions, func() { renderDecisions(os.Stdout) })
 }

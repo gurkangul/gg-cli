@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/config"
-	"github.com/gurkangul/gg-cli/internal/projectstate"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
@@ -302,6 +301,11 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 	if !shortExplicit && !isCompactActive(cmd) {
 		recordTaskFullHydration(t.ID)
 	}
+	// TASK-491: an EXPLICIT --full flag is the hydration-gate path (forced before
+	// ready-for-live/done/block). Tag that hydration telemetry as gate-mandated
+	// so it is excluded from the discretionary "drop-list agresif" risk signal.
+	// A plain full read (no --full flag) stays discretionary.
+	mandatedFull := cmd != nil && cmd.Flags().Changed("full")
 
 	return printJSON(t, func() {
 		// Render the with-context block into a buffer up front so both the
@@ -326,7 +330,7 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 				compactRendererV_taskGet,
 			)
 		} else {
-			emitHydration(cmd, "get", func(w io.Writer) {
+			emitHydration(cmd, "get", mandatedFull, func(w io.Writer) {
 				renderTaskGetDefault(w, t)
 				_, _ = w.Write(ctxBlock.Bytes())
 			})
@@ -437,22 +441,6 @@ func renderTaskGetCompact(w io.Writer, t *store.Task) {
 	}
 	fmt.Fprintf(w, "%s %s [%s] %s%s\n",
 		statusIcon(t.Status), t.ID, t.Priority, compactTrim(t.Title, compactLineWidth), suffix)
-}
-
-func recordTaskFullHydration(taskID string) {
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "⚠ could not record task hydration proof: %v\n", err)
-		return
-	}
-	runtimeDir, err := cfg.RuntimeDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "⚠ could not record task hydration proof: %v\n", err)
-		return
-	}
-	if err := projectstate.RecordHydration(runtimeDir, "task", taskID); err != nil {
-		fmt.Fprintf(os.Stderr, "⚠ could not record task hydration proof: %v\n", err)
-	}
 }
 
 // renderRelatedContext writes the === Related Context === block to w.

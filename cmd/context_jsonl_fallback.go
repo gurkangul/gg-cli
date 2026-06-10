@@ -75,7 +75,7 @@ func runContextForTaskJSONLFallback(cmd *cobra.Command, taskID, reason string) e
 			)
 			return
 		}
-		emitHydration(cmd, "context", func(w io.Writer) { renderForTask(w, tb, warnings) })
+		emitHydration(cmd, "context", false, func(w io.Writer) { renderForTask(w, tb, warnings) })
 		renderForTask(cmd.OutOrStdout(), tb, warnings)
 	})
 }

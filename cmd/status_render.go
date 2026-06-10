@@ -248,9 +248,13 @@ func renderNorthStarBlock(rtDir string) {
 			netTok = -netTok
 		}
 		refetchPct := float64(tsum.HydrationCalls) / float64(tsum.CompactCalls) * 100
-		refetchWarn := hydrationRiskSuffix(tsum.HydrationCalls, tsum.CompactCalls)
-		fmt.Printf("  Hydration %d re-fetches (%.0f%%), %s back; net %s%s / ~%s%s tok (est. calibrated: %d bytes/tok)%s\n",
+		// TASK-491: the "drop-list agresif" warning fires only on the DISCRETIONARY
+		// agent re-fetch rate — gate-mandated --full reads and human full-reads are
+		// reported in the split but never blamed on the compact drop-list.
+		refetchWarn := hydrationRiskSuffix(tsum.AgentDiscretionaryHydration, tsum.CompactCalls)
+		fmt.Printf("  Hydration %d re-fetches (%.0f%%; %d mandated by gate / %d discretionary), %s back; net %s%s / ~%s%s tok (est. calibrated: %d bytes/tok)%s\n",
 			tsum.HydrationCalls, refetchPct,
+			tsum.AgentMandatedHydrationCalls, tsum.AgentDiscretionaryHydration,
 			humanFileSize(int64(tsum.HydrationBytesTotal)),
 			netSign, humanFileSize(int64(netBytes)),
 			netSign, humanTokenCount(netTok), telemetry.CorpusCalibration.Rounded, refetchWarn)
@@ -284,16 +288,24 @@ func renderNorthStarBlock(rtDir string) {
 	fmt.Println()
 }
 
-func hydrationRiskSuffix(hydrationCalls, compactCalls int) string {
+// hydrationRiskSuffix computes the drop-list-risk warning from the DISCRETIONARY
+// agent re-fetch rate only (TASK-491). discretionaryCalls is the count of
+// agent-origin, NON-mandated hydrations — gate-mandated --full reads and human
+// full-reads are excluded by the caller, so they can no longer inflate the
+// "drop-list agresif" verdict. A high discretionary rate is the only honest
+// signal that compact dropped a field agents actually needed; a low/zero rate
+// is healthy (agents trust compact and rarely re-fetch). compactCalls is the
+// denominator (compact renders the re-fetch could have followed).
+func hydrationRiskSuffix(discretionaryCalls, compactCalls int) string {
 	if compactCalls <= 0 {
 		return ""
 	}
-	refetchPct := float64(hydrationCalls) / float64(compactCalls) * 100
+	refetchPct := float64(discretionaryCalls) / float64(compactCalls) * 100
 	switch {
 	case refetchPct > 50:
-		return " ⚠ drop-list muhtemelen agresif"
+		return " ⚠ drop-list muhtemelen agresif (discretionary re-fetch)"
 	case refetchPct < 10:
-		return " ⚠ low; compact may be used as source-of-truth"
+		return " ⚠ low discretionary re-fetch; compact trusted as source-of-truth"
 	case refetchPct < 20:
 		return " ⚠ moderate; hydrate before action"
 	default:

@@ -98,7 +98,12 @@ func emitCompactMissing(cmd *cobra.Command, verb string) {
 // compact display. render is called to measure the byte size of the full output
 // that was (or will be) printed. verb should match the compact verb that
 // preceded this fetch (e.g. "task", "get").
-func emitHydration(cmd *cobra.Command, verb string, render func(io.Writer)) {
+//
+// mandated marks the read as gate-required (explicit --full / hydration-gate
+// path, or bug-fix triage pre-flight) rather than a discretionary agent
+// re-fetch; mandated reads are excluded from the drop-list-risk warning
+// (TASK-491). Pass false for ordinary discretionary full reads.
+func emitHydration(cmd *cobra.Command, verb string, mandated bool, render func(io.Writer)) {
 	var buf bytes.Buffer
 	render(&buf)
 	cfg, err := config.Load()
@@ -113,7 +118,7 @@ func emitHydration(cmd *cobra.Command, verb string, render func(io.Writer)) {
 	if f := cmd.Flags().Lookup("from"); f != nil {
 		fromFlag = f.Value.String()
 	}
-	telemetry.RecordHydration(runtimeDir, verb, fromFlag, buf.Len())
+	telemetry.RecordHydration(runtimeDir, verb, fromFlag, buf.Len(), mandated)
 }
 
 // emitCompact renders both default and compact views to measure the byte

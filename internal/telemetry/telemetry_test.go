@@ -366,7 +366,7 @@ func TestRecordHydration_NetSavingsPositive(t *testing.T) {
 	dir := t.TempDir()
 	// Compact saved 800 bytes gross; re-fetch pulled back 200 → net 600.
 	RecordCompact(dir, "context", "", 200, 1000, 1, "")
-	RecordHydration(dir, "get", "", 200)
+	RecordHydration(dir, "get", "", 200, false)
 
 	sum, err := Summarize(dir)
 	if err != nil {
@@ -391,7 +391,7 @@ func TestRecordHydration_NetSavingsNegative(t *testing.T) {
 	dir := t.TempDir()
 	// Compact saved only 100 bytes but re-fetch pulled back 300 → net −200.
 	RecordCompact(dir, "context", "", 900, 1000, 1, "")
-	RecordHydration(dir, "get", "", 300)
+	RecordHydration(dir, "get", "", 300, false)
 
 	sum, err := Summarize(dir)
 	if err != nil {
@@ -420,7 +420,7 @@ func TestRecordHydration_OmittedOnNonHydrationEntries(t *testing.T) {
 func TestRecordHydration_NoCompact_NetZero(t *testing.T) {
 	dir := t.TempDir()
 	// Hydration with no compact calls — gross saved = 0, net = -hydrated.
-	RecordHydration(dir, "get", "", 500)
+	RecordHydration(dir, "get", "", 500, false)
 
 	sum, err := Summarize(dir)
 	if err != nil {
@@ -436,9 +436,9 @@ func TestRecordHydration_NoCompact_NetZero(t *testing.T) {
 
 func TestRecordHydration_VerbBreakdown(t *testing.T) {
 	dir := t.TempDir()
-	RecordHydration(dir, "get", "", 100)
-	RecordHydration(dir, "get", "", 200)
-	RecordHydration(dir, "decisions", "", 150)
+	RecordHydration(dir, "get", "", 100, false)
+	RecordHydration(dir, "get", "", 200, false)
+	RecordHydration(dir, "decisions", "", 150, false)
 
 	sum, err := Summarize(dir)
 	if err != nil {
@@ -463,8 +463,8 @@ func TestRecordHydration_RefetchRateThreshold(t *testing.T) {
 	// 2 compact calls, 2 hydration calls → 100% re-fetch rate (>50%).
 	RecordCompact(dir, "get", "", 200, 1000, 2, "")
 	RecordCompact(dir, "get", "", 200, 1000, 2, "")
-	RecordHydration(dir, "get", "", 500)
-	RecordHydration(dir, "get", "", 500)
+	RecordHydration(dir, "get", "", 500, false)
+	RecordHydration(dir, "get", "", 500, false)
 
 	sum, err := Summarize(dir)
 	if err != nil {

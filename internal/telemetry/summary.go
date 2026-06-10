@@ -40,6 +40,22 @@ type WeeklySummary struct {
 	HydrationVerbCounts map[string]int `json:"hydration_verb_counts"`
 	NetSavingsBytes     int            `json:"net_savings_bytes"`
 	NetTokensSaved      int            `json:"net_tokens_saved"`
+	// Honest re-fetch split (TASK-491). The total HydrationCalls above conflates
+	// three classes: human full-reads, gate-MANDATED agent --full reads (forced
+	// by the hydration/triage gates, often the FIRST read of a record), and
+	// DISCRETIONARY agent re-fetches (the only class that signals a compact
+	// drop-list dropped a field the agent needed). The "drop-list agresif"
+	// heuristic must fire ONLY on the discretionary-agent rate.
+	//   AgentHydrationCalls          = agent-origin hydration entries (excludes humans)
+	//   AgentMandatedHydrationCalls  = agent-origin AND Mandated=true (gate-forced)
+	//   AgentDiscretionaryHydration  = agent-origin AND Mandated=false (the real signal)
+	//   MandatedHydrationBytesTotal  = bytes fetched by mandated agent reads (for net-savings note)
+	// All recomputed from Origin/Mandated on every Entry, so old telemetry.jsonl
+	// (no mandated field → false → counted as discretionary) stays safe/additive.
+	AgentHydrationCalls         int `json:"agent_hydration_calls"`
+	AgentMandatedHydrationCalls int `json:"agent_mandated_hydration_calls"`
+	AgentDiscretionaryHydration int `json:"agent_discretionary_hydration_calls"`
+	MandatedHydrationBytesTotal int `json:"mandated_hydration_bytes_total"`
 	// Dupe-check aggregates (TASK-268). Helps answer: "how often do agents
 	// file anyway after seeing a dup warning?" High force/cancel ratios
 	// argue the threshold is off; zero MatchesHits with non-zero Calls
@@ -216,6 +232,19 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 			sum.HydrationCalls++
 			sum.HydrationBytesTotal += e.BytesHydrated
 			sum.HydrationVerbCounts[e.Verb]++
+			// Agent-origin split for the honest drop-list-risk signal (TASK-491).
+			// Human full-reads never feed the warning (mirror TASK-490); among
+			// agent reads, gate-mandated --full reads are separated from the
+			// discretionary re-fetches that are the only true compact-drop signal.
+			if e.Origin == originAgent {
+				sum.AgentHydrationCalls++
+				if e.Mandated {
+					sum.AgentMandatedHydrationCalls++
+					sum.MandatedHydrationBytesTotal += e.BytesHydrated
+				} else {
+					sum.AgentDiscretionaryHydration++
+				}
+			}
 		}
 		if e.WithContext {
 			sum.WithContextCalls++
@@ -252,6 +281,16 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 	sum.GlyphTokenOverhead = sum.GlyphByteOverhead / BytesPerToken
 	// Net savings = gross bytes saved by compact - bytes fetched back by hydration.
 	// Can be negative when compact induces more re-fetching than it saves.
+	//
+	// TASK-491 rationale (AC-5): NetSavingsBytes intentionally still subtracts
+	// the FULL HydrationBytesTotal (mandated + discretionary) so the historical
+	// net series stays comparable across the change — we do NOT silently shrink
+	// the charge-back. Instead the "drop-list agresif" WARNING no longer derives
+	// from net at all (see hydrationRiskSuffix / cmd/telemetry.go): it fires only
+	// on the discretionary-agent rate. MandatedHydrationBytesTotal is exposed so
+	// readers can see how much of the charge-back is gate-mandated first-read
+	// bytes (which overstate the "compact induced this fetch" claim) without us
+	// rewriting the long-running net metric.
 	sum.NetSavingsBytes = (sum.CompactBytesDefault - sum.CompactBytesOut) - sum.HydrationBytesTotal
 	sum.NetTokensSaved = sum.NetSavingsBytes / BytesPerToken
 	return sum, nil

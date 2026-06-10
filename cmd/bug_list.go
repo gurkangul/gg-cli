@@ -132,7 +132,12 @@ func runBugGet(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(w, "  Created: %s\n", shortDate(b.CreatedAt))
 		fmt.Fprintf(w, "  Updated: %s\n", shortDate(b.UpdatedAt))
 	}
-	emitHydration(cmd, "bug", renderBugGet)
+	// TASK-491: a non-compact `bug get` is the bug-fix gate / triage pre-flight
+	// full read (bug get has no discretionary --full toggle; --compact is the
+	// only opt-out, and we already skipped recordBugFullHydration under compact).
+	// Tag it gate-mandated so it does not feed the discretionary drop-list-risk
+	// signal — it is the FIRST full read, not a re-fetch after a compact view.
+	emitHydration(cmd, "bug", true, renderBugGet)
 	return printJSON(b, func() { renderBugGet(os.Stdout) })
 }
 
