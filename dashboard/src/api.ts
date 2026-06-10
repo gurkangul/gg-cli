@@ -83,5 +83,4 @@ export const api = {
   telemetry: () => get<Telemetry>('/api/telemetry'),
   recordDecision: (text: string, reason: string) => post<WriteResult>('/api/write/decision', { Text: text, Reason: reason }),
   createTask: (title: string, detail: string) => post<WriteResult>('/api/write/task', { Title: title, Detail: detail }),
-  startTask: (id: string) => post<WriteResult>('/api/write/task/start', { ID: id }),
 }

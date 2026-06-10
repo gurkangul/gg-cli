@@ -84,7 +84,6 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	mux.HandleFunc("/api/stream", srv.handleStream)
 	mux.HandleFunc("/api/write/decision", srv.handleWriteDecision)
 	mux.HandleFunc("/api/write/task", srv.handleWriteTask)
-	mux.HandleFunc("/api/write/task/start", srv.handleWriteTaskStart)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", servePort)
 	ln, err := net.Listen("tcp", addr)
@@ -529,21 +528,6 @@ func (s *dashboardServer) handleWriteTask(w http.ResponseWriter, r *http.Request
 		args = append(args, "--detail", body.Detail)
 	}
 	out, err := s.ggExec(r.Context(), args...)
-	writeJSONResp(w, map[string]any{"ok": err == nil, "output": out})
-}
-
-// handleWriteTaskStart claims/starts a task (the one gate-free Kanban drag:
-// pending → in_progress). Gated transitions (ready-for-live/done/block) stay CLI.
-func (s *dashboardServer) handleWriteTaskStart(w http.ResponseWriter, r *http.Request) {
-	if !s.requireWrite(w, r) {
-		return
-	}
-	var body struct{ ID string }
-	if json.NewDecoder(r.Body).Decode(&body) != nil || strings.TrimSpace(body.ID) == "" {
-		writeJSONResp(w, map[string]any{"error": "id is required"})
-		return
-	}
-	out, err := s.ggExec(r.Context(), "task", "start", body.ID, "--owner", "dashboard", "--lease", "60m")
 	writeJSONResp(w, map[string]any{"ok": err == nil, "output": out})
 }
 
