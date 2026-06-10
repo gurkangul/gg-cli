@@ -4,9 +4,9 @@ import 'reactflow/dist/style.css'
 import dagre from '@dagrejs/dagre'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RTooltip } from 'recharts'
-import { api, setProject as apiSetProject, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData, type Message, type WriteResult, type ProjectItem } from './api'
+import { api, setProject as apiSetProject, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData, type Message, type WriteResult, type ProjectItem, type ProjectHealth } from './api'
 
-const TABS = ['Overview', 'Live Search', 'Decisions', 'Work', 'Bugs', 'Messages', 'Graph', 'Files', 'Context', 'About'] as const
+const TABS = ['Projects', 'Overview', 'Live Search', 'Decisions', 'Work', 'Bugs', 'Messages', 'Graph', 'Files', 'Context', 'About'] as const
 type Tab = (typeof TABS)[number]
 
 const date = (s?: string) => (s ? s.slice(0, 10) : '')
@@ -604,6 +604,56 @@ gg serve                                        # this dashboard`}</pre>
   )
 }
 
+function ProjectsTab({ projects, current, onSwitch }: { projects: ProjectItem[]; current: string; onSwitch: (id: string) => void }) {
+  const [health, setHealth] = useState<Record<string, ProjectHealth>>({})
+  // Lazy: fetch each project's health in parallel only when this tab mounts.
+  useEffect(() => {
+    let alive = true
+    Promise.all(projects.map((p) => api.projectHealth(p.id).then((h) => [p.id, h] as const).catch(() => [p.id, null] as const))).then((pairs) => {
+      if (!alive) return
+      const m: Record<string, ProjectHealth> = {}
+      for (const [id, h] of pairs) if (h && !h.error) m[id] = h
+      setHealth(m)
+    })
+    return () => {
+      alive = false
+    }
+  }, [projects])
+  if (!projects.length) return <Empty>no gg projects registered — run gg init in a project</Empty>
+  return (
+    <>
+      <div className="text-dim text-xs mb-3.5">{projects.length} gg projects on this host — each brain is fully isolated. Click one to open it.</div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+        {projects.map((p) => {
+          const h = health[p.id]
+          return (
+            <button
+              key={p.id}
+              onClick={() => onSwitch(p.id)}
+              className={'text-left bg-panel border rounded-xl p-3.5 hover:border-accent transition-colors ' + (p.id === current ? 'border-accent' : 'border-border')}
+            >
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="font-semibold text-[13px]">{p.name}</span>
+                {p.id === current && <span className="text-accent text-[10px]">● current</span>}
+              </div>
+              <div className="text-dim text-[11px] mb-2.5 truncate" title={p.root}>{p.root}</div>
+              {h ? (
+                <div className="flex gap-3.5 text-[11px] text-dim">
+                  <span>{h.openTasks} open</span>
+                  <span style={{ color: h.openBugs > 0 ? '#f85149' : undefined }}>{h.openBugs} bugs</span>
+                  <span>{h.decisions} decisions</span>
+                </div>
+              ) : (
+                <div className="text-border text-[11px]">loading…</div>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('Overview')
   const [projects, setProjects] = useState<ProjectItem[]>([])
@@ -681,6 +731,7 @@ export default function App() {
       <main className="p-6 max-w-[1100px] mx-auto">
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+            {tab === 'Projects' && <ProjectsTab projects={projects} current={project} onSwitch={(id) => { switchProject(id); setTab('Overview') }} />}
             {tab === 'Overview' && <OverviewTab rev={rev} writable={writable} />}
             {tab === 'Live Search' && <SearchTab />}
             {tab === 'Decisions' && <DecisionsTab rev={rev} />}

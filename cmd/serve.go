@@ -84,6 +84,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(dist)))
 	mux.HandleFunc("/api/projects", srv.handleProjects)
+	mux.HandleFunc("/api/project-health", srv.handleProjectHealth)
 	mux.HandleFunc("/api/overview", srv.handleOverview)
 	mux.HandleFunc("/api/search", srv.handleSearch)
 	mux.HandleFunc("/api/decisions", srv.handleDecisions)
@@ -244,6 +245,44 @@ func (s *dashboardServer) closeAll() {
 			_ = pc.store.Close()
 		}
 	}
+}
+
+// handleProjectHealth returns one project's quick health for the launcher
+// portfolio. Resolved per-request (?project=<id>) and loaded lazily by the UI so
+// a host with many projects pays for counts only as cards render — not 11× up
+// front. Brains stay isolated; this is navigation metadata, not a merged view.
+func (s *dashboardServer) handleProjectHealth(w http.ResponseWriter, r *http.Request) {
+	pc := s.resolveOr(w, r)
+	if pc == nil {
+		return
+	}
+	ctx := r.Context()
+	tasks, _ := pc.store.ListTasks(ctx, "")
+	bugs, _ := pc.store.ListBugs(ctx, "")
+	decs, _ := pc.store.ListDecisions(ctx, 0, false)
+	openTasks, openBugs, last := 0, 0, ""
+	for _, t := range tasks {
+		if t.Status != "done" {
+			openTasks++
+		}
+		if t.CreatedAt > last {
+			last = t.CreatedAt
+		}
+	}
+	for _, b := range bugs {
+		if b.Status == "open" || b.Status == "reopened" || b.Status == "fixing" {
+			openBugs++
+		}
+	}
+	for _, d := range decs {
+		if d.CreatedAt > last {
+			last = d.CreatedAt
+		}
+	}
+	writeJSONResp(w, map[string]any{
+		"id": pc.projectID, "openTasks": openTasks, "openBugs": openBugs,
+		"decisions": len(decs), "lastActivity": last,
+	})
 }
 
 // handleProjects lists the registered projects for the dashboard switcher.

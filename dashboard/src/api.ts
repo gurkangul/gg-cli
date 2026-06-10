@@ -60,6 +60,7 @@ export type FileInfo = { name: string; records: number; bytes: number }
 export type FileDump = { name: string; records: any[] }
 export type Telemetry = { weekly?: any; sessions?: any }
 export type ProjectItem = { id: string; name: string; root: string; default?: boolean }
+export type ProjectHealth = { id: string; openTasks: number; openBugs: number; decisions: number; lastActivity?: string; error?: string }
 
 // The selected project is threaded into every request as ?project=<id> so one
 // path-independent server can serve every registered project's (isolated) brain.
@@ -84,6 +85,9 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 
 export const api = {
   projects: () => get<ProjectItem[]>('/api/projects'),
+  // Explicit project id (not the threaded current one) — for the portfolio.
+  projectHealth: async (id: string) =>
+    (await (await fetch('/api/project-health?project=' + encodeURIComponent(id))).json()) as ProjectHealth,
   overview: () => get<Overview>('/api/overview'),
   search: (q: string) => get<SearchResult>('/api/search?q=' + encodeURIComponent(q)),
   decisions: () => get<Decision[]>('/api/decisions'),
