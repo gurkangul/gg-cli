@@ -59,18 +59,31 @@ export type GraphData = { nodes: GraphNode[]; edges: GraphEdge[]; error?: string
 export type FileInfo = { name: string; records: number; bytes: number }
 export type FileDump = { name: string; records: any[] }
 export type Telemetry = { weekly?: any; sessions?: any }
+export type ProjectItem = { id: string; name: string; root: string; default?: boolean }
+
+// The selected project is threaded into every request as ?project=<id> so one
+// path-independent server can serve every registered project's (isolated) brain.
+let currentProject = ''
+export function setProject(id: string) {
+  currentProject = id
+}
+export function projectQuery(url: string): string {
+  if (!currentProject) return url
+  return url + (url.includes('?') ? '&' : '?') + 'project=' + encodeURIComponent(currentProject)
+}
 
 async function get<T>(url: string): Promise<T> {
-  const r = await fetch(url)
+  const r = await fetch(projectQuery(url))
   return (await r.json()) as T
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const r = await fetch(projectQuery(url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   return (await r.json()) as T
 }
 
 export const api = {
+  projects: () => get<ProjectItem[]>('/api/projects'),
   overview: () => get<Overview>('/api/overview'),
   search: (q: string) => get<SearchResult>('/api/search?q=' + encodeURIComponent(q)),
   decisions: () => get<Decision[]>('/api/decisions'),

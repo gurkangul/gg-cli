@@ -4,7 +4,7 @@ import 'reactflow/dist/style.css'
 import dagre from '@dagrejs/dagre'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RTooltip } from 'recharts'
-import { api, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData, type Message, type WriteResult } from './api'
+import { api, setProject as apiSetProject, type Decision, type Task, type Bug, type FileInfo, type Overview, type SearchResult, type Telemetry, type GraphData, type Message, type WriteResult, type ProjectItem } from './api'
 
 const TABS = ['Overview', 'Live Search', 'Decisions', 'Work', 'Bugs', 'Messages', 'Graph', 'Files', 'Context', 'About'] as const
 type Tab = (typeof TABS)[number]
@@ -606,24 +606,63 @@ gg serve                                        # this dashboard`}</pre>
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('Overview')
-  const [project, setProject] = useState('')
+  const [projects, setProjects] = useState<ProjectItem[]>([])
+  const [project, setProjectId] = useState('') // currently selected project id
   const [rev, setRev] = useState(0)
   const [live, setLive] = useState(false)
   const [writable, setWritable] = useState(false)
-  useEffect(() => { api.overview().then((o) => { setProject(o.project || ''); setWritable(!!o.writable) }) }, [])
+
+  // Load the registered projects once, select the default, then everything keys
+  // off `project` (threaded into every request so each brain stays isolated).
   useEffect(() => {
-    const es = new EventSource('/api/stream')
+    api.projects().then((ps) => {
+      setProjects(ps || [])
+      const def = (ps || []).find((p) => p.default) || (ps || [])[0]
+      if (def) {
+        apiSetProject(def.id)
+        setProjectId(def.id)
+      }
+      setRev((v) => v + 1)
+    })
+    api.overview().then((o) => setWritable(!!o.writable))
+  }, [])
+
+  // Re-open the live stream for the selected project and refetch the tabs.
+  useEffect(() => {
+    if (!project) return
+    apiSetProject(project)
+    const es = new EventSource('/api/stream?project=' + encodeURIComponent(project))
     es.addEventListener('ready', () => setLive(true))
     es.addEventListener('change', () => setRev((v) => v + 1))
     es.onerror = () => setLive(false)
     return () => es.close()
-  }, [])
+  }, [project])
+
+  const switchProject = (id: string) => {
+    apiSetProject(id)
+    setProjectId(id)
+    setRev((v) => v + 1)
+  }
+
   return (
     <div className="min-h-full">
       <header className="flex items-center gap-3.5 px-6 py-3.5 border-b border-border bg-panel">
         <h1 className="text-base font-semibold m-0"><span className="text-accent font-bold">gg</span> · project brain</h1>
-        <span className="text-dim text-xs">{project}</span>
-        <span className="ml-auto text-[11px] border border-border rounded-full px-2.5 py-0.5" style={{ color: live ? '#3fb950' : '#8b949e' }}>{live ? '● live' : '○ connecting'} · localhost · read-only</span>
+        {projects.length > 0 ? (
+          <select
+            value={project}
+            onChange={(e) => switchProject(e.target.value)}
+            title="Switch project — each brain is isolated"
+            className="bg-panel2 border border-border rounded-md text-fg text-xs px-2 py-1 max-w-[260px] cursor-pointer hover:border-accent"
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-dim text-xs">{project || 'no projects'}</span>
+        )}
+        <span className="ml-auto text-[11px] border border-border rounded-full px-2.5 py-0.5" style={{ color: live ? '#3fb950' : '#8b949e' }}>{live ? '● live' : '○ connecting'} · localhost{writable ? ' · write' : ' · read-only'}</span>
       </header>
       <nav className="flex gap-1 px-6 py-2.5 border-b border-border bg-panel overflow-x-auto">
         {TABS.map((t) => (
