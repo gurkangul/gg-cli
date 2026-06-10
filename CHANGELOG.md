@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-10
+
+### Added
+
+- **Global, path-independent dashboard** (TASK-487) — `gg serve` now runs from
+  any directory and serves every gg project registered on the host
+  (`~/.gg/projects.json`), with a header dropdown to switch between them. Each
+  request carries `?project=<id>` and resolves a cached per-project store +
+  embedder; brains stay fully isolated (no cross-project merge). Inside a project
+  that project is the default; stale (deleted-root) entries are filtered out.
+
+### Changed
+
+- **Work board is read-only** (TASK-486) — removed dashboard drag-to-start.
+  Agents self-claim and progress tasks (`gg next` / `gg task start`); a human
+  dragging to start created a fake "dashboard" owner and conflicted with the
+  autonomous-agent model. The clickable task-detail panel and the human compose
+  writes (record decision / create task) are retained; dropped `@dnd-kit/core`.
+
 ## [0.4.10] - 2026-06-09
 
 ### Added
