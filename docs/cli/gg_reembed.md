@@ -26,6 +26,7 @@ gg reembed [flags]
 ```
       --confirm   required: confirms you understand existing vector data will be dropped and rebuilt
   -h, --help      help for reembed
+      --yes       alias for --confirm (canonical destructive-confirm flag)
 ```
 
 ### Options inherited from parent commands

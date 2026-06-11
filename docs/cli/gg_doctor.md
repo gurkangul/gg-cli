@@ -55,6 +55,7 @@ gg doctor [flags]
       --refresh-hooks            overwrite drifted gg-managed hook templates after backing up each stale copy
       --refresh-hooks-force      with --refresh-hooks: also overwrite user-customized hooks that lack gg-template markers
       --staged                   with --check-secrets: run staged/working-tree scan only (gitleaks detect --no-git)
+      --strict                   exit non-zero when artifact drift is detected (for CI); without --strict, drift is advisory and does not affect the exit code
       --sync-artifacts           compare .gg/installed.json against the current CLI templates and show a drift table
       --sync-baseline            rescan project and refresh .gg/file-size-baseline.json with current line counts
       --wipe-brain               drop all Qdrant collections and Memgraph nodes for this project (destructive — use for testing)
