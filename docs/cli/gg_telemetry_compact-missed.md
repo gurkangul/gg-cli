@@ -1,14 +1,15 @@
 ## gg telemetry compact-missed
 
-Show per-verb missed compact savings (last 7 days)
+Show per-verb missed compact savings (last 7 days, agent-origin only)
 
 ### Synopsis
 
 For each verb that has at least one compact-mode call (i.e. the
-command has a working compact render path), report how many calls still ran
-default and the estimated bytes/tokens that would have been saved if those
-calls had used --compact. The estimate is per-verb and conservative: it uses
-each verb's own observed avg-bytes-saved-per-compact-call.
+command has a working compact render path), report how many agent-origin calls
+still ran default and the estimated bytes/tokens that would have been saved if
+those calls had used --compact. Human full-reads are excluded — they are not
+missed compact opportunities. The estimate is per-verb and conservative: it
+uses each verb's own observed avg-bytes-saved-per-compact-call.
 
 ```
 gg telemetry compact-missed [flags]

@@ -38,6 +38,7 @@ gg doctor [flags]
       --dry-run                  with --install-agent-hooks: report what would change without writing anything
       --fix                      with --check-contract: repair STALE and MISSING entries; refuses DRIFTED without --force-reset
       --fix-binary               with --check-binary: rebuild and reinstall gg from the local source checkout when the binary is stale
+      --fix-git-identity         reset a repo-local agent git identity so commits are attributed to you (the human)
       --fix-index                refresh a missing or stale code graph by running the recommended gg index command(s)
       --force                    with --install-agent-hooks: bypass detection and install for the named agent(s)
       --force-reset              with --check-contract --fix: overwrite manually-edited (DRIFTED) contract blocks
