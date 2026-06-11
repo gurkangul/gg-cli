@@ -22,15 +22,15 @@ var auditCaptureVerbs = []string{"record", "decide", "task", "bug"}
 
 var auditCmd = &cobra.Command{
 	Use:   "audit",
-	Short: "Session mutation audit (called by PostToolUse and Stop hooks)",
-	Long: `Track Edit/Write/MultiEdit mutations during a session and emit a
+	Short: experimentalShort("Session mutation audit (called by PostToolUse and Stop hooks)"),
+	Long: experimentalLong(`Track Edit/Write/MultiEdit mutations during a session and emit a
 warning at session end when N>=3 mutations happened with no gg
 record/decide/task calls — non-blocking, visibility only.
 
 This command is called automatically by hooks installed via:
   gg doctor --install-agent-hooks
 
-Set GG_NO_AUDIT=1 to suppress both the track and report hooks.`,
+Set GG_NO_AUDIT=1 to suppress both the track and report hooks.`),
 }
 
 var (

@@ -14,7 +14,8 @@ import (
 
 var gsdCmd = &cobra.Command{
 	Use:   "gsd",
-	Short: "GSD integration utilities",
+	Short: experimentalShort("GSD integration utilities"),
+	Long:  experimentalLong("GSD integration utilities."),
 }
 
 var gsdAuditCmd = &cobra.Command{

@@ -12,8 +12,8 @@ import (
 
 var telemetryCmd = &cobra.Command{
 	Use:   "telemetry",
-	Short: "Manage local usage telemetry",
-	Long: `Local-only, PII-free usage telemetry. Opt-in — disabled by default.
+	Short: experimentalShort("Manage local usage telemetry"),
+	Long: experimentalLong(`Local-only, PII-free usage telemetry. Opt-in — disabled by default.
 
 Enable in your project config:
   gg config set telemetry.enabled true
@@ -22,7 +22,7 @@ Or via environment variable (temporary):
   GG_TELEMETRY=1 gg status
 
 Disable permanently:
-  gg config set telemetry.enabled false`,
+  gg config set telemetry.enabled false`),
 }
 
 var telemetrySummaryCmd = &cobra.Command{

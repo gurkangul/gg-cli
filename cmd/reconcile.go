@@ -21,14 +21,14 @@ var (
 
 var reconcileCmd = &cobra.Command{
 	Use:   "reconcile",
-	Short: "Reconcile append-only task events with the live task projection",
-	Long: `Compares .gg/brain/task-events.jsonl against the Qdrant task projection.
+	Short: experimentalShort("Reconcile append-only task events with the live task projection"),
+	Long: experimentalLong(`Compares .gg/brain/task-events.jsonl against the Qdrant task projection.
 
 Default mode is read-only: reports missing projections, projection drift,
 orphaned owners/leases, and stale leases. Use --apply to repair safe cases:
 missing non-cancelled projections are replayed from .gg/brain/tasks.jsonl,
 drifted task lifecycle fields are reset from the event log, stale leases are
-released back to pending, and projected cancelled tasks are removed.`,
+released back to pending, and projected cancelled tasks are removed.`),
 	Args: cobra.NoArgs,
 	RunE: runReconcile,
 }

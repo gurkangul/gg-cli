@@ -14,11 +14,11 @@ import (
 
 var traceCmd = &cobra.Command{
 	Use:   "trace",
-	Short: "Inspect GG_TRACE span data",
-	Long: `Commands for reading, summarising, and clearing trace spans.
+	Short: experimentalShort("Inspect GG_TRACE span data"),
+	Long: experimentalLong(`Commands for reading, summarising, and clearing trace spans.
 
 Trace recording is enabled by setting GG_TRACE=1 before running gg commands.
-Each operation is appended as a JSON line to .gg/traces/YYYY-MM-DD.jsonl.`,
+Each operation is appended as a JSON line to .gg/traces/YYYY-MM-DD.jsonl.`),
 }
 
 // ── trace show ────────────────────────────────────────────────────────────────
