@@ -11,6 +11,7 @@ gg init [flags]
 ```
   -h, --help                  help for init
       --no-index              skip the post-setup index prompt (non-interactive no)
+      --no-index-hooks        skip auto-installing the CodeGraph git hooks (pre-push/post-merge/post-commit)
       --skip-enforcement      skip installing agent hooks and task-done gate scripts
       --with-index gg index   also run gg index after setup (non-interactive yes)
       --yes                   non-interactive: skip prompts
