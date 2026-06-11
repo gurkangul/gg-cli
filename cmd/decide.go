@@ -18,8 +18,13 @@ This command will be removed in a future major release.
 
   gg record "use JWT"                                      # accepted decision
   gg record "use sessions" --decision-status=rejected      # rejected approach`,
-	Args: cobra.ExactArgs(1),
-	RunE: runDecide,
+	// Deprecated is the single runtime warning: cobra prints
+	// `Command "decide" is deprecated, <msg>` to stderr exactly once before
+	// RunE. The wording comes from the shared deprecationMessage helper so it
+	// is identical to --help / completion. Do NOT also Fprintln in runDecide.
+	Deprecated: deprecationMessage("gg record"),
+	Args:       cobra.ExactArgs(1),
+	RunE:       runDecide,
 }
 
 var (
@@ -39,8 +44,8 @@ func init() {
 }
 
 func runDecide(cmd *cobra.Command, args []string) error {
-	fmt.Fprintln(cmd.ErrOrStderr(), "warning: 'gg decide' is deprecated — use 'gg record' instead")
-
+	// Deprecation notice is emitted by cobra (see decideCmd.Deprecated); do not
+	// duplicate it here.
 	text, err := requireNonEmpty("decision text", args[0])
 	if err != nil {
 		return err

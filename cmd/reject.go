@@ -21,8 +21,12 @@ This command will be removed in a future release.
 
   gg record "approach" --decision-status=rejected --reason "why"
   gg record "use PostgreSQL" --rejected-alternatives "MySQL,SQLite" --reason "..."`,
-	Args: cobra.ExactArgs(1),
-	RunE: runReject,
+	// Single runtime warning, emitted by cobra to stderr exactly once before
+	// RunE. Wording sourced from the shared deprecationMessage helper. Do NOT
+	// also Fprintln in runReject.
+	Deprecated: deprecationMessage("gg record --decision-status=rejected"),
+	Args:       cobra.ExactArgs(1),
+	RunE:       runReject,
 }
 
 var (
@@ -40,9 +44,8 @@ func init() {
 }
 
 func runReject(cmd *cobra.Command, args []string) error {
-	fmt.Fprintln(cmd.ErrOrStderr(), "warning: 'gg reject' is deprecated — use 'gg record --decision-status=rejected' instead")
-	fmt.Fprintln(cmd.ErrOrStderr(), "  example: gg record \"approach\" --decision-status=rejected --reason \"why\"")
-
+	// Deprecation notice is emitted by cobra (see rejectCmd.Deprecated); do not
+	// duplicate it here.
 	approach, err := requireNonEmpty("approach", args[0])
 	if err != nil {
 		return err
