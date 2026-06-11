@@ -35,6 +35,11 @@ func doctorCheckOllama(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 	}
 	report.ok("ollama", fmt.Sprintf("reachable at %s (model: %s)", cfg.Embedding.Host, cfg.Embedding.Model))
 
+	// AC-2: confirm the configured embedding model is actually present locally
+	// (queryable via /api/tags) before the embedding canaries run, so a missing
+	// model gives the exact `ollama pull` fix instead of a cryptic embed error.
+	doctorCheckEmbeddingModel(cmd.Context(), cfg.Embedding.Host, cfg.Embedding.Model, report)
+
 	gen := embedding.New(&cfg.Embedding, store.VectorSize)
 	dimCtx, dimCancel := withTimeout(cmd.Context())
 	defer dimCancel()

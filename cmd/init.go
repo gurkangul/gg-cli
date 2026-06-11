@@ -115,6 +115,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --- Early language notice (AC-3) ---
+	// Detect the project language up front so an unsupported ecosystem is called
+	// out BEFORE the slow service provisioning, instead of failing cryptically
+	// at the index step. Supported set is go, typescript, python, swift (see
+	// internal/index/runner.SupportedLangs); printUnsupportedLangNotice is a
+	// no-op when a supported language (or nothing) is detected.
+	printUnsupportedLangNotice(cwd)
+
 	// --- Shared infra at ~/.gg/ ---
 	sharedDir, err := config.SharedDir()
 	if err != nil {

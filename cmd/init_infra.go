@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,15 +15,40 @@ import (
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
+// startSharedServices brings the shared Docker stack up. Before invoking
+// `docker compose up` it probes the Docker daemon (AC-1) so a stopped daemon /
+// missing binary fails fast with an actionable hint instead of a slow compose
+// timeout. When compose itself fails, the REAL underlying stderr is surfaced
+// (not a generic "start manually" line). Returns true only when the stack came
+// up; a false return is always accompanied by a printed, actionable reason.
 func startSharedServices(ctx context.Context, composePath string) bool {
+	switch res, detail := probeDockerDaemon(ctx); res {
+	case dockerMissing:
+		fmt.Println("⚠ " + dockerMissingMsg())
+		return false
+	case dockerDown:
+		fmt.Println("⚠ " + dockerDaemonDownMsg(runtimeGOOS()))
+		if strings.TrimSpace(detail) != "" {
+			fmt.Println("  Docker reported: " + strings.TrimSpace(detail))
+		}
+		return false
+	}
+
 	fmt.Println("Starting shared Docker services...")
 	composeCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	compose := exec.CommandContext(composeCtx, "docker", "compose", "-f", composePath, "up", "-d")
+	// Tee stderr so the user still sees compose progress live, but we also keep a
+	// copy to surface the real failure cause (AC-1) when Run() returns an error.
+	var stderrBuf bytes.Buffer
 	compose.Stdout = os.Stdout
-	compose.Stderr = os.Stderr
+	compose.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
 	if err := compose.Run(); err != nil {
-		fmt.Println("⚠ Docker compose failed — start manually: docker compose -f", composePath, "up -d")
+		raw := strings.TrimSpace(stderrBuf.String())
+		if raw == "" {
+			raw = err.Error()
+		}
+		fmt.Println("⚠ " + composeFailureMsg(composePath, raw))
 		return false
 	}
 	fmt.Println("✓ Shared Docker services running")

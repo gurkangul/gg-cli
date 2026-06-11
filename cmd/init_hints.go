@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gurkangul/gg-cli/internal/agenthooks"
 	"github.com/gurkangul/gg-cli/internal/session"
@@ -116,6 +117,38 @@ func detectUnsupportedLang(dir string) string {
 		}
 	}
 	return ""
+}
+
+// unsupportedLangNotice builds the early upfront notice (AC-3) shown when a
+// project's ecosystem is recognized but NOT supported by gg index. Pure
+// formatter (no I/O) so the wording is unit-testable. Returns "" when lang is
+// empty (nothing recognized — caller stays silent).
+//
+// The supported set listed here mirrors internal/index/runner.SupportedLangs
+// (go, typescript, python, swift); keep them in sync.
+func unsupportedLangNotice(lang string) string {
+	if strings.TrimSpace(lang) == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"Detected %s — gg indexing currently supports Go, TypeScript, Python, Swift; "+
+			"the code graph will be limited/skipped for this project.",
+		lang,
+	)
+}
+
+// printUnsupportedLangNotice prints the early unsupported-language notice when
+// the project is a recognized-but-unsupported ecosystem AND no supported
+// language is detected. No-op for supported languages or unrecognized projects,
+// so supported and polyglot repos see nothing.
+func printUnsupportedLangNotice(dir string) {
+	if detectLangHint(dir) != "" {
+		return // a supported language is present — indexing will work.
+	}
+	if notice := unsupportedLangNotice(detectUnsupportedLang(dir)); notice != "" {
+		fmt.Println(notice)
+		fmt.Println()
+	}
 }
 
 // printBootstrapPrompt emits the paste-block users copy into their agent's
