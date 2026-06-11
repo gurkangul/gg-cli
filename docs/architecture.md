@@ -135,3 +135,7 @@ gg record           gg task create       gg search
 ```
 
 No central coordinator. No daemon. Each agent is a subprocess that reads/writes the shared store via the `gg` CLI.
+
+## Stability & versioning
+
+The target 1.0 contract (SemVer mapping, command stability tiers, forward-only storage compatibility, and the deprecation policy) is defined in [stability.md](./stability.md). The honest gap audit against that contract — command-surface tiers and per-format version/migration status — is in [1.0-readiness.md](./1.0-readiness.md).

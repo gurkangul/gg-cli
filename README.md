@@ -29,6 +29,10 @@ gg stores the durable shared memory and evidence that future agents need.
 > **Status:** pre-1.0 and actively dogfooded. The CLI is usable as a local
 > product today, while command details and storage formats may still evolve
 > before a stable 1.0 release.
+>
+> **Stability & versioning:** see [docs/stability.md](docs/stability.md) for the
+> target 1.0 contract (SemVer, command tiers, forward-only storage, deprecation
+> policy) and [docs/1.0-readiness.md](docs/1.0-readiness.md) for the honest gap audit.
 
 ---
 
