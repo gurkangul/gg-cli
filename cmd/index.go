@@ -86,9 +86,10 @@ func runIndexOnce(cmd *cobra.Command, lang runner.Lang, changedMode bool) error 
 	ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Minute)
 	defer cancel()
 
-	// Ensure schema indexes exist.
+	// Ensure schema indexes exist. This is the first call that actually opens a
+	// Bolt connection, so it is where a down/unreachable Memgraph surfaces.
 	if err := gc.SchemaInit(ctx); err != nil {
-		return fmt.Errorf("schema init: %w", err)
+		return memgraphDownErr("schema init", err)
 	}
 
 	if changedMode {

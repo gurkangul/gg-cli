@@ -34,7 +34,7 @@ func withTimeout(parent context.Context) (context.Context, context.CancelFunc) {
 func storeDownErr() error {
 	return &ExitError{
 		Code:    ExitStoreDown,
-		Message: "Qdrant unreachable — writes blocked, reads served from cache",
+		Message: withServiceHint("Qdrant unreachable — writes blocked, reads served from cache", svcQdrant),
 	}
 }
 

@@ -21,7 +21,7 @@ func runProjectContext(cmd *cobra.Command) error {
 	defer d.Close()
 
 	if d.qdrantSlow {
-		return fmt.Errorf("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status")
+		return fmt.Errorf("%s", withServiceHint("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status", svcQdrant))
 	}
 	if d.qdrantDown {
 		return serveContextFromCache(cmd, projectContextQuery)

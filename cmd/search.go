@@ -70,7 +70,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	defer d.Close()
 
 	if d.qdrantSlow {
-		return fmt.Errorf("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status")
+		return fmt.Errorf("%s", withServiceHint("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status", svcQdrant))
 	}
 	if d.qdrantDown {
 		// AC-4: fall back to JSONL scan first, then LKG cache.
@@ -82,7 +82,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	vector, err := d.embedder.Generate(ctx, query)
 	if err != nil {
-		return fmt.Errorf("generate embedding: %w", err)
+		return embedErr("generate embedding", err)
 	}
 
 	semanticLimit := searchLimit * 4

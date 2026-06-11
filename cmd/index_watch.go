@@ -114,7 +114,7 @@ func runIndexWatchTick(parent context.Context, cmd *cobra.Command, cfg *config.C
 	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)
 	defer cancel()
 	if err := gc.SchemaInit(ctx); err != nil {
-		return fmt.Errorf("schema init: %w", err)
+		return memgraphDownErr("schema init", err)
 	}
 	if full {
 		fmt.Fprintln(cmd.OutOrStderr(), "watch: full index required - running full index")

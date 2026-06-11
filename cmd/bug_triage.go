@@ -56,7 +56,7 @@ func runBugTriage(cmd *cobra.Command, args []string) error {
 
 	vector, err := d.embedder.Generate(ctx, query)
 	if err != nil {
-		return fmt.Errorf("generate embedding: %w", err)
+		return embedErr("generate embedding", err)
 	}
 
 	// Parallel search across all collections.

@@ -128,7 +128,7 @@ func doctorFixIndexCheckServices(parent context.Context, cfg *config.Config, ggD
 	}
 	defer func() { _ = gc.Close(ctx) }()
 	if err := gc.HealthCheck(ctx); err != nil {
-		return serviceErr(fmt.Sprintf("memgraph unavailable: %v", err))
+		return memgraphDownErr("memgraph unavailable", err)
 	}
 	return nil
 }
