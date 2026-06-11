@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-06-11
+
+Post-1.0 hardening. No breaking changes; all additive within the 1.0 stability
+contract.
+
+### Added
+
+- **Live CodeGraph** (TASK-502) — `gg init` now auto-installs the index git
+  hooks, and the set gains a **post-commit** hook so the CodeGraph refreshes on
+  every local commit (not just push/merge). No manual `gg index --watch` needed.
+  Foreground/non-blocking — never delays or fails a commit; opt out with
+  `--no-index-hooks` / `GG_NO_INDEX_HOOKS` / `auto_index_hooks: false`.
+- **`--json` for `gg status` and `gg doctor`** (TASK-503) — machine-readable
+  output for agents, plus discoverability cues (linked projects, pending outbox,
+  `GG_TRACE` tip) surfaced in the human output.
+- **Actionable service-down hints** (TASK-497) — when Qdrant/Memgraph/Ollama are
+  unreachable, errors now include the exact `docker compose … up`/`logs` recovery
+  commands.
+- **Registry hygiene** (TASK-504) — `gg system register --list`/`sync`/`doctor`
+  surface stale (missing-root) and invalid entries with a prune hint; duplicate
+  `project_id` at a different root now warns.
+- **Auto-reconcile outbox on session-start** (TASK-505) — pending vector writes
+  replay automatically (bounded 3s, non-fatal); opt out with
+  `GG_NO_AUTO_RECONCILE`. No more manual `gg doctor --reconcile` after a crash.
+- **Init friction reducers** (TASK-501) — early Docker-daemon check, embedding
+  model readiness in `gg doctor`, and an unsupported-language notice.
+- **`gg doctor --strict`** (TASK-506) — exit non-zero on artifact drift for CI;
+  default stays advisory.
+- Store integration tests for client/export/dedup against real Qdrant (TASK-500).
+
+### Changed
+
+- **`gg gsd-guard` fails safe** (TASK-498) — unreadable/malformed PreToolUse
+  stdin now blocks (exit 1) instead of silently failing open.
+- **`--yes`/`GG_YES` bypass** added to `gg doctor --heal` and the test-tier
+  install prompt (TASK-499); `gg reembed` gains a `--yes` alias for `--confirm`.
+- Clarified help for `wave` (optional) and `metrics` (dogfood) (TASK-508);
+  internal cleanups — `serve.go` split under the size gate (TASK-507), runner
+  `MustRegister`, shared index-state warn helper (TASK-506).
+
 ## [1.0.0] - 2026-06-11
 
 First stable release. The stability guarantees in
