@@ -128,16 +128,18 @@ func runDoctorHeal() error {
 		fmt.Printf("  Current file: %s\n", rulesPath)
 		fmt.Printf("  Template:     embedded (internal/templates/rules.md)\n")
 		fmt.Println()
-		fmt.Print("Re-render .gg/RULES.md from current template? [y/N] ")
-		var answer string
-		if _, scanErr := fmt.Scanln(&answer); scanErr != nil || strings.ToLower(strings.TrimSpace(answer)) != "y" {
-			fmt.Println("Skipped.")
-		} else {
+		if confirmDestructive(
+			"Re-render .gg/RULES.md from current template? [y/N] ",
+			"re-rendering without prompting",
+			"skipping re-render; pass --yes to apply",
+		) {
 			if healErr := healRulesFromTemplate(rulesPath, templates.RulesMD); healErr != nil {
 				fmt.Printf("  ✗ RULES.md: re-render failed: %v\n", healErr)
 			} else {
 				fmt.Printf("  ✓ RULES.md re-rendered from template (backup: %s.bak)\n", rulesPath)
 			}
+		} else {
+			fmt.Println("Skipped.")
 		}
 	default:
 		fmt.Println("  ✓ RULES.md         (matches current template — nothing to do)")
@@ -158,6 +160,44 @@ func runDoctorHeal() error {
 		fmt.Println("(gg does not commit for you — run the command above manually.)")
 	}
 	return nil
+}
+
+// confirmDestructive applies the CLAUDE.md non-interactive contract to a single
+// state-changing prompt. Every such command must run from CI or a script:
+//
+//   - --yes (doctorWipeBrainYes) or GG_YES truthy: auto-accept, NO stdin read.
+//   - non-TTY without the bypass: decline (safe default, never hangs).
+//   - TTY: print prompt and read [y/N] (default No on Enter/error).
+//
+// yesMsg / skipMsg are the one-line notices printed in the auto-accept and
+// non-interactive-decline branches respectively.
+func confirmDestructive(prompt, yesMsg, skipMsg string) bool {
+	if autoConfirmYes() {
+		fmt.Printf("  (--yes/GG_YES — %s)\n", yesMsg)
+		return true
+	}
+	if !isTerminal(os.Stdin) {
+		fmt.Printf("  (non-interactive, no --yes/GG_YES — %s)\n", skipMsg)
+		return false
+	}
+	fmt.Print(prompt)
+	var answer string
+	if _, scanErr := fmt.Scanln(&answer); scanErr != nil {
+		// EOF / empty line / read error all mean "no" — never act on a failed read.
+		return false
+	}
+	return strings.ToLower(strings.TrimSpace(answer)) == "y"
+}
+
+// autoConfirmYes reports whether destructive prompts should auto-accept without
+// reading stdin. True when the doctor --yes flag is set OR GG_YES is truthy.
+// Shared by the heal flow and the Makefile test-tier prompt so the
+// non-interactive contract is uniform across doctor sub-commands.
+func autoConfirmYes() bool {
+	if doctorWipeBrainYes {
+		return true
+	}
+	return envTruthy(os.Getenv("GG_YES"))
 }
 
 // isTemplateDrifted reports whether the file at path differs from the given

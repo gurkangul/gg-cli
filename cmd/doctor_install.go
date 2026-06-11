@@ -448,11 +448,13 @@ func offerMakefileTestTierInclude(makefilePath, tierTemplatePath, projectRoot st
 	includeLine := "include " + filepath.ToSlash(rel)
 
 	fmt.Printf("\nMakefile found at %s.\n", makefilePath)
-	fmt.Printf("Add test-tier targets (test-unit / test-integration / test-smoke / test-e2e)? [y/N] ")
-	fmt.Printf("  This appends: %s\n", includeLine)
+	fmt.Printf("  This would append: %s\n", includeLine)
 
-	var answer string
-	if _, scanErr := fmt.Scanln(&answer); scanErr != nil || strings.ToLower(strings.TrimSpace(answer)) != "y" {
+	if !confirmDestructive(
+		"Add test-tier targets (test-unit / test-integration / test-smoke / test-e2e)? [y/N] ",
+		"appending test-tier targets without prompting",
+		"skipping; pass --yes to append",
+	) {
 		fmt.Println("  Skipped — add the include manually when ready.")
 		return nil
 	}

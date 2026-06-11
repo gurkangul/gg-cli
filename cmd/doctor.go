@@ -84,7 +84,7 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorWipeBrain, "wipe-brain", false,
 		"drop all Qdrant collections and Memgraph nodes for this project (destructive — use for testing)")
 	doctorCmd.Flags().BoolVar(&doctorWipeBrainYes, "yes", false,
-		"with --wipe-brain: skip interactive confirmation")
+		"auto-accept confirmations for state-changing doctor flows (--wipe-brain, --heal RULES.md re-render, --install-task-hooks Makefile test-tier); also honored via GG_YES=1")
 	doctorCmd.Flags().BoolVar(&doctorInstallTaskHooks, "install-task-hooks", false,
 		"install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)")
 	doctorCmd.Flags().BoolVar(&doctorInstallIndexHooks, "install-index-hooks", false,
