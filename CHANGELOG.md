@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-11
+
+First stable release. The stability guarantees in
+[docs/stability.md](docs/stability.md) are now **in effect**: the stable command
+surface is frozen within a major version, storage is forward-only readable, and
+breaking changes follow SemVer with a deprecation cycle. See
+[docs/1.0-readiness.md](docs/1.0-readiness.md) for the readiness audit.
+
+### Added
+
+- **Stability & versioning policy** (TASK-492) — new `docs/stability.md` (SemVer
+  mapping, command tiers, forward-only storage, deprecation policy, config
+  additive-keys rule) and `docs/1.0-readiness.md` (command-surface + storage
+  audit and the closed punch-list).
+- **Shared deprecation mechanism** (TASK-493) — a single-source deprecation
+  helper plus cobra `Deprecated` adoption on `gg decide`/`gg reject`, so
+  deprecations warn once on stderr and are surfaced consistently in `--help`.
+- **Config/registry schema versioning** (TASK-494) — `.gg/config.yaml` and
+  `~/.gg/projects.json` carry a `schema_version`; unknown/removed config keys
+  emit a one-time stderr warning instead of being silently dropped, and older
+  files still load unchanged.
+- **Experimental-tier markers** (TASK-496) — `audit`, `trace`, `metrics`,
+  `telemetry`, `gsd`, and `reconcile` are now marked `[experimental]` in
+  `--help` so users can tell them from the frozen stable surface.
+
+### Changed
+
+- **Honest compact-missed telemetry** (TASK-490) — `gg telemetry compact-missed`
+  and the `gg status` Missed block now count agent-origin calls only; human
+  full-reads are no longer counted as missed compact opportunities.
+- **Honest hydration re-fetch metric** (TASK-491) — the re-fetch rate splits
+  gate-mandated `--full` reads from discretionary re-fetches; the "drop-list
+  agresif" warning now fires only on the discretionary agent rate.
+- **Status: pre-1.0 → stable (1.0).** README and docs updated; the stability
+  contract is now binding rather than aspirational.
+
+### Fixed
+
+- **docs/cli drift → zero** (TASK-495) — regenerated the generated CLI reference
+  (added missing `gg onboard`/`gg serve` pages, refreshed stale pages); the CI
+  docs-drift check is green.
+
 ## [0.6.0] - 2026-06-10
 
 ### Added

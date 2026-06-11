@@ -1,10 +1,9 @@
 # Stability & Versioning Policy
 
-> **Status:** This is the *target* contract for gg's 1.0 release. gg is still
-> **pre-1.0** (see the status note in [README.md](../README.md)). Until 1.0 ships,
-> any command, flag, or storage format may change. The companion
-> [1.0 readiness audit](./1.0-readiness.md) tracks the gaps between today's
-> behaviour and the guarantees below, as filed follow-up tasks.
+> **Status:** **In effect as of 1.0.0.** The guarantees below are binding from
+> the 1.0.0 release onward. The companion [1.0 readiness audit](./1.0-readiness.md)
+> records how each guarantee was met and which items were explicitly deferred
+> past 1.0.
 
 This document defines what gg promises to keep stable, how versions map to
 change scope, how commands are tiered, and how deprecations are handled.
@@ -13,7 +12,7 @@ change scope, how commands are tiered, and how deprecations are handled.
 
 ## 1. SemVer mapping
 
-gg follows [Semantic Versioning](https://semver.org/). Once **1.0.0** ships:
+gg follows [Semantic Versioning](https://semver.org/). As of **1.0.0**:
 
 | Bump | Meaning |
 |------|---------|
@@ -21,10 +20,9 @@ gg follows [Semantic Versioning](https://semver.org/). Once **1.0.0** ships:
 | **MINOR** (`1.1.0`) | Additive, backward-compatible change: new commands, new flags, new optional config keys, new storage fields that older binaries ignore. |
 | **PATCH** (`1.0.1`) | Bug fix or doc change with no contract or schema impact. |
 
-**Pre-1.0 caveat.** While the version is `0.x`, this mapping is aspirational, not
-binding: minor `0.x` bumps may contain breaking changes. The guarantees below
-become enforceable at `1.0.0`. Treat anything not yet covered by a migration or a
-stable-tier listing as subject to change.
+**History.** Before `1.0.0` (the `0.x` series) this mapping was aspirational and
+minor `0.x` bumps could contain breaking changes. From `1.0.0` onward the mapping
+is binding for the **stable** tier; experimental commands remain exempt (§2).
 
 ---
 

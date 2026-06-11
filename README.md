@@ -4,7 +4,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/gurkangul/gg-cli)](https://github.com/gurkangul/gg-cli/releases/latest)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/gurkangul/gg-cli)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status: Dogfood Ready](https://img.shields.io/badge/status-dogfood--ready-blue)](https://github.com/gurkangul/gg-cli/releases)
+[![Status: Stable 1.0](https://img.shields.io/badge/status-stable%201.0-brightgreen)](https://github.com/gurkangul/gg-cli/releases)
 
 **gg** is a local shared-brain CLI for developers who run more than one AI
 coding agent in the same codebase.
@@ -26,13 +26,14 @@ terminal command, it can use gg.
 gg does not own or run the agent's workflow. Agents keep their native flow;
 gg stores the durable shared memory and evidence that future agents need.
 
-> **Status:** pre-1.0 and actively dogfooded. The CLI is usable as a local
-> product today, while command details and storage formats may still evolve
-> before a stable 1.0 release.
+> **Status:** stable (1.0) and actively dogfooded. As of 1.0.0 the stability
+> guarantees below are in effect: the stable command surface is frozen within a
+> major version, storage is forward-only readable, and breaking changes follow
+> SemVer with a deprecation cycle.
 >
 > **Stability & versioning:** see [docs/stability.md](docs/stability.md) for the
-> target 1.0 contract (SemVer, command tiers, forward-only storage, deprecation
-> policy) and [docs/1.0-readiness.md](docs/1.0-readiness.md) for the honest gap audit.
+> 1.0 contract (SemVer, command tiers, forward-only storage, deprecation policy)
+> and [docs/1.0-readiness.md](docs/1.0-readiness.md) for the readiness audit.
 
 ---
 
