@@ -156,7 +156,7 @@ func runFullIndex(ctx context.Context, root, ggDir string, lang runner.Lang, r r
 
 	// Write state only on success.
 	if err := writeIndexState(ctx, root, ggDir, headSHA, lang, langExtensions(lang)); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
+		warnIndexStateWrite(err)
 	} else {
 		fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
 		// State is consistent — clear this outbox entry and any stale entries from
@@ -218,7 +218,7 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 	if currentFingerprint == langState.WorkingTreeFingerprint {
 		fmt.Println("indexed source/module fingerprint already matches current tree — advancing index-state")
 		if err := writeIndexState(ctx, root, ggDir, headSHA, lang, langExtensions(lang)); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
+			warnIndexStateWrite(err)
 		} else {
 			fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
 		}
@@ -243,7 +243,7 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 				return fmt.Errorf("sweep stale %s graph nodes after module removal: %w", lang, sweepErr)
 			}
 			if err := writeIndexState(ctx, root, ggDir, headSHA, lang, langExtensions(lang)); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
+				warnIndexStateWrite(err)
 			} else {
 				fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
 			}
@@ -261,7 +261,7 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 		fmt.Println("no changed files — index is up to date")
 		if baseSHA != headSHA {
 			if err := writeIndexState(ctx, root, ggDir, headSHA, lang, langExtensions(lang)); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
+				warnIndexStateWrite(err)
 			} else {
 				fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
 			}
@@ -336,12 +336,19 @@ func runChangedIndex(ctx context.Context, cmd *cobra.Command, root, ggDir string
 	}
 
 	if err := writeIndexState(ctx, root, ggDir, headSHA, lang, langExtensions(lang)); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
+		warnIndexStateWrite(err)
 	} else {
 		fmt.Printf("index-state.json updated (sha=%s)\n", headSHA[:8])
 		sweepIndexOutbox(ggDir, root, string(lang), outboxID)
 	}
 	return nil
+}
+
+// warnIndexStateWrite emits the single canonical stderr warning when the
+// index-state.json write fails. Centralised so the wording stays consistent
+// across the index flow's several write sites.
+func warnIndexStateWrite(err error) {
+	fmt.Fprintf(os.Stderr, "warning: could not write index-state.json: %v\n", err)
 }
 
 func writeIndexState(ctx context.Context, root, ggDir, headSHA string, lang runner.Lang, extensions []string) error {

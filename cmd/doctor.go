@@ -44,6 +44,7 @@ var (
 	doctorWipeBrainYes         bool
 	doctorInstallTaskHooks     bool
 	doctorInstallIndexHooks    bool
+	doctorStrict               bool
 	doctorSyncArtifacts        bool
 	doctorSyncApply            bool
 	doctorBypassAudit          bool
@@ -89,6 +90,8 @@ func init() {
 		"install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)")
 	doctorCmd.Flags().BoolVar(&doctorInstallIndexHooks, "install-index-hooks", false,
 		"install opt-in git hooks (pre-push + post-merge) that run gg index --changed to keep the local CodeGraph fresh; foreground + non-blocking, not a daemon")
+	doctorCmd.Flags().BoolVar(&doctorStrict, "strict", false,
+		"exit non-zero when artifact drift is detected (for CI); without --strict, drift is advisory and does not affect the exit code")
 	doctorCmd.Flags().BoolVar(&doctorInstallAgentsMD, "install-agents-md", false,
 		"inject the gg tracker-rules managed block into AGENTS.md (idempotent; alias for --install-agent-hooks --agent codex)")
 	doctorCmd.Flags().BoolVar(&doctorSyncArtifacts, "sync-artifacts", false,
@@ -383,6 +386,9 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		fmt.Println("────────────────────────────────────────────────────────────")
 		fmt.Println()
 		fmt.Println("Install agent hooks: `gg doctor --install-agent-hooks`")
+		if doctorStrict && driftCount > 0 {
+			return fmt.Errorf("%d artifact(s) drifted from CLI templates (--strict)", driftCount)
+		}
 		return nil
 	}
 	renderDoctorTips(report)

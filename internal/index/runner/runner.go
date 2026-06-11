@@ -93,13 +93,24 @@ func NewRegistry() *Registry {
 	return &Registry{runners: make(map[Lang]Runner)}
 }
 
-// Register adds a runner to the registry. Panics on duplicate Lang.
-func (r *Registry) Register(runner Runner) {
+// Register adds a runner to the registry. It returns an error on a duplicate
+// Lang rather than panicking, so library callers can handle the conflict.
+func (r *Registry) Register(runner Runner) error {
 	l := runner.Lang()
 	if _, exists := r.runners[l]; exists {
-		panic(fmt.Sprintf("runner already registered for lang %q", l))
+		return fmt.Errorf("runner already registered for lang %q", l)
 	}
 	r.runners[l] = runner
+	return nil
+}
+
+// MustRegister is Register for static, init-time registration of built-in
+// runners where a duplicate Lang is a programmer error (analogous to
+// sql.Register). It panics on conflict. Do NOT use with dynamic/user input.
+func (r *Registry) MustRegister(runner Runner) {
+	if err := r.Register(runner); err != nil {
+		panic(err)
+	}
 }
 
 // Get returns the runner for the given language.
@@ -112,9 +123,9 @@ func (r *Registry) Get(lang Lang) (Runner, bool) {
 // Binary resolution is performed lazily on the first Index call.
 func DefaultRegistry() *Registry {
 	reg := NewRegistry()
-	reg.Register(&GoRunner{})
-	reg.Register(&PythonRunner{})
-	reg.Register(&SwiftRunner{})
-	reg.Register(&TypeScriptRunner{})
+	reg.MustRegister(&GoRunner{})
+	reg.MustRegister(&PythonRunner{})
+	reg.MustRegister(&SwiftRunner{})
+	reg.MustRegister(&TypeScriptRunner{})
 	return reg
 }

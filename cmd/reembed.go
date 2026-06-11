@@ -31,16 +31,23 @@ Requires --confirm to proceed.`,
 	RunE: runReembed,
 }
 
-var reembedConfirm bool
+var (
+	reembedConfirm bool
+	reembedYes     bool
+)
 
 func init() {
 	reembedCmd.Flags().BoolVar(&reembedConfirm, "confirm", false,
 		"required: confirms you understand existing vector data will be dropped and rebuilt")
+	// --yes is the canonical destructive-confirm flag across gg; --confirm is kept
+	// as a backward-compatible alias so existing scripts keep working.
+	reembedCmd.Flags().BoolVar(&reembedYes, "yes", false,
+		"alias for --confirm (canonical destructive-confirm flag)")
 	rootCmd.AddCommand(reembedCmd)
 }
 
 func runReembed(cmd *cobra.Command, _ []string) error {
-	if !reembedConfirm {
+	if !reembedConfirm && !reembedYes {
 		fmt.Println("gg reembed — Embedding model migration")
 		fmt.Println(strings.Repeat("─", 50))
 		fmt.Println()
@@ -53,7 +60,7 @@ func runReembed(cmd *cobra.Command, _ []string) error {
 		fmt.Println("WARNING: If interrupted between steps 2 and 4, stored knowledge will be lost.")
 		fmt.Println("         Back up your Qdrant data before proceeding.")
 		fmt.Println()
-		fmt.Println("To proceed: gg reembed --confirm")
+		fmt.Println("To proceed: gg reembed --yes  (or --confirm)")
 		return nil
 	}
 
