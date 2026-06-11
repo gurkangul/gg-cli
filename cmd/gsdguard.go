@@ -113,26 +113,74 @@ func runGSDGuard(_ *cobra.Command, _ []string) error {
 		return nil // not canonical, passthrough
 	}
 
-	// Read the PreToolUse JSON payload from stdin.
-	raw, _ := io.ReadAll(os.Stdin)
-	var payload struct {
-		ToolName string `json:"tool_name"`
+	// Read + parse the PreToolUse JSON payload from stdin.
+	//
+	// FAIL-SAFE: reaching this point means the guard is ACTIVE (gg project,
+	// enforcement on, tracker.canonical=="gg"), so it MUST be able to inspect
+	// the tool name to decide allow vs block. Previously both the io.ReadAll and
+	// json.Unmarshal errors were swallowed (`raw,_ :=` / `_ = json.Unmarshal`).
+	// An unreadable stdin or malformed JSON then yielded an empty ToolName, the
+	// forbidden-tool loop never matched, and the guard returned nil — i.e. it
+	// failed OPEN, silently ALLOWING a call that may have been a forbidden
+	// gsd_plan_* write. We now discriminate both errors, warn on stderr, and
+	// take the conservative path: BLOCK (exit 1, ExitGeneral). For an active
+	// guard, a payload we cannot read or parse is treated as untrusted and
+	// denied rather than waved through.
+	toolName, err := parseGuardToolName(os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr,
+			"BLOCKED by gg durable-memory guard: could not read/parse PreToolUse payload (%v).\n"+
+				"The guard is active and cannot inspect the tool name, so it fails safe and blocks rather than silently allowing a possibly-forbidden call.\n"+
+				"If this is unexpected, check the Claude Code PreToolUse hook is piping valid JSON on stdin.\n",
+			err)
+		return &ExitError{Code: ExitGeneral, Message: fmt.Sprintf("gsd-guard: unreadable/malformed PreToolUse payload: %v", err)}
 	}
-	_ = json.Unmarshal(raw, &payload)
 
-	toolName := strings.ToLower(payload.ToolName)
+	loweredTool := strings.ToLower(toolName)
 	for _, forbidden := range forbiddenGSDTools {
-		if strings.Contains(toolName, forbidden) {
+		if strings.Contains(loweredTool, forbidden) {
 			fmt.Fprintf(os.Stdout,
 				"BLOCKED by gg durable-memory guard: %s writes only to local GSD planner state, which future agents may not read.\n"+
 					"Record durable shared work in gg instead:\n\n"+
 					"  gg task create \"<title>\" --priority <high|medium|low> --detail \"<details>\"\n\n"+
 					"This does not ban GSD as a native workflow; it prevents missing shared memory/evidence. Set tracker.canonical in .gg/config.yaml to change this behaviour.\n",
-				payload.ToolName)
+				toolName)
 			os.Exit(1)
 		}
 	}
 	return nil
+}
+
+// parseGuardToolName reads the PreToolUse JSON payload from r and returns the
+// tool_name field. It discriminates two error classes that were previously
+// swallowed:
+//
+//   - read error: stdin/reader is unreadable. Surfaced so the caller can fail
+//     safe instead of proceeding with empty input.
+//   - malformed JSON: the payload is not valid JSON. Surfaced so a corrupt
+//     body is never silently treated as an empty (and therefore allowed)
+//     ToolName.
+//
+// Legitimately-empty input (no bytes read, e.g. the hook fired with no payload)
+// is NOT an error here: an empty body Unmarshals to an empty struct and yields
+// an empty tool name, which the caller's forbidden-tool loop simply does not
+// match (passthrough/allow). Only a non-empty body that fails to parse, or a
+// reader that errors, is reported as an error so the guard can block.
+func parseGuardToolName(r io.Reader) (string, error) {
+	raw, err := io.ReadAll(r)
+	if err != nil {
+		return "", fmt.Errorf("read stdin: %w", err)
+	}
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return "", nil // legitimately-empty payload — passthrough, not an error
+	}
+	var payload struct {
+		ToolName string `json:"tool_name"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", fmt.Errorf("parse PreToolUse JSON: %w", err)
+	}
+	return payload.ToolName, nil
 }
 
 // emitGuardSkipEvent validates the bypass rationale (TASK-317/318) and, if valid,

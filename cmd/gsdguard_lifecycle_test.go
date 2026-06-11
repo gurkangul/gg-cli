@@ -4,9 +4,83 @@
 package cmd
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
+
+// parseGuardToolName tests (TASK-498) — the stdin/JSON parse path used by the
+// PreToolUse guard. Previously io.ReadAll and json.Unmarshal errors were
+// swallowed, so unreadable stdin or malformed JSON silently yielded an empty
+// ToolName and the guard failed OPEN (allowed). These tests pin the fail-safe
+// contract: read errors and malformed non-empty JSON are surfaced (caller
+// blocks), valid input parses, and legitimately-empty input is a non-error
+// passthrough.
+
+func TestParseGuardToolName_ValidPayload(t *testing.T) {
+	name, err := parseGuardToolName(strings.NewReader(`{"tool_name":"mcp__gsd-workflow__gsd_plan_milestone"}`))
+	if err != nil {
+		t.Fatalf("valid payload must not error, got %v", err)
+	}
+	if name != "mcp__gsd-workflow__gsd_plan_milestone" {
+		t.Errorf("unexpected tool name: %q", name)
+	}
+}
+
+func TestParseGuardToolName_ValidAllowedTool(t *testing.T) {
+	name, err := parseGuardToolName(strings.NewReader(`{"tool_name":"Bash"}`))
+	if err != nil {
+		t.Fatalf("valid payload must not error, got %v", err)
+	}
+	if name != "Bash" {
+		t.Errorf("unexpected tool name: %q", name)
+	}
+}
+
+func TestParseGuardToolName_MalformedJSONIsError(t *testing.T) {
+	_, err := parseGuardToolName(strings.NewReader(`{"tool_name": "Bash"`)) // truncated
+	if err == nil {
+		t.Fatal("malformed non-empty JSON must surface an error so the guard fails safe (blocks), not silently allow")
+	}
+	if !strings.Contains(err.Error(), "parse PreToolUse JSON") {
+		t.Errorf("error should identify the parse failure, got %q", err.Error())
+	}
+}
+
+func TestParseGuardToolName_GarbageBytesIsError(t *testing.T) {
+	if _, err := parseGuardToolName(strings.NewReader("not json at all")); err == nil {
+		t.Fatal("non-JSON non-empty body must surface an error, not be treated as empty ToolName")
+	}
+}
+
+func TestParseGuardToolName_EmptyStdinIsPassthrough(t *testing.T) {
+	// Legitimately-empty payload: nothing to block, so this is a non-error
+	// passthrough (empty tool name → caller's forbidden loop won't match).
+	for _, in := range []string{"", "   ", "\n\t"} {
+		name, err := parseGuardToolName(strings.NewReader(in))
+		if err != nil {
+			t.Errorf("empty/whitespace input %q must not error, got %v", in, err)
+		}
+		if name != "" {
+			t.Errorf("empty input %q must yield empty tool name, got %q", in, name)
+		}
+	}
+}
+
+// errReader always fails, simulating an unreadable stdin.
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, errors.New("stdin boom") }
+
+func TestParseGuardToolName_ReadErrorIsError(t *testing.T) {
+	_, err := parseGuardToolName(errReader{})
+	if err == nil {
+		t.Fatal("unreadable stdin must surface an error so the guard fails safe (blocks), not proceed with empty input")
+	}
+	if !strings.Contains(err.Error(), "read stdin") {
+		t.Errorf("error should identify the read failure, got %q", err.Error())
+	}
+}
 
 // isLifecycleBlockedRole tests — pure predicate, no I/O or env reads.
 
