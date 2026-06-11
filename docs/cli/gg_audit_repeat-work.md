@@ -39,4 +39,4 @@ gg audit repeat-work [flags]
 
 ### SEE ALSO
 
-* [gg audit](gg_audit.md)	 - Session mutation audit (called by PostToolUse and Stop hooks)
+* [gg audit](gg_audit.md)	 - [experimental] Session mutation audit (called by PostToolUse and Stop hooks)

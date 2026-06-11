@@ -1,8 +1,10 @@
 ## gg telemetry
 
-Manage local usage telemetry
+[experimental] Manage local usage telemetry
 
 ### Synopsis
+
+Experimental: may change or be removed in a MINOR without a deprecation cycle (see docs/stability.md §2).
 
 Local-only, PII-free usage telemetry. Opt-in — disabled by default.
 

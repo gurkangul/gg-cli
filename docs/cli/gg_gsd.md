@@ -1,6 +1,12 @@
 ## gg gsd
 
-GSD integration utilities
+[experimental] GSD integration utilities
+
+### Synopsis
+
+Experimental: may change or be removed in a MINOR without a deprecation cycle (see docs/stability.md §2).
+
+GSD integration utilities.
 
 ### Options
 

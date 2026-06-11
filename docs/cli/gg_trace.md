@@ -1,8 +1,10 @@
 ## gg trace
 
-Inspect GG_TRACE span data
+[experimental] Inspect GG_TRACE span data
 
 ### Synopsis
+
+Experimental: may change or be removed in a MINOR without a deprecation cycle (see docs/stability.md §2).
 
 Commands for reading, summarising, and clearing trace spans.
 

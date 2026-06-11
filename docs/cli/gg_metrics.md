@@ -1,8 +1,10 @@
 ## gg metrics
 
-Project health metrics
+[experimental] Project health metrics
 
 ### Synopsis
+
+Experimental: may change or be removed in a MINOR without a deprecation cycle (see docs/stability.md §2).
 
 Compute and display project health metrics.
 

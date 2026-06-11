@@ -31,4 +31,4 @@ gg gsd audit [flags]
 
 ### SEE ALSO
 
-* [gg gsd](gg_gsd.md)	 - GSD integration utilities
+* [gg gsd](gg_gsd.md)	 - [experimental] GSD integration utilities

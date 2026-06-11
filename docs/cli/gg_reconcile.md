@@ -1,8 +1,10 @@
 ## gg reconcile
 
-Reconcile append-only task events with the live task projection
+[experimental] Reconcile append-only task events with the live task projection
 
 ### Synopsis
+
+Experimental: may change or be removed in a MINOR without a deprecation cycle (see docs/stability.md §2).
 
 Compares .gg/brain/task-events.jsonl against the Qdrant task projection.
 

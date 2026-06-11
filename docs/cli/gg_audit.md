@@ -1,8 +1,10 @@
 ## gg audit
 
-Session mutation audit (called by PostToolUse and Stop hooks)
+[experimental] Session mutation audit (called by PostToolUse and Stop hooks)
 
 ### Synopsis
+
+Experimental: may change or be removed in a MINOR without a deprecation cycle (see docs/stability.md §2).
 
 Track Edit/Write/MultiEdit mutations during a session and emit a
 warning at session end when N>=3 mutations happened with no gg

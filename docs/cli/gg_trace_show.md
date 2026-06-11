@@ -27,4 +27,4 @@ gg trace show [flags]
 
 ### SEE ALSO
 
-* [gg trace](gg_trace.md)	 - Inspect GG_TRACE span data
+* [gg trace](gg_trace.md)	 - [experimental] Inspect GG_TRACE span data
