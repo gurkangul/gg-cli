@@ -240,6 +240,14 @@ func TestConvergenceLatency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping latency test in short mode")
 	}
+	if raceEnabled {
+		// -race instrumentation adds ~10-20x overhead to every memory access,
+		// so wall-clock Write+Delete latency is meaningless under it and the
+		// 50ms p99 gate flakes when the full suite runs in parallel under -race.
+		// Data-race coverage of Write/Delete is exercised by the other outbox
+		// tests that DO run under -race; the latency gate runs without it.
+		t.Skip("latency gate is not meaningful under -race instrumentation")
+	}
 
 	const samples = 200
 	dir := t.TempDir()
