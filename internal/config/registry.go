@@ -28,7 +28,13 @@ type ProjectEntry struct {
 // Projects is a map keyed by project_id so duplicate init calls overwrite
 // rather than duplicate.
 type Registry struct {
-	Projects map[string]ProjectEntry `json:"projects"`
+	// SchemaVersion stamps the projects.json format so a future shape change
+	// is detectable. Absent/zero in an older registry is treated as the
+	// current baseline — it never fails the load (docs/stability.md §3).
+	// Save stamps CurrentRegistrySchemaVersion; a value higher than this
+	// binary understands warns (LoadRegistry) but still loads.
+	SchemaVersion int                     `json:"schema_version,omitempty"`
+	Projects      map[string]ProjectEntry `json:"projects"`
 }
 
 // registryPath returns the absolute location of projects.json.
@@ -62,6 +68,10 @@ func LoadRegistry() (*Registry, error) {
 	if reg.Projects == nil {
 		reg.Projects = map[string]ProjectEntry{}
 	}
+	// Forward-only readability (§3): a registry written by a newer gg loads
+	// fine, but we flag it once on stderr so an ignored future field is not
+	// silently surprising. A missing/zero stamp is an older baseline — no warn.
+	warnRegistryAhead(reg.SchemaVersion, RegistryFile)
 	return reg, nil
 }
 
@@ -71,6 +81,11 @@ func (r *Registry) Save() error {
 	p, err := registryPath()
 	if err != nil {
 		return err
+	}
+	// Stamp the current schema version on every write so newly-written
+	// registries are versioned. Never downgrade a higher (future) stamp.
+	if r.SchemaVersion < CurrentRegistrySchemaVersion {
+		r.SchemaVersion = CurrentRegistrySchemaVersion
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return fmt.Errorf("create registry dir: %w", err)

@@ -202,6 +202,11 @@ type TelemetryConfig struct {
 }
 
 type Config struct {
+	// SchemaVersion stamps the .gg/config.yaml format so a future shape change
+	// is detectable. Absent/zero in an older config is treated as the current
+	// baseline (CurrentConfigSchemaVersion) — it never fails the load.
+	// ApplyDefaults stamps it when missing. See docs/stability.md §3, §5.
+	SchemaVersion int `yaml:"schema_version,omitempty"`
 	// ProjectID is a unique per-project UUID used to namespace Qdrant
 	// collections. Multiple projects share the same Qdrant instance but see
 	// only their own decisions/tasks/messages/rejections.
@@ -251,6 +256,11 @@ func (b BackupConfig) AutoEnabled() bool {
 }
 
 func (c *Config) ApplyDefaults() {
+	if c.SchemaVersion == 0 {
+		// Absent/zero in an older config: stamp the current baseline so the
+		// next Save persists it. Treating zero as baseline never fails load.
+		c.SchemaVersion = CurrentConfigSchemaVersion
+	}
 	if strings.TrimSpace(c.Backup.Interval) == "" {
 		c.Backup.Interval = "24h"
 	}

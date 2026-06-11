@@ -62,6 +62,9 @@ func LoadFromGGDir(ggDir string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
+	// Removed/renamed keys warn (stderr, once) but never hard-fail an otherwise
+	// valid config — docs/stability.md §5 additive-keys rule.
+	warnUnknownConfigKeys(data, filepath.Join(DirName, ConfigFile))
 	cfg.ApplyDefaults()
 	applyMemgraphEnvOverrides(&cfg.Memgraph)
 	if err := cfg.Validate(); err != nil {
