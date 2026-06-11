@@ -117,6 +117,84 @@ func (r *Registry) Add(id, root string) {
 	}
 }
 
+// DuplicateRootFor reports the previously-registered root for id when it is
+// already registered at a DIFFERENT filesystem root, so callers can warn before
+// Add overwrites it. It returns ("", false) when id is new or already points at
+// the same root (a harmless re-register of the same project). Comparison is
+// path-canonical (SamePath) so /tmp/x and /tmp/x/ are not treated as distinct.
+func (r *Registry) DuplicateRootFor(id, root string) (string, bool) {
+	prev, ok := r.Projects[id]
+	if !ok {
+		return "", false
+	}
+	if SamePath(prev.Root, root) {
+		return "", false
+	}
+	return prev.Root, true
+}
+
+// EntryStatus classifies a single registry entry's health for surfacing in
+// `gg system register --list`, `gg system sync`, and `gg doctor`.
+type EntryStatus string
+
+const (
+	// EntryOK means the root dir exists and .gg/config.yaml is present and parses
+	// as YAML. It deliberately does NOT require a fully-valid runtime config:
+	// runtime-only fields (qdrant.host, embedding.host, …) are irrelevant to
+	// registry hygiene, so a normal registered project always reads "ok".
+	EntryOK EntryStatus = "ok"
+	// EntryMissing means the root dir (or its .gg/config.yaml) is gone — a stale entry.
+	EntryMissing EntryStatus = "missing"
+	// EntryInvalid means the root exists but .gg/config.yaml is unreadable/unparseable.
+	EntryInvalid EntryStatus = "invalid"
+)
+
+// Status inspects the filesystem for one entry and returns its EntryStatus.
+// A missing root or missing .gg/config.yaml is "missing" (prunable); a root
+// whose config exists but fails to parse is "invalid" (needs attention, not a
+// blind prune). The config check is delegated via loadConfig so this stays in
+// the config package without importing higher layers; pass config.ParseFromGGDir
+// (parse-only "ok" contract) rather than the full-validation LoadFromGGDir.
+func (e ProjectEntry) Status(loadConfig func(ggDir string) error) EntryStatus {
+	ggDir := filepath.Join(e.Root, DirName)
+	cfgPath := filepath.Join(ggDir, ConfigFile)
+	if _, err := os.Stat(cfgPath); err != nil {
+		return EntryMissing
+	}
+	if loadConfig != nil {
+		if err := loadConfig(ggDir); err != nil {
+			return EntryInvalid
+		}
+	}
+	return EntryOK
+}
+
+// RegistryStats is an aggregate health summary across all registry entries.
+type RegistryStats struct {
+	Total   int
+	OK      int
+	Missing int
+	Invalid int
+}
+
+// Stats classifies every entry and returns aggregate counts. loadConfig is the
+// per-entry config validator (pass a closure over config.LoadFromGGDir); nil
+// skips the invalid-vs-ok distinction (every present config counts as OK).
+func (r *Registry) Stats(loadConfig func(ggDir string) error) RegistryStats {
+	s := RegistryStats{Total: len(r.Projects)}
+	for _, p := range r.Projects {
+		switch p.Status(loadConfig) {
+		case EntryMissing:
+			s.Missing++
+		case EntryInvalid:
+			s.Invalid++
+		default:
+			s.OK++
+		}
+	}
+	return s
+}
+
 // Remove drops an entry by project_id. Returns true if something was removed
 // so callers can distinguish "pruned" from "wasn't there".
 func (r *Registry) Remove(id string) bool {

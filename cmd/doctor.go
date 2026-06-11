@@ -328,6 +328,11 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	doctorPrintln("\nProject Structure:")
 	doctorCheckProjectStructure(report)
 
+	// 4a. Host registry hygiene — surface stale (missing-root) and invalid
+	// entries in ~/.gg/projects.json so cross-project commands don't silently
+	// trip over them, and point at the real prune command.
+	doctorCheckRegistry(report)
+
 	// 4b. Code graph freshness — doctor OK means this is ready too, not just file presence.
 	doctorPrintln("\nCode graph freshness:")
 	doctorCheckCodeGraphFreshness(cmd, cfg, report)

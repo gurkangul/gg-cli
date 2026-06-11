@@ -84,6 +84,13 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	stats := registryStats(reg)
+	fmt.Printf("Registry: %d project%s (%d ok, %d stale, %d invalid)\n",
+		stats.Total, plural(stats.Total, "", "s"), stats.OK, stats.Missing, stats.Invalid)
+	if stats.Missing > 0 {
+		fmt.Println("Run `gg system register --prune` to remove stale entries (missing root directory).")
+	}
+
 	fmt.Printf("Syncing %d project(s)\n", len(projects))
 	fmt.Println("──────────────────────────────────────────────────")
 

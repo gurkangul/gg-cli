@@ -73,6 +73,26 @@ func LoadFromGGDir(ggDir string) (*Config, error) {
 	return &cfg, nil
 }
 
+// ParseFromGGDir reads a project-local .gg/config.yaml and confirms it is
+// readable, well-formed YAML — without running the full runtime Validate().
+// This is the "ok" contract for registry health classification (EntryStatus):
+// a registered project is healthy when its config parses, even if it omits
+// optional/runtime fields (qdrant.host, embedding.host, …) that only matter
+// when the project is actually served. Use LoadFromGGDir when you need a
+// fully-validated, runnable config instead.
+func ParseFromGGDir(ggDir string) error {
+	path := filepath.Join(ggDir, ConfigFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("failed to parse %s: %w", path, err)
+	}
+	return nil
+}
+
 // ResolveLinkedProject resolves either an explicit project_id or a filesystem
 // path to the linked project's ID and .gg directory. Missing projects are
 // returned as errors so callers can warn without failing current-project reads.

@@ -206,6 +206,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// propagate future contract/hook updates without the user scanning the
 	// filesystem for .gg/config.yaml manually. Re-init overwrites the entry.
 	if reg, regErr := config.LoadRegistry(); regErr == nil {
+		if prevRoot, dup := reg.DuplicateRootFor(projectID, cwd); dup {
+			fmt.Printf("⚠ project_id %s was already registered at %s — re-pointing it to %s\n", projectID, prevRoot, cwd)
+		}
 		reg.Add(projectID, cwd)
 		if saveErr := reg.Save(); saveErr != nil {
 			fmt.Printf("⚠ registry update failed: %v\n", saveErr)

@@ -86,12 +86,30 @@ func runSystemRegister(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("%s has no project_id — re-run `gg init`", cfgPath)
 	}
 
+	if prevRoot, dup := reg.DuplicateRootFor(cfg.ProjectID, root); dup {
+		fmt.Printf("⚠ project_id %s was already registered at %s — re-pointing it to %s\n", cfg.ProjectID, prevRoot, root)
+	}
 	reg.Add(cfg.ProjectID, root)
 	if err := reg.Save(); err != nil {
 		return err
 	}
 	fmt.Printf("✓ registered %s (%s)\n", filepath.Base(root), cfg.ProjectID)
 	return nil
+}
+
+// registryEntryStatus classifies one registry entry by stat'ing its root and
+// parsing .gg/config.yaml. Shared by --list and the stale-count surfacing so
+// both report identical ok/missing/invalid semantics. "ok" means the config
+// parses (config.ParseFromGGDir) — a registered project is healthy even if it
+// omits runtime-only fields; "invalid" is reserved for unreadable/unparseable
+// config, which a blind --prune must not silently remove.
+func registryEntryStatus(e config.ProjectEntry) config.EntryStatus {
+	return e.Status(config.ParseFromGGDir)
+}
+
+// registryStats aggregates ok/missing/invalid counts across the whole registry.
+func registryStats(reg *config.Registry) config.RegistryStats {
+	return reg.Stats(config.ParseFromGGDir)
 }
 
 func pruneRegistry(reg *config.Registry) error {
@@ -120,11 +138,37 @@ func printRegistryList(reg *config.Registry) error {
 		fmt.Println("No projects registered.")
 		return nil
 	}
-	fmt.Printf("%-20s  %-36s  %s\n", "NAME", "PROJECT_ID", "ROOT")
+	fmt.Printf("%-8s  %-20s  %-36s  %s\n", "STATUS", "NAME", "PROJECT_ID", "ROOT")
+	var stats config.RegistryStats
+	stats.Total = len(projects)
 	for _, p := range projects {
-		fmt.Printf("%-20s  %-36s  %s\n", p.Name, p.ID, p.Root)
+		st := registryEntryStatus(p)
+		switch st {
+		case config.EntryMissing:
+			stats.Missing++
+		case config.EntryInvalid:
+			stats.Invalid++
+		default:
+			stats.OK++
+		}
+		fmt.Printf("%-8s  %-20s  %-36s  %s\n", string(st), p.Name, p.ID, p.Root)
 	}
+	printRegistryStaleHint(stats)
 	return nil
+}
+
+// printRegistryStaleHint emits the aggregate counts line and, when there are
+// stale (missing) entries, points at the real prune command. Invalid entries
+// are surfaced separately because a blind prune does not fix them.
+func printRegistryStaleHint(s config.RegistryStats) {
+	fmt.Printf("\nRegistry: %d project%s (%d ok, %d stale, %d invalid)\n",
+		s.Total, plural(s.Total, "", "s"), s.OK, s.Missing, s.Invalid)
+	if s.Missing > 0 {
+		fmt.Println("Run `gg system register --prune` to remove stale entries (missing root directory).")
+	}
+	if s.Invalid > 0 {
+		fmt.Println("Invalid entries have an unreadable .gg/config.yaml — inspect them; --prune will not remove them.")
+	}
 }
 
 func plural(n int, one, many string) string {
