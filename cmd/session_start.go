@@ -158,6 +158,13 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// the brain self-maintains. Silent when healthy; non-fatal.
 	healBrainGraphIfDrifted(cmd, os.Stdout, loadedCfg)
 
+	// TASK-505: auto-drain the crash-recovery outbox. When a vector write failed
+	// (Qdrant down) the intent was queued in .gg/outbox/; replay it now so the
+	// human never has to run `gg doctor --reconcile`. Bounded, non-fatal, and
+	// silent when the outbox is empty (the common path). Opt out with
+	// GG_NO_AUTO_RECONCILE=1.
+	reconcileOutboxIfNeeded(cmd, os.Stdout, sessionStartStderr)
+
 	// TASK-468: inject the distilled project canon so a fresh agent starts with
 	// the senior-dev knowledge, not just a searchable ledger. Best-effort.
 	emitProjectCanon(cmd.Context(), canonGGDir)
