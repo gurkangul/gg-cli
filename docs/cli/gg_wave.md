@@ -1,10 +1,12 @@
 ## gg wave
 
-Manage wave/milestone calendar buckets (Memgraph only)
+Manage optional wave/milestone buckets — sprints (Memgraph only)
 
 ### Synopsis
 
 Wave nodes group tasks into time-bounded sprints or milestones.
+Waves are OPTIONAL: projects that don't do time-based planning can ignore this
+command entirely — nothing else depends on waves existing.
 They live in Memgraph only — no Qdrant collection is created.
 
   gg wave add wave1 --name "Phase 1" --goal "Ship MVP" --start 2026-01-01 --end 2026-03-31
