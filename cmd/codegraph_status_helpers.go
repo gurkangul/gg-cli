@@ -385,6 +385,16 @@ func renderCodeGraphStatusCompact(s codeGraphStatus) string {
 	if !s.NoWatcherStarted {
 		parts = append(parts, "watcher="+compactTrim(s.Watcher, 50))
 	}
+	// Surface index-hook install state (TASK-502 AC-3) so an operator can tell
+	// whether the CodeGraph self-refreshes on commit/push/merge. When the graph
+	// needs a notice AND the hooks are missing, append the install prompt.
+	if root, err := config.FindRoot(); err == nil {
+		installed := indexHooksInstalled(root)
+		parts = append(parts, "hooks="+boolWord(installed, "on", "off"))
+		if !installed && fresh.NeedsNotice() {
+			parts = append(parts, "install-hooks=gg doctor --install-index-hooks")
+		}
+	}
 	return strings.Join(parts, "  ")
 }
 

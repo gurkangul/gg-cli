@@ -241,7 +241,8 @@ func doctorCheckCodeGraphFreshness(cmd *cobra.Command, cfg *config.Config, repor
 	if notice := codeGraphNoticeOneLine(status); notice != "" {
 		detail = notice
 	}
-	switch status.freshnessContract().Status {
+	fresh := status.freshnessContract()
+	switch fresh.Status {
 	case codeGraphFreshnessReady:
 		report.ok("code graph", detail)
 	case codeGraphFreshnessStale, codeGraphFreshnessMissing, codeGraphFreshnessUnavailable:
@@ -249,6 +250,7 @@ func doctorCheckCodeGraphFreshness(cmd *cobra.Command, cfg *config.Config, repor
 	default:
 		report.warn("code graph", detail)
 	}
+	doctorCheckIndexHooks(root, fresh, report)
 }
 
 // doctorCheckAgentsSchema parses agents_schema from the project's AGENTS.md frontmatter

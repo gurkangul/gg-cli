@@ -46,6 +46,7 @@ var (
 	initSkipEnforcement bool
 	initWithIndex       bool
 	initNoIndex         bool
+	initNoIndexHooks    bool
 	initYes             bool
 )
 
@@ -57,8 +58,49 @@ func init() {
 		"also run `gg index` after setup (non-interactive yes)")
 	initCmd.Flags().BoolVar(&initNoIndex, "no-index", false,
 		"skip the post-setup index prompt (non-interactive no)")
+	initCmd.Flags().BoolVar(&initNoIndexHooks, "no-index-hooks", false,
+		"skip auto-installing the CodeGraph git hooks (pre-push/post-merge/post-commit)")
 	initCmd.Flags().BoolVar(&initYes, "yes", false,
 		"non-interactive: skip prompts")
+}
+
+// indexHooksOptOut reports whether the user asked init to skip auto-installing
+// the CodeGraph git hooks. Honored sources: the --no-index-hooks flag, the
+// GG_NO_INDEX_HOOKS env (truthy), or the config key auto_index_hooks: false.
+func indexHooksOptOut() bool {
+	if initNoIndexHooks {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GG_NO_INDEX_HOOKS"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	if cfg, err := config.Load(); err == nil && cfg.AutoIndexHooks != nil && !*cfg.AutoIndexHooks {
+		return true
+	}
+	return false
+}
+
+// maybeInstallIndexHooks auto-installs the CodeGraph git hooks after a
+// successful init (AC-1). It is idempotent (installGitIndexHooks skips
+// already-installed gg hooks) and NON-FATAL: any failure warns on stderr but
+// never fails `gg init`. Honors the opt-out (flag/env/config) and is silent
+// (no prompt) — GG_YES / non-interactive runs install by default; only an
+// explicit opt-out skips. Returns true if hooks are installed afterwards so the
+// banner can report accurately.
+func maybeInstallIndexHooks(root string) bool {
+	if indexHooksOptOut() {
+		fmt.Println("  Skipped CodeGraph git hooks (--no-index-hooks). Install later with: gg doctor --install-index-hooks")
+		return false
+	}
+	fmt.Println()
+	fmt.Println("CodeGraph Hooks:")
+	if err := installGitIndexHooks(root); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ index hooks install (non-fatal): %v\n", err)
+		fmt.Fprintln(os.Stderr, "  Install later with: gg doctor --install-index-hooks")
+		return false
+	}
+	return indexHooksInstalled(root)
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -240,14 +282,32 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Auto-install the CodeGraph git hooks (AC-1) so the graph self-refreshes on
+	// commit/push/merge without a manual `gg index --watch`. Idempotent and
+	// non-fatal: a hook-install failure warns but never fails `gg init`.
+	hooksInstalled := maybeInstallIndexHooks(cwd)
+
 	langHint := detectLangHint(cwd)
 	unsupportedHint := ""
 	if langHint == "" {
 		unsupportedHint = detectUnsupportedLang(cwd)
 	}
 	indexed := maybeRunIndex(cmd, langHint, composeOK)
+	printIndexHooksBanner(hooksInstalled)
 	printBootstrapPrompt(detectAgentHint(installResults), langHint, unsupportedHint, indexed)
 	return nil
+}
+
+// printIndexHooksBanner notes (AC-4) that the CodeGraph now auto-refreshes on
+// commit/push/merge, or — when the hooks were skipped/failed — how to install
+// them. Always foreground git hooks; no background daemon (AC-5).
+func printIndexHooksBanner(installed bool) {
+	fmt.Println()
+	if installed {
+		fmt.Println("CodeGraph auto-refresh: ON — git hooks reindex changed files on every commit, push, and merge (foreground, non-blocking; no daemon).")
+		return
+	}
+	fmt.Println("CodeGraph auto-refresh: OFF — install the foreground git hooks anytime with: gg doctor --install-index-hooks")
 }
 
 // ensureProjectConfig creates .gg/config.yaml if missing, generating a fresh

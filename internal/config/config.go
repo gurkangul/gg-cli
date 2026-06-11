@@ -225,6 +225,11 @@ type Config struct {
 	Bugs           BugsConfig            `yaml:"bugs"`
 	Tasks          TasksConfig           `yaml:"tasks"`
 	Audit          AuditConfig           `yaml:"audit"`
+	// AutoIndexHooks, when explicitly set to false, opts a project out of the
+	// CodeGraph git hooks that `gg init` auto-installs (pre-push/post-merge/
+	// post-commit, TASK-502). Nil/absent or true = install (the default). The
+	// --no-index-hooks flag and GG_NO_INDEX_HOOKS env are equivalent opt-outs.
+	AutoIndexHooks *bool `yaml:"auto_index_hooks,omitempty"`
 }
 
 func DefaultConfig() *Config {
