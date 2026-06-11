@@ -169,21 +169,44 @@ var indexers = []indexerSpec{
 	},
 }
 
-// doctorReport accumulates check results and tracks whether any problems were found.
+// doctorCheck is one structured check result for the --json payload.
+type doctorCheck struct {
+	Label  string `json:"label"`
+	Status string `json:"status"` // pass | warn | fail
+	Detail string `json:"detail"`
+}
+
+// doctorReport accumulates check results and tracks whether any problems were
+// found. Every check is recorded in checks so `gg doctor --json` can emit a
+// stable machine-readable object; human text is suppressed under --json so
+// stdout stays valid JSON.
 type doctorReport struct {
 	problems int
+	checks   []doctorCheck
 }
 
 func (r *doctorReport) ok(label, detail string) {
+	r.checks = append(r.checks, doctorCheck{Label: label, Status: "pass", Detail: detail})
+	if jsonOutput {
+		return
+	}
 	fmt.Printf("  ✓ %-28s %s\n", label, detail)
 }
 
 func (r *doctorReport) warn(label, detail string) {
+	r.checks = append(r.checks, doctorCheck{Label: label, Status: "warn", Detail: detail})
+	if jsonOutput {
+		return
+	}
 	fmt.Printf("  ~ %-28s %s\n", label, detail)
 }
 
 func (r *doctorReport) fail(label, detail string) {
 	r.problems++
+	r.checks = append(r.checks, doctorCheck{Label: label, Status: "fail", Detail: detail})
+	if jsonOutput {
+		return
+	}
 	fmt.Printf("  ✗ %-28s %s\n", label, detail)
 }
 
@@ -265,10 +288,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		return runDoctorFixGitIdentity(cmd)
 	}
 
-	fmt.Println("GG Doctor")
-	fmt.Println(strings.Repeat("─", 50))
+	doctorPrintln("GG Doctor")
+	doctorPrintln(strings.Repeat("─", 50))
 	if !enforcement.Enabled() {
-		fmt.Printf("⚠ guards=off  (unset %s or set =on to re-enable: install-agent-hooks, gsd-guard, pre-task-done gate)\n", enforcement.EnvVar)
+		doctorPrintf("⚠ guards=off  (unset %s or set =on to re-enable: install-agent-hooks, gsd-guard, pre-task-done gate)\n", enforcement.EnvVar)
 	}
 
 	report := &doctorReport{}
@@ -277,19 +300,22 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	cfg := doctorCheckConfig(report)
 
 	// 1b. Git commit identity (TASK-480): warn if commits would be attributed to
-	// an agent instead of the human.
+	// an agent instead of the human. Routed through the report so it lands in the
+	// --json checks array too, with a bespoke human ⚠ line preserved.
 	if warn := gitCommitIdentityWarning(); warn != "" {
-		fmt.Printf("  ⚠ git commit identity     %s\n", warn)
+		report.checks = append(report.checks, doctorCheck{Label: "git commit identity", Status: "warn", Detail: warn})
+		doctorPrintf("  ⚠ git commit identity     %s\n", warn)
 	} else {
-		fmt.Printf("  ✓ %-28s %s\n", "git commit identity", "human ("+gitConfigValue("user.name")+")")
+		report.checks = append(report.checks, doctorCheck{Label: "git commit identity", Status: "pass", Detail: "human (" + gitConfigValue("user.name") + ")"})
+		doctorPrintf("  ✓ %-28s %s\n", "git commit identity", "human ("+gitConfigValue("user.name")+")")
 	}
 
 	// 2. Indexer binaries
-	fmt.Println("\nIndexer Binaries:")
+	doctorPrintln("\nIndexer Binaries:")
 	checkIndexers(cmd, report)
 
 	// 3. Service checks (only if config is valid)
-	fmt.Println("\nService Connectivity:")
+	doctorPrintln("\nService Connectivity:")
 	if cfg != nil {
 		doctorCheckQdrant(cmd, cfg, report)
 		doctorCheckMemgraph(cmd, cfg, report)
@@ -299,31 +325,37 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	}
 
 	// 4. Project structure
-	fmt.Println("\nProject Structure:")
+	doctorPrintln("\nProject Structure:")
 	doctorCheckProjectStructure(report)
 
 	// 4b. Code graph freshness — doctor OK means this is ready too, not just file presence.
-	fmt.Println("\nCode graph freshness:")
+	doctorPrintln("\nCode graph freshness:")
 	doctorCheckCodeGraphFreshness(cmd, cfg, report)
 
 	// 5. Outbox check — surface pending derived-store replay without repairing it.
-	fmt.Println("\nOutbox (derived-store replay):")
+	doctorPrintln("\nOutbox (derived-store replay):")
 	doctorCheckOutbox(report)
 
 	// 5b. JSONL integrity — warn on malformed lines in brain files.
-	fmt.Println("\nBrain JSONL integrity:")
+	doctorPrintln("\nBrain JSONL integrity:")
 	doctorCheckBrainJSONL(report)
 
 	// 6. Binary freshness — advisory warn, never blocks default run.
-	fmt.Println("\nBinary:")
+	doctorPrintln("\nBinary:")
 	doctorCheckBinaryAdvisory(report)
 
 	// 7. Hook template drift — marker-backed, blocks on drift but not customization.
-	fmt.Println("\nHook templates:")
+	doctorPrintln("\nHook templates:")
 	doctorCheckHookTemplates(report)
 
 	// Artifact drift check (advisory — does not count as a problem).
 	driftCount := doctorCheckArtifactDrift()
+
+	// --json: emit the stable machine-readable object and stop. No human text,
+	// no paste-block, so stdout is valid JSON only.
+	if jsonOutput {
+		return writeJSON(buildDoctorJSON(report, driftCount))
+	}
 
 	// Summary
 	fmt.Println()
@@ -334,6 +366,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		if driftCount > 0 {
 			fmt.Printf("  ⚠ %d artifact(s) drifted from CLI templates — run `gg doctor --sync-artifacts` to inspect\n", driftCount)
 		}
+		// Discoverability tips (TASK-503): advisory one-liners. The GG_TRACE tip
+		// is shown only when tracing is OFF so it never nags users who already
+		// opted in. The outbox tip fires only when there is a real backlog.
+		renderDoctorTips(report)
 		fmt.Println()
 		fmt.Println("Paste this into your AI agent's chat (works for any agent):")
 		fmt.Println()
@@ -344,5 +380,22 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		fmt.Println("Install agent hooks: `gg doctor --install-agent-hooks`")
 		return nil
 	}
+	renderDoctorTips(report)
 	return fmt.Errorf("%d problem(s) found — fix the issues above and re-run `gg doctor`", report.problems)
+}
+
+// doctorPrintln/doctorPrintf write human text to stdout only when --json is
+// off, so the JSON path never interleaves prose into the JSON object.
+func doctorPrintln(a ...any) {
+	if jsonOutput {
+		return
+	}
+	fmt.Println(a...)
+}
+
+func doctorPrintf(format string, a ...any) {
+	if jsonOutput {
+		return
+	}
+	fmt.Printf(format, a...)
 }

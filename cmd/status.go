@@ -113,6 +113,22 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// Dupe-acknowledged count: bugs filed despite duplicate warning (advisory signal).
 	dupeAcknowledged, _ := d.store.CountBugsByTag(ctx, "dupe-acknowledged")
 
+	// Linked projects — read-only cross-project sources consulted only when the
+	// caller passes --include-linked to search/context. Surfaced so agents who
+	// configured links actually discover the flag (TASK-503). Best-effort: a
+	// config load failure simply yields 0 and the line is suppressed.
+	var linkedProjectsCount int
+	if cfg, cfgErr := config.Load(); cfgErr == nil {
+		linkedProjectsCount = len(cfg.LinkedProjects)
+	}
+
+	// Index-hook install state (TASK-502) for the JSON payload, mirroring the
+	// human compact line in renderCodeGraphStatusCompact.
+	indexHooksOn := false
+	if root, rootErr := config.FindRoot(); rootErr == nil {
+		indexHooksOn = indexHooksInstalled(root)
+	}
+
 	// Outbox backlog — pending Memgraph writes from crashed gg index runs.
 	// Unbounded growth signals that `gg doctor --reconcile` is never run.
 	var outboxCount int
@@ -152,11 +168,13 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			"pending":    outboxCount,
 			"oldest_age": outboxOldestAge,
 		},
-		"open_tasks":  openTasks,
-		"messages":    messages,
-		"discussions": openDiscs,
-		"decisions":   decisions,
-		"rejections":  rejections,
+		"linked_projects":       linkedProjectsCount,
+		"index_hooks_installed": indexHooksOn,
+		"open_tasks":            openTasks,
+		"messages":              messages,
+		"discussions":           openDiscs,
+		"decisions":             decisions,
+		"rejections":            rejections,
 	}
 
 	return printJSON(payload, func() {
@@ -223,6 +241,13 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				ageDetail = "  (oldest: " + outboxOldestAge + " ago — run `gg doctor --reconcile`)"
 			}
 			fmt.Printf("\nOUTBOX:\n  ⏳ Pending: %d%s\n", outboxCount, ageDetail)
+		}
+
+		// Linked projects — discoverability nudge (TASK-503). Only shown when the
+		// project actually configured links, so it never spams a solo project.
+		if linkedProjectsCount > 0 {
+			fmt.Printf("\nLinked projects: %d — use --include-linked in search/context for cross-project results.\n",
+				linkedProjectsCount)
 		}
 
 		if messagesErr == nil {

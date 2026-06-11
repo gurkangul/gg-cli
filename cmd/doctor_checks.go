@@ -23,7 +23,7 @@ import (
 // doctorCheckConfig validates and reports on the project config.
 // Returns the config if valid, nil if invalid.
 func doctorCheckConfig(report *doctorReport) *config.Config {
-	fmt.Println("\nConfiguration:")
+	doctorPrintln("\nConfiguration:")
 	cfg, err := config.Load()
 	if err != nil {
 		if errors.Is(err, config.ErrMissingProjectID) {
