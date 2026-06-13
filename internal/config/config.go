@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,10 +27,8 @@ type QdrantConfig struct {
 	Port int    `yaml:"port"`
 }
 
-type EmbeddingConfig struct {
-	Host  string `yaml:"host"`
-	Model string `yaml:"model"`
-}
+// Embedding-backend types, defaults, and validation live in embedding.go to
+// keep this file focused. See EmbeddingConfig / VoyageConfig there.
 
 type MemgraphConfig struct {
 	URI      string `yaml:"uri"`      // Bolt URI, e.g. bolt://localhost:7687
@@ -246,8 +243,9 @@ func DefaultConfig() *Config {
 			Port: 6334,
 		},
 		Embedding: EmbeddingConfig{
-			Host:  "http://localhost:11434",
-			Model: "nomic-embed-text",
+			Backend: BackendOllama,
+			Host:    "http://localhost:11434",
+			Model:   "nomic-embed-text",
 		},
 		Memgraph: MemgraphConfig{
 			URI:      "bolt://localhost:7687",
@@ -278,6 +276,9 @@ func (c *Config) ApplyDefaults() {
 	if strings.TrimSpace(c.Backup.Timeout) == "" {
 		c.Backup.Timeout = "30s"
 	}
+	// Embedding backend defaults (empty Backend → offline Ollama; Voyage
+	// sub-defaults stamped). See embedding.go.
+	c.Embedding.applyEmbeddingDefaults()
 }
 
 // FindRoot walks up from cwd looking for a project-local .gg directory.
@@ -449,15 +450,8 @@ func (c *Config) Validate() error {
 	if c.Qdrant.Port <= 0 || c.Qdrant.Port > 65535 {
 		return fmt.Errorf("qdrant.port must be 1..65535, got %d", c.Qdrant.Port)
 	}
-	if strings.TrimSpace(c.Embedding.Host) == "" {
-		return fmt.Errorf("embedding.host is required")
-	}
-	u, err := url.Parse(c.Embedding.Host)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("embedding.host must be a full URL including scheme (http:// or https://), got %q", c.Embedding.Host)
-	}
-	if strings.TrimSpace(c.Embedding.Model) == "" {
-		return fmt.Errorf("embedding.model is required")
+	if err := c.Embedding.validate(); err != nil {
+		return err
 	}
 	if strings.TrimSpace(c.Backup.Interval) == "" {
 		return fmt.Errorf("backup.interval is required")

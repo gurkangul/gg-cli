@@ -74,7 +74,11 @@ func runReembed(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Determine the new vector size by calling the embedding model once.
-	fmt.Printf("Detecting vector size for model %q ...\n", cfg.Embedding.Model)
+	// Use the backend-qualified effective identity (bare model for Ollama,
+	// "voyage:<model>" for Voyage) so the console shows the real model — not the
+	// ignored leftover cfg.Embedding.Model under a Voyage config.
+	effectiveModel := embedding.EffectiveModelIdentity(&cfg.Embedding)
+	fmt.Printf("Detecting vector size for model %q ...\n", effectiveModel)
 	gen := embedding.New(&cfg.Embedding, 0) // 0 = no dim validation
 	probeCtx, probeCancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 	defer probeCancel()
@@ -83,7 +87,7 @@ func runReembed(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("probe embedding dim: %w", err)
 	}
 	newDim := len(probeVec)
-	fmt.Printf("Model %q returns %d-dim vectors.\n\n", cfg.Embedding.Model, newDim)
+	fmt.Printf("Model %q returns %d-dim vectors.\n\n", effectiveModel, newDim)
 
 	// Connect to Qdrant.
 	sc, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
@@ -110,9 +114,11 @@ func runReembed(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("reembed: %w", err)
 	}
 
-	// Update the embedding meta to record the new model.
+	// Update the embedding meta to record the new model. Use the backend-qualified
+	// identity (bare model for Ollama, "voyage:<model>" for Voyage) so a later
+	// backend switch is detected by CheckMeta as a mismatch.
 	if writeErr := embedding.WriteMeta(ggDir, &embedding.Meta{
-		ModelName: cfg.Embedding.Model,
+		ModelName: effectiveModel,
 		Dim:       newDim,
 	}); writeErr != nil {
 		fmt.Printf("warning: could not update embedding-meta.json: %v\n", writeErr)
@@ -129,6 +135,6 @@ func runReembed(cmd *cobra.Command, _ []string) error {
 		}
 		total += r.Migrated
 	}
-	fmt.Printf("\nTotal re-embedded: %d point(s). Model: %s (%d-dim)\n", total, cfg.Embedding.Model, newDim)
+	fmt.Printf("\nTotal re-embedded: %d point(s). Model: %s (%d-dim)\n", total, effectiveModel, newDim)
 	return nil
 }

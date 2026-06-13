@@ -119,3 +119,82 @@ memgraph:
 		t.Fatalf("Backup.Timeout = %q, want 30s", loaded.Backup.Timeout)
 	}
 }
+
+// TestDefaultConfig_EmbeddingBackendIsOllama proves the offline default stays
+// Ollama after the pluggable-backend change.
+func TestDefaultConfig_EmbeddingBackendIsOllama(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Embedding.Backend != BackendOllama {
+		t.Fatalf("default embedding.backend = %q, want %q", cfg.Embedding.Backend, BackendOllama)
+	}
+	if cfg.Embedding.Model != "nomic-embed-text" {
+		t.Fatalf("default embedding.model = %q, want nomic-embed-text", cfg.Embedding.Model)
+	}
+}
+
+// TestApplyDefaults_EmptyBackendResolvesToOllama ensures a config written before
+// the backend field existed (empty Backend) loads as Ollama, unchanged.
+func TestApplyDefaults_EmptyBackendResolvesToOllama(t *testing.T) {
+	cfg := &Config{Embedding: EmbeddingConfig{Host: "http://localhost:11434", Model: "nomic-embed-text"}}
+	cfg.ApplyDefaults()
+	if cfg.Embedding.Backend != BackendOllama {
+		t.Fatalf("empty backend should default to ollama, got %q", cfg.Embedding.Backend)
+	}
+	// Voyage sub-defaults are stamped but inert while backend is ollama.
+	if cfg.Embedding.Voyage.Model != DefaultVoyageModel {
+		t.Fatalf("voyage.model default = %q, want %q", cfg.Embedding.Voyage.Model, DefaultVoyageModel)
+	}
+	if cfg.Embedding.Voyage.OutputDim != DefaultVoyageOutputDim {
+		t.Fatalf("voyage.output_dim default = %d, want %d", cfg.Embedding.Voyage.OutputDim, DefaultVoyageOutputDim)
+	}
+	if cfg.Embedding.Voyage.APIKeyEnv != DefaultVoyageAPIKeyEnv {
+		t.Fatalf("voyage.api_key_env default = %q, want %q", cfg.Embedding.Voyage.APIKeyEnv, DefaultVoyageAPIKeyEnv)
+	}
+}
+
+// TestValidate_VoyageBackend covers the voyage-specific validation: the
+// host-URL rule does not apply, but model/output_dim/api_key_env do.
+func TestValidate_VoyageBackend(t *testing.T) {
+	base := func() *Config {
+		c := DefaultConfig()
+		c.ProjectID = "proj"
+		c.Embedding.Backend = BackendVoyage
+		c.ApplyDefaults() // stamps voyage sub-defaults + backup defaults
+		return c
+	}
+
+	t.Run("valid voyage config passes without a host URL", func(t *testing.T) {
+		c := base()
+		c.Embedding.Host = "" // irrelevant for voyage; must not error
+		if err := c.Validate(); err != nil {
+			t.Fatalf("valid voyage config should pass, got: %v", err)
+		}
+	})
+
+	t.Run("unsupported output_dim is rejected", func(t *testing.T) {
+		c := base()
+		c.Embedding.Voyage.OutputDim = 777
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "output_dim") {
+			t.Fatalf("expected output_dim validation error, got: %v", err)
+		}
+	})
+
+	t.Run("missing api_key_env is rejected", func(t *testing.T) {
+		c := base()
+		c.Embedding.Voyage.APIKeyEnv = ""
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "api_key_env") {
+			t.Fatalf("expected api_key_env validation error, got: %v", err)
+		}
+	})
+}
+
+// TestValidate_UnknownBackend rejects a typo'd backend name rather than
+// silently falling back.
+func TestValidate_UnknownBackend(t *testing.T) {
+	c := DefaultConfig()
+	c.ProjectID = "proj"
+	c.Embedding.Backend = "openai"
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "backend") {
+		t.Fatalf("expected backend validation error, got: %v", err)
+	}
+}
