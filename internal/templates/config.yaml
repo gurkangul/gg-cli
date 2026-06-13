@@ -7,8 +7,20 @@ qdrant:
   port: 6334            # Qdrant gRPC port (NOT the HTTP 6333 port)
 
 embedding:
-  host: http://localhost:11434   # Shared Ollama base URL
+  backend: ollama                # ollama (default, offline) | voyage (cloud, opt-in)
+  host: http://localhost:11434   # Shared Ollama base URL (ollama backend only)
   model: nomic-embed-text        # 768-dim — matches Qdrant collection vector size
+
+  # Optional Voyage AI cloud backend. OFF by default: it sends your text
+  # off-machine (privacy trade-off) in exchange for higher-quality embeddings.
+  # To enable: set backend: voyage above, export VOYAGE_API_KEY in your shell
+  # (never store the key here), then run `gg reembed` — voyage's dimension
+  # differs from nomic's 768 so existing collections must be rebuilt.
+  #
+  # voyage:
+  #   model: voyage-3.5-lite     # Voyage embedding model
+  #   output_dim: 1024           # 256 | 512 | 1024 | 2048
+  #   api_key_env: VOYAGE_API_KEY  # env var holding the key (key itself never stored)
 
 memgraph:
   uri: bolt://localhost:7687     # Bolt protocol endpoint (from ~/.gg/docker-compose.yaml)

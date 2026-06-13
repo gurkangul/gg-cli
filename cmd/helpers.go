@@ -55,16 +55,18 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 		return nil, err
 	}
 
-	// Fail-fast if the configured embedding model differs from the one used to
-	// create existing Qdrant collections. Mixed-model collections produce broken
-	// recall because vectors from different models are not comparable.
-	if metaErr := embedding.CheckMeta(ggDir, cfg.Embedding.Model, store.VectorSize); metaErr != nil {
+	// Fail-fast if the configured embedding backend/model differs from the one
+	// used to create existing Qdrant collections. Mixed-model collections produce
+	// broken recall because vectors from different models are not comparable. The
+	// identity is backend-qualified (e.g. "voyage:voyage-3.5-lite") so switching
+	// backends is detected as a mismatch, not silently mixed.
+	if metaErr := embedding.CheckMeta(ggDir, embedding.EffectiveModelIdentity(&cfg.Embedding), embedding.EffectiveDim(&cfg.Embedding, store.VectorSize)); metaErr != nil {
 		return nil, metaErr
 	}
 
 	// Resolve the expected embedding dimension from the meta file. On first
 	// run CheckMeta has already written the meta, so ReadMeta will succeed.
-	dim := store.VectorSize
+	dim := embedding.EffectiveDim(&cfg.Embedding, store.VectorSize)
 	if meta, readErr := embedding.ReadMeta(ggDir); readErr == nil && meta != nil {
 		dim = meta.Dim
 	}
@@ -123,11 +125,11 @@ func loadDepsReadOnly(needEmbedding bool) (d *deps, err error) {
 		return nil, err
 	}
 
-	if metaErr := embedding.CheckMeta(ggDir, cfg.Embedding.Model, store.VectorSize); metaErr != nil {
+	if metaErr := embedding.CheckMeta(ggDir, embedding.EffectiveModelIdentity(&cfg.Embedding), embedding.EffectiveDim(&cfg.Embedding, store.VectorSize)); metaErr != nil {
 		return nil, metaErr
 	}
 
-	dim := store.VectorSize
+	dim := embedding.EffectiveDim(&cfg.Embedding, store.VectorSize)
 	if meta, readErr := embedding.ReadMeta(ggDir); readErr == nil && meta != nil {
 		dim = meta.Dim
 	}

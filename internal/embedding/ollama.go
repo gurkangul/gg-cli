@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gurkangul/gg-cli/internal/config"
-	"github.com/gurkangul/gg-cli/internal/trace"
 )
 
 type embedRequest struct {
@@ -23,47 +22,48 @@ type embedResponse struct {
 	Error      string      `json:"error,omitempty"`
 }
 
-type Generator struct {
-	host        string
-	model       string
-	client      *http.Client
-	expectedDim int // 0 = no validation
+// ollamaBackend talks to a local Ollama server's /api/embed endpoint. It is the
+// default, fully-offline backend. The HTTP request shape is byte-identical to
+// the pre-refactor Generator so the default path is unchanged — whether Ollama
+// runs in Docker or natively makes no difference here (it is just an HTTP host).
+// Dimension validation is performed by the Generator wrapper, not here.
+type ollamaBackend struct {
+	host   string
+	model  string
+	client *http.Client
 }
 
-// New creates an embedding generator. expectedDim is the vector size the
-// caller expects (e.g. store.VectorSize = 768). If the model returns a vector
-// with a different dimension, Generate returns a descriptive error instead of
-// letting Qdrant surface a cryptic size-mismatch at upsert time.
-// Pass 0 to skip dimension validation.
-func New(cfg *config.EmbeddingConfig, expectedDim int) *Generator {
-	return &Generator{
-		host:        cfg.Host,
-		model:       cfg.Model,
-		client:      &http.Client{Timeout: 30 * time.Second},
-		expectedDim: expectedDim,
+func newOllamaBackend(cfg *config.EmbeddingConfig) *ollamaBackend {
+	return &ollamaBackend{
+		host:   cfg.Host,
+		model:  cfg.Model,
+		client: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
-// Generate creates an embedding vector for the given text via Ollama.
-// The context is honored for Ctrl+C and upstream timeouts.
-func (g *Generator) Generate(ctx context.Context, text string) (vec []float32, retErr error) {
-	start := time.Now()
-	defer func() { trace.Record("embed.generate", start, retErr) }()
+// modelIdentity returns the bare model name for the Ollama backend. It is
+// deliberately NOT backend-prefixed: existing installs recorded "nomic-embed-text"
+// in embedding-meta.json, so prefixing would spuriously trip the mismatch guard
+// on every upgrade. A switch to Voyage is still detected because the Voyage
+// identity IS prefixed (and the dim differs), so the two can never collide.
+func (b *ollamaBackend) modelIdentity() string { return b.model }
+
+func (b *ollamaBackend) generate(ctx context.Context, text string) ([]float32, error) {
 	body, err := json.Marshal(embedRequest{
-		Model: g.model,
+		Model: b.model,
 		Input: text,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.host+"/api/embed", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.host+"/api/embed", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := g.client.Do(req)
+	resp, err := b.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("ollama API call failed: %w", err)
 	}
@@ -87,12 +87,5 @@ func (g *Generator) Generate(ctx context.Context, text string) (vec []float32, r
 	if len(result.Embeddings) == 0 || len(result.Embeddings[0]) == 0 {
 		return nil, fmt.Errorf("no embedding returned from ollama")
 	}
-	vec = result.Embeddings[0]
-	if g.expectedDim > 0 && len(vec) != g.expectedDim {
-		return nil, fmt.Errorf(
-			"embedding dimension mismatch: model %q returned %d dimensions, expected %d — check that your embedding model matches the Qdrant collection size (hint: nomic-embed-text produces %d-dim vectors)",
-			g.model, len(vec), g.expectedDim, g.expectedDim,
-		)
-	}
-	return vec, nil
+	return result.Embeddings[0], nil
 }
