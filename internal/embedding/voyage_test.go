@@ -71,7 +71,7 @@ func TestVoyageBackend_RequestShapeAndParse(t *testing.T) {
 
 	cfg := &config.EmbeddingConfig{
 		Backend: config.BackendVoyage,
-		Voyage:  config.VoyageConfig{Model: "voyage-3.5-lite", OutputDim: wantDim, APIKeyEnv: "VOYAGE_API_KEY"},
+		Voyage:  config.VoyageConfig{Model: "voyage-3.5-lite", OutputDim: wantDim, APIKeyEnv: "VOYAGE_API_KEY"}, //nolint:gosec // env var NAME, not a real credential
 	}
 	b := newVoyageBackendForTest(t, srv, cfg)
 
@@ -125,7 +125,7 @@ func TestVoyageBackend_HonorsConfiguredDim(t *testing.T) {
 
 	cfg := &config.EmbeddingConfig{
 		Backend: config.BackendVoyage,
-		Voyage:  config.VoyageConfig{Model: "voyage-3.5-lite", OutputDim: wantDim, APIKeyEnv: "VOYAGE_API_KEY"},
+		Voyage:  config.VoyageConfig{Model: "voyage-3.5-lite", OutputDim: wantDim, APIKeyEnv: "VOYAGE_API_KEY"}, //nolint:gosec // env var NAME, not a real credential
 	}
 	b := newVoyageBackendForTest(t, srv, cfg)
 	vec, err := b.generate(context.Background(), "x")
@@ -146,7 +146,7 @@ func TestVoyageBackend_MissingAPIKey(t *testing.T) {
 	t.Setenv("VOYAGE_API_KEY", "") // explicitly empty
 	cfg := &config.EmbeddingConfig{
 		Backend: config.BackendVoyage,
-		Voyage:  config.VoyageConfig{Model: "voyage-3.5-lite", OutputDim: 1024, APIKeyEnv: "VOYAGE_API_KEY"},
+		Voyage:  config.VoyageConfig{Model: "voyage-3.5-lite", OutputDim: 1024, APIKeyEnv: "VOYAGE_API_KEY"}, //nolint:gosec // env var NAME, not a real credential
 	}
 	b := newVoyageBackend(cfg)
 	_, err := b.generate(context.Background(), "hi")
@@ -170,7 +170,7 @@ func TestVoyageBackend_APIError(t *testing.T) {
 
 	cfg := &config.EmbeddingConfig{
 		Backend: config.BackendVoyage,
-		Voyage:  config.VoyageConfig{Model: "voyage-3.5-lite", OutputDim: 1024, APIKeyEnv: "VOYAGE_API_KEY"},
+		Voyage:  config.VoyageConfig{Model: "voyage-3.5-lite", OutputDim: 1024, APIKeyEnv: "VOYAGE_API_KEY"}, //nolint:gosec // env var NAME, not a real credential
 	}
 	b := newVoyageBackendForTest(t, srv, cfg)
 	_, err := b.generate(context.Background(), "x")

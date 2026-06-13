@@ -80,7 +80,7 @@ func (s *sqliteStore) queryNodes(ctx context.Context, sqlText string, args ...an
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []nodeRow
 	for rows.Next() {
 		var id int64

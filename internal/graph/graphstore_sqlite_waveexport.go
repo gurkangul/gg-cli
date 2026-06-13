@@ -79,7 +79,7 @@ func (s *sqliteStore) listWaves(ctx context.Context, params map[string]any, with
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	keys := []string{"w"}
 	var recs []GraphRecord
 	for rows.Next() {
@@ -134,7 +134,7 @@ func (s *sqliteStore) waveStatus(ctx context.Context, params map[string]any) (*G
 	if err != nil {
 		return nil, err
 	}
-	defer taskRows.Close()
+	defer func() { _ = taskRows.Close() }()
 	var tasks []any
 	for taskRows.Next() {
 		var id any
@@ -160,7 +160,7 @@ func (s *sqliteStore) exportNodes(ctx context.Context, params map[string]any) (*
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	keys := []string{"lbls", "props"}
 	var recs []GraphRecord
 	for rows.Next() {
@@ -192,7 +192,7 @@ func (s *sqliteStore) exportEdges(ctx context.Context, params map[string]any) (*
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	keys := []string{"src_lbls", "src_props", "dst_lbls", "dst_props", "rel_type", "rel_props"}
 	var recs []GraphRecord
 	for rows.Next() {

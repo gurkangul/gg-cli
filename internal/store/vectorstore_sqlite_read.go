@@ -34,7 +34,7 @@ func (s *sqliteStore) loadCollection(ctx context.Context, coll string, withVecto
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []candidate
 	for rows.Next() {
 		var id string

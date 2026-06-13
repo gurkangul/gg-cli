@@ -69,7 +69,7 @@ func (s *sqliteStore) Upsert(ctx context.Context, req *qdrant.UpsertPoints) (*qd
 	if err != nil {
 		return nil, err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, p := range req.GetPoints() {
 		key := pointIDKey(p.GetId())
@@ -186,7 +186,7 @@ func (s *sqliteStore) selectorKeys(ctx context.Context, tx *sql.Tx, coll string,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []string
 	for rows.Next() {
 		var id string

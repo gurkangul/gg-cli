@@ -47,7 +47,7 @@ func (s *sqliteStore) dependentsOf(ctx context.Context, params map[string]any) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanStringColumn(rows, "dep")
 }
 
@@ -70,7 +70,7 @@ func (s *sqliteStore) bugsAffectingFile(ctx context.Context, params map[string]a
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	keys := []string{"bug_id", "title"}
 	var recs []GraphRecord
 	for rows.Next() {
@@ -104,7 +104,7 @@ func (s *sqliteStore) bugAffects(ctx context.Context, params map[string]any) (*G
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	keys := []string{"lbls", "val"}
 	var recs []GraphRecord
 	for rows.Next() {
@@ -195,7 +195,7 @@ func (s *sqliteStore) collectTaskIDs(ctx context.Context, ids *map[string]bool, 
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id any
 		if err := rows.Scan(&id); err != nil {

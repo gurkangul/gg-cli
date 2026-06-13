@@ -34,7 +34,7 @@ func TestNewBackend_DefaultSelectsOllama(t *testing.T) {
 func TestNewBackend_VoyageSelectsVoyage(t *testing.T) {
 	cfg := &config.EmbeddingConfig{
 		Backend: config.BackendVoyage,
-		Voyage:  config.VoyageConfig{Model: "voyage-3.5-lite", OutputDim: 1024, APIKeyEnv: "VOYAGE_API_KEY"},
+		Voyage:  config.VoyageConfig{Model: "voyage-3.5-lite", OutputDim: 1024, APIKeyEnv: "VOYAGE_API_KEY"}, //nolint:gosec // env var NAME, not a real credential
 	}
 	g := NewBackend(cfg, 1024)
 	if _, ok := g.backend.(*voyageBackend); !ok {
