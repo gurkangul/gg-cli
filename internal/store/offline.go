@@ -118,7 +118,7 @@ func (c *Client) ReplayBrainEntry(ctx context.Context, collSuffix, uuid string, 
 func (c *Client) CollectionPayloadCounts(ctx context.Context) (map[string]uint64, error) {
 	out := make(map[string]uint64)
 	for suffix, collName := range semanticCollectionNames(c) {
-		count, err := c.qc.Count(ctx, &qdrant.CountPoints{CollectionName: collName})
+		count, err := c.vs.Count(ctx, &qdrant.CountPoints{CollectionName: collName})
 		if err != nil {
 			if isCollectionNotFoundError(err) {
 				continue

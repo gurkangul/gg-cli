@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -39,37 +40,48 @@ type scrollerIface interface {
 }
 
 type Client struct {
-	qc        *qdrant.Client
-	scroller  scrollerIface // defaults to qc; overridable in tests
+	vs        VectorStore   // backend-agnostic vector index (Qdrant or SQLite)
+	scroller  scrollerIface // defaults to vs; overridable in tests
 	dataDir   string        // absolute path to project-local .gg/ — used for file-locked counters
-	projectID string        // per-project namespace prefix for Qdrant collections
+	projectID string        // per-project namespace prefix for collections
 }
 
-// New creates a store client bound to a specific project. All Qdrant
-// collection names are prefixed with projectID so multiple projects can share
-// a single Qdrant instance without seeing each other's data.
+// VectorBackendEnv selects the vector-store backend. Unset or "qdrant" keeps the
+// historical Qdrant path; "sqlite" activates the embedded, CGO-free brute-force
+// store (TASK-493) that removes the Qdrant Docker dependency.
+const VectorBackendEnv = "GG_VECTOR_BACKEND"
+
+// New creates a store client bound to a specific project. Collection names are
+// prefixed with projectID so multiple projects can share a single backend
+// without seeing each other's data.
+//
+// The backend is selected by the GG_VECTOR_BACKEND env var (default "qdrant").
+// With "sqlite", the cfg host/port are ignored and an embedded vectorstore.db is
+// opened under dataDir.
 func New(cfg *config.QdrantConfig, dataDir, projectID string) (*Client, error) {
 	if projectID == "" {
 		return nil, fmt.Errorf("project ID is required — config missing project_id")
 	}
-	qc, err := qdrant.NewClient(&qdrant.Config{
-		Host:                   cfg.Host,
-		Port:                   cfg.Port,
-		SkipCompatibilityCheck: true,
-	})
+	if backend := strings.ToLower(strings.TrimSpace(os.Getenv(VectorBackendEnv))); backend == "sqlite" {
+		ss, err := newSQLiteStore(dataDir)
+		if err != nil {
+			return nil, fmt.Errorf("sqlite vector store init failed: %w", err)
+		}
+		return &Client{vs: ss, scroller: ss, dataDir: dataDir, projectID: projectID}, nil
+	}
+	qs, err := newQdrantStore(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("qdrant connect failed: %w", err)
 	}
-	return &Client{qc: qc, scroller: qc, dataDir: dataDir, projectID: projectID}, nil
+	return &Client{vs: qs, scroller: qs, dataDir: dataDir, projectID: projectID}, nil
 }
 
 func (c *Client) Close() error {
-	return c.qc.Close()
+	return c.vs.Close()
 }
 
 func (c *Client) HealthCheck(ctx context.Context) error {
-	_, err := c.qc.HealthCheck(ctx)
-	return err
+	return c.vs.HealthCheck(ctx)
 }
 
 // Collection names are composed of <project_id>-<type>. The project_id is a
@@ -89,7 +101,7 @@ func (c *Client) CollectionStatus(ctx context.Context) (present, missing []strin
 		c.collDecisions(), c.collTasks(), c.collMessages(),
 		c.collRejections(), c.collDiscussions(), c.collNotes(), c.collBugs(),
 	}
-	all, err := c.qc.ListCollections(ctx)
+	all, err := c.vs.ListCollections(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list collections: %w", err)
 	}
@@ -112,7 +124,7 @@ func (c *Client) CollectionStatus(ctx context.Context) (present, missing []strin
 // embedding meta file (or store.VectorSize as a default for first-time setups).
 func (c *Client) EnsureCollections(ctx context.Context, vectorSize uint64) error {
 	collections := []string{c.collDecisions(), c.collTasks(), c.collMessages(), c.collRejections(), c.collDiscussions(), c.collNotes(), c.collBugs()}
-	existing, err := c.qc.ListCollections(ctx)
+	existing, err := c.vs.ListCollections(ctx)
 	if err != nil {
 		return fmt.Errorf("list collections: %w", err)
 	}
@@ -129,7 +141,7 @@ func (c *Client) EnsureCollections(ctx context.Context, vectorSize uint64) error
 		if existMap[name] {
 			continue
 		}
-		err := c.qc.CreateCollection(ctx, &qdrant.CreateCollection{
+		err := c.vs.CreateCollection(ctx, &qdrant.CreateCollection{
 			CollectionName: name,
 			VectorsConfig:  vectorCfg,
 		})
@@ -146,7 +158,7 @@ func (c *Client) EnsureCollections(ctx context.Context, vectorSize uint64) error
 // callers can distinguish "Qdrant is down" from "bad request".
 func (c *Client) qdrantUpsert(ctx context.Context, req *qdrant.UpsertPoints) error {
 	start := time.Now()
-	_, err := c.qc.Upsert(ctx, req)
+	_, err := c.vs.Upsert(ctx, req)
 	trace.Record("store.upsert", start, err)
 	if err != nil && isConnectivityError(err) {
 		return fmt.Errorf("%w: %v", ErrQdrantDown, err)
@@ -159,7 +171,7 @@ func (c *Client) qdrantUpsert(ctx context.Context, req *qdrant.UpsertPoints) err
 // Returns ErrQdrantDown when the error is a network connectivity failure.
 func (c *Client) qdrantQuery(ctx context.Context, req *qdrant.QueryPoints) ([]*qdrant.ScoredPoint, error) {
 	start := time.Now()
-	results, err := c.qc.Query(ctx, req)
+	results, err := c.vs.Query(ctx, req)
 	trace.Record("store.query", start, err)
 	if err != nil && isConnectivityError(err) {
 		return nil, fmt.Errorf("%w: %v", ErrQdrantDown, err)
@@ -222,12 +234,22 @@ func isCollectionNotFoundError(err error) bool {
 	return false
 }
 
+// IsCollectionNotFoundError is the exported form of isCollectionNotFoundError so
+// command-layer read paths can treat a missing collection (fresh install that
+// hasn't run `gg reembed`) the same as a store-down condition and fall back to
+// the offline JSONL scan instead of surfacing a raw NotFound. With the embedded
+// SQLite backend the store is always "up", so this is the only signal that the
+// collection has not been materialized yet.
+func IsCollectionNotFoundError(err error) bool {
+	return isCollectionNotFoundError(err)
+}
+
 // DropAllCollections deletes all project collections from Qdrant.
 // Used by `gg reembed` before recreating collections with a new vector size.
 func (c *Client) DropAllCollections(ctx context.Context) error {
 	collections := []string{c.collDecisions(), c.collTasks(), c.collMessages(), c.collRejections(), c.collDiscussions(), c.collNotes(), c.collBugs()}
 	for _, name := range collections {
-		if err := c.qc.DeleteCollection(ctx, name); err != nil {
+		if err := c.vs.DeleteCollection(ctx, name); err != nil {
 			return fmt.Errorf("drop collection %s: %w", name, err)
 		}
 	}

@@ -72,7 +72,7 @@ func taskIntValue(n int64) *qdrant.Value {
 
 func (c *Client) setTaskPayloadByFilter(ctx context.Context, filter *qdrant.Filter, payload map[string]*qdrant.Value) error {
 	wait := true
-	_, err := c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	_, err := c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
 		CollectionName:   c.collTasks(),
 		Wait:             &wait,
 		Payload:          payload,

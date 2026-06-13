@@ -91,7 +91,7 @@ func (c *Client) currentBrainPayload(ctx context.Context, kind, collection, poin
 		}
 	}
 	// Legacy fallback: record exists only in Qdrant (created before JSONL).
-	pts, getErr := c.qc.Get(ctx, &qdrant.GetPoints{
+	pts, getErr := c.vs.Get(ctx, &qdrant.GetPoints{
 		CollectionName: collection,
 		Ids:            []*qdrant.PointId{qdrant.NewID(pointUUID)},
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
@@ -162,7 +162,7 @@ func (c *Client) SyncBrainPayload(ctx context.Context, collSuffix, pointUUID str
 		return fmt.Errorf("build payload: %w", err)
 	}
 	wait := true
-	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	_, err = c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
 		CollectionName: c.projectID + "-" + collSuffix,
 		Wait:           &wait,
 		Payload:        qp,
@@ -181,7 +181,7 @@ func (c *Client) mirrorMutationToQdrant(ctx context.Context, collection, outboxK
 		return fmt.Errorf("build payload: %w", err)
 	}
 	wait := true
-	if _, setErr := c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	if _, setErr := c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
 		CollectionName: collection,
 		Wait:           &wait,
 		Payload:        qp,

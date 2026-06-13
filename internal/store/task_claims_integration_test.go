@@ -32,16 +32,16 @@ func TestTaskOwnershipIntegration(t *testing.T) {
 		Size:     VectorSize,
 		Distance: qdrant.Distance_Cosine,
 	})
-	if err := c.qc.CreateCollection(ctx, &qdrant.CreateCollection{
+	if err := c.vs.CreateCollection(ctx, &qdrant.CreateCollection{
 		CollectionName: c.collTasks(),
 		VectorsConfig:  vectorCfg,
 	}); err != nil {
-		t.Skipf("Qdrant cannot create test collection: %v", err)
+		t.Skipf("backend cannot create test collection: %v", err)
 	}
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cleanupCancel()
-		_ = c.qc.DeleteCollection(cleanupCtx, c.collTasks())
+		_ = c.vs.DeleteCollection(cleanupCtx, c.collTasks())
 	})
 
 	id, err := c.CreateTask(ctx, Task{
@@ -123,16 +123,16 @@ func TestReadyForLivePlanUpdateIntegration(t *testing.T) {
 		Size:     VectorSize,
 		Distance: qdrant.Distance_Cosine,
 	})
-	if err := c.qc.CreateCollection(ctx, &qdrant.CreateCollection{
+	if err := c.vs.CreateCollection(ctx, &qdrant.CreateCollection{
 		CollectionName: c.collTasks(),
 		VectorsConfig:  vectorCfg,
 	}); err != nil {
-		t.Skipf("Qdrant cannot create test collection: %v", err)
+		t.Skipf("backend cannot create test collection: %v", err)
 	}
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cleanupCancel()
-		_ = c.qc.DeleteCollection(cleanupCtx, c.collTasks())
+		_ = c.vs.DeleteCollection(cleanupCtx, c.collTasks())
 	})
 
 	id, err := c.CreateTask(ctx, Task{

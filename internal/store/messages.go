@@ -254,7 +254,7 @@ func (c *Client) markMessagesGloballyRead(ctx context.Context, ids []string) err
 	}
 	wait := true
 	readVal, _ := qdrant.NewValue(true)
-	_, err := c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	_, err := c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
 		CollectionName: c.collMessages(),
 		Wait:           &wait,
 		Payload: map[string]*qdrant.Value{

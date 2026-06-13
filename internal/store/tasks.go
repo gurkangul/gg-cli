@@ -63,7 +63,7 @@ func (c *Client) scrollAll(ctx context.Context, req *qdrant.ScrollPoints) ([]*qd
 	var all []*qdrant.RetrievedPoint
 	var offset *qdrant.PointId
 	for {
-		page, next, err := c.qc.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
+		page, next, err := c.vs.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
 			CollectionName:   req.CollectionName,
 			Filter:           req.Filter,
 			Limit:            &pageSize,
@@ -243,7 +243,7 @@ func (c *Client) listTasksFiltered(ctx context.Context, statusFilter string, nee
 }
 
 func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
-	points, err := c.qc.Get(ctx, &qdrant.GetPoints{
+	points, err := c.vs.Get(ctx, &qdrant.GetPoints{
 		CollectionName: c.collTasks(),
 		Ids:            []*qdrant.PointId{qdrant.NewID(pointUUIDForTaskID(taskID))},
 		WithPayload:    qdrant.NewWithPayloadEnable(true),

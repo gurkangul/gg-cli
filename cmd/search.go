@@ -109,6 +109,19 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}()
 	go func() { defer wg.Done(); notes, noteErr = d.store.SearchNotes(ctx, vector, semanticLimit) }()
 	wg.Wait()
+	// Embedded-brain resilience: with GG_VECTOR_BACKEND=sqlite the store is always
+	// reachable, so a fresh user who has not run `gg reembed` yet has no collection
+	// to query and the read returns a raw NotFound instead of triggering the
+	// store-down branch above. Treat collection-not-found exactly like store-down —
+	// fall back to the offline JSONL lexical scan and return results, never a raw
+	// NotFound. The qdrant path is unaffected: when Qdrant is up its collections
+	// already exist (gg init/reembed created them), and when it is down the
+	// d.qdrantDown branch handled it before we reached here.
+	for _, e := range []error{decErr, rejErr, taskErr, bugErr, noteErr} {
+		if store.IsCollectionNotFoundError(e) {
+			return serveSearchFromJSONL(cmd, query)
+		}
+	}
 	if decErr != nil {
 		return fmt.Errorf("search decisions: %w", decErr)
 	}

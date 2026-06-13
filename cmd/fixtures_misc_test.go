@@ -317,6 +317,11 @@ func TestPromptIfDuplicate_StoreError(t *testing.T) {
 }
 
 func TestPromptIfDuplicateThreshold_StoreError(t *testing.T) {
+	// Models the Qdrant-down dedup path (qdrantDown=true). Pin the default backend
+	// so an ambient GG_VECTOR_BACKEND=sqlite (always-on store) doesn't make the
+	// dedup check succeed and suppress the expected warning. This test does not
+	// route through setupGGDir, so it pins the backend directly.
+	t.Setenv("GG_VECTOR_BACKEND", "qdrant")
 	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 19997}
 	sc, err := store.New(cfg, t.TempDir(), "test-dedup-thresh-proj")
 	if err != nil {
