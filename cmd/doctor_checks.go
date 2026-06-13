@@ -56,8 +56,10 @@ var doctorQdrantNewClient = func(cfg *config.Config, ggDir string) (qdrantHealth
 	return store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
 }
 
-// doctorCheckQdrant checks Qdrant connectivity and collection presence.
-func doctorCheckQdrant(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
+// doctorCheckQdrantServer checks Qdrant SERVER connectivity and collection
+// presence. Only reached when the qdrant server backend is explicitly selected;
+// the embedded default is handled by doctorCheckEmbeddedVector (doctor_storage.go).
+func doctorCheckQdrantServer(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
 	ggDir, _ := config.GGDir()
 	c, err := doctorQdrantNewClient(cfg, ggDir)
 	if err != nil {
@@ -137,8 +139,10 @@ func doctorCheckQdrant(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 	report.ok("qdrant message vectors", "messages intentionally use zero vectors; degraded placeholders are marked with gg_vector_degraded")
 }
 
-// doctorCheckMemgraph checks Memgraph connectivity and schema indexes.
-func doctorCheckMemgraph(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
+// doctorCheckMemgraphServer checks Memgraph SERVER connectivity and schema
+// indexes. Only reached when the memgraph server backend is explicitly selected;
+// the embedded default is handled by doctorCheckEmbeddedGraph (doctor_storage.go).
+func doctorCheckMemgraphServer(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
 	if cfg.Memgraph.URI == "" {
 		report.warn("memgraph", "not configured — skipped")
 		return

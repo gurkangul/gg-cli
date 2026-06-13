@@ -14,7 +14,7 @@ import (
 
 // configNoMemgraph is a config without a memgraph URI — exercises the
 // doctorCheckConfig "memgraph.uri not set" warning and the
-// doctorCheckMemgraph "skipped" early-return path.
+// doctorCheckMemgraphServer "skipped" early-return path (server backend).
 const configNoMemgraph = `
 project_id: test-no-memgraph
 qdrant:

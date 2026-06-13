@@ -12,9 +12,9 @@ build gg from source and drive the core workflow end-to-end.
 |---|---|
 | Docker Desktop (or Engine) | Container image is `ubuntu:22.04` |
 | Go source checked out | Repo root is mounted read-only at `/src` |
-| Qdrant on host port 6334 | Run via `cd ~/.gg && docker compose up -d qdrant` |
-| Ollama on host port 11434 | Run via `cd ~/.gg && docker compose up -d ollama` |
-| Memgraph on host port 7687 | Run via `cd ~/.gg && docker compose up -d memgraph` |
+| Qdrant on host port 6334 | Server-backend smoke only — qdrant is no longer in the default compose; add a qdrant service to `~/.gg/docker-compose.yaml`, then `cd ~/.gg && docker compose up -d qdrant` |
+| Ollama on host port 11434 | Run via `cd ~/.gg && docker compose up -d ollama` (or native `ollama serve`) |
+| Memgraph on host port 7687 | Server-backend smoke only — memgraph is no longer in the default compose; add a memgraph service to `~/.gg/docker-compose.yaml`, then `cd ~/.gg && docker compose up -d memgraph` |
 
 The script connects to host-side services via `host.docker.internal`
 (automatically resolved on macOS Docker Desktop and Linux with
@@ -103,7 +103,7 @@ store/retrieve data). This is expected — start the services and re-run.
 | `AC-1 FAIL: which gg failed` | Go install path not in `$PATH` | Script sets `$GOPATH/bin` — check if build itself errored |
 | `AC-2 FAIL: .gg/ missing` | `gg init --yes --no-index` returned an error | Check if `git init` ran (required for project detection) |
 | `AC-3 FAIL: opaque error` | `gg doctor` panicked or errored without a human message | File a bug with the raw output |
-| `AC-4 FAIL: gg record` | Qdrant unreachable | Start Qdrant on host: `cd ~/.gg && docker compose up -d qdrant` |
+| `AC-4 FAIL: gg record` | Qdrant unreachable (server-backend smoke) | Add a qdrant service to `~/.gg/docker-compose.yaml`, then `cd ~/.gg && docker compose up -d qdrant` |
 | `AC-4c FAIL: search empty` | Ollama embedding service unreachable | Start Ollama: `cd ~/.gg && docker compose up -d ollama` |
 | `host.docker.internal: no address` | Linux Docker Engine without host-gateway | Set `HOST_GATEWAY=$(ip route show | awk '/default/ {print $3}')` |
 

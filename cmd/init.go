@@ -124,19 +124,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 	printUnsupportedLangNotice(cwd)
 
 	// --- Shared infra at ~/.gg/ ---
+	// The embedded stores need nothing here. We still write the OPTIONAL
+	// docker-compose.yaml (now just the optional Ollama service) + its volume
+	// dir so users who prefer Ollama-in-Docker have it ready. Qdrant/Memgraph
+	// volume dirs are no longer created — those servers are no longer part of
+	// the default compose.
 	sharedDir, err := config.SharedDir()
 	if err != nil {
 		return fmt.Errorf("resolve home dir: %w", err)
 	}
-	sharedVolumes := []string{
-		filepath.Join(sharedDir, "volumes", "qdrant"),
-		filepath.Join(sharedDir, "volumes", "memgraph"),
-		filepath.Join(sharedDir, "volumes", "ollama"),
-	}
-	for _, d := range sharedVolumes {
-		if err := os.MkdirAll(d, 0755); err != nil {
-			return fmt.Errorf("create %s: %w", d, err)
-		}
+	if err := os.MkdirAll(filepath.Join(sharedDir, "volumes", "ollama"), 0755); err != nil {
+		return fmt.Errorf("create %s: %w", filepath.Join(sharedDir, "volumes", "ollama"), err)
 	}
 	composePath := filepath.Join(sharedDir, "docker-compose.yaml")
 	f, err := os.OpenFile(composePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
@@ -150,17 +148,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if closeErr != nil {
 			return fmt.Errorf("close shared docker-compose: %w", closeErr)
 		}
-		fmt.Printf("✓ Created %s (shared infrastructure)\n", composePath)
+		fmt.Printf("✓ Created %s (optional Ollama-in-Docker service)\n", composePath)
 	case os.IsExist(err):
 		// Another init wrote it first, or we're re-running — both fine.
 	default:
 		return fmt.Errorf("create shared docker-compose: %w", err)
-	}
-
-	composeOK := startSharedServices(parentCtx, composePath)
-	ollamaHost := config.DefaultConfig().Embedding.Host
-	if composeOK {
-		pullOllamaModel(parentCtx, composePath, ollamaHost)
 	}
 
 	// --- Project-local .gg/ ---
@@ -201,6 +193,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("⚠ Could not create runtime dir: %v\n", rtErr)
 		}
 	}
+
+	// --- Backend provisioning (Docker is OPTIONAL) ---
+	// With the embedded SQLite stores (the default) no Docker container is
+	// required: the vector/graph DBs are created on first use under .gg/.
+	// provisionInfra only brings up Docker services that an explicitly-selected
+	// SERVER backend (qdrant/memgraph) needs, and warns — never fails — when the
+	// embedding endpoint (native Ollama) is unreachable. It returns the resolved
+	// config so the rest of init can report accurate, backend-aware guidance.
+	infraCfg, infra := provisionInfra(parentCtx, composePath, ggDir)
 
 	// Register this project in ~/.gg/projects.json so `gg system sync` can
 	// propagate future contract/hook updates without the user scanning the
@@ -244,20 +245,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("  AGENTS.md already exists, skipping (merge gg rules manually if needed)")
 	}
 
-	// Always attempt collection bootstrap — setupProjectCollections is resilient:
-	// it polls Qdrant and prints a warning if unreachable rather than failing.
-	// This matters when config.yaml is pre-written before `gg init` (e.g. smoke
-	// tests, brownfield setups) where Docker wasn't started by this run but
-	// external Qdrant services are already up.
+	// Bootstrap the vector collections. With the embedded SQLite backend this
+	// creates vectorstore.db + the 7 collections with no server. With the qdrant
+	// server backend it stays resilient: it polls Qdrant and warns (rather than
+	// failing) if unreachable, so a pre-written config / brownfield setup still
+	// completes.
 	if err := setupProjectCollections(parentCtx, projectID, ggDir); err != nil {
 		return err
 	}
-	if composeOK {
-		fmt.Printf("\nGG ready. Project %s is registered in shared Qdrant.\n", projectID)
-	} else {
-		fmt.Printf("\nProject %s registered. Start services if not already running:\n", projectID)
-		fmt.Println("  docker compose -f ~/.gg/docker-compose.yaml up -d")
-	}
+	printInfraSummary(projectID, infraCfg, infra)
 
 	// Install agent-side hooks so subsequent sessions of any detected agent
 	// self-enforce the gg protocol without the user having to remember.
@@ -303,7 +299,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if langHint == "" {
 		unsupportedHint = detectUnsupportedLang(cwd)
 	}
-	indexed := maybeRunIndex(cmd, langHint, composeOK)
+	indexed := maybeRunIndex(cmd, langHint, infra.GraphReady)
 	printIndexHooksBanner(hooksInstalled)
 	printBootstrapPrompt(detectAgentHint(installResults), langHint, unsupportedHint, indexed)
 	return nil

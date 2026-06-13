@@ -5,7 +5,8 @@
 ```
 gg (CLI, Go)
 │
-├── Qdrant (vector store)          localhost:6334
+├── Vector store (default: embedded SQLite, .gg/vectorstore.db — no Docker)
+│   │  pluggable: qdrant.backend=qdrant → Qdrant server at localhost:6334
 │   ├── <project>-decisions        gg record / gg search
 │   ├── <project>-rejections       gg record --decision-status=rejected
 │   ├── <project>-tasks            gg task
@@ -14,20 +15,26 @@ gg (CLI, Go)
 │   ├── <project>-notes            (legacy; CLI verbs removed in v0.3)
 │   └── <project>-messages         gg tell / gg inbox
 │
-├── Memgraph (graph DB)            localhost:7687 (optional)
+├── Graph store (default: embedded SQLite, .gg/graph.db — no Docker)
+│   │  pluggable: memgraph.backend=memgraph → Memgraph server at localhost:7687
 │   ├── Symbol nodes               exported functions, types, variables
 │   ├── File nodes                 source files
 │   └── IMPORTS edges              dependency relationships
 │
-└── Ollama (embeddings)            localhost:11434
+└── Embeddings (default: native Ollama localhost:11434, or opt-in Voyage cloud)
     └── nomic-embed-text (768-dim) semantic search vectors
 ```
+
+Backend selection precedence (both stores): `GG_VECTOR_BACKEND` /
+`GG_GRAPH_BACKEND` env var > `qdrant.backend` / `memgraph.backend` config field >
+built-in default (`sqlite`). The embedded stores remove the Docker dependency;
+the server adapters stay fully selectable.
 
 ## Directory layout
 
 ```
 ~/.gg/                             shared infra (one per machine)
-├── docker-compose.yaml
+├── docker-compose.yaml            OPTIONAL — only the (optional) Ollama service
 └── projects/
     └── <project_id>/              per-project runtime state (never committed)
         ├── telemetry.jsonl
@@ -36,7 +43,10 @@ gg (CLI, Go)
 
 <project_root>/
 └── .gg/                           per-project metadata (committed to git)
-    ├── config.yaml                project_id + service endpoints
+    ├── config.yaml                project_id + backend selection + endpoints
+    ├── vectorstore.db             embedded vector store (default backend)
+    ├── graph.db                   embedded graph store (default backend)
+    ├── brain/                     canonical JSONL ledger (committed, portable)
     ├── RULES.md
     ├── AGENTS.md (optional)
     ├── .gitignore                 excludes runtime state if written locally
@@ -47,34 +57,34 @@ gg (CLI, Go)
 
 ## Project isolation
 
-Every Qdrant point and every Memgraph node carries a `project_id` field. Multiple projects can share the same backend without data leakage. The project ID is set in `.gg/config.yaml` and injected automatically by all store/graph writes.
+Every vector point and every graph node carries a `project_id` field (the embedded SQLite stores namespace by it just as the Qdrant/Memgraph servers do). Multiple projects can share the same backend without data leakage. The project ID is set in `.gg/config.yaml` and injected automatically by all store/graph writes.
 
 ## Code packages
 
 | Package | Responsibility |
 |---|---|
 | `cmd/` | Cobra commands — thin handlers that delegate to internal packages |
-| `internal/store/` | Qdrant client — decisions, tasks, bugs, notes, discussions, messages |
-| `internal/graph/` | Memgraph client — code knowledge graph via Bolt protocol |
-| `internal/embedding/` | Ollama HTTP client — generates float32 vectors |
+| `internal/store/` | Vector store — pluggable backend (embedded SQLite default, Qdrant server opt-in) behind `VectorStore`; decisions, tasks, bugs, notes, discussions, messages |
+| `internal/graph/` | Graph store — pluggable backend (embedded SQLite default, Memgraph/Bolt opt-in) behind `GraphStore`; code knowledge graph |
+| `internal/embedding/` | Pluggable embedding backend — native Ollama default, opt-in Voyage cloud; generates float32 vectors |
 | `internal/index/` | SCIP pipeline — runner, parser, changed-file detection, version compat |
-| `internal/outbox/` | Crash-safety queue for Memgraph writes |
+| `internal/outbox/` | Crash-safety queue for graph writes |
 | `internal/config/` | Config loading, project root detection |
 
 ## Crash safety
 
-`gg index` writes to both Qdrant (via store) and Memgraph (via graph). To survive crashes mid-write:
+`gg index` writes to both the vector store and the graph store. To survive crashes mid-write:
 
-1. An outbox entry is written to `.gg/outbox/<id>.json` before the Memgraph write.
+1. An outbox entry is written to `.gg/outbox/<id>.json` before the graph write.
 2. On success the entry is deleted.
 3. `gg doctor --reconcile` surfaces any surviving entries and shows the repair command.
 
-All Memgraph writes use `MERGE` semantics (`UpsertNode`, `UpsertEdge`) so replay is safe.
+All graph writes use `MERGE` semantics (`UpsertNode`, `UpsertEdge`) so replay is safe.
 
 ## CodeGraph freshness contract
 
-Memgraph is a derived CodeGraph projection, not a background service owned by
-gg. Successful index runs update `.gg/index-state.json` with per-language SHAs
+The graph store (embedded SQLite by default, Memgraph when opted in) is a derived
+CodeGraph projection, not a background service owned by gg. Successful index runs update `.gg/index-state.json` with per-language SHAs
 and working-tree fingerprints. `gg session-start`, `gg next`, `gg impact`,
 `gg doctor`, and `gg index status` all render the same shared freshness
 contract: status (`ready`, `missing`, `stale`, `unavailable`, `unknown`,

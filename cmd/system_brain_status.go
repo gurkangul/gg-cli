@@ -216,7 +216,21 @@ func checkSystemBrainQdrant(ctx context.Context, cfg *config.Config, ggDir strin
 	return systemBrainCheck{Status: "up", Detail: fmt.Sprintf("%s:%d", cfg.Qdrant.Host, cfg.Qdrant.Port)}
 }
 
+// checkSystemBrainOllama reports the embedding backend's health. It is
+// backend-aware: under Voyage it does NOT probe the Ollama host (which would
+// falsely report down for a correctly-configured Voyage user — the TASK-495
+// gap); instead it checks the API-key env var. Under Ollama it probes /api/tags.
 func checkSystemBrainOllama(ctx context.Context, cfg *config.Config) systemBrainCheck {
+	if cfg.Embedding.ResolvedBackendName() == config.BackendVoyage {
+		keyEnv := cfg.Embedding.Voyage.APIKeyEnv
+		if strings.TrimSpace(keyEnv) == "" {
+			keyEnv = config.DefaultVoyageAPIKeyEnv
+		}
+		if strings.TrimSpace(os.Getenv(keyEnv)) == "" {
+			return systemBrainCheck{Status: "down", Detail: fmt.Sprintf("voyage backend: %s not set", keyEnv)}
+		}
+		return systemBrainCheck{Status: "up", Detail: "voyage (" + keyEnv + " present)"}
+	}
 	host := strings.TrimRight(cfg.Embedding.Host, "/")
 	hctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()

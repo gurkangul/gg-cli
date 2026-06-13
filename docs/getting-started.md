@@ -2,8 +2,18 @@
 
 ## Prerequisites
 
-1. **Docker with Compose v2** — `gg init` starts Qdrant, Ollama, and
-   Memgraph through the shared `~/.gg/docker-compose.yaml`.
+1. **An embedding provider** — native Ollama is the default:
+   ```sh
+   brew install ollama          # or https://ollama.com/download
+   ollama serve &
+   ollama pull nomic-embed-text
+   ```
+   Alternatively, opt into the Voyage cloud backend (set `embedding.backend: voyage`
+   in `.gg/config.yaml` and export `VOYAGE_API_KEY`).
+
+   **Docker is NOT required.** The vector store (`.gg/vectorstore.db`) and graph
+   store (`.gg/graph.db`) are embedded SQLite by default. Docker is only needed if
+   you opt into the Qdrant/Memgraph server backends.
 
 2. **Go** — used to install the CLI:
    ```sh

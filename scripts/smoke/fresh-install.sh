@@ -112,15 +112,20 @@ GATEWAY="host.docker.internal"
 # gg refuses to record without an agent identity — set one for the smoke.
 export GG_AGENT="smoke-test"
 
+# This smoke deliberately exercises the opt-in SERVER backends, so it pins
+# qdrant.backend / memgraph.backend (the default is now the embedded SQLite
+# store — TASK-496 — which would otherwise ignore these host endpoints).
 cat > "${GG_DIR}/config.yaml" <<YAML
 project_id: ${PROJECT_ID}
 qdrant:
+    backend: qdrant
     host: ${GATEWAY}
     port: 6334
 embedding:
     host: http://${GATEWAY}:11434
     model: nomic-embed-text
 memgraph:
+    backend: memgraph
     uri: bolt://${GATEWAY}:7687
     username: ""
     password: ""

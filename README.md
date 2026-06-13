@@ -127,19 +127,24 @@ Agent A        Agent B        Agent C        Human shell
                          │
         ┌────────────────┼────────────────┐
         ▼                ▼                ▼
-     Qdrant           Ollama          Memgraph
- semantic memory   local embeddings   CodeGraph
+  embedded SQLite     Ollama       embedded SQLite
+  semantic memory   embeddings    CodeGraph (graph.db)
+   (vectorstore.db)  (or Voyage)
 ```
 
 gg is intentionally boring infrastructure:
 
 - agents call a CLI command
 - every record is namespaced by project ID
-- Qdrant powers semantic recall
-- Ollama provides local embeddings
-- Memgraph stores the optional code graph
+- an embedded SQLite vector store (`.gg/vectorstore.db`) powers semantic recall — no Docker
+- native Ollama (or the opt-in Voyage cloud backend) provides embeddings
+- an embedded SQLite graph store (`.gg/graph.db`) holds the code graph — no Docker
 - project metadata is committed with the project
 - runtime state stays outside the project repository
+
+The vector and graph stores are embedded by default, so a fresh `gg init` needs
+no Qdrant or Memgraph containers. Server backends remain selectable for users who
+prefer them (`qdrant.backend: qdrant` / `memgraph.backend: memgraph`).
 
 There is no central coordinator and no background gg daemon. CodeGraph freshness
 is explicit: run a one-shot repair when needed, or start an opt-in foreground
@@ -152,7 +157,10 @@ watcher that stops when you stop it.
 Prerequisites:
 
 - Go matching the version in [`go.mod`](go.mod)
-- Docker with Compose v2
+- An embedding provider: native Ollama (`brew install ollama` + `ollama serve` +
+  `ollama pull nomic-embed-text`) — or the opt-in Voyage cloud backend
+- Docker is NOT required (the vector and graph stores are embedded SQLite by
+  default). It is only needed if you opt into the Qdrant/Memgraph server backends.
 
 Install the CLI:
 
@@ -169,15 +177,22 @@ gg doctor
 gg doctor --install-agent-hooks
 ```
 
-`gg init` starts local Docker services under `~/.gg/` when needed:
+`gg init` creates everything locally with no Docker:
 
-- Qdrant for semantic search
-- Ollama with `nomic-embed-text` for local embeddings
-- Memgraph for CodeGraph queries
+- an embedded SQLite vector store (`.gg/vectorstore.db`) for semantic search
+- an embedded SQLite graph store (`.gg/graph.db`) for CodeGraph queries
+- embeddings via native Ollama (`nomic-embed-text`); if Ollama is unreachable,
+  init WARNS with install guidance rather than failing — set Ollama up (or the
+  Voyage backend), then run `gg reembed` to populate the vector store.
 
-No cloud account or API key is required for normal use. Installing the CLI,
-pulling Docker images, and checking for updates can still use the network when
-you explicitly run those commands.
+Existing project switching to the embedded stores? Run `gg reembed` once to build
+`.gg/vectorstore.db` from `.gg/brain/*.jsonl`, and `gg index --lang <lang>` to
+build the code graph. The canonical data is always the committed JSONL brain.
+
+No cloud account or API key is required for normal use. Installing the CLI and
+checking for updates can still use the network when you explicitly run those
+commands. Only the opt-in server backends (`qdrant.backend: qdrant` /
+`memgraph.backend: memgraph`) need Docker.
 
 For brownfield projects, or after a gg upgrade, refresh agent instructions and
 hooks explicitly:
@@ -417,9 +432,9 @@ gg is local-first:
 
 - project identity and rules are stored with the project
 - runtime cache and telemetry stay under your local `~/.gg/` directory
-- semantic search is local Qdrant
-- embeddings are local Ollama
-- CodeGraph is local Memgraph
+- semantic search is an embedded local SQLite vector store (no Docker)
+- embeddings are local Ollama (or the opt-in Voyage cloud backend, which sends text off-machine)
+- CodeGraph is an embedded local SQLite graph store (no Docker)
 - records are namespaced by project ID
 - telemetry is local-only and can be disabled
 

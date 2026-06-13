@@ -11,17 +11,21 @@ import (
 )
 
 // maybeRunIndex decides whether to invoke `gg index` after init, based on
-// flags, TTY detection, and service availability. Returns true if an index
+// flags, TTY detection, and graph-store availability. Returns true if an index
 // run actually completed successfully so the bootstrap prompt can omit the
 // "Next: run gg index" suggestion.
 //
+// graphReady is true when the graph store is usable for indexing: always so for
+// the embedded SQLite backend (the default), or when the Memgraph server came
+// up for the opt-in server backend.
+//
 // Decision precedence:
-//   - --no-index or !composeOK: skip silently (no services, no point)
+//   - --no-index or !graphReady: skip silently (graph store unavailable)
 //   - --with-index: run without prompting
 //   - TTY stdin: prompt "Run `gg index --lang X` now? [Y/n]"
 //   - non-TTY default: skip (matches the 'interactive opt-in' project rule)
-func maybeRunIndex(cmd *cobra.Command, langHint string, composeOK bool) bool {
-	if initNoIndex || !composeOK {
+func maybeRunIndex(cmd *cobra.Command, langHint string, graphReady bool) bool {
+	if initNoIndex || !graphReady {
 		return false
 	}
 	// langHint == "" means no supported language detected (BUG-033 fix).

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -46,23 +45,25 @@ type Client struct {
 	projectID string        // per-project namespace prefix for collections
 }
 
-// VectorBackendEnv selects the vector-store backend. Unset or "qdrant" keeps the
-// historical Qdrant path; "sqlite" activates the embedded, CGO-free brute-force
-// store (TASK-493) that removes the Qdrant Docker dependency.
-const VectorBackendEnv = "GG_VECTOR_BACKEND"
+// VectorBackendEnv selects the vector-store backend, overriding the config field.
+// "sqlite" (the built-in default as of TASK-496) activates the embedded,
+// CGO-free brute-force store; "qdrant" keeps the historical Qdrant server path.
+// Mirrors config.VectorBackendEnv.
+const VectorBackendEnv = config.VectorBackendEnv
 
 // New creates a store client bound to a specific project. Collection names are
 // prefixed with projectID so multiple projects can share a single backend
 // without seeing each other's data.
 //
-// The backend is selected by the GG_VECTOR_BACKEND env var (default "qdrant").
-// With "sqlite", the cfg host/port are ignored and an embedded vectorstore.db is
-// opened under dataDir.
+// The backend is resolved with precedence GG_VECTOR_BACKEND env > qdrant.backend
+// config field > sqlite (the embedded default — no Docker). With the embedded
+// backend the cfg host/port are ignored and vectorstore.db is opened under
+// dataDir; only an explicit "qdrant" selection dials the server.
 func New(cfg *config.QdrantConfig, dataDir, projectID string) (*Client, error) {
 	if projectID == "" {
 		return nil, fmt.Errorf("project ID is required — config missing project_id")
 	}
-	if backend := strings.ToLower(strings.TrimSpace(os.Getenv(VectorBackendEnv))); backend == "sqlite" {
+	if cfg.UsesEmbedded() {
 		ss, err := newSQLiteStore(dataDir)
 		if err != nil {
 			return nil, fmt.Errorf("sqlite vector store init failed: %w", err)

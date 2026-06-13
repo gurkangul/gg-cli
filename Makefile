@@ -12,6 +12,8 @@ test:
 	@go test ./... -count=1 -race -timeout=120s
 
 # smoke-fresh: run the fresh-machine smoke test inside a clean Ubuntu container.
+# This exercises the OPT-IN Qdrant/Memgraph server backends specifically (the
+# default no-Docker embedded path is covered by the unit/integration suite).
 # Prerequisites: Docker running, host-side Qdrant/Memgraph/Ollama up on standard ports.
 # Override gateway: HOST_GATEWAY=172.17.0.1 make smoke-fresh
 smoke-fresh:

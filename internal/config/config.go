@@ -23,14 +23,24 @@ const (
 )
 
 type QdrantConfig struct {
-	Host string `yaml:"host"`
-	Port int    `yaml:"port"`
+	// Backend selects the vector store. Empty (default) resolves to the embedded
+	// CGO-free SQLite store (no Docker); "qdrant" selects the historical Qdrant
+	// server reached at Host:Port. The GG_VECTOR_BACKEND env var overrides this
+	// field. See storage.go (QdrantConfig.ResolveBackend).
+	Backend string `yaml:"backend,omitempty"`
+	Host    string `yaml:"host"`
+	Port    int    `yaml:"port"`
 }
 
 // Embedding-backend types, defaults, and validation live in embedding.go to
 // keep this file focused. See EmbeddingConfig / VoyageConfig there.
 
 type MemgraphConfig struct {
+	// Backend selects the graph store. Empty (default) resolves to the embedded
+	// CGO-free SQLite store (no Docker); "memgraph"/"neo4j" select the historical
+	// Memgraph server reached over Bolt at URI. The GG_GRAPH_BACKEND env var
+	// overrides this field. See storage.go (MemgraphConfig.ResolveBackend).
+	Backend  string `yaml:"backend,omitempty"`
 	URI      string `yaml:"uri"`      // Bolt URI, e.g. bolt://localhost:7687
 	Username string `yaml:"username"` // empty string = no auth (Memgraph default)
 	Password string `yaml:"password"` // empty string = no auth
@@ -239,8 +249,12 @@ func DefaultConfig() *Config {
 	backupEnabled := true
 	return &Config{
 		Qdrant: QdrantConfig{
-			Host: "localhost",
-			Port: 6334,
+			// Embedded SQLite vector store is the default (no Docker). Host/Port
+			// are retained so a user can flip backend: qdrant without re-running
+			// init. See storage.go for the env > field > sqlite precedence.
+			Backend: BackendSQLite,
+			Host:    "localhost",
+			Port:    6334,
 		},
 		Embedding: EmbeddingConfig{
 			Backend: BackendOllama,
@@ -248,6 +262,10 @@ func DefaultConfig() *Config {
 			Model:   "nomic-embed-text",
 		},
 		Memgraph: MemgraphConfig{
+			// Embedded SQLite graph store is the default (no Docker). URI is
+			// retained so a user can flip backend: memgraph without re-running
+			// init.
+			Backend:  BackendSQLite,
 			URI:      "bolt://localhost:7687",
 			Username: "",
 			Password: "",

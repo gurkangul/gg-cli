@@ -16,6 +16,39 @@ import (
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
+// doctorCheckEmbedding is the backend-aware embedding check. Under the Ollama
+// backend (default) it probes the Ollama endpoint and runs the dimension +
+// semantic canary. Under Voyage it skips the Ollama probe entirely and does a
+// lightweight check (API-key env present), so a correctly-configured Voyage user
+// is NOT falsely told `ollama=down` (the TASK-495 gap this closes).
+func doctorCheckEmbedding(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
+	if cfg.Embedding.ResolvedBackendName() == config.BackendVoyage {
+		doctorCheckVoyage(cfg, report)
+		return
+	}
+	doctorCheckOllama(cmd, cfg, report)
+}
+
+// doctorCheckVoyage performs the lightweight Voyage embedding check: it confirms
+// the API-key env var is present (the secret itself is never read into config).
+// It deliberately makes NO network call — a live probe would cost an API request
+// and require connectivity, which is the opposite of a fast health check.
+func doctorCheckVoyage(cfg *config.Config, report *doctorReport) {
+	keyEnv := cfg.Embedding.Voyage.APIKeyEnv
+	if strings.TrimSpace(keyEnv) == "" {
+		keyEnv = config.DefaultVoyageAPIKeyEnv
+	}
+	model := cfg.Embedding.Voyage.Model
+	if model == "" {
+		model = config.DefaultVoyageModel
+	}
+	if strings.TrimSpace(os.Getenv(keyEnv)) == "" {
+		report.fail("embedding (voyage)", fmt.Sprintf("backend=voyage but %s is not set — export it (the key is never stored in config.yaml)", keyEnv))
+		return
+	}
+	report.ok("embedding (voyage)", fmt.Sprintf("backend=voyage, model=%s, %s present (no live probe)", model, keyEnv))
+}
+
 // doctorCheckOllama checks Ollama connectivity, vector compatibility, and a
 // small semantic canary before claiming embedding guidance is healthy.
 func doctorCheckOllama(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
@@ -30,7 +63,7 @@ func doctorCheckOllama(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 			report.problems++
 			return
 		}
-		report.fail("ollama", fmt.Sprintf("unreachable at %s", cfg.Embedding.Host))
+		report.fail("ollama", fmt.Sprintf("unreachable at %s — install native Ollama (`brew install ollama` + `ollama serve` + `ollama pull %s`) or switch to the Voyage backend (embedding.backend: voyage + export VOYAGE_API_KEY)", cfg.Embedding.Host, cfg.Embedding.Model))
 		return
 	}
 	report.ok("ollama", fmt.Sprintf("reachable at %s (model: %s)", cfg.Embedding.Host, cfg.Embedding.Model))

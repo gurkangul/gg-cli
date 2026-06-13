@@ -174,7 +174,7 @@ func TestInit_EnforcementHooks_Idempotent(t *testing.T) {
 }
 
 // TestMaybeRunIndex_SkipWhenNoIndex verifies that --no-index prevents indexing
-// even if composeOK=true and TTY is available.
+// even if graphReady=true and TTY is available.
 func TestMaybeRunIndex_SkipWhenNoIndex(t *testing.T) {
 	orig := initNoIndex
 	defer func() { initNoIndex = orig }()
@@ -186,16 +186,17 @@ func TestMaybeRunIndex_SkipWhenNoIndex(t *testing.T) {
 	}
 }
 
-// TestMaybeRunIndex_SkipWhenComposeNotOK verifies that a missing Docker stack
-// short-circuits without prompting.
-func TestMaybeRunIndex_SkipWhenComposeNotOK(t *testing.T) {
+// TestMaybeRunIndex_SkipWhenGraphNotReady verifies that an unavailable graph
+// store (e.g. server backend selected but Memgraph down) short-circuits without
+// prompting.
+func TestMaybeRunIndex_SkipWhenGraphNotReady(t *testing.T) {
 	orig := initNoIndex
 	defer func() { initNoIndex = orig }()
 	initNoIndex = false
 
 	result := maybeRunIndex(nil, "go", false)
 	if result {
-		t.Error("expected maybeRunIndex to return false when composeOK=false")
+		t.Error("expected maybeRunIndex to return false when graphReady=false")
 	}
 }
 

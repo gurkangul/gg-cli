@@ -18,22 +18,28 @@ starts blank. It solves three recurring pains: (1) each agent re-derives context
 (2) impact-blind fixes create fix loops, (3) rejected approaches get re-proposed.
 
 **Non-negotiable constraints:**
-- **No daemon, no network.** CLI + local Docker (Qdrant + Ollama + Memgraph).
-  No background indexer: `gg doctor --fix-index` is the one-shot repair;
-  `gg index --watch` / `gg watch --index` are explicit foreground watchers.
+- **No daemon, no Docker by default.** CLI with embedded SQLite stores
+  (vectors + graph); embeddings via native Ollama or opt-in Voyage. Server
+  backends (Qdrant/Memgraph) stay selectable but are not required. No background
+  indexer: `gg doctor --fix-index` is the one-shot repair; `gg index --watch` /
+  `gg watch --index` are explicit foreground watchers.
 - **Agent-native.** Agents call gg as a subprocess, not REST/MCP/RPC.
-- **Multi-project isolation.** Shared infra at `~/.gg/`; each project namespaced
-  by a UUID `project_id`.
-- **Forward-only memory.** Append-only Qdrant; soft-filter resolved/done items,
-  never delete.
+- **Multi-project isolation.** Per-project metadata under `.gg/`; each project
+  namespaced by a UUID `project_id`.
+- **Forward-only memory.** Append-only vector store; soft-filter resolved/done
+  items, never delete.
 
 **Architecture (one paragraph):** Binary at `cmd/gg/main.go` dispatches Cobra
-subcommands in `cmd/`. Two stores: Qdrant (decisions/tasks/messages/rejections/
-discussions/notes/bugs) and Memgraph (Symbol/File/Package graph for `gg impact`).
-`gg init` provisions infra via docker-compose at `~/.gg/`. Each project's `.gg/`
-holds only committed metadata (config.yaml, sequence files, RULES.md); runtime
-state lives at `~/.gg/projects/<project_id>/` and is never committed. The outbox
-pattern in `internal/outbox/` guards dual-store consistency.
+subcommands in `cmd/`. Two stores behind pluggable interfaces: the vector store
+(`internal/store`, embedded SQLite `.gg/vectorstore.db` by default, Qdrant server
+opt-in) holds decisions/tasks/messages/rejections/discussions/notes/bugs, and the
+graph store (`internal/graph`, embedded SQLite `.gg/graph.db` by default, Memgraph
+opt-in) holds the Symbol/File/Package graph for `gg impact`. `gg init` needs no
+Docker — the embedded DBs are created on first use. Each project's `.gg/` holds
+committed metadata (config.yaml, the canonical `brain/*.jsonl` ledger, RULES.md)
+plus the embedded DBs; runtime state lives at `~/.gg/projects/<project_id>/` and
+is never committed. The outbox pattern in `internal/outbox/` guards dual-store
+consistency.
 
 **Look these up before suggesting changes:**
 - `gg search "<topic>" --compact` — past decisions + rejections on the subject

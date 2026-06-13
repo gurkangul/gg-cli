@@ -2,6 +2,12 @@
 
 > Status: implemented (TASK-352, fixes BUG-030)
 
+> Note (TASK-496): with the default embedded SQLite vector store the store is
+> always reachable (it is a local file), so the "Qdrant down" path below applies
+> only when the opt-in `qdrant.backend: qdrant` server backend is selected. The
+> JSONL-first write path remains the canonical, portable source of truth in both
+> cases — the embedded `.gg/vectorstore.db` is rebuilt from it via `gg reembed`.
+
 ## Problem
 
 Prior to this fix, all brain-write commands (`gg record`, `gg task create`, `gg bug report`, `gg reject`) performed a synchronous Qdrant upsert as their only write path.  When Qdrant was unreachable the command failed with a non-zero exit code and the user's data was lost.
