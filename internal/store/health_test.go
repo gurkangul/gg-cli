@@ -17,6 +17,7 @@ import (
 // Port 19999 is used as a "nothing there" port — not a well-known service.
 // The timeout is kept short so the test doesn't slow down CI.
 func TestHealthCheck_Unreachable(t *testing.T) {
+	skipIfSQLiteBackend(t)
 	cfg := &config.QdrantConfig{
 		Host: "127.0.0.1",
 		Port: 19999, // no service listening here
@@ -39,6 +40,7 @@ func TestHealthCheck_Unreachable(t *testing.T) {
 // connectivity errors with ErrQdrantDown so callers can use errors.Is for
 // read-only fallback detection.
 func TestQdrantDown_QueryWrapsErrQdrantDown(t *testing.T) {
+	skipIfSQLiteBackend(t)
 	cfg := &config.QdrantConfig{
 		Host: "127.0.0.1",
 		Port: 19999, // no service listening here

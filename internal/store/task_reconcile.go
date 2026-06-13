@@ -22,7 +22,7 @@ func (c *Client) SetTaskProjectionPayload(ctx context.Context, taskID string, fi
 		return fmt.Errorf("build task projection payload: %w", err)
 	}
 	wait := true
-	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	_, err = c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
 		CollectionName: c.collTasks(),
 		Wait:           &wait,
 		Payload:        payload,

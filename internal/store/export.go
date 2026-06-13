@@ -83,7 +83,7 @@ func (c *Client) scrollWithVectors(ctx context.Context, coll string) ([]BundlePo
 	var all []BundlePoint
 	var offset *qdrant.PointId
 	for {
-		page, next, err := c.qc.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
+		page, next, err := c.vs.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
 			CollectionName: coll,
 			Limit:          &pageSize,
 			Offset:         offset,
@@ -209,8 +209,8 @@ func extractVector(vecs *qdrant.VectorsOutput) []float32 {
 	if dense := vOutput.GetDense(); dense != nil {
 		return dense.GetData()
 	}
-	//nolint:staticcheck // GetData: fallback for older Qdrant protocol versions that predate Dense oneof
-	if data := vOutput.GetData(); len(data) > 0 {
+	//lint:ignore SA1019 GetData: fallback for older Qdrant protocol versions that predate Dense oneof
+	if data := vOutput.GetData(); len(data) > 0 { //nolint:staticcheck // GetData: deprecated flat fallback for pre-Dense-oneof Qdrant
 		return data
 	}
 	return nil

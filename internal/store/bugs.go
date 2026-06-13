@@ -134,7 +134,7 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 }
 
 func (c *Client) GetBug(ctx context.Context, bugID string) (*Bug, error) {
-	points, err := c.qc.Get(ctx, &qdrant.GetPoints{
+	points, err := c.vs.Get(ctx, &qdrant.GetPoints{
 		CollectionName: c.collBugs(),
 		Ids:            []*qdrant.PointId{qdrant.NewID(pointUUIDForBugID(bugID))},
 		WithPayload:    qdrant.NewWithPayloadEnable(true),

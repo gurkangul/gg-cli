@@ -127,7 +127,7 @@ func (c *Client) OpenDiscussion(ctx context.Context, d Discussion, vector []floa
 }
 
 func (c *Client) GetDiscussion(ctx context.Context, discID string) (*Discussion, error) {
-	points, err := c.qc.Get(ctx, &qdrant.GetPoints{
+	points, err := c.vs.Get(ctx, &qdrant.GetPoints{
 		CollectionName: c.collDiscussions(),
 		Ids:            []*qdrant.PointId{qdrant.NewID(pointUUIDForDiscID(discID))},
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
@@ -182,7 +182,7 @@ func (c *Client) DismissDiscussion(ctx context.Context, discID, reason string) e
 
 func (c *Client) closeDiscussion(ctx context.Context, discID, status, via, note, dismissNote string) error {
 	pointID := qdrant.NewID(pointUUIDForDiscID(discID))
-	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
+	existing, err := c.vs.Get(ctx, &qdrant.GetPoints{
 		CollectionName: c.collDiscussions(),
 		Ids:            []*qdrant.PointId{pointID},
 		WithPayload:    qdrant.NewWithPayloadInclude("disc_id", "status"),
@@ -212,7 +212,7 @@ func (c *Client) closeDiscussion(ctx context.Context, discID, status, via, note,
 	}
 
 	wait := true
-	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	_, err = c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
 		CollectionName: c.collDiscussions(),
 		Wait:           &wait,
 		Payload:        payload,
@@ -259,7 +259,7 @@ func (c *Client) SearchDiscussions(ctx context.Context, vector []float32, limit 
 }
 
 func (c *Client) CountOpenDiscussions(ctx context.Context) (uint64, error) {
-	return c.qc.Count(ctx, &qdrant.CountPoints{
+	return c.vs.Count(ctx, &qdrant.CountPoints{
 		CollectionName: c.collDiscussions(),
 		Filter: &qdrant.Filter{
 			Must: []*qdrant.Condition{qdrant.NewMatchKeyword("status", "open")},
@@ -371,7 +371,7 @@ func (c *Client) AppendTurn(ctx context.Context, discID string, turn Turn) (size
 	pointID := qdrant.NewID(pointUUIDForDiscID(discID))
 
 	// Fetch current turns to append to them.
-	existing, err := c.qc.Get(ctx, &qdrant.GetPoints{
+	existing, err := c.vs.Get(ctx, &qdrant.GetPoints{
 		CollectionName: c.collDiscussions(),
 		Ids:            []*qdrant.PointId{pointID},
 		WithPayload:    qdrant.NewWithPayloadEnable(true),
@@ -396,7 +396,7 @@ func (c *Client) AppendTurn(ctx context.Context, discID string, turn Turn) (size
 	updatedVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
 
 	wait := true
-	_, err = c.qc.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	_, err = c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
 		CollectionName: c.collDiscussions(),
 		Wait:           &wait,
 		Payload: map[string]*qdrant.Value{

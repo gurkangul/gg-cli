@@ -12,17 +12,30 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gurkangul/gg-cli/internal/config"
 )
 
+// skipIfSQLiteBackend skips tests that model the "Qdrant unreachable" path —
+// connectivity errors, ErrQdrantDown wrapping, the offline outbox queue. These
+// are meaningless for the embedded SQLite backend, whose local DB is always
+// reachable, so they skip when GG_VECTOR_BACKEND=sqlite is active.
+func skipIfSQLiteBackend(t *testing.T) {
+	t.Helper()
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(VectorBackendEnv)), "sqlite") {
+		t.Skip("Qdrant-down path is not applicable to the always-on SQLite backend")
+	}
+}
+
 // newDownClient creates a store Client connected to a port with nothing
 // listening (19998). Operations that reach Qdrant will fail with ErrQdrantDown.
 // dataDir is a temp directory that holds the seq files.
 func newDownClient(t *testing.T) *Client {
 	t.Helper()
+	skipIfSQLiteBackend(t)
 	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 19998}
 	c, err := New(cfg, t.TempDir(), "test-project-down")
 	if err != nil {

@@ -44,6 +44,12 @@ func setupGGDir(t *testing.T) string {
 	t.Setenv("HOME", home)
 	t.Setenv("GG_AGENT", "test")
 	t.Setenv("GG_ROLE", "")
+	// Pin the default (Qdrant) backend for the whole cmd suite. These tests model
+	// the "no live Qdrant ⇒ store-down ExitError(ExitStoreDown=6)" resilience
+	// contract, which is meaningless for the always-on embedded SQLite store. The
+	// SQLite store's own paths are covered by internal/store integration tests, so
+	// the cmd suite must not be perturbed by an ambient GG_VECTOR_BACKEND=sqlite.
+	t.Setenv("GG_VECTOR_BACKEND", "qdrant")
 	t.Chdir(dir)
 	return ggDir
 }

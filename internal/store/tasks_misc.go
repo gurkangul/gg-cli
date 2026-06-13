@@ -18,7 +18,7 @@ func (c *Client) CountTasks(ctx context.Context, status string) (uint64, error) 
 			},
 		}
 	}
-	return c.qc.Count(ctx, req)
+	return c.vs.Count(ctx, req)
 }
 
 func taskFromRetrieved(p *qdrant.RetrievedPoint) Task {
@@ -38,7 +38,7 @@ func (c *Client) CancelTask(ctx context.Context, taskID, actor, reason string) e
 	}
 	ptID := qdrant.NewID(pointUUIDForTaskID(taskID))
 	wait := true
-	_, err = c.qc.Delete(ctx, &qdrant.DeletePoints{
+	_, err = c.vs.Delete(ctx, &qdrant.DeletePoints{
 		CollectionName: c.collTasks(),
 		Wait:           &wait,
 		Points:         qdrant.NewPointsSelector(ptID),

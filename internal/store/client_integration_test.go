@@ -92,6 +92,7 @@ func TestClientHealthCheck_ContextCanceled_Integration(t *testing.T) {
 // short deadline, not silently succeed). This guards the isConnectivityError seam
 // used by qdrantUpsert/qdrantQuery. Runs unconditionally — no GG_INTEGRATION_TEST.
 func TestClientHealthCheck_QdrantDown(t *testing.T) {
+	skipIfSQLiteBackend(t)
 	c, err := New(&config.QdrantConfig{Host: "127.0.0.1", Port: 19998}, t.TempDir(), "test-client-down")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -110,6 +111,7 @@ func TestClientHealthCheck_QdrantDown(t *testing.T) {
 // ListCollections failure (does not pretend everything is missing/empty) when
 // Qdrant is unreachable. Runs unconditionally — no live Qdrant required.
 func TestClientCollectionStatus_QdrantDown(t *testing.T) {
+	skipIfSQLiteBackend(t)
 	c, err := New(&config.QdrantConfig{Host: "127.0.0.1", Port: 19998}, t.TempDir(), "test-client-down")
 	if err != nil {
 		t.Fatalf("New: %v", err)

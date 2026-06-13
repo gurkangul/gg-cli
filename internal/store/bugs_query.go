@@ -57,12 +57,12 @@ func (c *Client) CountBugs(ctx context.Context, statusFilter string) (uint64, er
 			Must: []*qdrant.Condition{qdrant.NewMatchKeyword("status", statusFilter)},
 		}
 	}
-	return c.qc.Count(ctx, req)
+	return c.vs.Count(ctx, req)
 }
 
 // CountBugsByTag returns the number of bugs whose tags list contains tag.
 func (c *Client) CountBugsByTag(ctx context.Context, tag string) (uint64, error) {
-	return c.qc.Count(ctx, &qdrant.CountPoints{
+	return c.vs.Count(ctx, &qdrant.CountPoints{
 		CollectionName: c.collBugs(),
 		Filter: &qdrant.Filter{
 			Must: []*qdrant.Condition{qdrant.NewMatchKeyword("tags", tag)},
