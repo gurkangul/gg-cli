@@ -55,6 +55,9 @@ func TestKnowledgeEdgeRelConstants(t *testing.T) {
 // impossible (the MATCH would simply return nothing). We can't test live Memgraph
 // here, but we confirm the helper wires up to runQuery (which auto-injects $pid).
 func TestUpsertKnowledgeEdge_NoPanicOnBadConn(t *testing.T) {
+	// Asserts the Memgraph-down ⇒ error contract; pin memgraph so the always-up
+	// embedded SQLite backend (TASK-494) doesn't turn this into a no-error path.
+	t.Setenv(GraphBackendEnv, "memgraph")
 	cfg := &config.MemgraphConfig{URI: "bolt://localhost:19997"}
 	c, err := New(cfg, "proj-test")
 	if err != nil {
@@ -71,6 +74,8 @@ func TestUpsertKnowledgeEdge_NoPanicOnBadConn(t *testing.T) {
 // error rather than panicking. The Cypher query structure (two UNION arms) is
 // covered structurally by this test; integration coverage requires live Memgraph.
 func TestTaskSiblings_NoPanicOnBadConn(t *testing.T) {
+	// Asserts the Memgraph-down ⇒ error contract; pin memgraph (see above).
+	t.Setenv(GraphBackendEnv, "memgraph")
 	cfg := &config.MemgraphConfig{URI: "bolt://localhost:19997"}
 	c, err := New(cfg, "proj-test")
 	if err != nil {

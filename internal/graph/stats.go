@@ -3,8 +3,6 @@ package graph
 import (
 	"context"
 	"fmt"
-
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 // Stats summarizes the project-scoped code graph.
@@ -57,7 +55,7 @@ func (c *Client) countScalar(ctx context.Context, cypher string) (int64, error) 
 	if err != nil {
 		return 0, err
 	}
-	n, _, err := neo4j.GetRecordValue[int64](record, "n")
+	n, _, err := recordValue[int64](record, "n")
 	if err != nil {
 		return 0, err
 	}

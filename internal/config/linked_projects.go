@@ -67,6 +67,10 @@ func LoadFromGGDir(ggDir string) (*Config, error) {
 	warnUnknownConfigKeys(data, filepath.Join(DirName, ConfigFile))
 	cfg.ApplyDefaults()
 	applyMemgraphEnvOverrides(&cfg.Memgraph)
+	// Stamp the resolved .gg directory so the embedded SQLite graph backend
+	// (GG_GRAPH_BACKEND=sqlite) can locate <ggDir>/graph.db. The default
+	// Memgraph backend ignores DataDir.
+	cfg.Memgraph.DataDir = ggDir
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config at %s: %w", path, err)
 	}

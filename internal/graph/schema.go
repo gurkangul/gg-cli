@@ -3,8 +3,6 @@ package graph
 import (
 	"context"
 	"fmt"
-
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 // Node labels used in the Memgraph graph schema.
@@ -230,7 +228,7 @@ func (c *Client) SchemaInit(ctx context.Context) error {
 
 	// DDL queries carry no project scope — use runQueryNoPID.
 	for _, cypher := range indexes {
-		_, cleanup, err := c.runQueryNoPID(ctx, cypher, nil)
+		cleanup, err := c.runQueryNoPID(ctx, cypher, nil)
 		if err != nil {
 			return fmt.Errorf("schema init %q: %w", cypher, err)
 		}
@@ -258,8 +256,8 @@ func (c *Client) BoundarySymbols(ctx context.Context) ([]*Node, error) {
 	var nodes []*Node
 	for result.Next(ctx) {
 		record := result.Record()
-		id, _, _ := neo4j.GetRecordValue[string](record, "id")
-		props, _, _ := neo4j.GetRecordValue[map[string]any](record, "props")
+		id, _, _ := recordValue[string](record, "id")
+		props, _, _ := recordValue[map[string]any](record, "props")
 		nodes = append(nodes, &Node{ID: id, Label: LabelSymbol, Properties: props})
 	}
 	if err := result.Err(); err != nil {

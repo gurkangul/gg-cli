@@ -181,12 +181,15 @@ func TestRunQueryNoPIDCallerAllowlist(t *testing.T) {
 }
 
 // TestNoRawSessRunOutsideQueriesGo enforces the Cypher choke-point contract:
-// every sess.Run call inside the graph package must live in queries.go.
+// every raw neo4j sess.Run call inside the graph package must live in the
+// neo4j GraphStore adapter (graphstore_neo4j.go). Since TASK-494, queries.go no
+// longer talks to the driver directly — it delegates to the configured
+// GraphStore (c.gs.Run / c.gs.RunDDL), and only the neo4j adapter holds a Bolt
+// session. The project_id injection still happens in queries.go (runQuery /
+// runQueryNoPID) before the call reaches any backend.
 //
-// Any other file calling sess.Run (or the neo4j session's Run method directly)
-// bypasses the single instrumentation and audit point and risks cross-project
-// data leaks because it skips the project_id injection done by runQuery /
-// runQueryNoPID.
+// Any OTHER file calling sess.Run bypasses the single instrumentation and audit
+// point and risks cross-project data leaks because it skips that injection.
 //
 // The test scans the package directory with the Go AST parser, which means it
 // catches violations at compile-CI time — no runtime Memgraph connection needed.
@@ -209,8 +212,10 @@ func TestNoRawSessRunOutsideQueriesGo(t *testing.T) {
 	for _, pkg := range pkgs {
 		for filename, file := range pkg.Files {
 			base := filepath.Base(filename)
-			// queries.go is the only permitted location for sess.Run calls.
-			if base == "queries.go" {
+			// graphstore_neo4j.go is the only permitted location for raw neo4j
+			// sess.Run calls: it is the GraphStore adapter that owns the Bolt
+			// session. queries.go now delegates to the GraphStore interface.
+			if base == "graphstore_neo4j.go" {
 				continue
 			}
 			// Test files may import neo4j types for assertions but must not

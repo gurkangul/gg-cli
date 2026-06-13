@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 // BugRef is a minimal summary of a Bug node returned from graph queries.
@@ -108,8 +106,8 @@ func (c *Client) BugsAffectingFile(ctx context.Context, filePath string) ([]BugR
 	var refs []BugRef
 	for result.Next(ctx) {
 		record := result.Record()
-		id, _, _ := neo4j.GetRecordValue[string](record, "bug_id")
-		title, _, _ := neo4j.GetRecordValue[string](record, "title")
+		id, _, _ := recordValue[string](record, "bug_id")
+		title, _, _ := recordValue[string](record, "title")
 		if id != "" {
 			refs = append(refs, BugRef{BugID: id, Title: title})
 		}
@@ -136,8 +134,8 @@ func (c *Client) BugAffects(ctx context.Context, bugID string) (files []string, 
 
 	for result.Next(ctx) {
 		record := result.Record()
-		lbls, _, _ := neo4j.GetRecordValue[[]any](record, "lbls")
-		val, _, _ := neo4j.GetRecordValue[string](record, "val")
+		lbls, _, _ := recordValue[[]any](record, "lbls")
+		val, _, _ := recordValue[string](record, "val")
 		if val == "" {
 			continue
 		}

@@ -37,6 +37,12 @@ type MemgraphConfig struct {
 	URI      string `yaml:"uri"`      // Bolt URI, e.g. bolt://localhost:7687
 	Username string `yaml:"username"` // empty string = no auth (Memgraph default)
 	Password string `yaml:"password"` // empty string = no auth
+
+	// DataDir is the project .gg directory, populated by LoadFromGGDir (never
+	// serialized). It is used only by the embedded SQLite graph backend
+	// (GG_GRAPH_BACKEND=sqlite, TASK-494) to locate <DataDir>/graph.db; the
+	// default Memgraph/Bolt backend ignores it.
+	DataDir string `yaml:"-"`
 }
 
 type BackupConfig struct {

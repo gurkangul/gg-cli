@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 // Node represents a graph node with a label and arbitrary properties.
@@ -48,7 +46,7 @@ func (c *Client) CreateNode(ctx context.Context, n *Node) error {
 	if err != nil {
 		return fmt.Errorf("create node single record: %w", err)
 	}
-	id, _, err := neo4j.GetRecordValue[string](record, "id")
+	id, _, err := recordValue[string](record, "id")
 	if err != nil {
 		return fmt.Errorf("create node get id: %w", err)
 	}
@@ -123,7 +121,7 @@ func (c *Client) UpsertNode(ctx context.Context, n *Node, mergeKeys []string) er
 	if err != nil {
 		return fmt.Errorf("upsert node %s single record: %w", n.Label, err)
 	}
-	id, _, err := neo4j.GetRecordValue[string](record, "id")
+	id, _, err := recordValue[string](record, "id")
 	if err != nil {
 		return fmt.Errorf("upsert node %s get id: %w", n.Label, err)
 	}
@@ -149,12 +147,11 @@ func (c *Client) FindNodeByProperty(ctx context.Context, label, key string, valu
 
 	record, err := result.Single(ctx)
 	if err == nil {
-		id, _, _ := neo4j.GetRecordValue[string](record, "id")
-		props, _, _ := neo4j.GetRecordValue[map[string]any](record, "props")
+		id, _, _ := recordValue[string](record, "id")
+		props, _, _ := recordValue[map[string]any](record, "props")
 		return &Node{ID: id, Label: label, Properties: props}, nil
 	}
 	// No results is not an error in our contract.
-	_, _ = result.Consume(ctx)
 	return nil, nil
 }
 
@@ -221,7 +218,7 @@ func (c *Client) DependentsOf(ctx context.Context, filePath string) ([]string, e
 
 	var deps []string
 	for result.Next(ctx) {
-		dep, _, _ := neo4j.GetRecordValue[string](result.Record(), "dep")
+		dep, _, _ := recordValue[string](result.Record(), "dep")
 		if dep != "" {
 			deps = append(deps, dep)
 		}
@@ -248,8 +245,8 @@ func (c *Client) FileSymbols(ctx context.Context, filePath string) ([]*Node, err
 	var nodes []*Node
 	for result.Next(ctx) {
 		record := result.Record()
-		id, _, _ := neo4j.GetRecordValue[string](record, "id")
-		props, _, _ := neo4j.GetRecordValue[map[string]any](record, "props")
+		id, _, _ := recordValue[string](record, "id")
+		props, _, _ := recordValue[map[string]any](record, "props")
 		nodes = append(nodes, &Node{ID: id, Label: LabelSymbol, Properties: props})
 	}
 	if err := result.Err(); err != nil {
@@ -274,7 +271,7 @@ func (c *Client) CountFileNodes(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("count file nodes single: %w", err)
 	}
-	n, _, err := neo4j.GetRecordValue[int64](record, "n")
+	n, _, err := recordValue[int64](record, "n")
 	if err != nil {
 		return 0, fmt.Errorf("count file nodes get value: %w", err)
 	}

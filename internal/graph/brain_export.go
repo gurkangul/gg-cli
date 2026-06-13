@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 // BrainNode is a single exported Memgraph node.
@@ -86,8 +84,8 @@ func (c *Client) ExportNodes(ctx context.Context) ([]BrainNode, error) {
 	var nodes []BrainNode
 	for result.Next(ctx) {
 		record := result.Record()
-		props, _, _ := neo4j.GetRecordValue[map[string]any](record, "props")
-		lbls, _, _ := neo4j.GetRecordValue[[]any](record, "lbls")
+		props, _, _ := recordValue[map[string]any](record, "props")
+		lbls, _, _ := recordValue[[]any](record, "lbls")
 		label := firstLabel(lbls)
 		cleaned := cleanProps(props)
 		id := stableDomainKey(label, cleaned)
@@ -127,12 +125,12 @@ func (c *Client) ExportEdges(ctx context.Context) ([]BrainEdge, error) {
 	var edges []BrainEdge
 	for result.Next(ctx) {
 		record := result.Record()
-		srcLbls, _, _ := neo4j.GetRecordValue[[]any](record, "src_lbls")
-		srcProps, _, _ := neo4j.GetRecordValue[map[string]any](record, "src_props")
-		dstLbls, _, _ := neo4j.GetRecordValue[[]any](record, "dst_lbls")
-		dstProps, _, _ := neo4j.GetRecordValue[map[string]any](record, "dst_props")
-		relType, _, _ := neo4j.GetRecordValue[string](record, "rel_type")
-		relProps, _, _ := neo4j.GetRecordValue[map[string]any](record, "rel_props")
+		srcLbls, _, _ := recordValue[[]any](record, "src_lbls")
+		srcProps, _, _ := recordValue[map[string]any](record, "src_props")
+		dstLbls, _, _ := recordValue[[]any](record, "dst_lbls")
+		dstProps, _, _ := recordValue[map[string]any](record, "dst_props")
+		relType, _, _ := recordValue[string](record, "rel_type")
+		relProps, _, _ := recordValue[map[string]any](record, "rel_props")
 
 		srcKey := stableDomainKey(firstLabel(srcLbls), cleanProps(srcProps))
 		dstKey := stableDomainKey(firstLabel(dstLbls), cleanProps(dstProps))
