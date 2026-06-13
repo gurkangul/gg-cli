@@ -3,8 +3,6 @@ package graph
 import (
 	"context"
 	"fmt"
-
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 // WaveRecord is the read-side view of a Wave node.
@@ -91,11 +89,10 @@ func (c *Client) ListWaves(ctx context.Context, statusFilter string) ([]WaveReco
 		if !ok {
 			continue
 		}
-		node, ok := nodeVal.(neo4j.Node)
+		prop, ok := nodeVal.(map[string]any)
 		if !ok {
 			continue
 		}
-		prop := node.Props
 		waves = append(waves, WaveRecord{
 			ID:        strProp(prop, "id"),
 			Name:      strProp(prop, "name"),
@@ -129,8 +126,7 @@ RETURN w, collect(t.qdrant_id) AS tasks`
 
 	var wave WaveRecord
 	if nodeVal, ok := rec.Get("w"); ok {
-		if node, ok := nodeVal.(neo4j.Node); ok {
-			prop := node.Props
+		if prop, ok := nodeVal.(map[string]any); ok {
 			wave = WaveRecord{
 				ID:        strProp(prop, "id"),
 				Name:      strProp(prop, "name"),

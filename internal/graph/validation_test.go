@@ -16,8 +16,15 @@ import (
 
 // newValidationClient creates a Client wired to an unreachable bolt URI.
 // Use only for tests that exercise validation guards (before runQuery).
+//
+// This file tests the Memgraph/Bolt path specifically (lazy connector, guard
+// clauses, fail-fast-on-unreachable). The default backend is pinned to memgraph
+// regardless of ambient GG_GRAPH_BACKEND so the always-up embedded SQLite store
+// (TASK-494) does not change the "Memgraph down ⇒ error" contract these tests
+// assert — mirroring the TASK-493 cmd-suite backend pin.
 func newValidationClient(t *testing.T) *Client {
 	t.Helper()
+	t.Setenv(GraphBackendEnv, "memgraph")
 	cfg := &config.MemgraphConfig{URI: "bolt://localhost:1"}
 	c, err := New(cfg, "test-project-validation")
 	if err != nil {
@@ -30,6 +37,9 @@ func newValidationClient(t *testing.T) *Client {
 // ── New() validation ─────────────────────────────────────────────────────────
 
 func TestNew_EmptyURI_Error(t *testing.T) {
+	// Empty URI is only an error on the Memgraph/Bolt path; the embedded SQLite
+	// backend ignores the URI. Pin memgraph so this guard is exercised.
+	t.Setenv(GraphBackendEnv, "memgraph")
 	cfg := &config.MemgraphConfig{URI: ""}
 	_, err := New(cfg, "some-project")
 	if err == nil {
@@ -46,7 +56,8 @@ func TestNew_EmptyProjectID_Error(t *testing.T) {
 }
 
 func TestNew_NoAuth_Succeeds(t *testing.T) {
-	// Both username and password empty → NoAuth() path.
+	// Both username and password empty → NoAuth() path (Memgraph-specific).
+	t.Setenv(GraphBackendEnv, "memgraph")
 	cfg := &config.MemgraphConfig{URI: "bolt://localhost:1"}
 	c, err := New(cfg, "test-no-auth")
 	if err != nil {
@@ -56,7 +67,8 @@ func TestNew_NoAuth_Succeeds(t *testing.T) {
 }
 
 func TestNew_WithAuth_Succeeds(t *testing.T) {
-	// Both fields set → BasicAuth() path.
+	// Both fields set → BasicAuth() path (Memgraph-specific).
+	t.Setenv(GraphBackendEnv, "memgraph")
 	cfg := &config.MemgraphConfig{
 		URI:      "bolt://localhost:1",
 		Username: "user",

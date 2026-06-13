@@ -14,10 +14,12 @@ import (
 )
 
 func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing.T) {
-	// Asserts the brain-health report shows qdrant=down. Pin the default backend
-	// so an ambient GG_VECTOR_BACKEND=sqlite (always-on store) doesn't report the
-	// store as up. This test does not route through setupGGDir.
+	// Asserts the brain-health report shows qdrant=down. Pin the default backends
+	// so an ambient GG_VECTOR_BACKEND/GG_GRAPH_BACKEND=sqlite (always-on stores)
+	// doesn't report the store/graph as up. This test does not route through
+	// setupGGDir.
 	t.Setenv("GG_VECTOR_BACKEND", "qdrant")
+	t.Setenv("GG_GRAPH_BACKEND", "memgraph")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	projectRoot := writeSystemBrainProject(t, "proj-a", "proj-a", false, "")
@@ -48,10 +50,11 @@ func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing
 }
 
 func TestSystemBrainStatusJSONReportsMismatchAndFreshSnapshot(t *testing.T) {
-	// Asserts qdrant=down in the JSON report. Pin the default backend so an ambient
-	// GG_VECTOR_BACKEND=sqlite (always-on store) doesn't report the store as up.
-	// This test does not route through setupGGDir.
+	// Asserts qdrant=down in the JSON report. Pin the default backends so an
+	// ambient GG_VECTOR_BACKEND/GG_GRAPH_BACKEND=sqlite (always-on stores) doesn't
+	// report the store/graph as up. This test does not route through setupGGDir.
 	t.Setenv("GG_VECTOR_BACKEND", "qdrant")
+	t.Setenv("GG_GRAPH_BACKEND", "memgraph")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	projectRoot := writeSystemBrainProject(t, "actual-project", "actual-project", true, time.Now().UTC().Format(time.RFC3339))

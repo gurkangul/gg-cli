@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 type SymbolMatch struct {
@@ -121,9 +119,9 @@ func (c *Client) callees(ctx context.Context, symbolID string) ([]SymbolMatch, e
 	return out, nil
 }
 
-func symbolMatchFromRecord(record *neo4j.Record) SymbolMatch {
-	id, _, _ := neo4j.GetRecordValue[string](record, "id")
-	props, _, _ := neo4j.GetRecordValue[map[string]any](record, "props")
+func symbolMatchFromRecord(record GraphRecord) SymbolMatch {
+	id, _, _ := recordValue[string](record, "id")
+	props, _, _ := recordValue[map[string]any](record, "props")
 	name, _ := props["name"].(string)
 	sourceFile, _ := props["source_file"].(string)
 	kind, _ := props["kind"].(string)

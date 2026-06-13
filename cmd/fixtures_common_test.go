@@ -50,6 +50,12 @@ func setupGGDir(t *testing.T) string {
 	// SQLite store's own paths are covered by internal/store integration tests, so
 	// the cmd suite must not be perturbed by an ambient GG_VECTOR_BACKEND=sqlite.
 	t.Setenv("GG_VECTOR_BACKEND", "qdrant")
+	// Same reasoning for the graph store (TASK-494): pin the default Memgraph
+	// backend so the "no live Memgraph ⇒ graph-down" behavior the cmd graph
+	// tests model is not flipped by an ambient GG_GRAPH_BACKEND=sqlite (the
+	// embedded store is always up). The SQLite graph path has its own coverage
+	// in internal/graph.
+	t.Setenv("GG_GRAPH_BACKEND", "memgraph")
 	t.Chdir(dir)
 	return ggDir
 }

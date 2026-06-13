@@ -48,6 +48,9 @@ func TestCreateNode_DoesNotMutateCallerProps(t *testing.T) {
 	// shallow-copy logic by inspecting the contract via New + a no-op call.
 	// The driver call will fail (no Memgraph), but we verify props are untouched.
 
+	// Backend-agnostic prop-mutation contract; pin memgraph so New uses the lazy
+	// Bolt connector (no dir/DB needed) regardless of ambient GG_GRAPH_BACKEND.
+	t.Setenv(GraphBackendEnv, "memgraph")
 	cfg := &config.MemgraphConfig{URI: "bolt://localhost:19998"} // nothing listening
 	c, err := New(cfg, "proj-abc")
 	if err != nil {
@@ -112,6 +115,8 @@ func TestPackageNode_NoProjectID(t *testing.T) {
 // TestInjectPID verifies that injectPID always adds "pid" = projectID to the
 // returned map without mutating the original and handles a nil input.
 func TestInjectPID(t *testing.T) {
+	// Backend-agnostic helper test; pin memgraph for the lazy connector path.
+	t.Setenv(GraphBackendEnv, "memgraph")
 	cfg := &config.MemgraphConfig{URI: "bolt://localhost:19999"}
 	c, err := New(cfg, "test-proj-abc")
 	if err != nil {

@@ -1,12 +1,13 @@
 package graph
 
-// queries.go — single choke-point for all Memgraph Cypher execution.
+// queries.go — single choke-point for all graph query execution.
 //
 // # Isolation contract
 //
 // Every MATCH / CREATE / MERGE operation in this package MUST go through
-// runQuery or runQueryNoPID — calling sess.Run directly is forbidden outside
-// of these two helpers. This gives a single instrumentation and audit point.
+// runQuery or runQueryNoPID — calling the backend's Run directly is forbidden
+// outside of these two helpers. This gives a single instrumentation and audit
+// point and is where project_id is injected.
 //
 // project_id scoping rules (enforced by convention, not the DB):
 //
@@ -22,39 +23,39 @@ package graph
 // code review by checking whether the node pattern or WHERE clause filters
 // on project_id.
 //
-// Note: Go's package visibility already prevents code outside this package from
-// obtaining a session. The choke-point here is about intra-package discipline.
+// Backend independence (TASK-494): runQuery delegates to the configured
+// GraphStore (Memgraph via neo4j, or the embedded SQLite store) and returns a
+// backend-neutral GraphResult. The Cypher strings are the interface currency —
+// both backends consume the identical Cypher template set.
 
 import (
 	"context"
 	"time"
 
 	"github.com/gurkangul/gg-cli/internal/trace"
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-// runQuery executes a Cypher query and returns the result. The caller must
-// consume the result and then call cleanup(), which closes the underlying
-// session.
+// runQuery executes a Cypher query and returns a fully-materialized,
+// backend-neutral result. The cleanup func is retained for call-site symmetry
+// with the previous neo4j session lifecycle; it is now a no-op because results
+// are materialized eagerly (no cursor stays open after Run returns), but callers
+// keep deferring it so the choke-point shape and call-sites are unchanged.
 //
 // All data-plane queries (MATCH, CREATE, MERGE, DELETE) must use this method.
-// Do not call sess.Run directly — use runQuery or runQueryNoPID.
 //
 // project_id isolation: runQuery automatically injects {"pid": c.projectID}
 // into every query so callers never need to pass it manually. Cypher strings
 // that filter on project scope should reference $pid in their WHERE / pattern.
-func (c *Client) runQuery(ctx context.Context, cypher string, params map[string]any) (neo4j.ResultWithContext, func(), error) {
+func (c *Client) runQuery(ctx context.Context, cypher string, params map[string]any) (*GraphResult, func(), error) {
 	params = c.injectPID(params)
 	start := time.Now()
-	sess := c.session(ctx)
-	result, err := sess.Run(ctx, cypher, params)
+	result, err := c.gs.Run(ctx, cypher, params)
 	trace.Record("graph.query", start, err)
-	cleanup := func() { _ = sess.Close(ctx) }
+	noop := func() {}
 	if err != nil {
-		cleanup()
-		return nil, func() {}, err
+		return nil, noop, err
 	}
-	return result, cleanup, nil
+	return result, noop, nil
 }
 
 // injectPID returns a shallow copy of params with "pid" set to c.projectID.
@@ -68,17 +69,14 @@ func (c *Client) injectPID(params map[string]any) map[string]any {
 	return out
 }
 
-// runQueryNoPID executes a Cypher query that legitimately has no project_id
-// scope — i.e. schema DDL (CREATE INDEX, SHOW INDEX) and connectivity checks.
+// runQueryNoPID executes a Cypher statement that legitimately has no project_id
+// scope — i.e. schema DDL (CREATE INDEX, SHOW INDEX). It returns no rows.
 //
 // Must NOT be used for data reads or writes — those require project isolation.
-func (c *Client) runQueryNoPID(ctx context.Context, cypher string, params map[string]any) (neo4j.ResultWithContext, func(), error) {
-	sess := c.session(ctx)
-	result, err := sess.Run(ctx, cypher, params)
-	cleanup := func() { _ = sess.Close(ctx) }
-	if err != nil {
-		cleanup()
-		return nil, func() {}, err
+func (c *Client) runQueryNoPID(ctx context.Context, cypher string, params map[string]any) (func(), error) {
+	noop := func() {}
+	if err := c.gs.RunDDL(ctx, cypher, params); err != nil {
+		return noop, err
 	}
-	return result, cleanup, nil
+	return noop, nil
 }
