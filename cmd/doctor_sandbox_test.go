@@ -24,7 +24,7 @@ func (f *fakeQdrantChecker) CollectionStatus(_ context.Context) ([]string, []str
 }
 func (f *fakeQdrantChecker) Close() error { return nil }
 
-func TestDoctorCheckQdrant_PrintsSandboxHint(t *testing.T) {
+func TestDoctorCheckQdrantServer_PrintsSandboxHint(t *testing.T) {
 	// Inject a fake client that returns EPERM on HealthCheck.
 	orig := doctorQdrantNewClient
 	defer func() { doctorQdrantNewClient = orig }()
@@ -47,7 +47,7 @@ func TestDoctorCheckQdrant_PrintsSandboxHint(t *testing.T) {
 
 	cmd := &cobra.Command{}
 	cmd.SetContext(t.Context())
-	doctorCheckQdrant(cmd, cfg, report)
+	doctorCheckQdrantServer(cmd, cfg, report)
 
 	if err := w.Close(); err != nil {
 		t.Fatalf("close stderr pipe: %v", err)

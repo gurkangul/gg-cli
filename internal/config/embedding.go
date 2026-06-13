@@ -77,9 +77,16 @@ func (e *EmbeddingConfig) applyEmbeddingDefaults() {
 // validate path correct even if it didn't.
 func (e *EmbeddingConfig) resolvedBackend() string {
 	if b := strings.TrimSpace(e.Backend); b != "" {
-		return b
+		return strings.ToLower(b)
 	}
 	return BackendOllama
+}
+
+// ResolvedBackendName is the exported form of resolvedBackend, used by the
+// command layer (init/doctor) to make the embedding probe backend-aware: probe
+// Ollama only under the Ollama backend, check the API-key env under Voyage.
+func (e *EmbeddingConfig) ResolvedBackendName() string {
+	return e.resolvedBackend()
 }
 
 // validate checks the embedding configuration for the selected backend. The

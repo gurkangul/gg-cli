@@ -15,6 +15,143 @@ import (
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
+// infraStatus summarizes what provisionInfra found/did so init can print
+// accurate, backend-aware guidance and decide whether indexing is feasible.
+type infraStatus struct {
+	VectorBackend string // resolved: "sqlite" (embedded) or "qdrant" (server)
+	GraphBackend  string // resolved: "sqlite" (embedded) or "memgraph" (server)
+	EmbedBackend  string // resolved: "ollama" or "voyage"
+	// GraphReady is true when the graph store is usable for `gg index`: always
+	// for the embedded backend; for the server backend, only when Memgraph is up.
+	GraphReady bool
+	// EmbedReady is true when embeddings can be produced now (Ollama reachable, or
+	// Voyage selected). false ⇒ init printed warn-with-guidance, not a hard fail.
+	EmbedReady bool
+	// ComposeUp records whether a Docker compose bring-up was attempted AND
+	// succeeded — only relevant when a server backend is selected.
+	ComposeUp bool
+	// NeedsServers is true when any server backend (qdrant/memgraph) is selected,
+	// i.e. Docker is actually required for this project.
+	NeedsServers bool
+}
+
+// provisionInfra is the backend-aware replacement for the old unconditional
+// `docker compose up`. Docker is now OPTIONAL: it is only brought up when a
+// server backend (qdrant/memgraph) is explicitly selected. For the embedded
+// default it does no Docker work at all — the SQLite stores are created on first
+// use. Embeddings never hard-fail init: an unreachable native Ollama endpoint
+// produces a warning with install guidance.
+//
+// It loads the freshly-written project config to resolve the effective backends
+// (env > config field > sqlite). On a config-load error it degrades to the
+// built-in defaults so init still completes.
+func provisionInfra(ctx context.Context, composePath, ggDir string) (*config.Config, infraStatus) {
+	cfg, err := config.LoadFromGGDir(ggDir)
+	if err != nil {
+		fmt.Printf("⚠ Could not load project config for backend provisioning: %v\n", err)
+		cfg = config.DefaultConfig()
+	}
+	st := infraStatus{
+		VectorBackend: cfg.Qdrant.ResolveBackend(),
+		GraphBackend:  cfg.Memgraph.ResolveBackend(),
+		EmbedBackend:  cfg.Embedding.Backend,
+		GraphReady:    cfg.Memgraph.UsesEmbedded(), // embedded graph is always ready
+	}
+	st.NeedsServers = !cfg.Qdrant.UsesEmbedded() || !cfg.Memgraph.UsesEmbedded()
+
+	fmt.Println()
+	fmt.Println("Storage backends:")
+	fmt.Printf("  vector: %s   graph: %s   embeddings: %s\n", st.VectorBackend, st.GraphBackend, st.EmbedBackend)
+	if cfg.Qdrant.UsesEmbedded() {
+		fmt.Println("  ✓ embedded vector store (.gg/vectorstore.db) — no Docker needed")
+	}
+	if cfg.Memgraph.UsesEmbedded() {
+		fmt.Println("  ✓ embedded graph store (.gg/graph.db) — no Docker needed")
+	}
+
+	// Only touch Docker when a server backend is actually selected.
+	if st.NeedsServers {
+		fmt.Println("\nServer backend selected — bringing up Docker services...")
+		st.ComposeUp = startSharedServices(ctx, composePath)
+		if !cfg.Memgraph.UsesEmbedded() {
+			st.GraphReady = st.ComposeUp
+		}
+		if !st.ComposeUp {
+			fmt.Println("⚠ Server backend selected but Docker services are not up.")
+			fmt.Println("  Start them with: docker compose -f ~/.gg/docker-compose.yaml up -d")
+			fmt.Println("  Or switch to the embedded default: set qdrant.backend: sqlite / memgraph.backend: sqlite in .gg/config.yaml")
+		}
+	}
+
+	// Embeddings: warn-not-fail. Ollama (default) is probed; Voyage skips the
+	// probe and just notes the API-key requirement.
+	st.EmbedReady = provisionEmbeddings(ctx, composePath, cfg, st.ComposeUp)
+	return cfg, st
+}
+
+// provisionEmbeddings verifies the configured embedding backend is usable, but
+// NEVER fails init. Under Ollama it probes the endpoint and, when unreachable,
+// prints native-install guidance (brew install ollama / ollama serve / pull) OR
+// the Voyage alternative. Under Voyage it confirms the API-key env var is set.
+// Returns true when embeddings can be produced now (informational only).
+func provisionEmbeddings(ctx context.Context, composePath string, cfg *config.Config, composeUp bool) bool {
+	fmt.Println("\nEmbeddings:")
+	if cfg.Embedding.ResolvedBackendName() == config.BackendVoyage {
+		keyEnv := cfg.Embedding.Voyage.APIKeyEnv
+		if keyEnv == "" {
+			keyEnv = config.DefaultVoyageAPIKeyEnv
+		}
+		if strings.TrimSpace(os.Getenv(keyEnv)) == "" {
+			fmt.Printf("  ⚠ Voyage backend selected but %s is not set — export it before `gg reembed`.\n", keyEnv)
+			return false
+		}
+		fmt.Printf("  ✓ Voyage backend configured (%s present)\n", keyEnv)
+		return true
+	}
+
+	// Ollama path.
+	host := cfg.Embedding.Host
+	tagsURL := strings.TrimRight(host, "/") + "/api/tags"
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := waitForHTTP(probeCtx, tagsURL, 3*time.Second); err != nil {
+		fmt.Printf("  ⚠ Ollama not reachable at %s — embeddings unavailable until you set one up.\n", host)
+		fmt.Println("    Native Ollama (recommended):")
+		fmt.Println("      brew install ollama          # or see https://ollama.com/download")
+		fmt.Println("      ollama serve &")
+		fmt.Println("      ollama pull nomic-embed-text")
+		fmt.Println("    Or use the Voyage cloud backend: set embedding.backend: voyage in .gg/config.yaml + export VOYAGE_API_KEY.")
+		fmt.Println("    Then populate the embedded vector store: gg reembed")
+		return false
+	}
+	fmt.Printf("  ✓ Ollama reachable at %s\n", host)
+	// If we have a running Docker Ollama, pull the model; otherwise the native
+	// install is the user's responsibility (the warning above guides them).
+	if composeUp {
+		pullOllamaModel(ctx, composePath, host)
+	}
+	return true
+}
+
+// printInfraSummary prints the closing backend-aware status + migration hints.
+// For an existing user switching to the embedded default, it points at the
+// one-time populate commands (gg reembed for vectors, gg index for the graph).
+func printInfraSummary(projectID string, cfg *config.Config, st infraStatus) {
+	fmt.Println()
+	fmt.Printf("GG ready — project %s registered.\n", projectID)
+	if cfg.Qdrant.UsesEmbedded() || cfg.Memgraph.UsesEmbedded() {
+		fmt.Println("Embedded stores are used by default (no Docker). To populate them from the")
+		fmt.Println("committed JSONL brain (existing project) or build the code graph, run:")
+		if cfg.Qdrant.UsesEmbedded() {
+			fmt.Println("  gg reembed                 # build .gg/vectorstore.db from .gg/brain/*.jsonl")
+		}
+		fmt.Println("  gg index --lang <go|typescript|python|swift>   # build .gg/graph.db (code graph)")
+	}
+	if st.NeedsServers && !st.ComposeUp {
+		fmt.Println("Server backend(s) selected but not up — start them, or flip to the embedded default.")
+	}
+}
+
 // startSharedServices brings the shared Docker stack up. Before invoking
 // `docker compose up` it probes the Docker daemon (AC-1) so a stopped daemon /
 // missing binary fails fast with an actionable hint instead of a slow compose
@@ -77,10 +214,17 @@ func pullOllamaModel(ctx context.Context, composePath, ollamaHost string) {
 }
 
 func setupProjectCollections(ctx context.Context, projectID, ggDir string) error {
-	fmt.Println("Waiting for Qdrant...")
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load freshly-written project config: %w", err)
+	}
+	embedded := cfg.Qdrant.UsesEmbedded()
+	storeLabel := "Qdrant"
+	if embedded {
+		storeLabel = "embedded vector store"
+		fmt.Println("Creating embedded vector store collections...")
+	} else {
+		fmt.Println("Waiting for Qdrant...")
 	}
 	var client *store.Client
 	var healthErr error
@@ -106,7 +250,7 @@ func setupProjectCollections(ctx context.Context, projectID, ggDir string) error
 		}
 	}
 	if healthErr != nil || client == nil {
-		fmt.Println("⚠ Qdrant not ready — collections will be created on first use")
+		fmt.Printf("⚠ %s not ready — collections will be created on first use\n", storeLabel)
 		return nil
 	}
 	defer func() { _ = client.Close() }()
@@ -116,7 +260,7 @@ func setupProjectCollections(ctx context.Context, projectID, ggDir string) error
 	if err := client.EnsureCollections(setupCtx, store.VectorSize); err != nil {
 		return fmt.Errorf("setup collections: %w", err)
 	}
-	fmt.Printf("✓ Qdrant collections ready for project %s\n", projectID)
+	fmt.Printf("✓ %s collections ready for project %s\n", storeLabel, projectID)
 	return nil
 }
 

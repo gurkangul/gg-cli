@@ -36,7 +36,12 @@ func skipIfSQLiteBackend(t *testing.T) {
 func newDownClient(t *testing.T) *Client {
 	t.Helper()
 	skipIfSQLiteBackend(t)
-	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 19998}
+	// Explicitly select the Qdrant server backend: this test models the
+	// "Qdrant unreachable" contract, which only exists for the server path. With
+	// the embedded SQLite store now the default (TASK-496), an empty Backend
+	// would resolve to the always-up embedded store and the down-path would never
+	// fire. GG_VECTOR_BACKEND=sqlite still wins (and skipIfSQLiteBackend skips).
+	cfg := &config.QdrantConfig{Backend: config.BackendQdrant, Host: "127.0.0.1", Port: 19998}
 	c, err := New(cfg, t.TempDir(), "test-project-down")
 	if err != nil {
 		t.Fatalf("New: %v", err)

@@ -1,22 +1,22 @@
+# gg-cli shared infrastructure — OPTIONAL.
+#
+# As of v1.1, gg uses EMBEDDED stores by default and needs NO Docker:
+#   - Vectors    → .gg/vectorstore.db (SQLite, brute-force cosine)
+#   - Codegraph  → .gg/graph.db       (SQLite property graph)
+#   - Embeddings → native Ollama (`brew install ollama` + `ollama serve`) or
+#                  the opt-in Voyage cloud backend (set embedding.backend: voyage).
+#
+# The only service below is Ollama, and it is OPTIONAL: it exists solely for
+# users who prefer running Ollama inside Docker instead of natively. Start it
+# with:
+#     docker compose -f ~/.gg/docker-compose.yaml up -d ollama
+#     docker compose -f ~/.gg/docker-compose.yaml exec ollama ollama pull nomic-embed-text
+#
+# Qdrant and Memgraph are no longer part of the default setup — the embedded
+# SQLite stores replace them. To opt back into the servers, set
+# qdrant.backend: qdrant / memgraph.backend: memgraph in .gg/config.yaml and add
+# the corresponding services here yourself.
 services:
-  qdrant:
-    image: qdrant/qdrant:v1.15.1
-    ports:
-      - "127.0.0.1:6333:6333"
-      - "127.0.0.1:6334:6334"
-    volumes:
-      - ./volumes/qdrant:/qdrant/storage
-    restart: unless-stopped
-
-  memgraph:
-    image: memgraph/memgraph:3.0.0
-    ports:
-      - "127.0.0.1:7687:7687"
-      - "127.0.0.1:7444:7444"
-    volumes:
-      - ./volumes/memgraph:/var/lib/memgraph
-    restart: unless-stopped
-
   ollama:
     image: ollama/ollama:0.5.7
     ports:

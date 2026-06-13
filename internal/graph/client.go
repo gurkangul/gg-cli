@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/gurkangul/gg-cli/internal/config"
 )
@@ -25,20 +24,21 @@ type Client struct {
 	projectID string     // per-project namespace — set on every created node
 }
 
-// GraphBackendEnv selects the graph-store backend. Unset, "memgraph" or "neo4j"
-// keeps the historical Memgraph/Bolt path (default); "sqlite" activates the
-// embedded, CGO-free store (TASK-494) that removes the Memgraph Docker
-// dependency.
-const GraphBackendEnv = "GG_GRAPH_BACKEND"
+// GraphBackendEnv selects the graph-store backend, overriding the config field.
+// "sqlite" (the built-in default as of TASK-496) activates the embedded,
+// CGO-free store; "memgraph"/"neo4j" keep the historical Memgraph/Bolt path.
+// Mirrors config.GraphBackendEnv.
+const GraphBackendEnv = config.GraphBackendEnv
 
 // New creates a graph client from config. projectID must be a non-empty string
 // identifying this project (e.g. the UUID from config.ProjectID). All nodes
 // written by this client carry {project_id: projectID} and all queries filter on
 // it. Call Close() when done.
 //
-// The backend is selected by the GG_GRAPH_BACKEND env var (default "memgraph").
-// With "sqlite", cfg.URI is ignored and an embedded graph.db is opened under the
-// project .gg directory derived from cfg.
+// The backend is resolved with precedence GG_GRAPH_BACKEND env > memgraph.backend
+// config field > sqlite (the embedded default — no Docker). With the embedded
+// backend cfg.URI is ignored and graph.db is opened under the project .gg
+// directory derived from cfg; only "memgraph"/"neo4j" dial the server.
 func New(cfg *config.MemgraphConfig, projectID string) (*Client, error) {
 	if projectID == "" {
 		return nil, fmt.Errorf("projectID is required — config missing project_id")
@@ -55,8 +55,7 @@ func New(cfg *config.MemgraphConfig, projectID string) (*Client, error) {
 // it falls back to the current working directory's .gg so existing call-sites
 // that only populate URI keep working in tests and live use.
 func newGraphStore(cfg *config.MemgraphConfig, projectID string) (GraphStore, error) {
-	backend := strings.ToLower(strings.TrimSpace(os.Getenv(GraphBackendEnv)))
-	if backend == "sqlite" {
+	if cfg.UsesEmbedded() {
 		ss, err := newSQLiteStore(graphDataDir(cfg))
 		if err != nil {
 			return nil, fmt.Errorf("sqlite graph store init failed: %w", err)

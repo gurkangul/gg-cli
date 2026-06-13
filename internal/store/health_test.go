@@ -19,8 +19,9 @@ import (
 func TestHealthCheck_Unreachable(t *testing.T) {
 	skipIfSQLiteBackend(t)
 	cfg := &config.QdrantConfig{
-		Host: "127.0.0.1",
-		Port: 19999, // no service listening here
+		Backend: config.BackendQdrant, // model the server-down path (TASK-496)
+		Host:    "127.0.0.1",
+		Port:    19999, // no service listening here
 	}
 	c, err := New(cfg, t.TempDir(), "test-project-healthcheck")
 	if err != nil {
@@ -42,8 +43,9 @@ func TestHealthCheck_Unreachable(t *testing.T) {
 func TestQdrantDown_QueryWrapsErrQdrantDown(t *testing.T) {
 	skipIfSQLiteBackend(t)
 	cfg := &config.QdrantConfig{
-		Host: "127.0.0.1",
-		Port: 19999, // no service listening here
+		Backend: config.BackendQdrant, // model the server-down path (TASK-496)
+		Host:    "127.0.0.1",
+		Port:    19999, // no service listening here
 	}
 	c, err := New(cfg, t.TempDir(), "test-project-down")
 	if err != nil {

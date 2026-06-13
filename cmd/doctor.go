@@ -317,12 +317,15 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	doctorPrintln("\nIndexer Binaries:")
 	checkIndexers(cmd, report)
 
-	// 3. Service checks (only if config is valid)
-	doctorPrintln("\nService Connectivity:")
+	// 3. Storage + embedding checks (only if config is valid). Backend-aware:
+	// embedded stores check local-DB health; only an explicit server backend
+	// probes localhost. The embedding check probes Ollama only under the Ollama
+	// backend; under Voyage it checks the API-key env instead (TASK-495 gap).
+	doctorPrintln("\nStorage & Embeddings:")
 	if cfg != nil {
-		doctorCheckQdrant(cmd, cfg, report)
-		doctorCheckMemgraph(cmd, cfg, report)
-		doctorCheckOllama(cmd, cfg, report)
+		doctorCheckVectorStore(cmd, cfg, report)
+		doctorCheckGraphStore(cmd, cfg, report)
+		doctorCheckEmbedding(cmd, cfg, report)
 	} else {
 		report.warn("services", "skipped — config invalid")
 	}
