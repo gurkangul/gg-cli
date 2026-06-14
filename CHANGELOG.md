@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-14
+
+Docker is no longer required. The two heavy database containers (Qdrant,
+Memgraph) are replaced by embedded, CGO-free SQLite stores that are the default;
+the server backends remain fully selectable as opt-in. Additive and backward
+compatible — existing projects keep working and can migrate with one
+`gg reembed` (vectors) + `gg index` (graph).
+
+### Added
+
+- **Embedded SQLite vector store** (TASK-493) — pure-Go brute-force cosine index
+  (`.gg/vectorstore.db`) replaces the Qdrant container as the default. Exact
+  (not approximate) ranking; single-digit-ms at project scale.
+- **Embedded SQLite graph store** (TASK-494) — pure-Go graph (`.gg/graph.db`)
+  replaces the Memgraph container as the default for `gg impact`.
+- **Pluggable embedding backend** (TASK-495) — Ollama remains the default
+  (byte-identical); **Voyage** cloud (`voyage-3.5-lite`) is an opt-in backend via
+  `embedding.backend: voyage` + `VOYAGE_API_KEY`. Embeddings can now run with no
+  Docker (native Ollama) or no local compute (Voyage).
+- **No-Docker by default** (TASK-496) — `gg init` no longer requires Docker;
+  `provisionInfra` only brings up compose services when a server backend is
+  explicitly selected. `gg doctor` is backend-aware (embedded health checks,
+  empty-store reembed/index hints, no false `ollama=down` under Voyage).
+- **Standalone SQLite vector-store tests** — `cosineSimilarity`, the float32
+  codec, brute-force ranking + top-K + score_threshold, must/must_not/should
+  payload filters, write path and on-disk persistence now have unit coverage
+  independent of the Qdrant integration oracle (17% → 57%).
+
+### Changed
+
+- Backend selection precedence (both stores): `GG_VECTOR_BACKEND` /
+  `GG_GRAPH_BACKEND` env > `qdrant.backend` / `memgraph.backend` config field >
+  `sqlite` built-in default.
+- `docker-compose.yaml` template drops the Qdrant and Memgraph services; Ollama
+  remains as an explicitly **optional** service.
+- Service-down hints: the Ollama hint now lists Docker, native, and Voyage
+  recovery paths; `gg bug` help no longer hard-references Qdrant.
+
+### Fixed
+
+- Integration tests pin the server backend (`GG_GRAPH_BACKEND=memgraph` /
+  `Backend: qdrant`) so the sqlite default-flip can't silently divert or
+  hard-fail them (RULES.md Rule 7).
+
 ## [1.0.1] - 2026-06-11
 
 Post-1.0 hardening. No breaking changes; all additive within the 1.0 stability

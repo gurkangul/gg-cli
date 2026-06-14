@@ -41,14 +41,26 @@ func serviceRecoveryHint(service string) string {
 	compose := composePathForHint()
 	svc := strings.ToLower(strings.TrimSpace(service))
 
+	// Ollama is the embedding engine, not a stored-data backend: it can run in
+	// Docker, natively, or be replaced by the Voyage cloud backend. Offer all
+	// three so the hint is correct regardless of how the user runs embeddings.
+	if svc == svcOllama {
+		return fmt.Sprintf(
+			"Ollama is unreachable. Restore embeddings any one way:\n"+
+				"  Docker:  docker compose -f %s up -d ollama\n"+
+				"  Native:  brew install ollama && ollama serve && ollama pull nomic-embed-text\n"+
+				"  Cloud:   set embedding.backend: voyage in .gg/config.yaml + export VOYAGE_API_KEY\n"+
+				"  Logs (Docker):  docker compose -f %s logs -f ollama",
+			compose, compose,
+		)
+	}
+
 	var label string
 	switch svc {
 	case svcQdrant:
 		label = "Qdrant"
 	case svcMemgraph:
 		label = "Memgraph"
-	case svcOllama:
-		label = "Ollama"
 	default:
 		// Unknown service: still give the generic compose-up shape.
 		return fmt.Sprintf(
