@@ -29,7 +29,7 @@ func TestEnsureCollections_Idempotent(t *testing.T) {
 	defer cancel()
 
 	projectID := "test-ensure-idem-" + uuid.New().String()[:8]
-	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 6334}
+	cfg := &config.QdrantConfig{Backend: config.BackendQdrant, Host: "127.0.0.1", Port: 6334}
 	c, err := New(cfg, t.TempDir(), projectID)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -84,7 +84,7 @@ func TestEnsureCollections_PreExistingConfig(t *testing.T) {
 
 	// Simulate a pre-written config with a custom project_id (e.g. "smoke-<uuid>").
 	customProjectID := "smoke-" + uuid.New().String()[:8]
-	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 6334}
+	cfg := &config.QdrantConfig{Backend: config.BackendQdrant, Host: "127.0.0.1", Port: 6334}
 
 	c, err := New(cfg, t.TempDir(), customProjectID)
 	if err != nil {

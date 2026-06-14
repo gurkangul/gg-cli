@@ -30,7 +30,7 @@ func newIntegrationClient(t *testing.T, name string) (*Client, context.Context) 
 		t.Skip("set GG_INTEGRATION_TEST=1 to run Qdrant integration tests")
 	}
 	projectID := fmt.Sprintf("test-%s-%d", name, time.Now().UTC().UnixNano())
-	c, err := New(&config.QdrantConfig{Host: "127.0.0.1", Port: 6334}, t.TempDir(), projectID)
+	c, err := New(&config.QdrantConfig{Backend: config.BackendQdrant, Host: "127.0.0.1", Port: 6334}, t.TempDir(), projectID)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

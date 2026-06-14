@@ -43,7 +43,7 @@ func TestBrainRoundTrip(t *testing.T) {
 	projectID := "test-brain-rt-" + uuid.New().String()[:8]
 	ggDir := t.TempDir()
 
-	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 6334}
+	cfg := &config.QdrantConfig{Backend: config.BackendQdrant, Host: "127.0.0.1", Port: 6334}
 	c, err := store.New(cfg, ggDir, projectID)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -349,7 +349,7 @@ func TestBrainScrubberSmoke(t *testing.T) {
 	projectID := "test-scrub-" + uuid.New().String()[:8]
 	ggDir := t.TempDir()
 
-	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 6334}
+	cfg := &config.QdrantConfig{Backend: config.BackendQdrant, Host: "127.0.0.1", Port: 6334}
 	c, err := store.New(cfg, ggDir, projectID)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)

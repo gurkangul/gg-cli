@@ -17,7 +17,7 @@ func TestTaskOwnershipIntegration(t *testing.T) {
 		t.Skip("set GG_INTEGRATION_TEST=1 to run Qdrant integration tests")
 	}
 	projectID := fmt.Sprintf("test-task-claim-%d", time.Now().UTC().UnixNano())
-	c, err := New(&config.QdrantConfig{Host: "127.0.0.1", Port: 6334}, t.TempDir(), projectID)
+	c, err := New(&config.QdrantConfig{Backend: config.BackendQdrant, Host: "127.0.0.1", Port: 6334}, t.TempDir(), projectID)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestReadyForLivePlanUpdateIntegration(t *testing.T) {
 		t.Skip("set GG_INTEGRATION_TEST=1 to run Qdrant integration tests")
 	}
 	projectID := fmt.Sprintf("test-task-ready-for-live-update-%d", time.Now().UTC().UnixNano())
-	c, err := New(&config.QdrantConfig{Host: "127.0.0.1", Port: 6334}, t.TempDir(), projectID)
+	c, err := New(&config.QdrantConfig{Backend: config.BackendQdrant, Host: "127.0.0.1", Port: 6334}, t.TempDir(), projectID)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

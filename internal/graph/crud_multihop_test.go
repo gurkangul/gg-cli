@@ -14,6 +14,7 @@ func TestDependentsOfDepthIntegration(t *testing.T) {
 	if os.Getenv("GG_INTEGRATION_TEST") != "1" {
 		t.Skip("set GG_INTEGRATION_TEST=1 with Memgraph running to exercise multi-hop traversal")
 	}
+	t.Setenv(GraphBackendEnv, "memgraph") // Memgraph integration test: pin so the sqlite default-flip (TASK-496) can't silently divert New() to an embedded store
 
 	uri := os.Getenv("GG_TEST_MEMGRAPH_URI")
 	if uri == "" {

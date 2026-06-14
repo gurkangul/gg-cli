@@ -35,6 +35,7 @@ func TestMemgraphBrainRoundTrip(t *testing.T) {
 	if os.Getenv("GG_INTEGRATION_TEST") != "1" {
 		t.Skip("set GG_INTEGRATION_TEST=1 to run Memgraph brain round-trip test")
 	}
+	t.Setenv(graph.GraphBackendEnv, "memgraph") // pin Memgraph; else the sqlite default (TASK-496) breaks New() → silent t.Skipf below (RULES.md Rule 7)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
