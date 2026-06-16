@@ -75,10 +75,23 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Messages — fetch once and derive the count from the result so we can't
-	// race with a concurrent `gg inbox` between Count and Scroll.
+	// race with a concurrent `gg inbox` between Count and Scroll. The human-only
+	// set drives the preview; the all-audience set lets us label how many of the
+	// total are agent broadcasts (which `gg inbox` hides by default) so the
+	// "Unread" line stops disagreeing with the inbox view (BUG-091).
 	messages, messagesErr := d.store.GetInbox(ctx, "", true, "")
 	if messagesErr != nil {
 		fmt.Fprintln(os.Stderr, "warning: get inbox:", messagesErr)
+	}
+	agentBroadcasts := 0
+	if messagesErr == nil {
+		if all, allErr := d.store.GetInbox(ctx, "", false, ""); allErr == nil {
+			if m := len(all) - len(messages); m > 0 {
+				agentBroadcasts = m
+			}
+		} else {
+			fmt.Fprintln(os.Stderr, "warning: get inbox (all-audience):", allErr)
+		}
 	}
 
 	// Open discussions — unresolved topics the next agent must close.
@@ -251,7 +264,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 
 		if messagesErr == nil {
-			fmt.Printf("\nMESSAGES:\n  Unread: %d\n", len(messages))
+			unreadLine := fmt.Sprintf("  Unread: %d project-wide", len(messages))
+			if agentBroadcasts > 0 {
+				unreadLine += fmt.Sprintf("  (+%d agent-broadcasts)", agentBroadcasts)
+			}
+			fmt.Printf("\nMESSAGES:\n%s\n", unreadLine)
 			const maxInline = 5
 			preview := messages
 			truncated := 0

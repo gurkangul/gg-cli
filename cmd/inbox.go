@@ -177,6 +177,16 @@ func runInbox(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(messages) == 0 {
+		// Role blind-spot hint (BUG-091): an explicit --role that yields 0 can
+		// hide project-wide unread mail (broadcasts or other-role targets). Probe
+		// the whole project peek-like (reader="" → count-only, no consume) and
+		// point the agent at the unfiltered view instead of a bare "no mail".
+		if strings.TrimSpace(inboxRole) != "" {
+			if all, allErr := d.store.GetInbox(ctx, "", true, ""); allErr == nil && len(all) > 0 {
+				fmt.Printf("0 for role '%s' — %d unread project-wide. See: gg inbox\n", inboxRole, len(all))
+				return nil
+			}
+		}
 		fmt.Println("No unread messages.")
 		return nil
 	}
