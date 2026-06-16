@@ -49,7 +49,10 @@ var canonGatherCmd = &cobra.Command{
 	RunE:  runCanonGather,
 }
 
+var canonShowCompact bool
+
 func init() {
+	canonShowCmd.Flags().BoolVar(&canonShowCompact, "compact", false, "one line per canon area — drops full body to preserve agent context window")
 	canonCmd.AddCommand(canonSetCmd, canonShowCmd, canonGatherCmd)
 	rootCmd.AddCommand(canonCmd)
 }
@@ -94,7 +97,52 @@ func runCanonShow(cmd *cobra.Command, args []string) error {
 		auto = filterCanonArea(auto, want)
 	}
 	combined := append(append([]store.CanonEntry{}, manual...), auto...)
-	return printJSON(combined, func() { writeCanonView(cmd.OutOrStdout(), manual, auto) })
+
+	// TASK-499: surface the same drift badge `gg context` prints when canon text
+	// claims a task is resolved/done but the live task is still pending. Reuses
+	// the shared detectTextConflicts detector (cmd/context_conflicts.go) so canon
+	// can't tell a fresher-but-wronger story than the ledger.
+	conflicts := canonConflicts(cmd, d, combined)
+
+	return printJSON(map[string]any{
+		"canon":     combined,
+		"conflicts": conflicts,
+	}, func() {
+		if isCompactActive(cmd) {
+			emitCompact(cmd, "canon",
+				func(w io.Writer) { writeCanonView(w, manual, auto, conflicts) },
+				func(w io.Writer) { writeCanonCompact(w, manual, auto, conflicts) },
+				compactRendererV_canon,
+			)
+			return
+		}
+		writeCanonView(cmd.OutOrStdout(), manual, auto, conflicts)
+	})
+}
+
+// canonConflicts cross-references canon entry text against live task statuses,
+// flagging entries that claim a task is resolved/done while the live task is
+// still non-terminal. Returns nil when the ledger is unreachable (no live
+// statuses to check against) so canon still renders offline.
+func canonConflicts(cmd *cobra.Command, d *deps, entries []store.CanonEntry) []contextConflict {
+	if d.qdrantDown {
+		return nil
+	}
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+	tasks, err := d.store.ListTasks(ctx, "")
+	if err != nil {
+		return nil
+	}
+	taskStatus := make(map[string]string, len(tasks))
+	for _, t := range tasks {
+		taskStatus[t.ID] = t.Status
+	}
+	sources := make([]conflictSource, 0, len(entries))
+	for _, e := range entries {
+		sources = append(sources, conflictSource{"canon", e.Text})
+	}
+	return detectTextConflicts(sources, taskStatus)
 }
 
 // autoCanonEntries computes the auto-derived canon from the live ledger. The
@@ -121,24 +169,75 @@ func filterCanonArea(entries []store.CanonEntry, want string) []store.CanonEntry
 	return out
 }
 
-func writeCanonView(w io.Writer, manual, auto []store.CanonEntry) {
+func writeCanonView(w io.Writer, manual, auto []store.CanonEntry, conflicts []contextConflict) {
 	if len(manual) == 0 && len(auto) == 0 {
 		fmt.Fprintln(w, "No canon and no ledger to distill yet.")
 		return
 	}
 	fmt.Fprintln(w, "PROJECT CANON (distilled institutional memory):")
+	if len(conflicts) > 0 {
+		fmt.Fprintln(w, "\nCONFLICTS:")
+		for _, c := range conflicts {
+			fmt.Fprintf(w, "  ⚡ [%s] canon says resolved (%q) but live status is %s — live status is authoritative\n",
+				c.ID, c.ClosureToken, c.LiveStatus)
+		}
+	}
 	if len(manual) > 0 {
 		fmt.Fprintln(w, "\n=== Curated ===")
 		for _, e := range manual {
-			fmt.Fprintf(w, "\n## %s\n%s\n", e.Area, e.Text)
+			fmt.Fprintf(w, "\n## %s%s\n%s\n", e.Area, canonDriftSuffix(e, conflicts), e.Text)
 		}
 	}
 	if len(auto) > 0 {
 		fmt.Fprintln(w, "\n=== Auto-derived (live digest of the ledger; no manual upkeep) ===")
 		for _, e := range auto {
-			fmt.Fprintf(w, "\n## %s\n%s\n", e.Area, e.Text)
+			fmt.Fprintf(w, "\n## %s%s\n%s\n", e.Area, canonDriftSuffix(e, conflicts), e.Text)
 		}
 	}
+}
+
+// writeCanonCompact emits one line per canon area, dropping the full body to
+// preserve an agent's context window. Conflicting areas keep their drift marker
+// so the badge survives compaction.
+func writeCanonCompact(w io.Writer, manual, auto []store.CanonEntry, conflicts []contextConflict) {
+	if len(manual) == 0 && len(auto) == 0 {
+		fmt.Fprintln(w, "canon: empty")
+		return
+	}
+	conflictSuffix := ""
+	if len(conflicts) > 0 {
+		conflictSuffix = fmt.Sprintf(" ⚡%dX", len(conflicts))
+	}
+	fmt.Fprintf(w, "canon: %dC %dA%s\n", len(manual), len(auto), conflictSuffix)
+	for _, c := range conflicts {
+		fmt.Fprintf(w, "⚡ CONFLICT [%s] canon says resolved (%q) — live: %s\n", c.ID, c.ClosureToken, c.LiveStatus)
+	}
+	for _, e := range manual {
+		fmt.Fprintf(w, "C %s%s  %s\n", e.Area, canonDriftSuffix(e, conflicts), compactTrim(canonOneLine(e.Text), compactLineWidth))
+	}
+	for _, e := range auto {
+		fmt.Fprintf(w, "A %s%s  %s\n", e.Area, canonDriftSuffix(e, conflicts), compactTrim(canonOneLine(e.Text), compactLineWidth))
+	}
+}
+
+// canonDriftSuffix returns a " ⚠ live: pending (TASK-NNN)" marker when the
+// entry's text references a conflicting task, otherwise "".
+func canonDriftSuffix(e store.CanonEntry, conflicts []contextConflict) string {
+	var ids []string
+	for _, c := range conflicts {
+		if strings.Contains(e.Text, c.ID) {
+			ids = append(ids, fmt.Sprintf("%s %s", c.ID, c.LiveStatus))
+		}
+	}
+	if len(ids) == 0 {
+		return ""
+	}
+	return "  ⚠ live: " + strings.Join(ids, ", ")
+}
+
+// canonOneLine collapses multi-line canon text to a single line for compact output.
+func canonOneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 func runCanonGather(cmd *cobra.Command, args []string) error {

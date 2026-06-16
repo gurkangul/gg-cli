@@ -30,6 +30,7 @@ import (
 const (
 	compactRendererV_search     = 3
 	compactRendererV_context    = 3
+	compactRendererV_canon      = 1
 	compactRendererV_impact     = 2
 	compactRendererV_inbox      = 2
 	compactRendererV_taskList   = 2 // "list" verb (task list)

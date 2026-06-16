@@ -41,36 +41,23 @@ func hasClosureToken(text string) string {
 	return ""
 }
 
-// detectConflicts cross-references all narrative text in the bundle against
-// canonical task/bug statuses in the same bundle.
-func detectConflicts(bundle contextBundle) []contextConflict {
-	// Build lookup maps for IDs present in this bundle.
-	taskStatus := make(map[string]string, len(bundle.tasks))
-	for _, t := range bundle.tasks {
-		taskStatus[t.ID] = t.Status
-	}
-	bugStatus := make(map[string]string) // bugs not directly in contextBundle; only tasks are
-	_ = bugStatus                        // reserved for future extension when bugs join the bundle
+// conflictSource is one narrative blob to scan for closure-token-vs-live drift.
+// kind is the source label that lands in contextConflict.SourceType (e.g.
+// "decision", "note", "canon").
+type conflictSource struct {
+	kind string
+	text string
+}
 
-	type source struct {
-		kind string
-		text string
-	}
-
-	// Collect all narrative text from decisions, notes, and rejections.
-	var sources []source
-	for _, d := range bundle.decisions {
-		sources = append(sources, source{"decision", d.Text + " " + d.Reason})
-	}
-	for _, n := range bundle.notes {
-		sources = append(sources, source{"note", n.Text})
-	}
-	for _, r := range bundle.rejections {
-		sources = append(sources, source{"rejection", r.Approach + " " + r.Reason})
-	}
-
-	// Deduplicate conflicts by ID so the same ID mentioned multiple times
-	// across sources emits only one conflict.
+// detectTextConflicts is the shared drift detector (TASK-499): it scans each
+// narrative source for a closure token plus a TASK/BUG reference, then flags a
+// conflict when the referenced ID is a non-terminal live task in taskStatus.
+// Both `gg context` (via detectConflicts) and `gg canon show` reuse this so the
+// canon and the ledger can never tell divergent done/pending stories.
+//
+// Conflicts are deduplicated by ID so the same ID mentioned across multiple
+// sources emits a single conflict.
+func detectTextConflicts(sources []conflictSource, taskStatus map[string]string) []contextConflict {
 	seen := make(map[string]bool)
 	var conflicts []contextConflict
 
@@ -84,22 +71,47 @@ func detectConflicts(bundle contextBundle) []contextConflict {
 			if seen[id] {
 				continue
 			}
-			// Only flag IDs present in this bundle (avoids false positives from
-			// historical references to items in other projects or already done).
-			if status, ok := taskStatus[id]; ok {
-				if nonTerminalTaskStatus(status) {
-					seen[id] = true
-					conflicts = append(conflicts, contextConflict{
-						ID:            id,
-						SourceType:    src.kind,
-						ClosureToken:  tok,
-						LiveStatus:    status,
-						Authoritative: "live_status",
-					})
-				}
+			// Only flag IDs whose live status is known (avoids false positives
+			// from historical references to items in other projects or already
+			// done) and still non-terminal.
+			if status, ok := taskStatus[id]; ok && nonTerminalTaskStatus(status) {
+				seen[id] = true
+				conflicts = append(conflicts, contextConflict{
+					ID:            id,
+					SourceType:    src.kind,
+					ClosureToken:  tok,
+					LiveStatus:    status,
+					Authoritative: "live_status",
+				})
 			}
 		}
 	}
 
 	return conflicts
+}
+
+// detectConflicts cross-references all narrative text in the bundle against
+// canonical task/bug statuses in the same bundle. Thin wrapper over the shared
+// detectTextConflicts so the canon path and the context path stay in lockstep.
+func detectConflicts(bundle contextBundle) []contextConflict {
+	// Build lookup map for task IDs present in this bundle. (Bugs aren't in
+	// contextBundle yet — reserved for future extension when they join.)
+	taskStatus := make(map[string]string, len(bundle.tasks))
+	for _, t := range bundle.tasks {
+		taskStatus[t.ID] = t.Status
+	}
+
+	// Collect all narrative text from decisions, notes, and rejections.
+	var sources []conflictSource
+	for _, d := range bundle.decisions {
+		sources = append(sources, conflictSource{"decision", d.Text + " " + d.Reason})
+	}
+	for _, n := range bundle.notes {
+		sources = append(sources, conflictSource{"note", n.Text})
+	}
+	for _, r := range bundle.rejections {
+		sources = append(sources, conflictSource{"rejection", r.Approach + " " + r.Reason})
+	}
+
+	return detectTextConflicts(sources, taskStatus)
 }
