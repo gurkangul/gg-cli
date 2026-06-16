@@ -12,6 +12,23 @@ import (
 var taskCmd = &cobra.Command{
 	Use:   "task",
 	Short: "Manage tasks",
+	// BUG-093(d): an unknown subcommand (e.g. `gg task show`, `gg task frob`)
+	// used to silently print the help blurb. Reject it with a suggestion
+	// instead. Bare `gg task` (no args) still prints help.
+	RunE: runTaskParent,
+}
+
+func runTaskParent(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+	sub := args[0]
+	hint := "run `gg task --help` to list subcommands"
+	switch sub {
+	case "show", "view", "info", "details":
+		hint = "did you mean `gg task get`?"
+	}
+	return fmt.Errorf("unknown task subcommand %q — %s", sub, hint)
 }
 
 var validPriorities = map[string]bool{"high": true, "medium": true, "low": true}

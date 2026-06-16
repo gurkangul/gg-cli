@@ -25,10 +25,13 @@ var taskListCmd = &cobra.Command{
 }
 
 var taskGetCmd = &cobra.Command{
-	Use:   "get TASK-ID",
-	Short: "Get task details",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runTaskGet,
+	Use: "get TASK-ID",
+	// BUG-093(d): `show` is the natural verb agents reach for; alias it to get
+	// so `gg task show TASK-1` works instead of silently printing help.
+	Aliases: []string{"show"},
+	Short:   "Get task details",
+	Args:    cobra.ExactArgs(1),
+	RunE:    runTaskGet,
 }
 
 var (

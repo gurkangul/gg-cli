@@ -3,12 +3,17 @@ package cmd
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/telemetry"
 )
+
+// telemetryBarWidth is the maximum bar length, in cells, drawn for the
+// busiest verb. Every other verb's bar is scaled proportionally to it.
+const telemetryBarWidth = 20
 
 var telemetryCmd = &cobra.Command{
 	Use:   "telemetry",
@@ -23,6 +28,41 @@ Or via environment variable (temporary):
 
 Disable permanently:
   gg config set telemetry.enabled false`),
+	// BUG-093(e): bare `gg telemetry` now defaults to the summary view instead
+	// of printing the experimental help blurb.
+	RunE: runTelemetrySummary,
+}
+
+// telemetryBar renders a proportional bar: its length is count/max of
+// telemetryBarWidth cells, so the busiest verb fills the bar and the rest
+// scale down from it. A non-zero count always shows at least one cell.
+func telemetryBar(count, max int) string {
+	if count <= 0 || max <= 0 {
+		return ""
+	}
+	width := (count*telemetryBarWidth + max/2) / max // round to nearest
+	if width < 1 {
+		width = 1
+	}
+	if width > telemetryBarWidth {
+		width = telemetryBarWidth
+	}
+	return strings.Repeat("█", width)
+}
+
+// topLevelVerbs returns the set of verbs that are runnable as `gg <verb>`:
+// every registered top-level command name plus its aliases. Used by the
+// telemetry summary to separate real commands from brain-kind / subcommand
+// access labels (BUG-092b).
+func topLevelVerbs() map[string]bool {
+	out := map[string]bool{}
+	for _, c := range rootCmd.Commands() {
+		out[c.Name()] = true
+		for _, a := range c.Aliases {
+			out[a] = true
+		}
+	}
+	return out
 }
 
 var telemetrySummaryCmd = &cobra.Command{
@@ -106,13 +146,41 @@ func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
 			return verbs[i].verb < verbs[j].verb
 		})
 
-		fmt.Println("Command usage:")
+		// BUG-092(a): scale each bar proportionally to the busiest verb so a
+		// 903-count verb and a 75-count verb no longer both render full-width.
+		maxCount := 0
 		for _, v := range verbs {
-			bar := ""
-			for i := 0; i < v.count && i < 20; i++ {
-				bar += "█"
+			if v.count > maxCount {
+				maxCount = v.count
 			}
-			fmt.Printf("  %-16s %3d  %s\n", v.verb, v.count, bar)
+		}
+		// BUG-092(b): split runnable top-level commands from brain-kind / sub-
+		// command access labels so an agent does not read "decisions" or "get"
+		// as a runnable `gg <verb>`. A verb is a real command only when it is a
+		// registered top-level command (or alias) on the root.
+		topLevel := topLevelVerbs()
+		var cmdRows, brainRows []vc
+		for _, v := range verbs {
+			if topLevel[v.verb] {
+				cmdRows = append(cmdRows, v)
+			} else {
+				brainRows = append(brainRows, v)
+			}
+		}
+
+		printVerbRow := func(v vc, suffix string) {
+			fmt.Printf("  %-16s %3d  %s%s\n", v.verb, v.count, telemetryBar(v.count, maxCount), suffix)
+		}
+
+		fmt.Println("Command usage:")
+		for _, v := range cmdRows {
+			printVerbRow(v, "")
+		}
+		if len(brainRows) > 0 {
+			fmt.Println("\nSubcommand verbs (leaf verbs like `gg task get`, `gg telemetry summary` — not top-level `gg <verb>`):")
+			for _, v := range brainRows {
+				printVerbRow(v, "  (subcommand)")
+			}
 		}
 
 		if sum.CompactCalls > 0 {
