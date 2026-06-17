@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-06-17
+
+Distribution + code-intelligence release: gg's brain is now reachable over MCP by
+any agent, gains live LSP code navigation, hybrid lexical search, and a hardened
+multi-agent story. No migration from 2.x (same embedded SQLite backend).
+
+### Added
+
+- **`gg mcp serve`** — read-only MCP server over **stdio** (no port, no daemon) exposing
+  `gg_search`/`gg_context`/`gg_impact`/`gg_canon`/`gg_task_get`/`gg_bug_get`. Any MCP client
+  (Claude Desktop, Cursor, Zed, …) auto-inherits the project brain; the project is resolved
+  from CWD so brains never mix, and **no write tool is ever exposed**.
+- **`gg lsp refs|defn|hover <file> <line> <col>`** — live, type-aware code intelligence via a
+  per-invocation language server (gopls for Go; extensible per language). Exact references,
+  definitions, and hover with zero index staleness.
+- **`gg decisions [query]`** — direct decisions view/search.
+- **`gg canon suggest` / `gg canon apply`** — structured, no-LLM canon consolidation (the agent
+  fills an add/edit/delete op contract; gg validates atomically before applying).
+- **`gg canon show --compact`** + a live decision↔task drift badge so canon never outruns the ledger.
+- **Hybrid BM25/FTS5 symbol search** in `gg search` — exact-identifier matches alongside semantic.
+- **Mandatory agent onboarding** — AGENTS.md orientation is now mandatory; new **Gemini** (`GEMINI.md`)
+  and **OpenHands** (`.openhands/microagents/gg.md`) installers so every runtime gets a gg-managed
+  "read the brain first" instruction.
+- **`gg graph status`** — typed code-graph readiness line; stale-graph notice in `gg search`/`gg impact`.
+
+### Changed
+
+- `gg context` now ranks bundle entries by task-relevance (overlap + priority/type/recency,
+  critical/architecture force-injected).
+- `gg telemetry summary` bars normalized to max + leaf-verb section; bare `gg telemetry` defaults
+  to `summary`; `gg task <unknown>` errors with a suggestion; `gg status` shows a labeled unread breakdown.
+- `gg index --watch` hardened — single-flight mutex, per-file debounce, watchdog, circuit breaker
+  (still foreground, no daemon).
+
+### Fixed
+
+- Multi-agent SQLite write contention — SQLITE_BUSY retry/backoff on store + graph write paths.
+- Inbox unread-count inconsistency + unbounded agent-broadcast pileup (BUG-091); `gg inbox archive`
+  timeout at 500+ messages (BUG-094); reconcile-from-JSONL test rewritten for the embedded store (BUG-090).
+- MCP: JSONL fallback so tools never false-empty on un-reembedded projects; real read errors surfaced;
+  panic-recovery (request loop + tool goroutines); oversize-line handled gracefully; `gg_context` parity.
+- `gg decisions` offline path returns decisions only; canon drift marker anchored to exact IDs;
+  inbox role-hint respects `--include-agents`/time filters.
+
 ## [2.1.0] - 2026-06-17
 
 Polish + bug-fix release on top of 2.0.0: completes the backend-neutral cleanup,
