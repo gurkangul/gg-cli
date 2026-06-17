@@ -84,7 +84,7 @@ func runCanonShow(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	// Auto-derived canon is computed live from the ledger so it never needs
-	// manual upkeep; it requires Qdrant, so it is simply omitted when down.
+	// manual upkeep; it requires the vector store, so it is simply omitted when down.
 	var auto []store.CanonEntry
 	if !d.qdrantDown {
 		ctx, cancel := withTimeout(cmd.Context())
@@ -223,9 +223,15 @@ func writeCanonCompact(w io.Writer, manual, auto []store.CanonEntry, conflicts [
 // canonDriftSuffix returns a " ⚠ live: pending (TASK-NNN)" marker when the
 // entry's text references a conflicting task, otherwise "".
 func canonDriftSuffix(e store.CanonEntry, conflicts []contextConflict) string {
+	// Extract exact TASK/BUG references so a prefix ID like "TASK-49" never
+	// substring-matches "TASK-499" (anchored, mirrors detectTextConflicts).
+	refs := make(map[string]bool)
+	for _, m := range idExtractor.FindAllString(e.Text, -1) {
+		refs[m] = true
+	}
 	var ids []string
 	for _, c := range conflicts {
-		if strings.Contains(e.Text, c.ID) {
+		if refs[c.ID] {
 			ids = append(ids, fmt.Sprintf("%s %s", c.ID, c.LiveStatus))
 		}
 	}

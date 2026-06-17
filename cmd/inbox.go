@@ -109,6 +109,10 @@ func runInbox(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("get inbox: %w", err)
 	}
+	// Count for the role fetch BEFORE time filters, so the blind-spot hint below
+	// only fires when the role itself is empty — not when --since/--older-than
+	// filtered an otherwise-populated role inbox down to zero.
+	roleFetchCount := len(messages)
 
 	// --since-cursor: filter to messages newer than the stored per-agent cursor.
 	// Silently skipped when GG_AGENT is unset or runtimeDir is unavailable.
@@ -181,8 +185,8 @@ func runInbox(cmd *cobra.Command, args []string) error {
 		// hide project-wide unread mail (broadcasts or other-role targets). Probe
 		// the whole project peek-like (reader="" → count-only, no consume) and
 		// point the agent at the unfiltered view instead of a bare "no mail".
-		if strings.TrimSpace(inboxRole) != "" {
-			if all, allErr := d.store.GetInbox(ctx, "", true, ""); allErr == nil && len(all) > 0 {
+		if strings.TrimSpace(inboxRole) != "" && roleFetchCount == 0 {
+			if all, allErr := d.store.GetInbox(ctx, "", !inboxIncludeAgents, ""); allErr == nil && len(all) > 0 {
 				fmt.Printf("0 for role '%s' — %d unread project-wide. See: gg inbox\n", inboxRole, len(all))
 				return nil
 			}
