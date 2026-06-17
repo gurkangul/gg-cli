@@ -53,11 +53,16 @@ func printSearchResultsWithSymbols(cmd *cobra.Command, query string, decisions [
 	const backend = "sqlite"
 	results := trimSearchResults(buildSearchResultsWithBackendScoresAndMessages(query, decisions, rejections, tasks, bugs, notes, nil, backend, nil), searchLimit)
 	jsonMap := map[string]any{
-		"decisions":      decisions,
-		"rejections":     rejections,
-		"tasks":          tasks,
-		"bugs":           bugs,
-		"notes":          notes,
+		"decisions":  decisions,
+		"rejections": rejections,
+		"tasks":      tasks,
+		"bugs":       bugs,
+		"notes":      notes,
+		// messages: this live-semantic path never carries messages, but the
+		// canonical printer (printSearchResultsWithBackendScoresAndMessages)
+		// always emits the key (as null when empty). Emit it here too for --json
+		// schema parity so consumers see a stable set of keys. TASK-509.
+		"messages":       []store.Message(nil),
 		"matches":        results,
 		"symbol_matches": symbols,
 		"ranking":        "semantic results plus a bm25/FTS5 lexical code-symbol tier (exact/keyword identifier matches)",

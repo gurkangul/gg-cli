@@ -175,6 +175,13 @@ func (l *indexWatchLoop) tick(parent context.Context, cmd *cobra.Command) error 
 
 	runErr := l.runReindex(parent, cmd, full)
 	if runErr != nil {
+		// Caller-initiated cancellation (Ctrl-C) is not an indexer failure. The
+		// breaker contract (watchresilience/breaker.go) says RecordFailure must
+		// not be fed caller cancellation, so skip both Record* calls and let the
+		// outer loop observe ctx.Done() and exit cleanly — no spurious breaker trip.
+		if errors.Is(runErr, context.Canceled) {
+			return nil
+		}
 		if errors.Is(runErr, context.DeadlineExceeded) {
 			fmt.Fprintf(cmd.OutOrStderr(), "watch: reindex exceeded %s watchdog - skipped, watcher still running\n", indexWatchOpTimeout)
 		} else {
