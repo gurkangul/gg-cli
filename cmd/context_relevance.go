@@ -174,14 +174,6 @@ func (rc relevanceContext) scoreTask(t store.Task) (int, string) {
 	return score, strings.Join(reasons, ", ")
 }
 
-func (rc relevanceContext) scoreBug(b store.Bug) (int, string) {
-	var reasons []string
-	score := rc.scoreText(0, &reasons, b.Title+" "+b.Detail+" "+b.RootCause, b.Tags)
-	score = priorityBoost(score, &reasons, b.Severity)
-	score = rc.recencyBoost(score, b.CreatedAt)
-	return score, strings.Join(reasons, ", ")
-}
-
 func (rc relevanceContext) scoreDiscussion(d store.Discussion) (int, string) {
 	var reasons []string
 	score := rc.scoreText(0, &reasons, d.Topic+" "+d.Detail, d.Tags)

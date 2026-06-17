@@ -100,7 +100,7 @@ func TestScoreTask_PriorityOrder(t *testing.T) {
 	crit, _ := rc.scoreTask(store.Task{Title: "login", Priority: "critical"})
 	high, _ := rc.scoreTask(store.Task{Title: "login", Priority: "high"})
 	low, _ := rc.scoreTask(store.Task{Title: "login", Priority: "low"})
-	if !(crit > high && high > low) {
+	if crit <= high || high <= low {
 		t.Errorf("priority order broken: critical=%d high=%d low=%d", crit, high, low)
 	}
 }

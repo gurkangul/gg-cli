@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-// busyErr is a stand-in that reports the same "database is locked" text the
+// errBusy is a stand-in that reports the same "database is locked" text the
 // modernc driver surfaces, so IsBusy's string fallback path is exercised without
 // having to provoke a real lock from the (unexported-field) *sqlite.Error type.
-var busyErr = errors.New("database is locked (5) (SQLITE_BUSY)")
+var errBusy = errors.New("database is locked (5) (SQLITE_BUSY)")
 
 func TestIsBusy(t *testing.T) {
 	cases := []struct {
@@ -23,7 +23,7 @@ func TestIsBusy(t *testing.T) {
 		{"locked text", errors.New("database is locked"), true},
 		{"table locked", errors.New("database table is locked: points"), true},
 		{"busy token", errors.New("SQLITE_BUSY"), true},
-		{"wrapped locked", fmt.Errorf("upsert into coll: %w", busyErr), true},
+		{"wrapped locked", fmt.Errorf("upsert into coll: %w", errBusy), true},
 		{"unrelated", errors.New("no such column: foo"), false},
 		{"constraint", errors.New("UNIQUE constraint failed"), false},
 	}
@@ -42,7 +42,7 @@ func TestDoRetriesThenSucceeds(t *testing.T) {
 	err := Do(context.Background(), func() error {
 		calls++
 		if calls < 3 {
-			return busyErr
+			return errBusy
 		}
 		return nil
 	})
@@ -61,7 +61,7 @@ func TestDoGivesUpAfterMaxAttempts(t *testing.T) {
 	calls := 0
 	err := Do(context.Background(), func() error {
 		calls++
-		return busyErr
+		return errBusy
 	})
 	if !IsBusy(err) {
 		t.Fatalf("Do returned %v, want a busy error after exhausting retries", err)
@@ -104,7 +104,7 @@ func TestDoHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	start := time.Now()
-	err := Do(ctx, func() error { return busyErr })
+	err := Do(ctx, func() error { return errBusy })
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Do returned %v, want context.Canceled", err)
 	}
