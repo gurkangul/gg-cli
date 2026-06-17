@@ -166,7 +166,14 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return printSearchResults(cmd, query, decisions, rejections, tasks, bugs, notes, "", time.Time{})
+	// TASK-505: lexical symbol tier. Surface exact/keyword code-symbol matches
+	// (bm25-ranked FTS5 over the graph store) alongside the semantic results, so
+	// an identifier like "ForwardCallFlow" — or a camelCase fragment — ranks by
+	// keyword instead of losing to embedding noise. Best-effort: a missing graph
+	// or empty index is silent and never blocks the semantic answer.
+	symbols := lexicalSymbolMatches(ctx, query, int(searchLimit))
+
+	return printSearchResultsWithSymbols(cmd, query, decisions, rejections, tasks, bugs, notes, symbols, "", time.Time{})
 }
 
 // emitSearchGraphNotice prints the one-line stale/empty code-graph notice to

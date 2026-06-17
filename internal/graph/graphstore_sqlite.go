@@ -93,6 +93,12 @@ CREATE INDEX IF NOT EXISTS idx_edges_pid          ON edges(project_id);
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("init graph store schema: %w", err)
 	}
+	// Lexical symbol index (TASK-505) — derived FTS5 table over Symbol nodes,
+	// kept in sync by the node-write path. Rebuild-safe: dropping it and
+	// re-indexing reconstructs it.
+	if err := s.initFTS(); err != nil {
+		return err
+	}
 	return nil
 }
 

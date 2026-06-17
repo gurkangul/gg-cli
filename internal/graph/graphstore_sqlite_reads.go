@@ -20,6 +20,8 @@ func (s *sqliteStore) runRead(ctx context.Context, c, cypher string, params map[
 		return s.findSymbols(ctx, params)
 	case strings.HasPrefix(c, "MATCH (n:Symbol {boundary: true"):
 		return s.boundarySymbols(ctx, params)
+	case strings.HasPrefix(c, ftsSearchSentinel):
+		return s.searchSymbolsFTS(ctx, params)
 	case strings.Contains(c, "-[:CALLS]->(to:Symbol"):
 		return s.callees(ctx, params)
 	case strings.Contains(c, "-[:IMPORTS]->(f:File {path: $path"):
