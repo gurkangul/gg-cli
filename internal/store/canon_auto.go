@@ -282,6 +282,11 @@ func hasImportantTag(tags []string) bool {
 	return false
 }
 
+// NormalizeForDedup exposes the canon dedup key so callers outside the store
+// (e.g. `gg canon suggest`) can judge "already reflected" with the same logic
+// the auto-canon dedup uses.
+func NormalizeForDedup(s string) string { return normalizeForDedup(s) }
+
 // normalizeForDedup collapses a record's text to a stable key so near-identical
 // duplicates (e.g. the four identical bypass-rationale rows) fold to one.
 func normalizeForDedup(s string) string {
