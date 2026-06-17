@@ -4,11 +4,30 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
+
+// safeSearch runs a per-collection search body on its own goroutine, marking the
+// WaitGroup done and recovering any panic into errp. A panic in one collection's
+// search (e.g. a malformed store entry) must not crash the whole stdio session,
+// so it surfaces as a tool error via firstSearchError instead of taking down the
+// process. The recover here is essential: the HandleLine-level recover only
+// covers the request goroutine, never the goroutines spawned below it.
+func safeSearch(wg *sync.WaitGroup, errp *error, body func()) {
+	go func() {
+		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				*errp = fmt.Errorf("search panicked: %v", r)
+			}
+		}()
+		body()
+	}()
+}
 
 // ── gg_search ─────────────────────────────────────────────────────────────
 
@@ -33,36 +52,31 @@ func (b *brain) toolSearch(ctx context.Context, args map[string]any) ([]ContentB
 	var decErr, rejErr, taskErr, bugErr, noteErr error
 	var wg sync.WaitGroup
 	wg.Add(5)
-	go func() {
-		defer wg.Done()
+	safeSearch(&wg, &decErr, func() {
 		decisions, decErr = fallbackSearch(b.ggDir, "decisions", query,
 			func() ([]store.Decision, error) { return b.store.SearchDecisions(ctx, vector, limit, false) },
 			decisionFromEntry)
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	safeSearch(&wg, &rejErr, func() {
 		rejections, rejErr = fallbackSearch(b.ggDir, "rejections", query,
 			func() ([]store.Rejection, error) { return b.store.SearchRejections(ctx, vector, limit) },
 			rejectionFromEntry)
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	safeSearch(&wg, &taskErr, func() {
 		tasks, taskErr = fallbackSearch(b.ggDir, "tasks", query,
 			func() ([]store.Task, error) { return b.store.SearchTasks(ctx, vector, limit, false) },
 			taskFromEntry)
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	safeSearch(&wg, &bugErr, func() {
 		bugs, bugErr = fallbackSearch(b.ggDir, "bugs", query,
 			func() ([]store.Bug, error) { return b.store.SearchBugs(ctx, vector, limit, false) },
 			bugFromEntry)
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	safeSearch(&wg, &noteErr, func() {
 		notes, noteErr = fallbackSearch(b.ggDir, "notes", query,
 			func() ([]store.Note, error) { return b.store.SearchNotes(ctx, vector, limit) },
 			noteFromEntry)
-	}()
+	})
 	wg.Wait()
 	if msg := firstSearchError(decErr, rejErr, taskErr, bugErr, noteErr); msg != "" {
 		return TextBlock("gg_search: " + msg), true
@@ -161,36 +175,31 @@ func (b *brain) contextTopic(ctx context.Context, query string, compact bool) ([
 	var decErr, rejErr, taskErr, discErr, noteErr error
 	var wg sync.WaitGroup
 	wg.Add(5)
-	go func() {
-		defer wg.Done()
+	safeSearch(&wg, &decErr, func() {
 		decisions, decErr = fallbackSearch(b.ggDir, "decisions", query,
 			func() ([]store.Decision, error) { return b.store.SearchDecisions(ctx, vector, limit, false) },
 			decisionFromEntry)
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	safeSearch(&wg, &rejErr, func() {
 		rejections, rejErr = fallbackSearch(b.ggDir, "rejections", query,
 			func() ([]store.Rejection, error) { return b.store.SearchRejections(ctx, vector, limit) },
 			rejectionFromEntry)
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	safeSearch(&wg, &taskErr, func() {
 		tasks, taskErr = fallbackSearch(b.ggDir, "tasks", query,
 			func() ([]store.Task, error) { return b.store.SearchTasks(ctx, vector, limit, false) },
 			taskFromEntry)
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	safeSearch(&wg, &discErr, func() {
 		discussions, discErr = fallbackSearch(b.ggDir, "discussions", query,
 			func() ([]store.Discussion, error) { return b.store.SearchDiscussions(ctx, vector, limit, false) },
 			discussionFromEntry)
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	safeSearch(&wg, &noteErr, func() {
 		notes, noteErr = fallbackSearch(b.ggDir, "notes", query,
 			func() ([]store.Note, error) { return b.store.SearchNotes(ctx, vector, limit) },
 			noteFromEntry)
-	}()
+	})
 	wg.Wait()
 	if msg := firstSearchError(decErr, rejErr, taskErr, discErr, noteErr); msg != "" {
 		return TextBlock("gg_context: " + msg), true
@@ -214,10 +223,18 @@ func (b *brain) contextTopic(ctx context.Context, query string, compact bool) ([
 
 // contextProject returns a project onboarding overview: recent decisions,
 // rejections, active tasks, open bugs, and the canon.
+//
+// Parity with the CLI `gg context` project overview (cmd/context_project.go):
+// the decision list is run through store.FilterDecisionNoise to drop low-signal
+// audit cruft and dedup near-identical rows, and the task set spans all
+// in-flight statuses (pending, in_progress, ready_for_live, blocked) rather than
+// only "pending" — so the MCP overview matches what a human sees from the CLI.
 func (b *brain) contextProject(ctx context.Context, compact bool) ([]ContentBlock, bool) {
-	decisions, _ := b.store.ListDecisions(ctx, defaultLimit, false)
+	rawDecisions, _ := b.store.ListDecisions(ctx, defaultLimit, false)
+	decisions := store.FilterDecisionNoise(rawDecisions)
 	rejections, _ := b.store.ListRejections(ctx, defaultLimit)
-	tasks, _ := b.store.ListTasks(ctx, "pending")
+	allTasks, _ := b.store.ListTasks(ctx, "")
+	tasks := inFlightTasks(allTasks)
 	bugs, _ := b.store.ListBugs(ctx, "open")
 	canon, _ := b.store.ListCanon()
 	payload := map[string]any{
@@ -234,6 +251,25 @@ func (b *brain) contextProject(ctx context.Context, compact bool) ([]ContentBloc
 		}
 	}
 	return jsonContent(payload), false
+}
+
+// inFlightTasks keeps only tasks in an active status and caps the set at
+// defaultLimit, mirroring the CLI project-overview filter
+// (cmd.projectContextTasks / projectContextTaskStatus). The MCP package cannot
+// import cmd (import cycle), so the status set is mirrored here verbatim:
+// pending, in_progress, ready_for_live, blocked.
+func inFlightTasks(tasks []store.Task) []store.Task {
+	out := make([]store.Task, 0, len(tasks))
+	for _, t := range tasks {
+		switch strings.TrimSpace(t.Status) {
+		case "pending", "in_progress", "ready_for_live", "blocked":
+			out = append(out, t)
+		}
+	}
+	if len(out) > defaultLimit {
+		out = out[:defaultLimit]
+	}
+	return out
 }
 
 // ── gg_impact ─────────────────────────────────────────────────────────────
@@ -298,24 +334,21 @@ func (b *brain) toolImpact(ctx context.Context, args map[string]any) ([]ContentB
 		var decErr, taskErr, rejErr error
 		var wg sync.WaitGroup
 		wg.Add(3)
-		go func() {
-			defer wg.Done()
+		safeSearch(&wg, &decErr, func() {
 			decisions, decErr = fallbackSearch(b.ggDir, "decisions", searchQuery,
 				func() ([]store.Decision, error) { return b.store.SearchDecisions(ctx, vector, defaultLimit, true) },
 				decisionFromEntry)
-		}()
-		go func() {
-			defer wg.Done()
+		})
+		safeSearch(&wg, &taskErr, func() {
 			tasks, taskErr = fallbackSearch(b.ggDir, "tasks", searchQuery,
 				func() ([]store.Task, error) { return b.store.SearchTasks(ctx, vector, defaultLimit, true) },
 				taskFromEntry)
-		}()
-		go func() {
-			defer wg.Done()
+		})
+		safeSearch(&wg, &rejErr, func() {
 			rejections, rejErr = fallbackSearch(b.ggDir, "rejections", searchQuery,
 				func() ([]store.Rejection, error) { return b.store.SearchRejections(ctx, vector, defaultLimit) },
 				rejectionFromEntry)
-		}()
+		})
 		wg.Wait()
 		if msg := firstSearchError(decErr, taskErr, rejErr); msg != "" {
 			return TextBlock("gg_impact: " + msg), true

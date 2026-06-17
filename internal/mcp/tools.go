@@ -20,9 +20,12 @@ const callTimeout = 15 * time.Second
 const defaultLimit = 5
 
 // Host is the read-only ToolHost backing the gg MCP server. It resolves the
-// project brain lazily on each call from the configured project directory, so a
-// long-lived server process always reads the current on-disk state and never
-// holds a write handle.
+// project brain lazily on each call from the configured project directory and
+// closes it when the call returns, so a long-lived server process always reads
+// the current on-disk state and only holds a store handle for the duration of a
+// single tool call. The read-only guarantee is enforced by the tool surface
+// (only gg_* read tools are registered — no write path exists), not by the file
+// handle: the underlying SQLite/store open may take a writable handle.
 //
 // Project resolution failure (no .gg in the resolved directory) is NOT fatal:
 // initialize still succeeds so the client connects, and tools/call returns an
@@ -129,7 +132,7 @@ func (h *Host) ListTools() []Tool {
 			Description: "Semantic search across the project brain (decisions, rejections, tasks, bugs, notes). Use before starting work to check prior decisions and rejected approaches.",
 			InputSchema: objSchema(map[string]map[string]any{
 				"query":   strProp("the search query"),
-				"compact": boolProp("one line per item to preserve context window"),
+				"compact": boolProp("also include a per-collection counts map for a quick size estimate"),
 			}, "query"),
 		},
 		{
@@ -138,7 +141,7 @@ func (h *Host) ListTools() []Tool {
 			InputSchema: objSchema(map[string]map[string]any{
 				"query":    strProp("topic to build a context bundle for"),
 				"for_task": strProp("TASK-NNN for task-scoped rehydration"),
-				"compact":  boolProp("one line per item to preserve context window"),
+				"compact":  boolProp("also include a per-collection counts map for a quick size estimate"),
 			}),
 		},
 		{

@@ -119,35 +119,101 @@ func New(host ToolHost, version string) *Server {
 //
 // CRITICAL: out is the JSON-RPC channel. The caller must ensure nothing else
 // writes to it.
+//
+// A single oversize message (a line longer than maxLineBytes) degrades
+// gracefully: the offending line is drained and skipped with a JSON-RPC error,
+// and the loop KEEPS serving rather than tearing down the whole client session.
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer, logw io.Writer) error {
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
+	reader := bufio.NewReaderSize(in, 64*1024)
 
-	for scanner.Scan() {
+	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		line := scanner.Bytes()
-		resp := s.HandleLine(ctx, line)
-		if resp == nil {
-			continue // notification or blank line — no response
+		line, tooLong, err := readBoundedLine(reader, maxLineBytes)
+		if tooLong {
+			// One oversize message must not kill the session: surface a
+			// protocol error (id unknown — null) and keep reading.
+			fmt.Fprintf(logw, "gg mcp: oversize message skipped (> %d bytes)\n", maxLineBytes)
+			resp := s.encodeError(nil, codeInvalidRequest, "message exceeds maximum size")
+			if _, werr := out.Write(append(resp, '\n')); werr != nil {
+				fmt.Fprintf(logw, "gg mcp: stdout write failed: %v\n", werr)
+				return werr
+			}
+			if err != nil {
+				if err == io.EOF {
+					return nil
+				}
+				fmt.Fprintf(logw, "gg mcp: stdin read failed: %v\n", err)
+				return err
+			}
+			continue
 		}
-		if _, err := out.Write(append(resp, '\n')); err != nil {
-			fmt.Fprintf(logw, "gg mcp: stdout write failed: %v\n", err)
+		if len(line) > 0 {
+			resp := s.HandleLine(ctx, line)
+			if resp != nil {
+				if _, werr := out.Write(append(resp, '\n')); werr != nil {
+					fmt.Fprintf(logw, "gg mcp: stdout write failed: %v\n", werr)
+					return werr
+				}
+			}
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			fmt.Fprintf(logw, "gg mcp: stdin read failed: %v\n", err)
 			return err
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(logw, "gg mcp: stdin read failed: %v\n", err)
-		return err
+}
+
+// readBoundedLine reads one newline-delimited message, capping its length at
+// max bytes. When a line exceeds max, it returns tooLong=true and drains the
+// rest of that line (up to the next '\n' or EOF) so the next read resyncs on a
+// fresh message boundary. The returned line excludes the trailing newline. A
+// non-nil err (notably io.EOF) is returned alongside any final partial line.
+func readBoundedLine(r *bufio.Reader, max int) (line []byte, tooLong bool, err error) {
+	buf := make([]byte, 0, 256)
+	for {
+		b, rerr := r.ReadByte()
+		if rerr != nil {
+			return buf, false, rerr
+		}
+		if b == '\n' {
+			return buf, false, nil
+		}
+		if len(buf) >= max {
+			// Drain the rest of the oversize line so we resync on the next
+			// message boundary instead of mid-stream garbage.
+			if derr := drainLine(r); derr != nil {
+				return nil, true, derr
+			}
+			return nil, true, nil
+		}
+		buf = append(buf, b)
 	}
-	return nil
+}
+
+// drainLine discards bytes until the next '\n' or EOF.
+func drainLine(r *bufio.Reader) error {
+	for {
+		b, err := r.ReadByte()
+		if err != nil {
+			return err
+		}
+		if b == '\n' {
+			return nil
+		}
+	}
 }
 
 // HandleLine processes one raw JSON-RPC line and returns the marshalled
 // response, or nil when no response must be written (notifications, blank
-// input). It never panics on malformed input.
-func (s *Server) HandleLine(ctx context.Context, raw []byte) []byte {
+// input). It never panics on malformed input, and a panic inside a tool
+// handler is recovered into a JSON-RPC internal error so one bad request can
+// never tear down the stdio session.
+func (s *Server) HandleLine(ctx context.Context, raw []byte) (resp []byte) {
 	line := strings.TrimSpace(string(raw))
 	if line == "" {
 		return nil
@@ -161,9 +227,22 @@ func (s *Server) HandleLine(ctx context.Context, raw []byte) []byte {
 		return s.encodeError(idOrNull(req.ID), codeInvalidRequest, "Invalid Request")
 	}
 
-	// A request without an id is a notification: dispatch for side effects but
-	// never emit a response (initialize ack, etc.).
-	isNotification := isNullID(req.ID)
+	// A request is a notification when it carries no id OR its method is in the
+	// notifications/* namespace (per spec a notification never gets a response,
+	// even if a client erroneously attaches an id — e.g. notifications/initialized).
+	isNotification := isNullID(req.ID) || strings.HasPrefix(req.Method, "notifications/")
+
+	// Recover any panic from dispatch (and the tool goroutines it joins on) so
+	// the session survives. The recovered request still gets a JSON-RPC error.
+	defer func() {
+		if r := recover(); r != nil {
+			if isNotification {
+				resp = nil // notifications never get a response, even on panic
+				return
+			}
+			resp = s.encodeError(idOrNull(req.ID), codeInternalError, fmt.Sprintf("internal error handling %q: %v", req.Method, r))
+		}
+	}()
 
 	result, rpcErr := s.dispatch(ctx, req.Method, req.Params)
 	if isNotification {
@@ -182,6 +261,12 @@ func (s *Server) HandleLine(ctx context.Context, raw []byte) []byte {
 // dispatch routes a method to its handler. methodNotFound is signalled via the
 // returned rpcError.
 func (s *Server) dispatch(ctx context.Context, method string, params json.RawMessage) (any, *rpcError) {
+	// Any notifications/* method is a fire-and-forget notification; HandleLine
+	// drops the response. Accept them all (initialized, cancelled, progress, …)
+	// so an unknown notification never returns a method-not-found error.
+	if strings.HasPrefix(method, "notifications/") {
+		return map[string]any{}, nil
+	}
 	switch method {
 	case "initialize":
 		return map[string]any{
@@ -191,9 +276,6 @@ func (s *Server) dispatch(ctx context.Context, method string, params json.RawMes
 				"tools": map[string]any{},
 			},
 		}, nil
-	case "notifications/initialized":
-		// Notification — no response. Return empty; HandleLine drops it.
-		return map[string]any{}, nil
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
