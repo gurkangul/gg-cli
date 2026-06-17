@@ -30,14 +30,43 @@ func (b *brain) toolSearch(ctx context.Context, args map[string]any) ([]ContentB
 		bugs       []store.Bug
 		notes      []store.Note
 	)
+	var decErr, rejErr, taskErr, bugErr, noteErr error
 	var wg sync.WaitGroup
 	wg.Add(5)
-	go func() { defer wg.Done(); decisions, _ = b.store.SearchDecisions(ctx, vector, limit, false) }()
-	go func() { defer wg.Done(); rejections, _ = b.store.SearchRejections(ctx, vector, limit) }()
-	go func() { defer wg.Done(); tasks, _ = b.store.SearchTasks(ctx, vector, limit, false) }()
-	go func() { defer wg.Done(); bugs, _ = b.store.SearchBugs(ctx, vector, limit, false) }()
-	go func() { defer wg.Done(); notes, _ = b.store.SearchNotes(ctx, vector, limit) }()
+	go func() {
+		defer wg.Done()
+		decisions, decErr = fallbackSearch(b.ggDir, "decisions", query,
+			func() ([]store.Decision, error) { return b.store.SearchDecisions(ctx, vector, limit, false) },
+			decisionFromEntry)
+	}()
+	go func() {
+		defer wg.Done()
+		rejections, rejErr = fallbackSearch(b.ggDir, "rejections", query,
+			func() ([]store.Rejection, error) { return b.store.SearchRejections(ctx, vector, limit) },
+			rejectionFromEntry)
+	}()
+	go func() {
+		defer wg.Done()
+		tasks, taskErr = fallbackSearch(b.ggDir, "tasks", query,
+			func() ([]store.Task, error) { return b.store.SearchTasks(ctx, vector, limit, false) },
+			taskFromEntry)
+	}()
+	go func() {
+		defer wg.Done()
+		bugs, bugErr = fallbackSearch(b.ggDir, "bugs", query,
+			func() ([]store.Bug, error) { return b.store.SearchBugs(ctx, vector, limit, false) },
+			bugFromEntry)
+	}()
+	go func() {
+		defer wg.Done()
+		notes, noteErr = fallbackSearch(b.ggDir, "notes", query,
+			func() ([]store.Note, error) { return b.store.SearchNotes(ctx, vector, limit) },
+			noteFromEntry)
+	}()
 	wg.Wait()
+	if msg := firstSearchError(decErr, rejErr, taskErr, bugErr, noteErr); msg != "" {
+		return TextBlock("gg_search: " + msg), true
+	}
 
 	payload := map[string]any{
 		"query":      query,
@@ -59,18 +88,19 @@ func (b *brain) toolSearch(ctx context.Context, args map[string]any) ([]ContentB
 // ── gg_context ────────────────────────────────────────────────────────────
 
 func (b *brain) toolContext(ctx context.Context, args map[string]any) ([]ContentBlock, bool) {
+	compact := argBool(args, "compact")
 	if forTask := argString(args, "for_task"); forTask != "" {
-		return b.contextForTask(ctx, forTask)
+		return b.contextForTask(ctx, forTask, compact)
 	}
 	if query := argString(args, "query"); query != "" {
-		return b.contextTopic(ctx, query)
+		return b.contextTopic(ctx, query, compact)
 	}
-	return b.contextProject(ctx)
+	return b.contextProject(ctx, compact)
 }
 
 // contextForTask returns the task, its dependency tasks, and semantically
 // related decisions/rejections — the task-scoped rehydration bundle.
-func (b *brain) contextForTask(ctx context.Context, taskID string) ([]ContentBlock, bool) {
+func (b *brain) contextForTask(ctx context.Context, taskID string, compact bool) ([]ContentBlock, bool) {
 	if _, err := store.ParseTaskID(taskID); err != nil {
 		return TextBlock(fmt.Sprintf("invalid task id %q: %v", taskID, err)), true
 	}
@@ -86,21 +116,36 @@ func (b *brain) contextForTask(ctx context.Context, taskID string) ([]ContentBlo
 	}
 	var decisions []store.Decision
 	var rejections []store.Rejection
-	if vector, embErr := b.embedder.Generate(ctx, t.Title+" "+t.Detail); embErr == nil {
-		decisions, _ = b.store.SearchDecisions(ctx, vector, defaultLimit, false)
-		rejections, _ = b.store.SearchRejections(ctx, vector, defaultLimit)
+	query := t.Title + " " + t.Detail
+	if vector, embErr := b.embedder.Generate(ctx, query); embErr == nil {
+		var decErr, rejErr error
+		decisions, decErr = fallbackSearch(b.ggDir, "decisions", query,
+			func() ([]store.Decision, error) { return b.store.SearchDecisions(ctx, vector, defaultLimit, false) },
+			decisionFromEntry)
+		rejections, rejErr = fallbackSearch(b.ggDir, "rejections", query,
+			func() ([]store.Rejection, error) { return b.store.SearchRejections(ctx, vector, defaultLimit) },
+			rejectionFromEntry)
+		if msg := firstSearchError(decErr, rejErr); msg != "" {
+			return TextBlock("gg_context: " + msg), true
+		}
 	}
-	return jsonContent(map[string]any{
+	payload := map[string]any{
 		"task":         t,
 		"dependencies": deps,
 		"decisions":    decisions,
 		"rejections":   rejections,
-	}), false
+	}
+	if compact {
+		payload["counts"] = map[string]int{
+			"dependencies": len(deps), "decisions": len(decisions), "rejections": len(rejections),
+		}
+	}
+	return jsonContent(payload), false
 }
 
 // contextTopic returns a semantic bundle across decisions, rejections, tasks,
 // discussions, and notes for a free-text topic.
-func (b *brain) contextTopic(ctx context.Context, query string) ([]ContentBlock, bool) {
+func (b *brain) contextTopic(ctx context.Context, query string, compact bool) ([]ContentBlock, bool) {
 	vector, err := b.embedder.Generate(ctx, query)
 	if err != nil {
 		return TextBlock("embedding failed (is the embedding backend reachable?): " + err.Error()), true
@@ -113,39 +158,82 @@ func (b *brain) contextTopic(ctx context.Context, query string) ([]ContentBlock,
 		discussions []store.Discussion
 		notes       []store.Note
 	)
+	var decErr, rejErr, taskErr, discErr, noteErr error
 	var wg sync.WaitGroup
 	wg.Add(5)
-	go func() { defer wg.Done(); decisions, _ = b.store.SearchDecisions(ctx, vector, limit, false) }()
-	go func() { defer wg.Done(); rejections, _ = b.store.SearchRejections(ctx, vector, limit) }()
-	go func() { defer wg.Done(); tasks, _ = b.store.SearchTasks(ctx, vector, limit, false) }()
-	go func() { defer wg.Done(); discussions, _ = b.store.SearchDiscussions(ctx, vector, limit, false) }()
-	go func() { defer wg.Done(); notes, _ = b.store.SearchNotes(ctx, vector, limit) }()
+	go func() {
+		defer wg.Done()
+		decisions, decErr = fallbackSearch(b.ggDir, "decisions", query,
+			func() ([]store.Decision, error) { return b.store.SearchDecisions(ctx, vector, limit, false) },
+			decisionFromEntry)
+	}()
+	go func() {
+		defer wg.Done()
+		rejections, rejErr = fallbackSearch(b.ggDir, "rejections", query,
+			func() ([]store.Rejection, error) { return b.store.SearchRejections(ctx, vector, limit) },
+			rejectionFromEntry)
+	}()
+	go func() {
+		defer wg.Done()
+		tasks, taskErr = fallbackSearch(b.ggDir, "tasks", query,
+			func() ([]store.Task, error) { return b.store.SearchTasks(ctx, vector, limit, false) },
+			taskFromEntry)
+	}()
+	go func() {
+		defer wg.Done()
+		discussions, discErr = fallbackSearch(b.ggDir, "discussions", query,
+			func() ([]store.Discussion, error) { return b.store.SearchDiscussions(ctx, vector, limit, false) },
+			discussionFromEntry)
+	}()
+	go func() {
+		defer wg.Done()
+		notes, noteErr = fallbackSearch(b.ggDir, "notes", query,
+			func() ([]store.Note, error) { return b.store.SearchNotes(ctx, vector, limit) },
+			noteFromEntry)
+	}()
 	wg.Wait()
-	return jsonContent(map[string]any{
+	if msg := firstSearchError(decErr, rejErr, taskErr, discErr, noteErr); msg != "" {
+		return TextBlock("gg_context: " + msg), true
+	}
+	payload := map[string]any{
 		"query":       query,
 		"decisions":   decisions,
 		"rejections":  rejections,
 		"tasks":       tasks,
 		"discussions": discussions,
 		"notes":       notes,
-	}), false
+	}
+	if compact {
+		payload["counts"] = map[string]int{
+			"decisions": len(decisions), "rejections": len(rejections),
+			"tasks": len(tasks), "discussions": len(discussions), "notes": len(notes),
+		}
+	}
+	return jsonContent(payload), false
 }
 
 // contextProject returns a project onboarding overview: recent decisions,
 // rejections, active tasks, open bugs, and the canon.
-func (b *brain) contextProject(ctx context.Context) ([]ContentBlock, bool) {
+func (b *brain) contextProject(ctx context.Context, compact bool) ([]ContentBlock, bool) {
 	decisions, _ := b.store.ListDecisions(ctx, defaultLimit, false)
 	rejections, _ := b.store.ListRejections(ctx, defaultLimit)
 	tasks, _ := b.store.ListTasks(ctx, "pending")
 	bugs, _ := b.store.ListBugs(ctx, "open")
 	canon, _ := b.store.ListCanon()
-	return jsonContent(map[string]any{
+	payload := map[string]any{
 		"decisions":  decisions,
 		"rejections": rejections,
 		"tasks":      tasks,
 		"bugs":       bugs,
 		"canon":      canon,
-	}), false
+	}
+	if compact {
+		payload["counts"] = map[string]int{
+			"decisions": len(decisions), "rejections": len(rejections),
+			"tasks": len(tasks), "bugs": len(bugs), "canon": len(canon),
+		}
+	}
+	return jsonContent(payload), false
 }
 
 // ── gg_impact ─────────────────────────────────────────────────────────────
@@ -207,12 +295,31 @@ func (b *brain) toolImpact(ctx context.Context, args map[string]any) ([]ContentB
 			tasks      []store.Task
 			rejections []store.Rejection
 		)
+		var decErr, taskErr, rejErr error
 		var wg sync.WaitGroup
 		wg.Add(3)
-		go func() { defer wg.Done(); decisions, _ = b.store.SearchDecisions(ctx, vector, defaultLimit, true) }()
-		go func() { defer wg.Done(); tasks, _ = b.store.SearchTasks(ctx, vector, defaultLimit, true) }()
-		go func() { defer wg.Done(); rejections, _ = b.store.SearchRejections(ctx, vector, defaultLimit) }()
+		go func() {
+			defer wg.Done()
+			decisions, decErr = fallbackSearch(b.ggDir, "decisions", searchQuery,
+				func() ([]store.Decision, error) { return b.store.SearchDecisions(ctx, vector, defaultLimit, true) },
+				decisionFromEntry)
+		}()
+		go func() {
+			defer wg.Done()
+			tasks, taskErr = fallbackSearch(b.ggDir, "tasks", searchQuery,
+				func() ([]store.Task, error) { return b.store.SearchTasks(ctx, vector, defaultLimit, true) },
+				taskFromEntry)
+		}()
+		go func() {
+			defer wg.Done()
+			rejections, rejErr = fallbackSearch(b.ggDir, "rejections", searchQuery,
+				func() ([]store.Rejection, error) { return b.store.SearchRejections(ctx, vector, defaultLimit) },
+				rejectionFromEntry)
+		}()
 		wg.Wait()
+		if msg := firstSearchError(decErr, taskErr, rejErr); msg != "" {
+			return TextBlock("gg_impact: " + msg), true
+		}
 		result["decisions"] = decisions
 		result["tasks"] = tasks
 		result["rejections"] = rejections
