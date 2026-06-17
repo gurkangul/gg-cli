@@ -14,6 +14,7 @@ import (
 // vector collection is not materialized yet, but the decision is still durably
 // written to brain/decisions.jsonl and the command exits 0.
 func TestDecide_FreshProject_WritesJSONL(t *testing.T) {
+	requireOllamaOrSkip(t)
 	ggDir := setupGGDir(t)
 	_, _, err := execCmd(t, "decide", "use JWT for auth")
 	if err != nil {

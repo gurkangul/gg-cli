@@ -10,6 +10,7 @@ import (
 )
 
 func TestAC1AC2AC3AC4AC5NativeWorkflowMemorySyncSmoke(t *testing.T) {
+	requireOllamaOrSkip(t)
 	ggDir := setupGGDir(t)
 	t.Setenv("GG_AGENT", "native-smoke")
 	t.Setenv("GG_ROLE", "implementer")

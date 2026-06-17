@@ -39,6 +39,7 @@ func TestContext_StoreDown(t *testing.T) {
 // printContextBundle code paths.
 
 func TestSearch_CacheHit(t *testing.T) {
+	requireOllamaOrSkip(t)
 	setupGGDir(t)
 	rtDir := testRuntimeDir(t)
 
@@ -76,6 +77,7 @@ func TestSearch_CacheHit(t *testing.T) {
 }
 
 func TestSearch_CacheHit_Empty(t *testing.T) {
+	requireOllamaOrSkip(t)
 	setupGGDir(t)
 	rtDir := testRuntimeDir(t)
 
@@ -92,6 +94,7 @@ func TestSearch_CacheHit_Empty(t *testing.T) {
 }
 
 func TestContext_CacheHit(t *testing.T) {
+	requireOllamaOrSkip(t)
 	setupGGDir(t)
 	rtDir := testRuntimeDir(t)
 
@@ -155,6 +158,7 @@ func TestContext_CacheHit(t *testing.T) {
 }
 
 func TestContext_CacheHit_FullTranscript(t *testing.T) {
+	requireOllamaOrSkip(t)
 	setupGGDir(t)
 	rtDir := testRuntimeDir(t)
 
@@ -185,6 +189,7 @@ func TestContext_CacheHit_FullTranscript(t *testing.T) {
 }
 
 func TestContext_CacheHit_LongDetail(t *testing.T) {
+	requireOllamaOrSkip(t)
 	setupGGDir(t)
 	rtDir := testRuntimeDir(t)
 
@@ -216,6 +221,7 @@ func TestContext_CacheHit_LongDetail(t *testing.T) {
 // The cmd-level render path writes to os.Stdout directly (not captured by
 // execCmd), so this test validates the scan contract at the brain layer.
 func TestSearch_OfflineFallback_ScansTasksAndBugs(t *testing.T) {
+	requireOllamaOrSkip(t)
 	ggDir := setupGGDir(t)
 
 	// Seed task and bug entries in JSONL.
