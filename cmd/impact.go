@@ -169,6 +169,10 @@ func runImpact(cmd *cobra.Command, args []string) error {
 		fresh := graphStatus.freshnessContract()
 		result.CodeGraph = &fresh
 		result.Warnings = append(result.Warnings, impactGraphFreshnessWarningsForStatus(graphStatus, relPath)...)
+		// TASK-504: also emit the terse one-line typed notice to stderr so the
+		// agent never silently trusts an empty/never-built graph even when it is
+		// piping the JSON payload on stdout.
+		emitGraphStatusNotice(cmd.OutOrStderr(), graphStatus)
 	} else {
 		result.Warnings = append(result.Warnings, "code graph freshness unknown: config unavailable")
 	}

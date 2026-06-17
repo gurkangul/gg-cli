@@ -33,10 +33,10 @@ See also: gg status (project overview), gg task get (task details)`,
 }
 
 var (
-	searchLimit              uint64
-	searchCompact            bool
-	searchIncludeLinked      bool
-	searchIncludeSuperseded  bool
+	searchLimit             uint64
+	searchCompact           bool
+	searchIncludeLinked     bool
+	searchIncludeSuperseded bool
 )
 
 func init() {
@@ -76,6 +76,12 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		// AC-4: fall back to JSONL scan first, then LKG cache.
 		return serveSearchFromJSONL(cmd, query)
 	}
+
+	// TASK-504: surface a one-line stderr notice when the code graph is stale or
+	// empty so an agent searching for context knows the graph-backed signals
+	// (impact, dependents) may be out of date. Best-effort and bounded — never
+	// blocks or fails search; stderr keeps the stdout payload clean.
+	emitSearchGraphNotice(cmd)
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
@@ -161,6 +167,23 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	return printSearchResults(cmd, query, decisions, rejections, tasks, bugs, notes, "", time.Time{})
+}
+
+// emitSearchGraphNotice prints the one-line stale/empty code-graph notice to
+// stderr (TASK-504). It is fully best-effort: any config/root failure or a
+// fresh/not-applicable graph is silent, and the bounded status collection
+// cannot stall search.
+func emitSearchGraphNotice(cmd *cobra.Command) {
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	root, err := config.FindRoot()
+	if err != nil {
+		return
+	}
+	status := codeGraphStatusWithTimeout(root, root+"/"+config.DirName, cfg)
+	emitGraphStatusNotice(cmd.OutOrStderr(), status)
 }
 
 // serveSearchFromJSONL performs a text-scan of the brain JSONL files as a

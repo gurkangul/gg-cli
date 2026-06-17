@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/gurkangul/gg-cli/internal/sqliteretry"
 	_ "modernc.org/sqlite" // registers the CGO-free "sqlite" driver
 )
 
@@ -114,10 +115,13 @@ func (s *sqliteStore) CreateCollection(ctx context.Context, req *CreateCollectio
 	dim := collectionDim(req)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO collections(name, dim) VALUES(?, ?)
-		 ON CONFLICT(name) DO UPDATE SET dim=excluded.dim`,
-		req.CollectionName, dim)
+	err := sqliteretry.Do(ctx, func() error {
+		_, e := s.db.ExecContext(ctx,
+			`INSERT INTO collections(name, dim) VALUES(?, ?)
+			 ON CONFLICT(name) DO UPDATE SET dim=excluded.dim`,
+			req.CollectionName, dim)
+		return e
+	})
 	if err != nil {
 		return fmt.Errorf("create collection %s: %w", req.CollectionName, err)
 	}
@@ -139,6 +143,10 @@ func collectionDim(req *CreateCollection) int64 {
 func (s *sqliteStore) DeleteCollection(ctx context.Context, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return sqliteretry.Do(ctx, func() error { return s.deleteCollectionTx(ctx, name) })
+}
+
+func (s *sqliteStore) deleteCollectionTx(ctx context.Context, name string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

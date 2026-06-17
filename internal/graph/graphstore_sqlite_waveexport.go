@@ -50,13 +50,13 @@ func (s *sqliteStore) upsertWave(ctx context.Context, params map[string]any) (*G
 		if encErr != nil {
 			return nil, encErr
 		}
-		if _, err := s.db.ExecContext(ctx,
+		if _, err := s.execWrite(ctx,
 			`UPDATE nodes SET props = ? WHERE internal_id = ?`, encMerged, existingID); err != nil {
 			return nil, fmt.Errorf("upsert wave %s: %w", waveID, err)
 		}
 		return emptyResult(), nil
 	}
-	if _, err := s.db.ExecContext(ctx,
+	if _, err := s.execWrite(ctx,
 		`INSERT INTO nodes(label, project_id, props) VALUES(?, ?, ?)`, LabelWave, pid, encoded); err != nil {
 		return nil, fmt.Errorf("insert wave %s: %w", waveID, err)
 	}

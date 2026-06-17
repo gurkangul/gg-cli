@@ -81,7 +81,7 @@ func (s *sqliteStore) createNode(ctx context.Context, cypher string, params map[
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	res, err := s.db.ExecContext(ctx,
+	res, err := s.execWrite(ctx,
 		`INSERT INTO nodes(label, project_id, props) VALUES(?, ?, ?)`,
 		label, pid, encoded)
 	if err != nil {
@@ -124,13 +124,13 @@ func (s *sqliteStore) mergeNode(ctx context.Context, cypher string, params map[s
 		return nil, err
 	}
 	if found {
-		if _, err := s.db.ExecContext(ctx,
+		if _, err := s.execWrite(ctx,
 			`UPDATE nodes SET props = ? WHERE internal_id = ?`, encoded, existingID); err != nil {
 			return nil, fmt.Errorf("merge node %s update: %w", label, err)
 		}
 		return idResult(existingID), nil
 	}
-	res, err := s.db.ExecContext(ctx,
+	res, err := s.execWrite(ctx,
 		`INSERT INTO nodes(label, project_id, props) VALUES(?, ?, ?)`, label, pid, encoded)
 	if err != nil {
 		return nil, fmt.Errorf("merge node %s insert: %w", label, err)
@@ -182,7 +182,7 @@ func (s *sqliteStore) deleteNodeByID(ctx context.Context, params map[string]any)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.db.ExecContext(ctx,
+	if _, err := s.execWrite(ctx,
 		`DELETE FROM nodes WHERE internal_id = ? AND project_id = ?`, id, pidOf(params)); err != nil {
 		return nil, fmt.Errorf("delete node by id: %w", err)
 	}
@@ -206,7 +206,7 @@ func (s *sqliteStore) deleteNodesByProps(ctx context.Context, cypher string, par
 		q += ` AND json_extract(props, '$.' || ?) = ?`
 		args = append(args, k, v)
 	}
-	if _, err := s.db.ExecContext(ctx, q, args...); err != nil {
+	if _, err := s.execWrite(ctx, q, args...); err != nil {
 		return nil, fmt.Errorf("delete %s by props: %w", label, err)
 	}
 	return emptyResult(), nil
@@ -216,12 +216,12 @@ func (s *sqliteStore) deleteNodesByProps(ctx context.Context, cypher string, par
 func (s *sqliteStore) sweepProject(ctx context.Context, params map[string]any) (*GraphResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM nodes WHERE project_id = ?`, pidOf(params)); err != nil {
+	if _, err := s.execWrite(ctx, `DELETE FROM nodes WHERE project_id = ?`, pidOf(params)); err != nil {
 		return nil, fmt.Errorf("sweep project: %w", err)
 	}
 	// Edges are removed by ON DELETE CASCADE; also clear any project-scoped
 	// edges whose endpoints were already gone (defensive — keeps stats exact).
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM edges WHERE project_id = ?`, pidOf(params)); err != nil {
+	if _, err := s.execWrite(ctx, `DELETE FROM edges WHERE project_id = ?`, pidOf(params)); err != nil {
 		return nil, fmt.Errorf("sweep project edges: %w", err)
 	}
 	return emptyResult(), nil
@@ -232,7 +232,7 @@ func (s *sqliteStore) sweepLang(ctx context.Context, params map[string]any) (*Gr
 	lang, _ := params["lang"].(string)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.db.ExecContext(ctx,
+	if _, err := s.execWrite(ctx,
 		`DELETE FROM nodes WHERE project_id = ? AND json_extract(props, '$.lang') = ?`,
 		pidOf(params), lang); err != nil {
 		return nil, fmt.Errorf("sweep project lang %s: %w", lang, err)

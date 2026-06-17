@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/gurkangul/gg-cli/internal/sqliteretry"
 )
 
 // pointIDKey renders a PointId to the stable string key used as the SQLite
@@ -55,9 +57,19 @@ func (s *sqliteStore) Upsert(ctx context.Context, req *UpsertPoints) (*UpdateRes
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Rebuild the whole transaction per attempt so a transient SQLITE_BUSY from a
+	// parallel agent's writer retries cleanly with backoff (TASK-503) instead of
+	// hard-failing once busy_timeout is exhausted.
+	if err := sqliteretry.Do(ctx, func() error { return s.upsertTx(ctx, req) }); err != nil {
+		return nil, err
+	}
+	return &UpdateResult{}, nil
+}
+
+func (s *sqliteStore) upsertTx(ctx context.Context, req *UpsertPoints) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -65,28 +77,25 @@ func (s *sqliteStore) Upsert(ctx context.Context, req *UpsertPoints) (*UpdateRes
 		`INSERT INTO points(collection, id, vector, payload) VALUES(?, ?, ?, ?)
 		 ON CONFLICT(collection, id) DO UPDATE SET vector=excluded.vector, payload=excluded.payload`)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = stmt.Close() }()
 
 	for _, p := range req.GetPoints() {
 		key := pointIDKey(p.GetId())
 		if key == "" {
-			return nil, fmt.Errorf("upsert into %s: point has no id", req.CollectionName)
+			return fmt.Errorf("upsert into %s: point has no id", req.CollectionName)
 		}
 		payloadBlob, err := encodePayload(p.GetPayload())
 		if err != nil {
-			return nil, fmt.Errorf("upsert into %s: %w", req.CollectionName, err)
+			return fmt.Errorf("upsert into %s: %w", req.CollectionName, err)
 		}
 		vecBlob := encodeVector(denseVector(p.GetVectors()))
 		if _, err := stmt.ExecContext(ctx, req.CollectionName, key, vecBlob, payloadBlob); err != nil {
-			return nil, fmt.Errorf("upsert into %s: %w", req.CollectionName, err)
+			return fmt.Errorf("upsert into %s: %w", req.CollectionName, err)
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return &UpdateResult{}, nil
+	return tx.Commit()
 }
 
 // SetPayload merges new payload keys into the existing payload of the selected
@@ -99,15 +108,22 @@ func (s *sqliteStore) SetPayload(ctx context.Context, req *SetPayloadPoints) (*U
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := sqliteretry.Do(ctx, func() error { return s.setPayloadTx(ctx, req) }); err != nil {
+		return nil, err
+	}
+	return &UpdateResult{}, nil
+}
+
+func (s *sqliteStore) setPayloadTx(ctx context.Context, req *SetPayloadPoints) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	keys, err := s.selectorKeys(ctx, tx, req.CollectionName, req.GetPointsSelector())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, key := range keys {
 		var blob []byte
@@ -116,27 +132,24 @@ func (s *sqliteStore) SetPayload(ctx context.Context, req *SetPayloadPoints) (*U
 			if err == sql.ErrNoRows {
 				continue
 			}
-			return nil, err
+			return err
 		}
 		existing, err := decodePayload(blob)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for k, v := range req.GetPayload() {
 			existing[k] = v
 		}
 		merged, err := encodePayload(existing)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE points SET payload=? WHERE collection=? AND id=?`, merged, req.CollectionName, key); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return &UpdateResult{}, nil
+	return tx.Commit()
 }
 
 func (s *sqliteStore) Delete(ctx context.Context, req *DeletePoints) (*UpdateResult, error) {
@@ -145,25 +158,29 @@ func (s *sqliteStore) Delete(ctx context.Context, req *DeletePoints) (*UpdateRes
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := sqliteretry.Do(ctx, func() error { return s.deleteTx(ctx, req) }); err != nil {
+		return nil, err
+	}
+	return &UpdateResult{}, nil
+}
+
+func (s *sqliteStore) deleteTx(ctx context.Context, req *DeletePoints) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	keys, err := s.selectorKeys(ctx, tx, req.CollectionName, req.GetPoints())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, key := range keys {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM points WHERE collection=? AND id=?`, req.CollectionName, key); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return &UpdateResult{}, nil
+	return tx.Commit()
 }
 
 // selectorKeys resolves a PointsSelector to the set of SQLite primary keys it

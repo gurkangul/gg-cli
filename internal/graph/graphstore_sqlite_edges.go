@@ -171,7 +171,7 @@ func (s *sqliteStore) writeEdge(ctx context.Context, srcID, dstID int64, edgeTyp
 			if encErr != nil {
 				return nil, encErr
 			}
-			if _, err := s.db.ExecContext(ctx,
+			if _, err := s.execWrite(ctx,
 				`UPDATE edges SET props = ? WHERE internal_id = ?`, encoded, existingID); err != nil {
 				return nil, fmt.Errorf("merge edge %s: %w", edgeType, err)
 			}
@@ -182,7 +182,7 @@ func (s *sqliteStore) writeEdge(ctx context.Context, srcID, dstID int64, edgeTyp
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.db.ExecContext(ctx,
+	if _, err := s.execWrite(ctx,
 		`INSERT INTO edges(src, dst, type, project_id, props) VALUES(?, ?, ?, ?, ?)`,
 		srcID, dstID, edgeType, pid, encoded); err != nil {
 		return nil, fmt.Errorf("create edge %s: %w", edgeType, err)
@@ -253,7 +253,7 @@ func (s *sqliteStore) deleteAffectsEdges(ctx context.Context, params map[string]
 	if !ok {
 		return emptyResult(), nil
 	}
-	if _, err := s.db.ExecContext(ctx,
+	if _, err := s.execWrite(ctx,
 		`DELETE FROM edges WHERE project_id = ? AND src = ? AND type = ?`,
 		pid, srcID, RelAffects); err != nil {
 		return nil, fmt.Errorf("delete AFFECTS edges: %w", err)

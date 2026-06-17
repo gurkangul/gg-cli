@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/gurkangul/gg-cli/internal/sqliteretry"
 	_ "modernc.org/sqlite" // registers the CGO-free "sqlite" driver
 )
 
@@ -110,4 +111,24 @@ func (s *sqliteStore) HealthCheck(ctx context.Context) error {
 
 func (s *sqliteStore) Close(ctx context.Context) error {
 	return s.db.Close()
+}
+
+// execWrite runs a write statement with SQLITE_BUSY/SQLITE_LOCKED retry+backoff
+// (TASK-503). All graph writes are single, idempotent INSERT/UPDATE/DELETE
+// statements (the package serializes its own writers with s.mu and never
+// interleaves a multi-statement write outside a handler), so re-running on a
+// transient lock from a parallel agent's process is safe. busy_timeout already
+// waits on a held lock; this rides out the case where a writer is starved past
+// that timeout instead of surfacing a hard "database is locked".
+func (s *sqliteStore) execWrite(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	var res sql.Result
+	err := sqliteretry.Do(ctx, func() error {
+		r, e := s.db.ExecContext(ctx, query, args...)
+		if e != nil {
+			return e
+		}
+		res = r
+		return nil
+	})
+	return res, err
 }
