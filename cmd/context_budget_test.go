@@ -35,7 +35,7 @@ func makeBundle() contextBundle {
 
 func TestBuildTieredItems_TierAssignment(t *testing.T) {
 	bundle := makeBundle()
-	items := buildTieredItems(bundle)
+	items := buildTieredItems("", bundle)
 
 	// Count tiers
 	tierCount := make(map[int]int)
@@ -63,7 +63,7 @@ func TestBuildTieredItems_TierAssignment(t *testing.T) {
 
 func TestBuildTieredItems_SortOrder(t *testing.T) {
 	bundle := makeBundle()
-	items := buildTieredItems(bundle)
+	items := buildTieredItems("", bundle)
 
 	// Verify tiers are non-decreasing (sorted P1 first)
 	for i := 1; i < len(items); i++ {
@@ -152,7 +152,7 @@ func TestApproxTokens(t *testing.T) {
 
 func TestBuildTieredItems_LineHasTierPrefix(t *testing.T) {
 	bundle := makeBundle()
-	items := buildTieredItems(bundle)
+	items := buildTieredItems("", bundle)
 	for _, item := range items {
 		prefix := "[P" + string(rune('0'+item.tier)) + "]"
 		if !strings.HasPrefix(item.line, prefix) {
