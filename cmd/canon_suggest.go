@@ -321,20 +321,36 @@ func runCanonApply(cmd *cobra.Command, _ []string) error {
 	defer d.Close()
 
 	author := resolveAuthor(cmd)
-	var applied, cleared int
-	w := cmd.OutOrStdout()
+
+	// Validate EVERY operation before applying ANY — canon.jsonl is append-only
+	// last-write-wins, so a batch that wrote op[0] then errored on a later invalid
+	// op[N] would leave a partial apply. Pre-validate so an invalid op aborts the
+	// whole batch with zero writes.
 	for i, op := range contract.Operations {
-		area := strings.TrimSpace(op.Area)
-		if area == "" {
+		if strings.TrimSpace(op.Area) == "" {
 			return fmt.Errorf("operations[%d]: area is required", i)
 		}
 		action := strings.ToLower(strings.TrimSpace(op.Action))
 		switch action {
 		case "add", "edit":
-			text := strings.TrimSpace(op.Text)
-			if text == "" {
-				return fmt.Errorf("operations[%d] (%s %s): text is required", i, action, area)
+			if strings.TrimSpace(op.Text) == "" {
+				return fmt.Errorf("operations[%d] (%s %s): text is required", i, action, strings.TrimSpace(op.Area))
 			}
+		case "delete":
+			// no text required
+		default:
+			return fmt.Errorf("operations[%d]: unknown action %q (want add|edit|delete)", i, op.Action)
+		}
+	}
+
+	var applied, cleared int
+	w := cmd.OutOrStdout()
+	for i, op := range contract.Operations {
+		area := strings.TrimSpace(op.Area)
+		action := strings.ToLower(strings.TrimSpace(op.Action))
+		switch action {
+		case "add", "edit":
+			text := strings.TrimSpace(op.Text)
 			if canonApplyDryRun {
 				fmt.Fprintf(w, "would %-6s %s: %s\n", action, area, truncSuggest(text))
 				continue
@@ -353,8 +369,6 @@ func runCanonApply(cmd *cobra.Command, _ []string) error {
 				return fmt.Errorf("operations[%d] (delete %s): %w", i, area, err)
 			}
 			cleared++
-		default:
-			return fmt.Errorf("operations[%d]: unknown action %q (want add|edit|delete)", i, op.Action)
 		}
 	}
 	if canonApplyDryRun {

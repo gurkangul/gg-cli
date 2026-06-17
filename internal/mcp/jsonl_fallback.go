@@ -43,10 +43,12 @@ func fallbackSearch[T any](
 	// Un-reembedded collection — fall back to the JSONL lexical scan.
 	matches, scanErr := brainpkg.SearchByTextScored(ggDir, kind, query)
 	if scanErr != nil {
-		// No JSONL file (pre-JSONL brain) → treat as genuinely empty, not an
-		// error. The CLI falls through to its LKG cache here; the MCP server has
-		// no cache layer, so an empty bundle is the correct, non-erroring answer.
-		return nil, nil
+		// A MISSING JSONL file is not an error — SearchByTextScored returns an
+		// empty result for that, which flows through the normal empty path. So
+		// reaching here means a REAL read/scan failure (corrupt file, bad perms):
+		// surface it, because a silent-empty bundle would re-introduce the exact
+		// false-negative this fallback exists to prevent.
+		return nil, scanErr
 	}
 	res := make([]T, 0, len(matches))
 	for _, m := range matches {
