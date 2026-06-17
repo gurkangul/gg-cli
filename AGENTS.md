@@ -90,7 +90,12 @@ verified?* No answer = claim is false.
 Each rule is recorded via `gg record` (tags `process`, `discipline`) so it
 surfaces in `gg search --compact "process discipline"`.
 
-## ORIENTATION (start of session)
+## ORIENTATION (start of session) — MANDATORY, do this FIRST
+
+**Before reading or changing anything in this project, you MUST orient yourself
+with gg.** Run the block below as your first action in every fresh session (and
+after any `/clear`). Skipping it means working blind to prior decisions,
+rejections, and open work — which this project treats as an error, not a shortcut.
 
 Set `GG_AGENT` to the runtime *actually* executing gg (don't copy another
 runtime's example): `gsd-gg-cli-1`, `codex-1`, `claude-planner`, `cursor-1`.
@@ -283,10 +288,10 @@ Durable outputs include decisions, rejected approaches, shared work items,
 bugs/root causes, blockers, handoffs, evidence summaries, and artifact references.
 Evidence summaries should stay compact: commands run, live smoke result, impacted files, known gaps, and artifact paths.
 
-Recommended orientation:
+Mandatory orientation (run before your first action):
 
 1. Read this entire AGENTS.md file.
-2. Run `gg session-start --agent <agent_id> --role <role>` when available.
+2. Run `gg session-start --agent <agent_id> --role <role>` as your FIRST action (mandatory when a shell is available).
 3. Run `gg search --compact <topic>` before changing important behavior.
 4. Record durable decisions/rejections/evidence with `gg record`, `gg task`, `gg bug`, or `gg tell`.
 
