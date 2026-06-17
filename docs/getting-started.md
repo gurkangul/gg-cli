@@ -12,8 +12,7 @@
    in `.gg/config.yaml` and export `VOYAGE_API_KEY`).
 
    **Docker is NOT required.** The vector store (`.gg/vectorstore.db`) and graph
-   store (`.gg/graph.db`) are embedded SQLite by default. Docker is only needed if
-   you opt into the Qdrant/Memgraph server backends.
+   store (`.gg/graph.db`) are embedded SQLite — there is no server backend to run.
 
 2. **Go** — used to install the CLI:
    ```sh

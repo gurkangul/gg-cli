@@ -26,34 +26,34 @@ func expectedComposePath(t *testing.T) string {
 func TestServiceRecoveryHint(t *testing.T) {
 	// Embedded local stores: hint points at disk/permissions + gg doctor, never a
 	// "docker compose" command (there is no server to bring up).
-	t.Run("qdrant", func(t *testing.T) {
-		got := serviceRecoveryHint(svcQdrant)
+	t.Run("vector store", func(t *testing.T) {
+		got := serviceRecoveryHint(svcVectorStore)
 		if !strings.Contains(got, "embedded vector store at .gg/vectorstore.db") {
-			t.Fatalf("qdrant hint missing embedded-store message:\n%s", got)
+			t.Fatalf("vector store hint missing embedded-store message:\n%s", got)
 		}
 		if !strings.Contains(got, "gg doctor") {
-			t.Fatalf("qdrant hint missing 'gg doctor':\n%s", got)
+			t.Fatalf("vector store hint missing 'gg doctor':\n%s", got)
 		}
 		if strings.Contains(got, "docker compose") {
 			t.Fatalf("embedded vector store hint must not suggest docker compose:\n%s", got)
 		}
 	})
 
-	t.Run("qdrant-upper-case-and-padded", func(t *testing.T) {
+	t.Run("vector-store-upper-case-and-padded", func(t *testing.T) {
 		// Case-insensitive / padded input still resolves to the embedded-store hint.
-		got := serviceRecoveryHint("  QDRANT ")
+		got := serviceRecoveryHint("  VECTOR STORE ")
 		if !strings.Contains(got, "embedded vector store at .gg/vectorstore.db") {
-			t.Fatalf("padded/upper qdrant hint did not resolve:\n%s", got)
+			t.Fatalf("padded/upper vector store hint did not resolve:\n%s", got)
 		}
 	})
 
-	t.Run("memgraph", func(t *testing.T) {
-		got := serviceRecoveryHint(svcMemgraph)
+	t.Run("code graph", func(t *testing.T) {
+		got := serviceRecoveryHint(svcCodeGraph)
 		if !strings.Contains(got, "embedded code graph at .gg/graph.db") {
-			t.Fatalf("memgraph hint missing embedded-graph message:\n%s", got)
+			t.Fatalf("code graph hint missing embedded-graph message:\n%s", got)
 		}
 		if !strings.Contains(got, "gg doctor") {
-			t.Fatalf("memgraph hint missing 'gg doctor':\n%s", got)
+			t.Fatalf("code graph hint missing 'gg doctor':\n%s", got)
 		}
 		if strings.Contains(got, "docker compose") {
 			t.Fatalf("embedded code graph hint must not suggest docker compose:\n%s", got)
@@ -87,7 +87,7 @@ func TestServiceRecoveryHintUnknownService(t *testing.T) {
 }
 
 func TestWithServiceHint(t *testing.T) {
-	got := withServiceHint("Vector store unavailable — writes blocked", svcQdrant)
+	got := withServiceHint("Vector store unavailable — writes blocked", svcVectorStore)
 
 	if !strings.HasPrefix(got, "Vector store unavailable — writes blocked\n") {
 		t.Fatalf("withServiceHint must preserve the raw message first:\n%s", got)

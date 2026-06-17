@@ -39,10 +39,10 @@ type codeGraphStatus struct {
 	HeadSHA                string             `json:"head_sha,omitempty"`
 	IndexedAt              string             `json:"indexed_at,omitempty"`
 	WorkingTreeFingerprint string             `json:"working_tree_fingerprint,omitempty"`
-	MemgraphConfigured     bool               `json:"memgraph_configured"`
-	MemgraphAvailable      bool               `json:"memgraph_available"`
+	GraphConfigured        bool               `json:"graph_configured"`
+	GraphAvailable         bool               `json:"graph_available"`
 	GraphStatsAvailable    bool               `json:"graph_stats_available"`
-	MemgraphDetail         string             `json:"memgraph_detail,omitempty"`
+	GraphDetail            string             `json:"graph_detail,omitempty"`
 	GraphEmpty             bool               `json:"graph_empty"`
 	Stats                  graph.Stats        `json:"stats"`
 	IndexedLanguages       []string           `json:"indexed_languages,omitempty"`
@@ -340,27 +340,27 @@ func (s *codeGraphStatus) applyChangeSummary(summary codeGraphChangeSummary) {
 
 func (s *codeGraphStatus) fillGraphStats(ctx context.Context, cfg *config.Config) {
 	if cfg == nil {
-		s.MemgraphDetail = "not checked"
+		s.GraphDetail = "not checked"
 		return
 	}
-	s.MemgraphConfigured = true
+	s.GraphConfigured = true
 	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
-		s.MemgraphDetail = "client init: " + err.Error()
+		s.GraphDetail = "client init: " + err.Error()
 		return
 	}
 	defer func() { _ = gc.Close(ctx) }()
 
 	if err := gc.HealthCheck(ctx); err != nil {
-		s.MemgraphDetail = "unavailable: " + err.Error()
+		s.GraphDetail = "unavailable: " + err.Error()
 		return
 	}
-	s.MemgraphAvailable = true
-	s.MemgraphDetail = "reachable"
+	s.GraphAvailable = true
+	s.GraphDetail = "reachable"
 
 	stats, err := gc.Stats(ctx)
 	if err != nil {
-		s.MemgraphDetail = "stats unavailable: " + err.Error()
+		s.GraphDetail = "stats unavailable: " + err.Error()
 		return
 	}
 	s.Stats = stats
@@ -382,7 +382,7 @@ func (s *codeGraphStatus) finalize() {
 			s.Detail += "; " + msg
 		}
 	}
-	if s.MemgraphAvailable && s.GraphEmpty {
+	if s.GraphAvailable && s.GraphEmpty {
 		s.Status = "missing"
 		if fullCommand := codeGraphFullIndexSuggestionForStatus(*s); fullCommand != "" {
 			s.SuggestedCommand = fullCommand
@@ -397,33 +397,33 @@ func (s *codeGraphStatus) finalize() {
 			s.Detail += "; " + msg
 		}
 	}
-	if s.Status == "ready" && s.MemgraphAvailable && !s.GraphStatsAvailable {
+	if s.Status == "ready" && s.GraphAvailable && !s.GraphStatsAvailable {
 		s.Status = "missing"
 		if fullCommand := codeGraphFullIndexSuggestionForStatus(*s); fullCommand != "" {
 			s.SuggestedCommand = fullCommand
 		}
 		s.Detail = "code graph stats unavailable"
-		if s.MemgraphDetail != "" {
-			s.Detail += ": " + s.MemgraphDetail
+		if s.GraphDetail != "" {
+			s.Detail += ": " + s.GraphDetail
 		}
 		if s.SuggestedCommand != "" {
 			s.Detail += " - run gg doctor, then " + s.SuggestedCommand
 		}
 	}
-	if s.Status == "ready" && s.MemgraphDetail != "not checked" && !s.MemgraphAvailable {
+	if s.Status == "ready" && s.GraphDetail != "not checked" && !s.GraphAvailable {
 		s.Status = "missing"
 		if fullCommand := codeGraphFullIndexSuggestionForStatus(*s); fullCommand != "" {
 			s.SuggestedCommand = fullCommand
 		}
 		s.Detail = "code graph unavailable"
-		if s.MemgraphDetail != "" {
-			s.Detail += ": " + s.MemgraphDetail
+		if s.GraphDetail != "" {
+			s.Detail += ": " + s.GraphDetail
 		}
 		if s.SuggestedCommand != "" {
 			s.Detail += " - check the code graph (.gg/graph.db), then run " + s.SuggestedCommand
 		}
 	}
-	if !s.MemgraphAvailable && s.Detail == "" {
+	if !s.GraphAvailable && s.Detail == "" {
 		s.Detail = "code graph unavailable"
 	}
 }
@@ -476,9 +476,9 @@ func renderCodeGraphStatus(w io.Writer, s codeGraphStatus) {
 	if fresh.Status != codeGraphFreshnessNotApplicable {
 		fmt.Fprintf(w, "  Background refresh: %t\n", fresh.BackgroundRefresh)
 	}
-	fmt.Fprintf(w, "  Code graph: %s", boolWord(s.MemgraphAvailable, "available", "unavailable"))
-	if s.MemgraphDetail != "" {
-		fmt.Fprintf(w, " (%s)", s.MemgraphDetail)
+	fmt.Fprintf(w, "  Code graph: %s", boolWord(s.GraphAvailable, "available", "unavailable"))
+	if s.GraphDetail != "" {
+		fmt.Fprintf(w, " (%s)", s.GraphDetail)
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "  Counts: files=%d symbols=%d edges=%d\n", s.Stats.Files, s.Stats.Symbols, s.Stats.Edges)

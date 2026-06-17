@@ -141,7 +141,7 @@ dropped so a failed broadcast never masks the underlying verify failure.
 | `1` | `ExitGeneral` | General error. |
 | `2` | `ExitNotFound` | Resource not found. |
 | `3` | `ExitConfig` | Config / init error (run `gg init`). |
-| `4` | `ExitService` | Service unreachable (Qdrant / Ollama / Memgraph). |
+| `4` | `ExitService` | Service unreachable (embedded store/graph open failure or the Ollama embedding endpoint). |
 | `6` | `ExitStoreDown` | Store down — writes blocked, reads served from cache. |
 | `7` | `ExitVerifyFailed` | Pre-task-done hook rejected the transition; task state unchanged. |
 | `130` | `ExitSignal` | Interrupted (Ctrl+C). |

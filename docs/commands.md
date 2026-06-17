@@ -81,10 +81,10 @@ See [docs/commands/impact.md](commands/impact.md) for the full `gg impact` seman
 ## Operations
 
 ```sh
-gg init                              # initialize project + Qdrant collections
+gg init                              # initialize project + embedded SQLite stores
 gg doctor                            # connectivity + indexer binary checks
 gg doctor --install-indexers         # auto-install missing SCIP binaries
-gg doctor --reconcile                # report incomplete Memgraph writes
+gg doctor --reconcile                # report incomplete graph writes
 gg reembed --confirm                 # migrate collections to new embedding model
 ```
 

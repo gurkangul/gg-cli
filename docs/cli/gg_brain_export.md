@@ -4,7 +4,7 @@ Serialize project brain to .gg/brain/ (JSONL, payload-only)
 
 ### Synopsis
 
-Export all Qdrant collections and Memgraph graph data to deterministic
+Export all vector store collections and code-graph data to deterministic
 JSONL files under .gg/brain/. Vectors are excluded by default — run
 'gg reindex --embed' after import to rebuild them.
 

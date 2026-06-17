@@ -6,8 +6,8 @@ Portable brain snapshot (export / import / status)
 
 Manage a git-trackable snapshot of gg's shared brain.
 
-  gg brain export   — write .gg/brain/ from current Qdrant + Memgraph state
-  gg brain import   — restore Qdrant + Memgraph from .gg/brain/
+  gg brain export   — write .gg/brain/ from current vector store + code-graph state
+  gg brain import   — restore vector store + code graph from .gg/brain/
   gg brain status   — show snapshot metadata and checksum status
 
 ### Options
@@ -25,8 +25,8 @@ Manage a git-trackable snapshot of gg's shared brain.
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
-* [gg brain backfill](gg_brain_backfill.md)	 - Migrate tag-based Task↔Decision links to Memgraph edges
+* [gg brain backfill](gg_brain_backfill.md)	 - Migrate tag-based Task↔Decision links to code-graph edges
 * [gg brain export](gg_brain_export.md)	 - Serialize project brain to .gg/brain/ (JSONL, payload-only)
-* [gg brain import](gg_brain_import.md)	 - Restore Qdrant + Memgraph from .gg/brain/ (idempotent)
-* [gg brain reindex-decisions](gg_brain_reindex-decisions.md)	 - Replay Decision nodes into Memgraph from the Qdrant decision store
+* [gg brain import](gg_brain_import.md)	 - Restore vector store + code graph from .gg/brain/ (idempotent)
+* [gg brain reindex-decisions](gg_brain_reindex-decisions.md)	 - Replay Decision nodes into the code graph from the decision store
 * [gg brain status](gg_brain_status.md)	 - Show brain snapshot metadata and verify checksums

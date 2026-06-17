@@ -20,8 +20,8 @@ Task mode (TASK-NNN argument):
   - Downstream dependents (tasks that DEPENDS_ON this one, or are BLOCKED by it)
   - Decisions and related tasks from the knowledge store (semantic search)
 
-Requires Memgraph (gg index must have been run). The knowledge-store search
-works even without Memgraph.
+Requires the code graph (gg index must have been run). The knowledge-store search
+works even without the code graph.
 
 When CodeGraph is missing, stale, or unavailable, impact uses the shared
 freshness notice contract: repair is explicit with gg doctor --fix-index;

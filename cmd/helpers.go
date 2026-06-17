@@ -34,7 +34,7 @@ func withTimeout(parent context.Context) (context.Context, context.CancelFunc) {
 func storeDownErr() error {
 	return &ExitError{
 		Code:    ExitStoreDown,
-		Message: withServiceHint("vector store unavailable — writes blocked, reads served from cache", svcQdrant),
+		Message: withServiceHint("vector store unavailable — writes blocked, reads served from cache", svcVectorStore),
 	}
 }
 

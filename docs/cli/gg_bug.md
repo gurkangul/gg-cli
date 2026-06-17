@@ -4,8 +4,8 @@ Manage bug lifecycle
 
 ### Synopsis
 
-Track defects from discovery through fix. Bugs are stored in Qdrant and
-searchable by description. Each bug moves through a lifecycle:
+Track defects from discovery through fix. Bugs are stored in the project
+vector store and searchable by description. Each bug moves through a lifecycle:
   open → fixing → fixed | wontfix → reopened → fixing → fixed
 
 ### Options
@@ -27,7 +27,7 @@ searchable by description. Each bug moves through a lifecycle:
 * [gg bug fix](gg_bug_fix.md)	 - Mark a bug as fixed
 * [gg bug get](gg_bug_get.md)	 - Show bug details
 * [gg bug list](gg_bug_list.md)	 - List bugs
-* [gg bug reindex](gg_bug_reindex.md)	 - Replay bug AFFECTS edges into Memgraph
+* [gg bug reindex](gg_bug_reindex.md)	 - Replay bug AFFECTS edges into the code graph
 * [gg bug reopen](gg_bug_reopen.md)	 - Reopen a fixed or wontfix bug
 * [gg bug report](gg_bug_report.md)	 - Report a new bug
 * [gg bug run-repros](gg_bug_run-repros.md)	 - Run all registered repro scripts for fixed bugs

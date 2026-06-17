@@ -41,8 +41,8 @@ switch between them — each project's brain stays fully isolated (no merging). 
 inside a project and that project is selected by default.
 
 It is NOT a daemon: it runs only until you press Ctrl-C, binds to 127.0.0.1
-exclusively (no network exposure), and serves the same JSONL/Qdrant stores the
-CLI reads.
+exclusively (no network exposure), and serves the same JSONL and embedded-SQLite
+stores the CLI reads.
 
   gg serve                # launcher for all projects at http://127.0.0.1:7777
   gg serve --port 8080    # pick another port

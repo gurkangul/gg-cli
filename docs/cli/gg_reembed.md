@@ -1,19 +1,19 @@
 ## gg reembed
 
-Migrate all Qdrant collections to the currently configured embedding model
+Rebuild the embedded vector index (.gg/vectorstore.db) from .gg/brain/*.jsonl
 
 ### Synopsis
 
-Drops and recreates all project Qdrant collections at the dimension of
-the currently configured embedding model, then re-embeds every stored point.
+Drops and recreates the local vector index (.gg/vectorstore.db) at the
+dimension of the currently configured embedding model, then re-embeds every
+record from the durable brain (.gg/brain/*.jsonl).
 
 Use this when you change the embedding model in .gg/config.yaml. Without
 re-embedding, vectors from different models will be mixed in the same
 collections, which breaks semantic search recall.
 
-WARNING: This operation drops all collections before recreating them.
-If the process is interrupted after the drop, stored knowledge (decisions,
-tasks, notes, etc.) will be lost. Back up your Qdrant data if it matters.
+This rebuilds the local vector index from .gg/brain/*.jsonl (the durable source
+of truth, which is never modified). Safe to re-run.
 
 Requires --confirm to proceed.
 

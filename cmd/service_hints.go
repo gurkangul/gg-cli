@@ -12,9 +12,9 @@ import (
 // are embedded SQLite files (.gg/vectorstore.db / .gg/graph.db); only Ollama is
 // a real external service.
 const (
-	svcQdrant   = "qdrant"   // embedded vector store (.gg/vectorstore.db)
-	svcMemgraph = "memgraph" // embedded code graph (.gg/graph.db)
-	svcOllama   = "ollama"   // external embedding engine
+	svcVectorStore = "vector store" // embedded vector store (.gg/vectorstore.db)
+	svcCodeGraph   = "code graph"   // embedded code graph (.gg/graph.db)
+	svcOllama      = "ollama"       // external embedding engine
 )
 
 // ollamaComposePath returns the path to the OPTIONAL Ollama-in-Docker compose
@@ -35,7 +35,7 @@ func ollamaComposePath() string {
 // Ollama is the only true external service and offers Docker/native/cloud
 // options.
 //
-// service must be one of svcQdrant, svcMemgraph, svcOllama. An unknown service
+// service must be one of svcVectorStore, svcCodeGraph, svcOllama. An unknown service
 // yields a generic local-store hint (never a panic) so new call sites degrade
 // safely rather than swallowing the situation.
 func serviceRecoveryHint(service string) string {
@@ -56,10 +56,10 @@ func serviceRecoveryHint(service string) string {
 	}
 
 	switch svc {
-	case svcQdrant:
+	case svcVectorStore:
 		return "The embedded vector store at .gg/vectorstore.db could not be opened.\n" +
 			"  Check disk space and file permissions on .gg/, then run: gg doctor"
-	case svcMemgraph:
+	case svcCodeGraph:
 		return "The embedded code graph at .gg/graph.db could not be opened.\n" +
 			"  Check disk space and file permissions on .gg/, then run: gg doctor"
 	default:
@@ -81,7 +81,7 @@ func withServiceHint(msg, service string) string {
 // code-graph choke points where Memgraph being down hard-fails the command.
 func memgraphDownErr(context string, err error) error {
 	raw := fmt.Sprintf("%s: %v", context, err)
-	return serviceErr(withServiceHint(raw, svcMemgraph))
+	return serviceErr(withServiceHint(raw, svcCodeGraph))
 }
 
 // isOllamaConnectivityErr reports whether err looks like Ollama being down /

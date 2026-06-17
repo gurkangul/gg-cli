@@ -6,9 +6,11 @@ detects **operation not permitted (EPERM/EACCES)** on a localhost TCP connection
 ## What this means
 
 The agent is running in a sandboxed environment (Codex harness, restricted CI container,
-or similar) where outbound TCP to localhost services (Qdrant, Memgraph, Ollama) is
-blocked at the OS/seccomp level. This is **not** a service outage — the services may be
-running normally outside the sandbox.
+or similar) where outbound TCP to localhost is blocked at the OS/seccomp level. The
+vector and graph stores are embedded SQLite files (`.gg/vectorstore.db`,
+`.gg/graph.db`) and never use TCP; the only network endpoint gg touches is the
+optional Ollama embedding URL (`localhost:11434` by default). This is **not** a
+service outage — Ollama may be running normally outside the sandbox.
 
 ## Agent discipline (mandatory)
 
@@ -17,7 +19,7 @@ When EPERM is detected in any doctor/write path, the agent **MUST**:
 1. **Stop** the current operation — do not continue as if the service is down.
 2. **Surface the sandbox warning** to the user:
    ```
-   ✗ qdrant unreachable at localhost:6334 — operation not permitted (sandbox?)
+   ✗ ollama unreachable at localhost:11434 — operation not permitted (sandbox?)
      → if running under an agent harness, rerun this command outside the sandbox or with escalated permission
    ```
 3. **Request escalated permission** from the user rather than silently failing over

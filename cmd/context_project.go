@@ -21,7 +21,7 @@ func runProjectContext(cmd *cobra.Command) error {
 	defer d.Close()
 
 	if d.qdrantSlow {
-		return fmt.Errorf("%s", withServiceHint("vector store health check timed out — retry or run gg doctor", svcQdrant))
+		return fmt.Errorf("%s", withServiceHint("vector store health check timed out — retry or run gg doctor", svcVectorStore))
 	}
 	if d.qdrantDown {
 		return serveContextFromCache(cmd, projectContextQuery)

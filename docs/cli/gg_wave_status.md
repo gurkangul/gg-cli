@@ -20,4 +20,4 @@ gg wave status <wave-id> [flags]
 
 ### SEE ALSO
 
-* [gg wave](gg_wave.md)	 - Manage optional wave/milestone buckets — sprints (Memgraph only)
+* [gg wave](gg_wave.md)	 - Manage optional wave/milestone buckets — sprints (code graph only)

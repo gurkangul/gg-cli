@@ -62,7 +62,7 @@ type systemBrainProjectStatus struct {
 	RegistryStatus  string                    `json:"registry_status"`
 	ProjectIDStatus string                    `json:"project_id_status"`
 	Snapshot        systemBrainSnapshotStatus `json:"snapshot"`
-	Qdrant          systemBrainCheck          `json:"qdrant"`
+	Vector          systemBrainCheck          `json:"vector"`
 	Ollama          systemBrainCheck          `json:"ollama"`
 	CodeGraph       systemBrainCodeGraph      `json:"codegraph"`
 	Problems        []string                  `json:"problems,omitempty"`
@@ -89,7 +89,7 @@ type systemBrainSnapshotStatus struct {
 type systemBrainCodeGraph struct {
 	Status            string `json:"status"`
 	Detail            string `json:"detail,omitempty"`
-	MemgraphAvailable bool   `json:"memgraph_available"`
+	GraphAvailable    bool   `json:"graph_available"`
 	Files             int64  `json:"files"`
 	Symbols           int64  `json:"symbols"`
 	Edges             int64  `json:"edges"`
@@ -97,13 +97,13 @@ type systemBrainCodeGraph struct {
 	HeadSHA           string `json:"head_sha,omitempty"`
 }
 
-type systemBrainQdrantClient interface {
+type systemBrainVectorClient interface {
 	brainLiveCounter
 	HealthCheck(ctx context.Context) error
 	Close() error
 }
 
-var systemBrainNewQdrantClient = func(cfg *config.Config, ggDir string) (systemBrainQdrantClient, error) {
+var systemBrainNewVectorClient = func(cfg *config.Config, ggDir string) (systemBrainVectorClient, error) {
 	return store.New(ggDir, cfg.ProjectID)
 }
 
@@ -155,7 +155,7 @@ func collectSystemBrainProjectStatus(ctx context.Context, entry config.ProjectEn
 		RegistryStatus:  "ok",
 		ProjectIDStatus: "unknown",
 		Snapshot:        systemBrainSnapshotStatus{Status: "unknown"},
-		Qdrant:          systemBrainCheck{Status: "unknown"},
+		Vector:          systemBrainCheck{Status: "unknown"},
 		Ollama:          systemBrainCheck{Status: "unknown"},
 		CodeGraph:       systemBrainCodeGraph{Status: "unknown"},
 	}
@@ -194,16 +194,16 @@ func collectSystemBrainProjectStatus(ctx context.Context, entry config.ProjectEn
 		project.addProblem("registry project_id mismatch")
 	}
 
-	project.Qdrant = checkSystemBrainQdrant(ctx, cfg, ggDir)
+	project.Vector = checkSystemBrainVector(ctx, cfg, ggDir)
 	project.Ollama = checkSystemBrainOllama(ctx, cfg)
-	project.Snapshot = checkSystemBrainSnapshot(ctx, ggDir, cfg, project.Qdrant.Status == "up")
+	project.Snapshot = checkSystemBrainSnapshot(ctx, ggDir, cfg, project.Vector.Status == "up")
 	project.CodeGraph = checkSystemBrainCodeGraph(ctx, entry.Root, ggDir, cfg)
 	project.addDerivedProblems()
 	return project
 }
 
-func checkSystemBrainQdrant(ctx context.Context, cfg *config.Config, ggDir string) systemBrainCheck {
-	client, err := systemBrainNewQdrantClient(cfg, ggDir)
+func checkSystemBrainVector(ctx context.Context, cfg *config.Config, ggDir string) systemBrainCheck {
+	client, err := systemBrainNewVectorClient(cfg, ggDir)
 	if err != nil {
 		return systemBrainCheck{Status: "down", Detail: "client init: " + err.Error()}
 	}
@@ -249,7 +249,7 @@ func checkSystemBrainOllama(ctx context.Context, cfg *config.Config) systemBrain
 	return systemBrainCheck{Status: "up", Detail: host}
 }
 
-func checkSystemBrainSnapshot(ctx context.Context, ggDir string, cfg *config.Config, qdrantUp bool) systemBrainSnapshotStatus {
+func checkSystemBrainSnapshot(ctx context.Context, ggDir string, cfg *config.Config, vectorUp bool) systemBrainSnapshotStatus {
 	manifestPath := filepath.Join(ggDir, brainDirName, "manifest.json")
 	data, err := os.ReadFile(manifestPath) //nolint:gosec
 	if err != nil {
@@ -307,8 +307,8 @@ func checkSystemBrainSnapshot(ctx context.Context, ggDir string, cfg *config.Con
 		status.Status = "unknown"
 		status.Detail = "snapshot checksum mismatch"
 	}
-	if qdrantUp {
-		client, err := systemBrainNewQdrantClient(cfg, ggDir)
+	if vectorUp {
+		client, err := systemBrainNewVectorClient(cfg, ggDir)
 		if err != nil {
 			if status.Status == "fresh" {
 				status.Status = "unknown"
@@ -352,7 +352,7 @@ func checkSystemBrainCodeGraph(ctx context.Context, root, ggDir string, cfg *con
 	return systemBrainCodeGraph{
 		Status:            graphStatus.Status,
 		Detail:            graphStatus.Detail,
-		MemgraphAvailable: graphStatus.MemgraphAvailable,
+		GraphAvailable:    graphStatus.GraphAvailable,
 		Files:             graphStatus.Stats.Files,
 		Symbols:           graphStatus.Stats.Symbols,
 		Edges:             graphStatus.Stats.Edges,
@@ -395,7 +395,7 @@ func summarizeSystemBrainStatus(projects []systemBrainProjectStatus) systemBrain
 		case "drifted":
 			summary.DriftedSnapshot++
 		}
-		if p.Qdrant.Status != "up" || p.Ollama.Status != "up" {
+		if p.Vector.Status != "up" || p.Ollama.Status != "up" {
 			summary.BackendIssues++
 		}
 		if p.CodeGraph.Status != "ready" && p.CodeGraph.Status != "not_applicable" {
@@ -409,8 +409,8 @@ func (p *systemBrainProjectStatus) addDerivedProblems() {
 	if p.Snapshot.Status != "fresh" {
 		p.addProblem("snapshot=" + p.Snapshot.Status)
 	}
-	if p.Qdrant.Status != "up" {
-		p.addProblem("qdrant=" + p.Qdrant.Status)
+	if p.Vector.Status != "up" {
+		p.addProblem("vector=" + p.Vector.Status)
 	}
 	if p.Ollama.Status != "up" {
 		p.addProblem("ollama=" + p.Ollama.Status)
@@ -439,8 +439,8 @@ func renderSystemBrainStatus(w io.Writer, report systemBrainStatusReport) {
 	}
 	for _, p := range report.Projects {
 		fmt.Fprintf(w, "• %-20s  %s\n", p.Name, p.Root)
-		fmt.Fprintf(w, "  registry=%s project_id=%s snapshot=%s qdrant=%s ollama=%s codegraph=%s\n",
-			p.RegistryStatus, p.ProjectIDStatus, p.Snapshot.Status, p.Qdrant.Status, p.Ollama.Status, p.CodeGraph.Status)
+		fmt.Fprintf(w, "  registry=%s project_id=%s snapshot=%s vector=%s ollama=%s codegraph=%s\n",
+			p.RegistryStatus, p.ProjectIDStatus, p.Snapshot.Status, p.Vector.Status, p.Ollama.Status, p.CodeGraph.Status)
 		if len(p.Problems) > 0 {
 			fmt.Fprintf(w, "  problems: %s\n", strings.Join(p.Problems, "; "))
 		}

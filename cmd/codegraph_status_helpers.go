@@ -365,7 +365,7 @@ func renderCodeGraphStatusCompact(s codeGraphStatus) string {
 	if len(s.DetectedLanguages) > 0 {
 		parts = append(parts, "detected="+strings.Join(s.DetectedLanguages, ","))
 	}
-	parts = append(parts, fmt.Sprintf("codegraph=%s", boolWord(s.MemgraphAvailable, "ok", "down")))
+	parts = append(parts, fmt.Sprintf("codegraph=%s", boolWord(s.GraphAvailable, "ok", "down")))
 	parts = append(parts, fmt.Sprintf("files=%d sym=%d edges=%d", s.Stats.Files, s.Stats.Symbols, s.Stats.Edges))
 	if s.ChangedFiles+s.NewFiles+s.DeletedFiles+s.ModuleFiles > 0 {
 		parts = append(parts, fmt.Sprintf("changes=%d new=%d deleted=%d modules=%d", s.ChangedFiles, s.NewFiles, s.DeletedFiles, s.ModuleFiles))

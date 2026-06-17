@@ -20,7 +20,7 @@ before running any script in `.gg/hooks/pre-task-done.d/` or
 | `GG_INSIDE_HOOK` | Always `"1"` inside hooks invoked by a `gg` parent process | `1` |
 
 **Why `GG_INSIDE_HOOK` matters.** When `gg task done` runs the verify
-hook, the parent `gg` process already holds live Qdrant connections and
+hook, the parent `gg` process already holds an open embedded-store handle and
 holds the project lock. A hook that also opens connections (e.g. by running
 `go test ./...` with live-state tests) races the parent. Set
 `GG_INSIDE_HOOK=1` detection in any hook that calls `go test` to

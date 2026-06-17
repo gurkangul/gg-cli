@@ -70,7 +70,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	defer d.Close()
 
 	if d.qdrantSlow {
-		return fmt.Errorf("%s", withServiceHint("vector store health check timed out — retry or run gg doctor", svcQdrant))
+		return fmt.Errorf("%s", withServiceHint("vector store health check timed out — retry or run gg doctor", svcVectorStore))
 	}
 	if d.qdrantDown {
 		// AC-4: fall back to JSONL scan first, then LKG cache.

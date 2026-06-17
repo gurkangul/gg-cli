@@ -2,11 +2,12 @@
 
 > Status: implemented (TASK-352, fixes BUG-030)
 
-> Note (TASK-496): with the default embedded SQLite vector store the store is
-> always reachable (it is a local file), so the "Qdrant down" path below applies
-> only when the opt-in `qdrant.backend: qdrant` server backend is selected. The
-> JSONL-first write path remains the canonical, portable source of truth in both
-> cases — the embedded `.gg/vectorstore.db` is rebuilt from it via `gg reembed`.
+> Note: the vector store is now embedded SQLite (`.gg/vectorstore.db`) only —
+> there is no server backend. The store is a local file and always reachable, so
+> the "Qdrant up/down" upsert path described below no longer occurs in practice;
+> it is retained here as the historical design record for BUG-030. The
+> JSONL-first write path remains the canonical, portable source of truth — the
+> embedded `.gg/vectorstore.db` is rebuilt from it via `gg reembed`.
 
 ## Problem
 

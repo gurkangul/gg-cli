@@ -47,7 +47,7 @@ func (s searchScoreOverrides) get(kind, id string) (int, bool) {
 }
 
 func buildSearchResults(query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note) []searchResult {
-	return buildSearchResultsWithBackend(query, decisions, rejections, tasks, bugs, notes, "qdrant")
+	return buildSearchResultsWithBackend(query, decisions, rejections, tasks, bugs, notes, "sqlite")
 }
 
 func buildSearchResultsWithBackend(query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, backend string) []searchResult {

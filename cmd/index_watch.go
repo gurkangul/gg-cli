@@ -108,7 +108,7 @@ func runIndexWatchTick(parent context.Context, cmd *cobra.Command, cfg *config.C
 
 	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
-		return serviceErr(fmt.Sprintf("memgraph client: %v", err))
+		return serviceErr(fmt.Sprintf("code graph client: %v", err))
 	}
 	defer func() { _ = gc.Close(parent) }()
 	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)

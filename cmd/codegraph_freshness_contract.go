@@ -15,7 +15,7 @@ const (
 
 	codeGraphReasonMissingGraph          = "missing_graph"
 	codeGraphReasonEmptyGraph            = "empty_graph"
-	codeGraphReasonMemgraphUnavailable   = "memgraph_unavailable"
+	codeGraphReasonGraphUnavailable      = "graph_unavailable"
 	codeGraphReasonLanguageMissing       = "language_missing"
 	codeGraphReasonNonAncestor           = "non_ancestor"
 	codeGraphReasonChangedFiles          = "changed_files"
@@ -113,7 +113,7 @@ func codeGraphContractReason(s codeGraphStatus, status string) string {
 		return codeGraphReasonNotApplicable
 	}
 	if codeGraphMemgraphUnavailable(s) {
-		return codeGraphReasonMemgraphUnavailable
+		return codeGraphReasonGraphUnavailable
 	}
 	if status == codeGraphFreshnessReady {
 		return ""
@@ -147,8 +147,8 @@ func codeGraphMemgraphUnavailable(s codeGraphStatus) bool {
 	if s.Status == "not_applicable" {
 		return false
 	}
-	detail := strings.ToLower(s.MemgraphDetail)
-	return strings.Contains(detail, "unavailable") || (s.MemgraphConfigured && !s.MemgraphAvailable && s.MemgraphDetail != "not checked")
+	detail := strings.ToLower(s.GraphDetail)
+	return strings.Contains(detail, "unavailable") || (s.GraphConfigured && !s.GraphAvailable && s.GraphDetail != "not checked")
 }
 
 func codeGraphContractLanguages(s codeGraphStatus) []string {

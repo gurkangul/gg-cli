@@ -354,7 +354,7 @@ func TestRenderCodeGraphStatusCompact(t *testing.T) {
 		Status:            "ready",
 		LastIndexedSHA:    "1234567890abcdef",
 		HeadSHA:           "1234567890abcdef",
-		MemgraphAvailable: true,
+		GraphAvailable: true,
 	})
 	for _, want := range []string{"CodeGraph ready", "idx=12345678", "head=12345678", "codegraph=ok"} {
 		if !strings.Contains(out, want) {
@@ -369,7 +369,7 @@ func TestCodeGraphStatus_FinalizeDowngradesReadyWhenMemgraphUnavailable(t *testi
 		Detail:            "index-state matches HEAD and working tree source files for go",
 		DetectedLanguages: []string{"go"},
 		SuggestedCommand:  "gg index --lang go --changed",
-		MemgraphDetail:    "unavailable: dial tcp 127.0.0.1:1: connect: connection refused",
+		GraphDetail:    "unavailable: dial tcp 127.0.0.1:1: connect: connection refused",
 	}
 	status.finalize()
 	if status.Status != "missing" {
@@ -389,8 +389,8 @@ func TestCodeGraphStatus_FinalizeDowngradesReadyWhenGraphStatsUnavailable(t *tes
 	status := codeGraphStatus{
 		Status:              "ready",
 		Detail:              "index-state matches HEAD and working tree source files for go",
-		MemgraphAvailable:   true,
-		MemgraphDetail:      "stats unavailable: query failed",
+		GraphAvailable:   true,
+		GraphDetail:      "stats unavailable: query failed",
 		DetectedLanguages:   []string{"go"},
 		SuggestedCommand:    "gg index --lang go --changed",
 		GraphStatsAvailable: false,
@@ -472,7 +472,7 @@ func TestCollectCodeGraphStatus_GraphEmptySuggestsFullIndex(t *testing.T) {
 	}
 	status := collectCodeGraphStatus(context.Background(), root, ggDir, nil)
 	status.GraphEmpty = true
-	status.MemgraphAvailable = true
+	status.GraphAvailable = true
 	status.Status = "missing"
 	status.finalize()
 	if !strings.Contains(status.Detail, "gg index --lang go") || strings.Contains(status.Detail, "--changed") {
@@ -544,7 +544,7 @@ func TestCodeGraphFreshnessContract_Reasons(t *testing.T) {
 		{"module manifest", codeGraphStatus{Status: "stale", ModuleFiles: 1, DetectedLanguages: []string{"go"}}, codeGraphFreshnessStale, codeGraphReasonModuleManifestChanged},
 		{"language missing", codeGraphStatus{Status: "stale", Detail: "unindexed language(s): go", DetectedLanguages: []string{"go"}}, codeGraphFreshnessStale, codeGraphReasonLanguageMissing},
 		{"non ancestor", codeGraphStatus{Status: "non_ancestor", DetectedLanguages: []string{"go"}}, codeGraphFreshnessStale, codeGraphReasonNonAncestor},
-		{"memgraph unavailable", codeGraphStatus{Status: "ready", MemgraphConfigured: true, MemgraphDetail: "unavailable: dial tcp", DetectedLanguages: []string{"go"}}, codeGraphFreshnessUnavailable, codeGraphReasonMemgraphUnavailable},
+		{"memgraph unavailable", codeGraphStatus{Status: "ready", GraphConfigured: true, GraphDetail: "unavailable: dial tcp", DetectedLanguages: []string{"go"}}, codeGraphFreshnessUnavailable, codeGraphReasonGraphUnavailable},
 		{"not applicable", codeGraphStatus{Status: "not_applicable"}, codeGraphFreshnessNotApplicable, codeGraphReasonNotApplicable},
 	}
 	for _, tc := range cases {

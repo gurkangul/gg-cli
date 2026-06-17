@@ -68,7 +68,7 @@ gg gives that work a shared memory layer.
 
 - **Consistent, durable memory under concurrency**
   Mutations are JSONL-first with optimistic version/CAS, so state survives a
-  Qdrant rebuild and parallel writers don't silently clobber each other. Inbox
+  vector-store rebuild and parallel writers don't silently clobber each other. Inbox
   read-state is per-recipient — one agent reading never consumes another's
   message — and concurrent Claude tabs get a unique per-session identity.
 
@@ -102,8 +102,8 @@ gg gives that work a shared memory layer.
   reviewer closes it in projects that enforce verifier separation.
 
 - **Local-first privacy**
-  Data stays on your machine. gg uses local Docker services for search,
-  embeddings, and graph queries.
+  Data stays on your machine. gg uses embedded SQLite stores for search and
+  graph queries; embeddings run on local Ollama (no Docker required).
 
 - **Portable project brain**
   Brain snapshots can be exported, checked, and restored without depending on a
@@ -142,9 +142,9 @@ gg is intentionally boring infrastructure:
 - project metadata is committed with the project
 - runtime state stays outside the project repository
 
-The vector and graph stores are embedded by default, so a fresh `gg init` needs
-no Qdrant or Memgraph containers. Server backends remain selectable for users who
-prefer them (`qdrant.backend: qdrant` / `memgraph.backend: memgraph`).
+The vector and graph stores are embedded SQLite, so a fresh `gg init` needs no
+containers and no Docker. There is no server backend to opt into — embedded
+SQLite is the only store.
 
 There is no central coordinator and no background gg daemon. CodeGraph freshness
 is explicit: run a one-shot repair when needed, or start an opt-in foreground
@@ -159,8 +159,8 @@ Prerequisites:
 - Go matching the version in [`go.mod`](go.mod)
 - An embedding provider: native Ollama (`brew install ollama` + `ollama serve` +
   `ollama pull nomic-embed-text`) — or the opt-in Voyage cloud backend
-- Docker is NOT required (the vector and graph stores are embedded SQLite by
-  default). It is only needed if you opt into the Qdrant/Memgraph server backends.
+- Docker is NOT required — the vector and graph stores are embedded SQLite, and
+  there is no server backend to run.
 
 Install the CLI:
 
@@ -191,8 +191,7 @@ build the code graph. The canonical data is always the committed JSONL brain.
 
 No cloud account or API key is required for normal use. Installing the CLI and
 checking for updates can still use the network when you explicitly run those
-commands. Only the opt-in server backends (`qdrant.backend: qdrant` /
-`memgraph.backend: memgraph`) need Docker.
+commands. The stores are embedded SQLite, so nothing needs Docker.
 
 For brownfield projects, or after a gg upgrade, refresh agent instructions and
 hooks explicitly:

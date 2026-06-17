@@ -9,7 +9,7 @@ gg export                          # writes gg-export-<date>.json.gz
 gg export my-project.json.gz      # custom output path
 ```
 
-Exports all Qdrant collections for the current project:
+Exports all vector-store collections for the current project:
 
 - Decisions and rejections
 - Tasks (all statuses)
@@ -71,7 +71,7 @@ gg import shared-context-2026-04.json.gz
 
 ## Round-trip guarantee
 
-`gg export` captures the exact point-in-time state of the Qdrant collections.
+`gg export` captures the exact point-in-time state of the vector-store collections.
 `gg import` restores them via MERGE semantics — existing points with the same
 UUID are overwritten, new points are added. After a round-trip:
 

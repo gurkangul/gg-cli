@@ -11,10 +11,10 @@ func TestShouldUseFullIndexForFix(t *testing.T) {
 		want   bool
 	}{
 		{"missing graph empty", codeGraphStatus{Status: "missing", GraphEmpty: true}, true},
-		{"missing memgraph unavailable", codeGraphStatus{Status: "missing", MemgraphDetail: "unavailable"}, true},
-		{"missing memgraph not checked", codeGraphStatus{Status: "missing", MemgraphDetail: "not checked"}, true},
-		{"missing stats unavailable", codeGraphStatus{Status: "missing", MemgraphAvailable: true, GraphStatsAvailable: false}, true},
-		{"missing other", codeGraphStatus{Status: "missing", MemgraphAvailable: true, GraphStatsAvailable: true, MemgraphDetail: "reachable"}, false},
+		{"missing graph unavailable", codeGraphStatus{Status: "missing", GraphDetail: "unavailable"}, true},
+		{"missing graph not checked", codeGraphStatus{Status: "missing", GraphDetail: "not checked"}, true},
+		{"missing stats unavailable", codeGraphStatus{Status: "missing", GraphAvailable: true, GraphStatsAvailable: false}, true},
+		{"missing other", codeGraphStatus{Status: "missing", GraphAvailable: true, GraphStatsAvailable: true, GraphDetail: "reachable"}, false},
 		{"stale graph empty", codeGraphStatus{Status: "stale", GraphEmpty: true}, false},
 	}
 

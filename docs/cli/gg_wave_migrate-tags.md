@@ -5,7 +5,7 @@ Dry-run tag-to-wave migration (--apply to execute)
 ### Synopsis
 
 Scan tasks with wave* tags (e.g. wave1, wave2) and report which would be
-assigned to Wave nodes. By default this is a dry-run — no Memgraph writes.
+assigned to Wave nodes. By default this is a dry-run — no code-graph writes.
 Pass --apply to create Wave nodes and write IN_WAVE edges.
 
 ```
@@ -27,4 +27,4 @@ gg wave migrate-tags [flags]
 
 ### SEE ALSO
 
-* [gg wave](gg_wave.md)	 - Manage optional wave/milestone buckets — sprints (Memgraph only)
+* [gg wave](gg_wave.md)	 - Manage optional wave/milestone buckets — sprints (code graph only)

@@ -3,15 +3,9 @@
 # tasks/decisions are written.
 project_id: PROJECT_ID_PLACEHOLDER
 
-# Vector store. Default: embedded SQLite (no Docker) — vectors live in
-# .gg/vectorstore.db. Set backend: qdrant to use a Qdrant server at host:port
-# instead (add a qdrant service to ~/.gg/docker-compose.yaml — no longer shipped
-# by default — then `docker compose -f ~/.gg/docker-compose.yaml up -d qdrant`).
-# The GG_VECTOR_BACKEND env var overrides this field.
-qdrant:
-  backend: sqlite       # sqlite (default, embedded, no Docker) | qdrant (server)
-  host: localhost       # Qdrant gRPC host — only used when backend: qdrant
-  port: 6334            # Qdrant gRPC port (NOT the HTTP 6333 port)
+# Vector store: embedded SQLite at .gg/vectorstore.db (brute-force cosine,
+# no Docker). The removed server backends left no config key — there is
+# nothing to set here.
 
 embedding:
   backend: ollama                # ollama (default, offline) | voyage (cloud, opt-in)
@@ -31,17 +25,9 @@ embedding:
   #   output_dim: 1024           # 256 | 512 | 1024 | 2048
   #   api_key_env: VOYAGE_API_KEY  # env var holding the key (key itself never stored)
 
-# Graph store. Default: embedded SQLite (no Docker) — the code graph lives in
-# .gg/graph.db. Set backend: memgraph to use a Memgraph server over Bolt instead
-# (add a memgraph service to ~/.gg/docker-compose.yaml — no longer shipped by
-# default — then `docker compose -f ~/.gg/docker-compose.yaml up -d memgraph`).
-# The GG_GRAPH_BACKEND env var overrides this field.
-memgraph:
-  backend: sqlite                # sqlite (default, embedded, no Docker) | memgraph (server)
-  uri: bolt://localhost:7687     # Bolt endpoint — only used when backend: memgraph
-  username: ""                   # Leave empty — Memgraph default has no auth
-  password: ""                   # Leave empty; set MEMGRAPH_PASSWORD env var instead of writing here
-                                 # MEMGRAPH_URI and MEMGRAPH_USERNAME env vars also override their fields
+# Code graph: embedded SQLite property graph at .gg/graph.db (no Docker).
+# The removed server backends left no config key — there is nothing to set
+# here.
 
 backup:
   enabled: true                  # session-start auto backup toggle

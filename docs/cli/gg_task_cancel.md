@@ -10,7 +10,7 @@ DISTINCT FROM task done: cancel is "this task should not have existed", not
 "this work is complete". It bypasses the verifier-separation gate because
 there is no work to verify.
 
-Removes the Qdrant point and the Memgraph Task node + all its edges.
+Removes the vector store entry and the code-graph Task node + all its edges.
 
 --reason is required to prevent accidental use.
 

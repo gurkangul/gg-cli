@@ -8,7 +8,7 @@ This document is the authoritative reference for the `gg brain export|import|sta
 
 ## Motivation
 
-gg's memory lives in two stores: Qdrant (decisions, tasks, messages, rejections, discussions, notes, bugs) and Memgraph (code graph: symbols, files, packages, edges). Both are Docker-backed and local-only. Moving a project to another machine or sharing context across team members currently requires manual container migration — error-prone and opaque.
+gg's memory lives in two embedded SQLite stores under `.gg/`: the vector store (`.gg/vectorstore.db` — decisions, tasks, messages, rejections, discussions, notes, bugs) and the graph store (`.gg/graph.db` — code graph: symbols, files, packages, edges). They are local files with no Docker. Moving a project to another machine or sharing context across team members still benefits from a portable, diffable snapshot rather than copying opaque binary store files.
 
 `gg brain export` serialises both stores to git-trackable text files under `.gg/brain/`. `gg brain import` reconstructs both stores from those files on a target machine. The result is a portable, diffable brain snapshot that travels with the repo.
 

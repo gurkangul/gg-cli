@@ -85,7 +85,7 @@ func CheckMeta(ggDir, modelName string, dim int) error {
 	}
 	if meta.ModelName != modelName {
 		return fmt.Errorf(
-			"%w: Qdrant collections were created with model %q (dim %d), "+
+			"%w: vector store collections were created with model %q (dim %d), "+
 				"but the project now uses %q — "+
 				"run `gg reembed` to drop and rebuild all collections with the new model",
 			ErrModelMismatch, meta.ModelName, meta.Dim, modelName,
@@ -99,7 +99,7 @@ func CheckMeta(ggDir, modelName string, dim int) error {
 	}
 	if meta.Dim != dim {
 		return fmt.Errorf(
-			"%w: Qdrant collections were created with model %q at dim %d, "+
+			"%w: vector store collections were created with model %q at dim %d, "+
 				"but the configured model %q now returns dim %d — "+
 				"run `gg reembed` to drop and rebuild all collections with the new dimension",
 			ErrModelMismatch, meta.ModelName, meta.Dim, modelName, dim,

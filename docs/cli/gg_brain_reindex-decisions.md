@@ -1,19 +1,19 @@
 ## gg brain reindex-decisions
 
-Replay Decision nodes into Memgraph from the Qdrant decision store
+Replay Decision nodes into the code graph from the decision store
 
 ### Synopsis
 
-Rebuild Decision nodes in Memgraph from the Qdrant decision store.
+Rebuild Decision nodes in the code graph from the decision store.
 
 Symmetric with `gg task reindex` and `gg bug reindex`. Lists every
-decision in Qdrant and upserts a matching Decision node in Memgraph so
-historical decisions (created before TASK-228 shipped, or when Memgraph
-was unreachable) participate in graph traversal and `gg impact` queries.
+decision in the store and upserts a matching Decision node in the code graph
+so historical decisions (created before TASK-228 shipped, or when the graph
+was unavailable) participate in graph traversal and `gg impact` queries.
 
-Only node identity (qdrant_id + text) is mirrored. Status, author,
-tags, and reasons remain in Qdrant — Memgraph Decision nodes exist to
-anchor DECIDES / REJECTS / IMPLEMENTS edges.
+Only node identity (id + text) is mirrored. Status, author,
+tags, and reasons remain in the decision store — code-graph Decision nodes
+exist to anchor DECIDES / REJECTS / IMPLEMENTS edges.
 
 ```
 gg brain reindex-decisions [flags]

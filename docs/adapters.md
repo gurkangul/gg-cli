@@ -98,6 +98,6 @@ are documented in [verify-gate.md](verify-gate.md).
 
 ## Backend alternatives
 
-The default backend is local Docker. For shared team setups, point `config.yaml` at a remote Qdrant/Memgraph instance.
+The vector and graph stores are embedded SQLite (`.gg/vectorstore.db`, `.gg/graph.db`) — there is no server backend and nothing to point at a remote instance. For shared team setups, use `gg brain export` / `gg brain import` to move a project's memory between machines.
 
 > **Scope note:** REST API / hosted multi-tenant mode is not in scope for Phase 1 or 2. See [roadmap.md](roadmap.md) for future phases.

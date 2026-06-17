@@ -98,10 +98,10 @@ func shouldUseFullIndexForFix(status codeGraphStatus) bool {
 	if status.Status != "missing" {
 		return false
 	}
-	if status.GraphEmpty || !status.GraphStatsAvailable || !status.MemgraphAvailable {
+	if status.GraphEmpty || !status.GraphStatsAvailable || !status.GraphAvailable {
 		return true
 	}
-	return status.MemgraphDetail == "not checked"
+	return status.GraphDetail == "not checked"
 }
 
 func doctorFixIndexCheckServices(parent context.Context, cfg *config.Config, ggDir string) error {

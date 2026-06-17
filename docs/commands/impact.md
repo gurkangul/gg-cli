@@ -8,9 +8,9 @@ gg impact <file> [flags]
 
 ## What it reports
 
-1. **Downstream dependents** — files that `import` the given file. By default this is a 1-hop traversal from the code graph; pass `--hops N` or `--depth N` for bounded multi-hop traversal. Requires Memgraph and `gg index` to have been run.
+1. **Downstream dependents** — files that `import` the given file. By default this is a 1-hop traversal from the code graph; pass `--hops N` or `--depth N` for bounded multi-hop traversal. Requires the embedded graph store (`.gg/graph.db`) and `gg index` to have been run.
 2. **Exported symbols** — all `Symbol` nodes for the file in the graph (functions, types, constants, variables with public visibility or boundary-crossing relevance).
-3. **Related knowledge** — top-N decisions, tasks, and rejections from the Qdrant knowledge base, retrieved via semantic similarity to the file's basename and path.
+3. **Related knowledge** — top-N decisions, tasks, and rejections from the embedded SQLite knowledge base, retrieved via semantic similarity to the file's basename and path.
 
 ## Flags
 
@@ -26,7 +26,7 @@ gg impact <file> [flags]
 |------|---------|
 | `0` | No affected dependents found (or graph not indexed) |
 | `1` | One or more downstream dependents found |
-| `2` | Command error (bad arguments, Qdrant/Memgraph unavailable) |
+| `2` | Command error (bad arguments, embedded store/graph unavailable) |
 
 > Note: the exit code distinguishes "clean change" (0) from "change with blast radius" (1) so CI/pre-push gates can fail on impact.
 
@@ -51,7 +51,7 @@ traversal at an implementation maximum so accidental huge graph walks stay
 bounded. JSON output includes `target_kind`, `hop_depth`, per-file
 `dependent_hops`, and `traversal` metadata with cycle/truncation signals.
 
-Integration test: run `GG_INTEGRATION_TEST=1 go test ./internal/graph -run TestDependentsOfDepthIntegration -count=1` with Memgraph available at `bolt://localhost:7687` (or set `GG_TEST_MEMGRAPH_URI`).
+Test: run `go test ./internal/graph -run TestSQLite_DependentsOf -count=1` (see [`internal/graph/graphstore_sqlite_test.go`](../../internal/graph/graphstore_sqlite_test.go)). The embedded SQLite graph store needs no external service.
 
 ## Related knowledge selection
 
@@ -63,10 +63,10 @@ Top-5 results are returned per collection. Use `--kb-limit` to increase this.
 
 Graph features (dependents, symbols) require:
 
-1. Memgraph configured in `.gg/config.yaml` (`memgraph.uri`)
+1. The embedded graph store (`.gg/graph.db`), created by `gg init`
 2. `gg index` run at least once for the relevant language
 
-If Memgraph is not configured, `gg impact` degrades gracefully — the knowledge-base search still runs, and a warning is printed.
+If the graph has not been indexed, `gg impact` degrades gracefully — the knowledge-base search still runs, and a warning is printed.
 
 `gg impact` uses the shared CodeGraph freshness notice contract used by
 `gg session-start`, `gg next`, `gg doctor`, and `gg index status`. Stale,

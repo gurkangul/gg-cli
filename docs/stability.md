@@ -73,7 +73,7 @@ How this is honoured:
 - **Format changes ship a migration.** When a format genuinely changes shape
   (dimension change, re-keying, re-embedding), the new binary carries an
   automatic, idempotent migration rather than breaking the old store. The
-  reference implementation is the Qdrant re-embed migration in
+  reference implementation is the re-embed migration in
   [`internal/store/reembed.go`](../internal/store/reembed.go) (`ReembedAll`):
   it reads every existing point (overlaying JSONL as the source of truth so
   JSONL-only/mutated entries are not lost), drops and recreates collections at

@@ -78,7 +78,7 @@ func runReconcile(cmd *cobra.Command, _ []string) error {
 	}
 	defer d.Close()
 	if d.qdrantDown {
-		return fmt.Errorf("qdrant unreachable — cannot compare live task projection")
+		return fmt.Errorf("vector store unavailable — cannot compare live task projection")
 	}
 
 	ctx, cancel := withTimeout(cmd.Context())

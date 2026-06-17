@@ -12,10 +12,9 @@
 #     docker compose -f ~/.gg/docker-compose.yaml up -d ollama
 #     docker compose -f ~/.gg/docker-compose.yaml exec ollama ollama pull nomic-embed-text
 #
-# Qdrant and Memgraph are no longer part of the default setup — the embedded
-# SQLite stores replace them. To opt back into the servers, set
-# qdrant.backend: qdrant / memgraph.backend: memgraph in .gg/config.yaml and add
-# the corresponding services here yourself.
+# The Qdrant and Memgraph server backends have been removed — the embedded
+# SQLite stores (.gg/vectorstore.db and .gg/graph.db) are the only option.
+# There are no config keys to point gg back at a server.
 services:
   ollama:
     image: ollama/ollama:0.5.7

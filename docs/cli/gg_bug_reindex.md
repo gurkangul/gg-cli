@@ -1,13 +1,13 @@
 ## gg bug reindex
 
-Replay bug AFFECTS edges into Memgraph
+Replay bug AFFECTS edges into the code graph
 
 ### Synopsis
 
-Rebuild Bug→File and Bug→Symbol edges in Memgraph from the Qdrant store.
+Rebuild Bug→File and Bug→Symbol edges in the code graph from the bug store.
 
-Use this to heal drift that occurs when Memgraph was unreachable during
-gg bug report — Qdrant holds the authoritative affected_files /
+Use this to heal drift that occurs when the code graph was unavailable during
+gg bug report — the bug store holds the authoritative affected_files /
 affected_symbols lists; reindex replays them into the graph.
 
 By default all bugs with at least one affected file or symbol are

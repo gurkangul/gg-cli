@@ -35,9 +35,9 @@ export GG_ROLE="${GG_ROLE:-implementer}"
 gg session-start --agent "$GG_AGENT" --role "$GG_ROLE"
 ```
 
-`gg init` starts the local Docker services through gg's shared compose file.
-Memgraph-backed code indexing is optional; the decision/task/search memory
-works without running `gg index`.
+`gg init` creates the embedded SQLite stores (`.gg/vectorstore.db`,
+`.gg/graph.db`) — no Docker required. Code indexing is optional; the
+decision/task/search memory works without running `gg index`.
 
 ---
 

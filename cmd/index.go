@@ -80,7 +80,7 @@ func runIndexOnce(cmd *cobra.Command, lang runner.Lang, changedMode bool) error 
 
 	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
-		return serviceErr(fmt.Sprintf("memgraph client: %v", err))
+		return serviceErr(fmt.Sprintf("code graph client: %v", err))
 	}
 	defer func() { _ = gc.Close(cmd.Context()) }()
 

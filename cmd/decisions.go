@@ -63,7 +63,7 @@ func runDecisions(cmd *cobra.Command, args []string) error {
 	defer d.Close()
 
 	if d.qdrantSlow {
-		return fmt.Errorf("%s", withServiceHint("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status", svcQdrant))
+		return fmt.Errorf("%s", withServiceHint("vector store health check timed out — retry or run gg doctor", svcVectorStore))
 	}
 	if d.qdrantDown {
 		// Offline fallback reuses the search JSONL scan; an empty query scans

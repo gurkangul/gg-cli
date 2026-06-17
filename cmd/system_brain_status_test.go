@@ -15,7 +15,7 @@ import (
 
 func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing.T) {
 	// The local vector store is the always-up embedded SQLite store, so the
-	// brain-health report shows qdrant=up. Ollama remains down (no embedding
+	// brain-health report shows vector=up. Ollama remains down (no embedding
 	// server). This test does not route through setupGGDir.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -34,7 +34,7 @@ func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing
 		"registry=ok",
 		"project_id=ok",
 		"snapshot=none",
-		"qdrant=up",
+		"vector=up",
 		"ollama=down",
 		"codegraph=not_applicable",
 		"registry_issues=0",
@@ -48,7 +48,7 @@ func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing
 
 func TestSystemBrainStatusJSONReportsMismatchAndFreshSnapshot(t *testing.T) {
 	// The embedded SQLite vector store is always up, so the JSON report shows
-	// qdrant=up; ollama stays down (no embedding server). This test does not route
+	// vector=up; ollama stays down (no embedding server). This test does not route
 	// through setupGGDir.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -76,9 +76,9 @@ func TestSystemBrainStatusJSONReportsMismatchAndFreshSnapshot(t *testing.T) {
 				Status    string `json:"status"`
 				Checksums string `json:"checksums"`
 			} `json:"snapshot"`
-			Qdrant struct {
+			Vector struct {
 				Status string `json:"status"`
-			} `json:"qdrant"`
+			} `json:"vector"`
 			Ollama struct {
 				Status string `json:"status"`
 			} `json:"ollama"`
@@ -106,8 +106,8 @@ func TestSystemBrainStatusJSONReportsMismatchAndFreshSnapshot(t *testing.T) {
 	if got.Snapshot.Status != "fresh" || got.Snapshot.Checksums != "ok" {
 		t.Fatalf("snapshot mismatch: %#v", got.Snapshot)
 	}
-	if got.Qdrant.Status != "up" || got.Ollama.Status != "down" || got.CodeGraph.Status != "not_applicable" {
-		t.Fatalf("backend/codegraph status mismatch: qdrant=%#v ollama=%#v codegraph=%#v", got.Qdrant, got.Ollama, got.CodeGraph)
+	if got.Vector.Status != "up" || got.Ollama.Status != "down" || got.CodeGraph.Status != "not_applicable" {
+		t.Fatalf("backend/codegraph status mismatch: vector=%#v ollama=%#v codegraph=%#v", got.Vector, got.Ollama, got.CodeGraph)
 	}
 }
 
@@ -118,13 +118,13 @@ func TestSystemBrainStatusJSONReportsDriftedSnapshot(t *testing.T) {
 	writeSystemBrainRegistry(t, home, map[string]string{"proj-a": projectRoot})
 	t.Chdir(t.TempDir())
 
-	originalClient := systemBrainNewQdrantClient
-	systemBrainNewQdrantClient = func(_ *config.Config, _ string) (systemBrainQdrantClient, error) {
-		return fakeSystemBrainQdrantClient{recordsByKind: map[string][]store.BrainRecord{
+	originalClient := systemBrainNewVectorClient
+	systemBrainNewVectorClient = func(_ *config.Config, _ string) (systemBrainVectorClient, error) {
+		return fakeSystemBrainVectorClient{recordsByKind: map[string][]store.BrainRecord{
 			store.BrainKind[0]: {{ID: "live-only"}},
 		}}, nil
 	}
-	t.Cleanup(func() { systemBrainNewQdrantClient = originalClient })
+	t.Cleanup(func() { systemBrainNewVectorClient = originalClient })
 
 	stdout, stderr, err := execCmd(t, "--json", "system", "brain", "status")
 	if err != nil {
@@ -224,15 +224,15 @@ func TestSystemBrainStatusEmptyRegistry(t *testing.T) {
 	}
 }
 
-type fakeSystemBrainQdrantClient struct {
+type fakeSystemBrainVectorClient struct {
 	recordsByKind map[string][]store.BrainRecord
 }
 
-func (fakeSystemBrainQdrantClient) HealthCheck(context.Context) error { return nil }
+func (fakeSystemBrainVectorClient) HealthCheck(context.Context) error { return nil }
 
-func (fakeSystemBrainQdrantClient) Close() error { return nil }
+func (fakeSystemBrainVectorClient) Close() error { return nil }
 
-func (f fakeSystemBrainQdrantClient) ExportBrainCollection(_ context.Context, kind string) ([]store.BrainRecord, error) {
+func (f fakeSystemBrainVectorClient) ExportBrainCollection(_ context.Context, kind string) ([]store.BrainRecord, error) {
 	return f.recordsByKind[kind], nil
 }
 
@@ -244,14 +244,9 @@ func writeSystemBrainProject(t *testing.T, projectID, name string, withSnapshot 
 		t.Fatalf("mkdir .gg: %v", err)
 	}
 	cfg := `project_id: ` + projectID + `
-qdrant:
-  host: "127.0.0.1"
-  port: 19997
 embedding:
   host: "http://127.0.0.1:19998"
   model: "nomic-embed-text"
-memgraph:
-  uri: "bolt://127.0.0.1:1"
 `
 	if err := os.WriteFile(filepath.Join(ggDir, "config.yaml"), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)

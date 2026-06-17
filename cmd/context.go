@@ -70,7 +70,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 	defer d.Close()
 
 	if d.qdrantSlow {
-		return fmt.Errorf("%s", withServiceHint("vector store health check timed out — retry or run gg doctor", svcQdrant))
+		return fmt.Errorf("%s", withServiceHint("vector store health check timed out — retry or run gg doctor", svcVectorStore))
 	}
 	if d.qdrantDown {
 		// BUG-075: prefer a live JSONL scan over the up-to-7-day LKG cache,

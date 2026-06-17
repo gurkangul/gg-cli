@@ -45,8 +45,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code graph. `gg reembed`'s false "stored knowledge will be lost" warning is
   corrected (`.gg/brain/*.jsonl` is the never-dropped source of truth). JSON
   `source_backend` reports `sqlite` on the embedded read path.
+- **Backend-neutral `--json` keys.** `gg index status --json` renames
+  `memgraph_configured` / `memgraph_available` / `memgraph_detail` →
+  `graph_configured` / `graph_available` / `graph_detail`; `gg system brain-status
+  --json` renames `qdrant` → `vector` and `memgraph_available` → `graph_available`.
+  Scripts parsing these fields must update.
 
 ### Fixed
+
+- **`gg init` no longer writes a config it immediately rejects.** The generated
+  `.gg/config.yaml` template still emitted top-level `qdrant:` / `memgraph:`
+  sections after those keys were removed from the schema, so every command on a
+  freshly-`init`'d project printed `unrecognized key(s): memgraph, qdrant`. The
+  template now carries only recognized keys.
 
 - **`gg context <topic>` / `gg context` / `gg context --for-task` now fall back to
   the JSONL brain** when the embedded collections are not materialized yet (fresh

@@ -1,11 +1,11 @@
 ## gg brain backfill
 
-Migrate tag-based Task↔Decision links to Memgraph edges
+Migrate tag-based Task↔Decision links to code-graph edges
 
 ### Synopsis
 
-Scan Qdrant for implicit Task↔Decision relationships and write them as
-explicit Memgraph edges — (Decision)-[:DECIDES]->(Task) — tagged with
+Scan the brain store for implicit Task↔Decision relationships and write them
+as explicit code-graph edges — (Decision)-[:DECIDES]->(Task) — tagged with
 created_by=backfill_v1 for rollback identification.
 
 Two sources are evaluated:
@@ -22,7 +22,7 @@ writing anything. Pass --apply to execute the migration.
 
 Examples:
   gg brain backfill              # audit only
-  gg brain backfill --apply      # write edges to Memgraph
+  gg brain backfill --apply      # write edges to the code graph
 
 ```
 gg brain backfill [flags]
@@ -31,7 +31,7 @@ gg brain backfill [flags]
 ### Options
 
 ```
-      --apply   write edges to Memgraph (default: dry-run only)
+      --apply   write edges to the code graph (default: dry-run only)
   -h, --help    help for backfill
 ```
 

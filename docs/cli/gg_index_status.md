@@ -28,4 +28,4 @@ gg index status [flags]
 
 ### SEE ALSO
 
-* [gg index](gg_index.md)	 - Index the codebase into the Memgraph knowledge graph
+* [gg index](gg_index.md)	 - Index the codebase into the embedded code graph (.gg/graph.db)

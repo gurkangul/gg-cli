@@ -23,16 +23,17 @@ Most tests run without a live backend. There are three test tiers:
 Cobra arg-count validation, flag validation, and config-not-found paths.
 These live in `cmd/cmd_test.go` and exercise the cobra layer only.
 
-### Tier 2 — config present, Qdrant down (always run)
+### Tier 2 — config present, embedded store (always run)
 
 `cmd/fixtures_test.go` creates a minimal `.gg` directory via `setupGGDir(t)`.
-Commands reach `loadDeps` / `loadDepsReadOnly`, fail at the Qdrant health
-check, and return `ExitStoreDown`. Read-only commands (search, context) fall
-back to the LKG cache and exercise the cache-hit code paths.
+Commands reach `loadDeps` / `loadDepsReadOnly` against the embedded SQLite
+stores (always reachable — they are local files). Read-only commands (search,
+context) also exercise the LKG cache-hit code paths.
 
-### Tier 3 — live backend (skip if unavailable)
+### Tier 3 — live embedding endpoint (skip if unavailable)
 
-Integration tests that require a running Qdrant + Ollama. Currently none are
+Integration tests that require a running Ollama embedding endpoint (the stores
+are embedded SQLite and need no external service). Currently none are
 implemented in the alpha phase; they will be added in TASK-043 (v1.0 prep).
 
 ## Running coverage locally

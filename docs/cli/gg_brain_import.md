@@ -1,10 +1,10 @@
 ## gg brain import
 
-Restore Qdrant + Memgraph from .gg/brain/ (idempotent)
+Restore vector store + code graph from .gg/brain/ (idempotent)
 
 ### Synopsis
 
-Import a brain snapshot from .gg/brain/ into the local Qdrant and Memgraph stores.
+Import a brain snapshot from .gg/brain/ into the embedded vector store and code graph.
 
 Validates manifest SHA-256 checksums and embedding model compatibility before writing.
 By default uses upsert semantics — safe to run multiple times.

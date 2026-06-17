@@ -36,7 +36,7 @@ writing anything. Pass --apply to execute the migration.
 
 Examples:
   gg brain backfill              # audit only
-  gg brain backfill --apply      # write edges to Memgraph`,
+  gg brain backfill --apply      # write edges to the code graph`,
 	RunE: runBrainBackfill,
 }
 

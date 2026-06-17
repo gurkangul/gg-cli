@@ -247,7 +247,7 @@ func runCanonGather(cmd *cobra.Command, args []string) error {
 	}
 	defer d.Close()
 	if d.qdrantDown {
-		return fmt.Errorf("qdrant unreachable — gather needs the ledger; retry when stores are up")
+		return fmt.Errorf("vector store unavailable — gather needs the ledger; retry when stores are up")
 	}
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()

@@ -5,8 +5,7 @@
 ```
 gg (CLI, Go)
 │
-├── Vector store (default: embedded SQLite, .gg/vectorstore.db — no Docker)
-│   │  pluggable: qdrant.backend=qdrant → Qdrant server at localhost:6334
+├── Vector store (embedded SQLite, .gg/vectorstore.db — no Docker)
 │   ├── <project>-decisions        gg record / gg search
 │   ├── <project>-rejections       gg record --decision-status=rejected
 │   ├── <project>-tasks            gg task
@@ -15,8 +14,7 @@ gg (CLI, Go)
 │   ├── <project>-notes            (legacy; CLI verbs removed in v0.3)
 │   └── <project>-messages         gg tell / gg inbox
 │
-├── Graph store (default: embedded SQLite, .gg/graph.db — no Docker)
-│   │  pluggable: memgraph.backend=memgraph → Memgraph server at localhost:7687
+├── Graph store (embedded SQLite, .gg/graph.db — no Docker)
 │   ├── Symbol nodes               exported functions, types, variables
 │   ├── File nodes                 source files
 │   └── IMPORTS edges              dependency relationships
@@ -25,10 +23,8 @@ gg (CLI, Go)
     └── nomic-embed-text (768-dim) semantic search vectors
 ```
 
-Backend selection precedence (both stores): `GG_VECTOR_BACKEND` /
-`GG_GRAPH_BACKEND` env var > `qdrant.backend` / `memgraph.backend` config field >
-built-in default (`sqlite`). The embedded stores remove the Docker dependency;
-the server adapters stay fully selectable.
+Both stores are embedded SQLite — there is no server backend to opt into and no
+Docker dependency.
 
 ## Directory layout
 
@@ -43,9 +39,9 @@ the server adapters stay fully selectable.
 
 <project_root>/
 └── .gg/                           per-project metadata (committed to git)
-    ├── config.yaml                project_id + backend selection + endpoints
-    ├── vectorstore.db             embedded vector store (default backend)
-    ├── graph.db                   embedded graph store (default backend)
+    ├── config.yaml                project_id + embedding endpoint
+    ├── vectorstore.db             embedded vector store
+    ├── graph.db                   embedded graph store
     ├── brain/                     canonical JSONL ledger (committed, portable)
     ├── RULES.md
     ├── AGENTS.md (optional)
@@ -57,15 +53,15 @@ the server adapters stay fully selectable.
 
 ## Project isolation
 
-Every vector point and every graph node carries a `project_id` field (the embedded SQLite stores namespace by it just as the Qdrant/Memgraph servers do). Multiple projects can share the same backend without data leakage. The project ID is set in `.gg/config.yaml` and injected automatically by all store/graph writes.
+Every vector point and every graph node carries a `project_id` field (the embedded SQLite stores namespace by it). Multiple projects can share the same store without data leakage. The project ID is set in `.gg/config.yaml` and injected automatically by all store/graph writes.
 
 ## Code packages
 
 | Package | Responsibility |
 |---|---|
 | `cmd/` | Cobra commands — thin handlers that delegate to internal packages |
-| `internal/store/` | Vector store — pluggable backend (embedded SQLite default, Qdrant server opt-in) behind `VectorStore`; decisions, tasks, bugs, notes, discussions, messages |
-| `internal/graph/` | Graph store — pluggable backend (embedded SQLite default, Memgraph/Bolt opt-in) behind `GraphStore`; code knowledge graph |
+| `internal/store/` | Vector store — embedded SQLite behind `VectorStore`; decisions, tasks, bugs, notes, discussions, messages |
+| `internal/graph/` | Graph store — embedded SQLite behind `GraphStore`; code knowledge graph |
 | `internal/embedding/` | Pluggable embedding backend — native Ollama default, opt-in Voyage cloud; generates float32 vectors |
 | `internal/index/` | SCIP pipeline — runner, parser, changed-file detection, version compat |
 | `internal/outbox/` | Crash-safety queue for graph writes |
@@ -83,13 +79,13 @@ All graph writes use `MERGE` semantics (`UpsertNode`, `UpsertEdge`) so replay is
 
 ## CodeGraph freshness contract
 
-The graph store (embedded SQLite by default, Memgraph when opted in) is a derived
+The graph store (embedded SQLite) is a derived
 CodeGraph projection, not a background service owned by gg. Successful index runs update `.gg/index-state.json` with per-language SHAs
 and working-tree fingerprints. `gg session-start`, `gg next`, `gg impact`,
 `gg doctor`, and `gg index status` all render the same shared freshness
 contract: status (`ready`, `missing`, `stale`, `unavailable`, `unknown`,
 `not_applicable`), reason (`missing_graph`, `empty_graph`,
-`memgraph_unavailable`, `language_missing`, `non_ancestor`, `changed_files`,
+`graph_unavailable`, `language_missing`, `non_ancestor`, `changed_files`,
 `module_manifest_changed`, `fingerprint_mismatch`, `not_applicable`,
 `unknown`), counts, repair command, and foreground-watch hint.
 
@@ -140,8 +136,8 @@ gg record           gg task create       gg search
   │                    │                    │
   └────────────────────┴────────────────────┘
                         │
-                   Qdrant + Memgraph
-                   (shared backend)
+              embedded SQLite stores
+              (.gg/vectorstore.db + .gg/graph.db)
 ```
 
 No central coordinator. No daemon. Each agent is a subprocess that reads/writes the shared store via the `gg` CLI.

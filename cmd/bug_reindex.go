@@ -62,7 +62,7 @@ func runBugReindex(cmd *cobra.Command, _ []string) error {
 
 	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
-		return fmt.Errorf("memgraph: %w", err)
+		return fmt.Errorf("code graph: %w", err)
 	}
 	defer func() { _ = gc.Close(ctx) }()
 

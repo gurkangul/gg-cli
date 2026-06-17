@@ -97,7 +97,7 @@ func semanticMemoryActionWarning(ctx context.Context, cfg *config.Config) string
 			healthErr := c.HealthCheck(healthCtx)
 			cancel()
 			if healthErr != nil {
-				parts = append(parts, "qdrant unreachable")
+				parts = append(parts, "vector store unavailable")
 			} else {
 				countCtx, countCancel := context.WithTimeout(ctx, 2*time.Second)
 				counts, countErr := c.DegradedVectorCounts(countCtx)
@@ -121,7 +121,7 @@ func semanticMemoryActionWarning(ctx context.Context, cfg *config.Config) string
 		}
 	}
 	for _, part := range parts {
-		if part == "qdrant unreachable" {
+		if part == "vector store unavailable" {
 			hint = "Run: gg doctor"
 			break
 		}

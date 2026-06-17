@@ -58,7 +58,7 @@ gg doctor [flags]
       --strict                   exit non-zero when artifact drift is detected (for CI); without --strict, drift is advisory and does not affect the exit code
       --sync-artifacts           compare .gg/installed.json against the current CLI templates and show a drift table
       --sync-baseline            rescan project and refresh .gg/file-size-baseline.json with current line counts
-      --wipe-brain               drop all Qdrant collections and Memgraph nodes for this project (destructive — use for testing)
+      --wipe-brain               drop all vector collections and code-graph nodes for this project (destructive — use for testing)
       --yes                      auto-accept confirmations for state-changing doctor flows (--wipe-brain, --heal RULES.md re-render, --install-task-hooks Makefile test-tier); also honored via GG_YES=1
 ```
 

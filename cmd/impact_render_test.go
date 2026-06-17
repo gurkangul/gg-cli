@@ -131,7 +131,7 @@ func TestImpactGraphEmptyWarning_UsesFullIndexSuggestion(t *testing.T) {
 		Detail:            "index-state matches HEAD and working tree source files for go",
 		DetectedLanguages: []string{"go"},
 		SuggestedCommand:  "gg index --lang go --changed",
-		MemgraphAvailable: true,
+		GraphAvailable:    true,
 		GraphEmpty:        true,
 	}
 	status.finalize()

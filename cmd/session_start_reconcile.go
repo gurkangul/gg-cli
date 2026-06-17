@@ -105,7 +105,7 @@ func autoReconcileDisabled() bool {
 
 // errAutoReconcileStoreDown signals that Qdrant was unreachable, so the replay
 // was deferred (not a failure). reconcileOutboxIfNeeded stays silent on it.
-var errAutoReconcileStoreDown = errors.New("qdrant unreachable — replay deferred")
+var errAutoReconcileStoreDown = errors.New("vector store unavailable — replay deferred")
 
 // autoReconcileReplay drains the outbox using the same replay primitives as
 // `gg doctor --reconcile` (replayBrainEntry), but quietly: it does not print the

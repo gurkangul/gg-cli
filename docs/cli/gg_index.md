@@ -1,11 +1,12 @@
 ## gg index
 
-Index the codebase into the Memgraph knowledge graph
+Index the codebase into the embedded code graph (.gg/graph.db)
 
 ### Synopsis
 
 Runs a SCIP indexer on the project and writes the resulting code graph
-(Symbol, File, Package nodes and DEFINES/IMPORTS edges) to Memgraph.
+(Symbol, File, Package nodes and DEFINES/IMPORTS edges) to the embedded SQLite
+graph store (.gg/graph.db).
 CALLS flow queries are supported when CALLS edges exist, but the built-in SCIP
 parser currently materializes cross-file references as IMPORTS edges.
 

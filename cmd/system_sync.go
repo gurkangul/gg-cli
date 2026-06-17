@@ -196,7 +196,7 @@ func runSystemSyncTracker(ctx context.Context, projectRoot string, cfg *config.C
 	}
 	client, err := systemSyncNewQdrantClient(cfg, ggDir)
 	if err != nil {
-		return fmt.Errorf("create qdrant client: %w", err)
+		return fmt.Errorf("create vector store client: %w", err)
 	}
 	defer func() { _ = client.Close() }()
 
@@ -210,7 +210,7 @@ func runSystemSyncTracker(ctx context.Context, projectRoot string, cfg *config.C
 		if errors.Is(err, context.Canceled) {
 			return err
 		}
-		fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+		fmt.Printf("  ↷ tracker self-heal skipped — vector store unavailable: %v\n", err)
 		return nil
 	}
 
@@ -222,7 +222,7 @@ func runSystemSyncTracker(ctx context.Context, projectRoot string, cfg *config.C
 			return ctxErr
 		}
 		if systemSyncQdrantUnavailable(err) {
-			fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+			fmt.Printf("  ↷ tracker self-heal skipped — vector store unavailable: %v\n", err)
 			return nil
 		}
 		return fmt.Errorf("check tracker collections: %w", err)
@@ -240,7 +240,7 @@ func runSystemSyncTracker(ctx context.Context, projectRoot string, cfg *config.C
 			return ctxErr
 		}
 		if systemSyncQdrantUnavailable(err) {
-			fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+			fmt.Printf("  ↷ tracker self-heal skipped — vector store unavailable: %v\n", err)
 			return nil
 		}
 		if systemSyncAlreadyExists(err) {
@@ -272,7 +272,7 @@ func runSystemSyncRetryAfterRace(ctx context.Context, client systemSyncQdrant, v
 			return ctxErr
 		}
 		if systemSyncQdrantUnavailable(err) {
-			fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+			fmt.Printf("  ↷ tracker self-heal skipped — vector store unavailable: %v\n", err)
 			return nil
 		}
 		return fmt.Errorf("verify tracker collections after create race: %w", err)
@@ -293,7 +293,7 @@ func runSystemSyncRetryAfterRace(ctx context.Context, client systemSyncQdrant, v
 		return ctxErr
 	}
 	if systemSyncQdrantUnavailable(err) {
-		fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+		fmt.Printf("  ↷ tracker self-heal skipped — vector store unavailable: %v\n", err)
 		return nil
 	}
 	if systemSyncAlreadyExists(err) {
@@ -311,7 +311,7 @@ func runSystemSyncFinalRaceCheck(ctx context.Context, client systemSyncQdrant) e
 			return ctxErr
 		}
 		if systemSyncQdrantUnavailable(err) {
-			fmt.Printf("  ↷ tracker self-heal skipped — qdrant unavailable: %v\n", err)
+			fmt.Printf("  ↷ tracker self-heal skipped — vector store unavailable: %v\n", err)
 			return nil
 		}
 		return fmt.Errorf("verify tracker collections after repeated create race: %w", err)
