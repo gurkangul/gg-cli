@@ -4,6 +4,11 @@ agents_schema: "2.1"
 
 # Agent Guidance
 
+> **MANDATORY:** This project uses gg as shared memory. Before your first
+> action, run `gg session-start --agent <id> --role <role>` and
+> `gg context --compact`. Record durable decisions/bugs/handoffs with gg.
+> Skipping this means working blind to prior decisions.
+
 ## Project Context
 
 > **Replace this section with your project's elevator pitch.** Agents read
@@ -87,10 +92,10 @@ that can run a command.
 
 # GG RULES
 
-## RECOMMENDED ORIENTATION
+## MANDATORY ORIENTATION (do this before your first action)
 
-At the start of a session, orient yourself with gg when shell access is
-available:
+You MUST orient yourself with gg before reading or changing anything. As your
+FIRST action in a fresh session (and after any /clear), run the block below:
 
 Set `GG_AGENT` to the runtime that is actually executing gg commands. Do not
 copy an example from another runtime. Examples: `gsd-myproject-1` for a real

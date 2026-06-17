@@ -15,8 +15,18 @@ func TestInstallDetected_ReportsEveryAgent(t *testing.T) {
 	}
 	// In an empty project dir every agent should be either not-detected or,
 	// for claude, suggested (when the host machine has Claude Code installed
-	// globally). Both are valid "not installed in project" outcomes.
+	// globally). The always-on soft installers (gemini, openhands) Detect()
+	// unconditionally and create their native file even in a bare dir, so they
+	// report ActionCreated — that is intentional coverage, not a failure.
+	alwaysOn := map[string]bool{"gemini": true, "openhands": true}
 	for _, r := range results {
+		if alwaysOn[r.AgentName] {
+			if r.Action != ActionCreated {
+				t.Errorf("agent %s action = %q in empty dir, want %q (always-on soft installer)",
+					r.AgentName, r.Action, ActionCreated)
+			}
+			continue
+		}
 		switch r.Action {
 		case ActionNotDetected, ActionSuggested:
 			// OK — agent not active in this project
@@ -97,7 +107,7 @@ func TestTierString(t *testing.T) {
 
 func TestAllNames_CoversAllInstallers(t *testing.T) {
 	names := AllNames()
-	want := []string{"claude", "cursor", "codex", "bmad", "gsd"}
+	want := []string{"claude", "cursor", "codex", "gemini", "openhands", "bmad", "gsd"}
 	if len(names) != len(want) {
 		t.Fatalf("got %v, want %v", names, want)
 	}

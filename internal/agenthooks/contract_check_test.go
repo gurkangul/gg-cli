@@ -336,10 +336,13 @@ func TestHasDrift_TrueWhenMissing(t *testing.T) {
 func TestHasDrift_FalseWhenAllOK(t *testing.T) {
 	dir := contractFixture(t)
 	// Also install the other files so none are MISSING.
-	// cursor, codex/bmad (AGENTS.md), gsd.
+	// cursor, codex/bmad (AGENTS.md), gemini (GEMINI.md), openhands microagent, gsd.
 	_ = os.MkdirAll(filepath.Join(dir, ".cursor", "rules"), 0o755)
 	writeBlock(t, filepath.Join(dir, ".cursor", "rules", "gg-mandatory.mdc"))
 	writeBlock(t, filepath.Join(dir, "AGENTS.md"))
+	writeBlock(t, filepath.Join(dir, "GEMINI.md"))
+	_ = os.MkdirAll(filepath.Join(dir, ".openhands", "microagents"), 0o755)
+	writeBlock(t, filepath.Join(dir, ".openhands", "microagents", "gg.md"))
 	_ = os.MkdirAll(filepath.Join(dir, ".gsd"), 0o755)
 	writeBlock(t, filepath.Join(dir, ".gsd", "KNOWLEDGE.md"))
 

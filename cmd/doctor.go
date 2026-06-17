@@ -75,7 +75,7 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorInstallAgentHooks, "install-agent-hooks", false,
 		"write agent-side config (SessionStart hook / alwaysApply rule / read-preload) to enforce gg usage")
 	doctorCmd.Flags().StringVar(&doctorHooksAgent, "agent", "",
-		"restrict --install-agent-hooks to a single agent (claude, cursor, codex, bmad, gsd)")
+		"restrict --install-agent-hooks to a single agent (claude, cursor, codex, gemini, openhands, bmad, gsd)")
 	doctorCmd.Flags().BoolVar(&doctorHooksDryRun, "dry-run", false,
 		"with --install-agent-hooks: report what would change without writing anything")
 	doctorCmd.Flags().BoolVar(&doctorHeal, "heal", false,

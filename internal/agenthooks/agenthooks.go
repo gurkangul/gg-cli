@@ -113,6 +113,8 @@ var registry = []Installer{
 	&claudeInstaller{},
 	&cursorInstaller{},
 	&codexInstaller{},
+	&geminiInstaller{},
+	&openhandsInstaller{},
 	&bmadInstaller{},
 	&gsdInstaller{},
 }

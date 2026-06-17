@@ -21,6 +21,10 @@ description: gg-cli durable memory rule (managed by gg — do not edit)
 You are operating inside a gg-cli shared-memory project. Read AGENTS.md at the
 repo root for the full native-workflow + durable-memory protocol.
 
+MANDATORY: before your first action, read AGENTS.md and run
+` + "`gg session-start --agent <id> --role <role>`" + ` then ` + "`gg context --compact`" + `.
+Skipping orientation means working blind to prior decisions.
+
 Rule: gg-cli does not own Cursor's workflow. Use Cursor normally, and persist
 anything future agents need into gg: decisions, rejections, shared work items,
 bugs/root causes, blockers, handoffs, evidence summaries, and artifact references.
