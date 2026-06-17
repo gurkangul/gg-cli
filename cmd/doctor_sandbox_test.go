@@ -1,74 +1,17 @@
 package cmd
 
 import (
-	"bytes"
-	"context"
-	"io"
-	"os"
-	"strings"
 	"syscall"
 	"testing"
 
-	"github.com/spf13/cobra"
-
-	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
-// fakeQdrantChecker is an injectable fake that returns a canned error from HealthCheck.
-type fakeQdrantChecker struct{ err error }
-
-func (f *fakeQdrantChecker) HealthCheck(_ context.Context) error { return f.err }
-func (f *fakeQdrantChecker) CollectionStatus(_ context.Context) ([]string, []string, error) {
-	return nil, nil, nil
-}
-func (f *fakeQdrantChecker) Close() error { return nil }
-
-func TestDoctorCheckQdrantServer_PrintsSandboxHint(t *testing.T) {
-	// Inject a fake client that returns EPERM on HealthCheck.
-	orig := doctorQdrantNewClient
-	defer func() { doctorQdrantNewClient = orig }()
-	doctorQdrantNewClient = func(_ *config.Config, _ string) (qdrantHealthChecker, error) {
-		return &fakeQdrantChecker{err: syscall.EPERM}, nil
-	}
-
-	// Capture stderr.
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	origStderr := os.Stderr
-	os.Stderr = w
-
-	report := &doctorReport{}
-	cfg := &config.Config{}
-	cfg.Qdrant.Host = "localhost"
-	cfg.Qdrant.Port = 6334
-
-	cmd := &cobra.Command{}
-	cmd.SetContext(t.Context())
-	doctorCheckQdrantServer(cmd, cfg, report)
-
-	if err := w.Close(); err != nil {
-		t.Fatalf("close stderr pipe: %v", err)
-	}
-	os.Stderr = origStderr
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
-		t.Fatalf("read stderr pipe: %v", err)
-	}
-
-	if report.problems != 1 {
-		t.Fatalf("expected 1 problem, got %d", report.problems)
-	}
-	output := buf.String()
-	if !strings.Contains(output, "operation not permitted (sandbox?)") {
-		t.Errorf("expected sandbox banner in stderr, got: %q", output)
-	}
-	if !strings.Contains(output, "sandbox") {
-		t.Errorf("expected hint line mentioning sandbox, got: %q", output)
-	}
-}
+// NOTE: TestDoctorCheckQdrantServer_PrintsSandboxHint (and its fakeQdrantChecker)
+// were removed: they exercised the deleted doctorCheckQdrantServer server check
+// and the removed config.Config.Qdrant field. The embedded store is always up, so
+// there is no Qdrant-server health-check path to sandbox-guard. The surviving
+// sandbox-permission detection is covered below.
 
 func TestRecordOffline_EpermVariantPrintsSandboxNote(t *testing.T) {
 	// OutboxQueued with EPERM Cause must be detected.

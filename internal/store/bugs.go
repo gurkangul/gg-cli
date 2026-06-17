@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gurkangul/gg-cli/internal/brain"
-	"github.com/qdrant/go-client/qdrant"
 )
 
 var bugIDNamespace = uuid.MustParse("c0c0c0c0-1a5c-4d0d-bab0-000000000003")
@@ -46,10 +45,10 @@ func pointUUIDForBugID(id string) string {
 }
 
 func (c *Client) maxBugIDNumber(ctx context.Context) (int, error) {
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collBugs(),
-		Limit:          qdrant.PtrOf(uint32(1000)),
-		WithPayload:    qdrant.NewWithPayloadInclude("bug_id"),
+		Limit:          PtrOf(uint32(1000)),
+		WithPayload:    NewWithPayloadInclude("bug_id"),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("scan bugs collection: %w", err)
@@ -110,20 +109,20 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 		return b.ID, semanticVectorMissing(OutboxKindBug, brainUUID)
 	}
 
-	// AC-2: Qdrant secondary best-effort.
-	qdrantPayload, err := qdrant.TryValueMap(rawPayload)
+	// AC-2: the vector store secondary best-effort.
+	vecPayload, err := TryValueMap(rawPayload)
 	if err != nil {
 		return "", fmt.Errorf("build payload: %w", err)
 	}
 	wait := true
-	uErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	uErr := c.vsUpsert(ctx, &UpsertPoints{
 		CollectionName: c.collBugs(),
 		Wait:           &wait,
-		Points: []*qdrant.PointStruct{
+		Points: []*PointStruct{
 			{
-				Id:      qdrant.NewID(brainUUID),
-				Vectors: qdrant.NewVectors(vector...),
-				Payload: qdrantPayload,
+				Id:      NewID(brainUUID),
+				Vectors: NewVectors(vector...),
+				Payload: vecPayload,
 			},
 		},
 	})
@@ -134,10 +133,10 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 }
 
 func (c *Client) GetBug(ctx context.Context, bugID string) (*Bug, error) {
-	points, err := c.vs.Get(ctx, &qdrant.GetPoints{
+	points, err := c.vs.Get(ctx, &GetPoints{
 		CollectionName: c.collBugs(),
-		Ids:            []*qdrant.PointId{qdrant.NewID(pointUUIDForBugID(bugID))},
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Ids:            []*PointId{NewID(pointUUIDForBugID(bugID))},
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return nil, err
@@ -150,13 +149,13 @@ func (c *Client) GetBug(ctx context.Context, bugID string) (*Bug, error) {
 }
 
 func (c *Client) ListBugs(ctx context.Context, statusFilter string) ([]Bug, error) {
-	req := &qdrant.ScrollPoints{
+	req := &ScrollPoints{
 		CollectionName: c.collBugs(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 	}
 	if statusFilter != "" {
-		req.Filter = &qdrant.Filter{
-			Must: []*qdrant.Condition{qdrant.NewMatchKeyword("status", statusFilter)},
+		req.Filter = &Filter{
+			Must: []*Condition{NewMatchKeyword("status", statusFilter)},
 		}
 	}
 	points, err := c.scrollAll(ctx, req)
@@ -196,7 +195,7 @@ func (c *Client) StartFixingBug(ctx context.Context, bugID string) error {
 //
 // JSONL-first with version/CAS (BUG-062/063): the full updated payload is
 // appended to .gg/brain/bugs.jsonl under an optimistic version guard, then
-// mirrored to Qdrant. On a rebuild the fixed/wontfix state and root_cause are
+// mirrored to the vector store. On a rebuild the fixed/wontfix state and root_cause are
 // recovered from JSONL instead of reverting to the create-time "open" state.
 func (c *Client) updateBugStatus(ctx context.Context, bugID, status, rootCause, fixSummary, reproScript string) error {
 	brainUUID := pointUUIDForBugID(bugID)

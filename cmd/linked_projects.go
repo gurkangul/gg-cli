@@ -91,7 +91,7 @@ func openLinkedStores(cfg *config.Config) ([]linkedStore, []string) {
 		if ggDir == "" {
 			ggDir = config.GGDirOrEmpty()
 		}
-		client, err := store.New(&cfg.Qdrant, ggDir, projectID)
+		client, err := store.New(ggDir, projectID)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("linked project %s: %v", projectID, err))
 			continue

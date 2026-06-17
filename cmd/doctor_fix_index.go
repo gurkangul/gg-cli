@@ -28,14 +28,12 @@ func runDoctorFixIndex(cmd *cobra.Command) error {
 	// (Decision/Task nodes + DECIDES/DEPENDS_ON edges) first, on every explicit
 	// repair. Reuses the proven reindex paths; best-effort — failures warn, never
 	// block the code-graph repair.
-	if cfg.Memgraph.URI != "" {
-		fmt.Println("Reconciling brain graph (tasks → decisions)…")
-		if rErr := runTaskReindex(cmd, nil); rErr != nil {
-			fmt.Printf("warning: brain task reconcile: %v\n", rErr)
-		}
-		if rErr := runBrainReindexDecisions(cmd, nil); rErr != nil {
-			fmt.Printf("warning: brain decision reconcile: %v\n", rErr)
-		}
+	fmt.Println("Reconciling brain graph (tasks → decisions)…")
+	if rErr := runTaskReindex(cmd, nil); rErr != nil {
+		fmt.Printf("warning: brain task reconcile: %v\n", rErr)
+	}
+	if rErr := runBrainReindexDecisions(cmd, nil); rErr != nil {
+		fmt.Printf("warning: brain decision reconcile: %v\n", rErr)
 	}
 
 	statusCtx, statusCancel := withTimeout(cmd.Context())
@@ -111,24 +109,21 @@ func doctorFixIndexCheckServices(parent context.Context, cfg *config.Config, ggD
 	defer cancel()
 
 	if qc, err := doctorQdrantNewClient(cfg, ggDir); err != nil {
-		fmt.Printf("warning: qdrant unavailable (%v); continuing with Memgraph refresh\n", err)
+		fmt.Printf("warning: vector store unavailable (%v); continuing with code-graph refresh\n", err)
 	} else {
 		defer func() { _ = qc.Close() }()
 		if err := qc.HealthCheck(ctx); err != nil {
-			fmt.Printf("warning: qdrant unavailable (%v); continuing with Memgraph refresh\n", err)
+			fmt.Printf("warning: vector store unavailable (%v); continuing with code-graph refresh\n", err)
 		}
 	}
 
-	if cfg.Memgraph.URI == "" {
-		return serviceErr("memgraph not configured; cannot refresh code graph")
-	}
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
-		return serviceErr(fmt.Sprintf("memgraph client: %v", err))
+		return serviceErr(fmt.Sprintf("code graph client: %v", err))
 	}
 	defer func() { _ = gc.Close(ctx) }()
 	if err := gc.HealthCheck(ctx); err != nil {
-		return memgraphDownErr("memgraph unavailable", err)
+		return memgraphDownErr("code graph unavailable", err)
 	}
 	return nil
 }

@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // SetTaskProjectionPayload is a narrow repair hook for gg reconcile. It updates
@@ -17,16 +15,16 @@ func (c *Client) SetTaskProjectionPayload(ctx context.Context, taskID string, fi
 	if len(fields) == 0 {
 		return nil
 	}
-	payload, err := qdrant.TryValueMap(fields)
+	payload, err := TryValueMap(fields)
 	if err != nil {
 		return fmt.Errorf("build task projection payload: %w", err)
 	}
 	wait := true
-	_, err = c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	_, err = c.vs.SetPayload(ctx, &SetPayloadPoints{
 		CollectionName: c.collTasks(),
 		Wait:           &wait,
 		Payload:        payload,
-		PointsSelector: qdrant.NewPointsSelector(qdrant.NewID(pointUUIDForTaskID(taskID))),
+		PointsSelector: NewPointsSelector(NewID(pointUUIDForTaskID(taskID))),
 	})
 	if err != nil {
 		return fmt.Errorf("set task projection %s: %w", taskID, err)

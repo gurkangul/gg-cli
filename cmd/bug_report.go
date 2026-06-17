@@ -144,7 +144,7 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 			}
 		}
 	} else {
-		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)")
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ vector store unavailable — read served from JSONL (may miss cross-project context)")
 	}
 
 	affectedFiles := normalizeBugFiles(parseTags(bugFiles))
@@ -175,12 +175,12 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Write Bug node + AFFECTS edges to Memgraph when configured. Always
-	// upsert the Bug node, even when no affected files/symbols were given —
-	// otherwise `gg impact BUG-NNN` cannot find the bug and onelift/qrmenu
-	// end up with 0 Bug nodes in Memgraph despite a populated Qdrant.
-	if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Memgraph.URI != "" {
-		if gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID); gcErr == nil {
+	// Write Bug node + AFFECTS edges to the code graph. Always upsert the Bug
+	// node, even when no affected files/symbols were given — otherwise
+	// `gg impact BUG-NNN` cannot find the bug and projects end up with 0 Bug
+	// nodes in the code graph despite a populated vector store.
+	if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil {
+		if gc, gcErr := graph.New(cfg.DataDir, cfg.ProjectID); gcErr == nil {
 			gctx, gcancel := withTimeout(cmd.Context())
 			defer gcancel()
 			if mergeErr := gc.MergeBugAffects(gctx, id, title, affectedFiles, affectedSymbols); mergeErr != nil {

@@ -11,16 +11,16 @@ import (
 
 var taskReindexCmd = &cobra.Command{
 	Use:   "reindex",
-	Short: "Replay Task nodes into Memgraph from the Qdrant task store",
-	Long: `Rebuild Task nodes in Memgraph from the Qdrant task store.
+	Short: "Replay Task nodes into the code graph from the task store",
+	Long: `Rebuild Task nodes in the code graph from the task store.
 
-Use this to heal drift that occurs when (a) Memgraph was unreachable during
-gg task create, or (b) tasks were created before gg started dual-writing
-(TASK-225). Qdrant holds the authoritative task list; reindex upserts a
+Use this to heal drift that occurs when (a) the code graph was unavailable
+during gg task create, or (b) tasks were created before gg started dual-writing
+(TASK-225). The task store holds the authoritative task list; reindex upserts a
 matching Task node for each one, idempotently.
 
-Only node identity (qdrant_id + title) is mirrored. Status, priority,
-tags, and author remain in Qdrant — Memgraph Task nodes exist to
+Only node identity (id + title) is mirrored. Status, priority,
+tags, and author remain in the task store — code-graph Task nodes exist to
 participate in graph traversal (DECIDES / IMPLEMENTS / IN_WAVE edges).`,
 	RunE: runTaskReindex,
 }
@@ -34,10 +34,6 @@ func runTaskReindex(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if cfg.Memgraph.URI == "" {
-		return fmt.Errorf("memgraph.uri not configured — run gg init first")
-	}
-
 	d, err := loadDeps(false)
 	if err != nil {
 		return err
@@ -52,7 +48,7 @@ func runTaskReindex(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list tasks: %w", err)
 	}
 
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
 		return fmt.Errorf("memgraph: %w", err)
 	}

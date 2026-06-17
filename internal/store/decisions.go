@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gurkangul/gg-cli/internal/brain"
-	"github.com/qdrant/go-client/qdrant"
 )
 
 type Decision struct {
@@ -29,8 +28,8 @@ type Decision struct {
 }
 
 // AddDecision writes the decision to .gg/brain/decisions.jsonl first (durable,
-// offline-safe), then attempts a Qdrant upsert.  Returns an OutboxQueued error
-// when Qdrant is unreachable so callers can surface the queued-for-replay note.
+// offline-safe), then attempts a vector-store upsert.  Returns an OutboxQueued error
+// when the vector store is unreachable so callers can surface the queued-for-replay note.
 func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) error {
 	if d.ID == "" {
 		d.ID = uuid.New().String()
@@ -64,20 +63,20 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 		return semanticVectorMissing(OutboxKindDecision, d.ID)
 	}
 
-	// AC-2: Qdrant upsert is secondary best-effort.
-	qdrantPayload, err := qdrant.TryValueMap(rawPayload)
+	// AC-2: vector upsert is secondary best-effort.
+	vecPayload, err := TryValueMap(rawPayload)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
 	}
 	wait := true
-	uErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	uErr := c.vsUpsert(ctx, &UpsertPoints{
 		CollectionName: c.collDecisions(),
 		Wait:           &wait,
-		Points: []*qdrant.PointStruct{
+		Points: []*PointStruct{
 			{
-				Id:      qdrant.NewID(d.ID),
-				Vectors: qdrant.NewVectors(vector...),
-				Payload: qdrantPayload,
+				Id:      NewID(d.ID),
+				Vectors: NewVectors(vector...),
+				Payload: vecPayload,
 			},
 		},
 	})
@@ -92,21 +91,21 @@ func (c *Client) AddDecision(ctx context.Context, d Decision, vector []float32) 
 // cosine similarity scores — they must not appear in ranked results.
 //
 // BUG-085: this MUST use is_empty, not is_null. Normal records never set the
-// gg_vector_degraded key at all, and Qdrant's is_null matches only keys that
+// gg_vector_degraded key at all, and the vector store's is_null matches only keys that
 // exist AND are explicitly null — so is_null excluded EVERY record and made all
 // Search* queries return zero results. is_empty matches missing/null/empty, so
 // it keeps normal records and drops only the explicitly-marked degraded ones.
-func nonDegradedVectorCondition() *qdrant.Condition {
-	return qdrant.NewIsEmpty("gg_vector_degraded")
+func nonDegradedVectorCondition() *Condition {
+	return NewIsEmpty("gg_vector_degraded")
 }
 
-// ActiveDecisionsFilter returns the Qdrant filter that restricts results to
+// ActiveDecisionsFilter returns the payload filter that restricts results to
 // active decisions only (status="active"). Superseded and rejected decisions
 // are excluded from default retrieval — they remain queryable with includeAll=true.
-func ActiveDecisionsFilter() *qdrant.Filter {
-	return &qdrant.Filter{
-		Must: []*qdrant.Condition{
-			qdrant.NewMatchKeyword("status", "active"),
+func ActiveDecisionsFilter() *Filter {
+	return &Filter{
+		Must: []*Condition{
+			NewMatchKeyword("status", "active"),
 		},
 	}
 }
@@ -116,20 +115,20 @@ func ActiveDecisionsFilter() *qdrant.Filter {
 // decisions are returned — superseded and rejected decisions are suppressed so
 // agents don't surface stale or overridden context.
 func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit uint64, includeAll bool) ([]Decision, error) {
-	req := &qdrant.QueryPoints{
+	req := &QueryPoints{
 		CollectionName: c.collDecisions(),
-		Query:          qdrant.NewQuery(vector...),
-		Limit:          qdrant.PtrOf(limit),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Query:          NewQuery(vector...),
+		Limit:          PtrOf(limit),
+		WithPayload:    NewWithPayloadEnable(true),
 	}
 	if !includeAll {
 		f := ActiveDecisionsFilter()
 		f.Must = append(f.Must, nonDegradedVectorCondition())
 		req.Filter = f
 	} else {
-		req.Filter = &qdrant.Filter{Must: []*qdrant.Condition{nonDegradedVectorCondition()}}
+		req.Filter = &Filter{Must: []*Condition{nonDegradedVectorCondition()}}
 	}
-	results, err := c.qdrantQuery(ctx, req)
+	results, err := c.vsQuery(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -144,13 +143,13 @@ func (c *Client) SearchDecisions(ctx context.Context, vector []float32, limit ui
 }
 
 // ListDecisions returns the most recently created decisions, sorted descending
-// by created_at. It paginates internally and then trims to limit — Qdrant's
+// by created_at. It paginates internally and then trims to limit — the vector store's
 // scroll itself has no time-ordering guarantee.
 // When includeAll is false, only active decisions are returned.
 func (c *Client) ListDecisions(ctx context.Context, limit int, includeAll bool) ([]Decision, error) {
-	req := &qdrant.ScrollPoints{
+	req := &ScrollPoints{
 		CollectionName: c.collDecisions(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 	}
 	if !includeAll {
 		req.Filter = ActiveDecisionsFilter()
@@ -173,12 +172,12 @@ func (c *Client) ListDecisions(ctx context.Context, limit int, includeAll bool) 
 // ListPinnedDecisions returns active, pinned decisions (TASK-469). The project
 // overview surfaces these first so important decisions never sink under recency.
 func (c *Client) ListPinnedDecisions(ctx context.Context) ([]Decision, error) {
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collDecisions(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
-		Filter: &qdrant.Filter{Must: []*qdrant.Condition{
-			qdrant.NewMatchKeyword("status", "active"),
-			qdrant.NewMatchBool("pinned", true),
+		WithPayload:    NewWithPayloadEnable(true),
+		Filter: &Filter{Must: []*Condition{
+			NewMatchKeyword("status", "active"),
+			NewMatchBool("pinned", true),
 		}},
 	})
 	if err != nil {
@@ -201,9 +200,9 @@ func (c *Client) ListDecisionsByTaskID(ctx context.Context, taskID string) ([]De
 	if taskID == "" {
 		return nil, nil
 	}
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collDecisions(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return nil, err
@@ -225,7 +224,7 @@ func sortDecisionsDesc(ds []Decision) {
 	})
 }
 
-func decisionFromPayload(id string, pay map[string]*qdrant.Value) Decision {
+func decisionFromPayload(id string, pay map[string]*Value) Decision {
 	status := pay["status"].GetStringValue()
 	if status == "" {
 		status = "active"
@@ -257,7 +256,7 @@ var ValidDecisionStatuses = map[string]bool{
 //
 // JSONL-first with version/CAS (BUG-062/063): the status change is appended to
 // .gg/brain/decisions.jsonl as a new full-payload line under an optimistic
-// version guard, then mirrored to Qdrant. A concurrent writer that advanced the
+// version guard, then mirrored to the vector store. A concurrent writer that advanced the
 // version first yields ErrMutationConflict and writes nothing. The decision's
 // point UUID equals its decision ID (see AddDecision).
 func (c *Client) UpdateDecisionStatus(ctx context.Context, decisionID, status string) error {
@@ -285,7 +284,7 @@ func toAnySlice(ss []string) []any {
 	return out
 }
 
-func extractStringList(v *qdrant.Value) []string {
+func extractStringList(v *Value) []string {
 	if v == nil {
 		return nil
 	}

@@ -130,7 +130,7 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 	} else {
-		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)")
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ vector store unavailable — read served from JSONL (may miss cross-project context)")
 	}
 
 	t := store.Task{
@@ -176,19 +176,19 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 // `gg brain backfill`. Matches the pattern in cmd/record.go:writeGraphEdges.
 func upsertTaskGraphNode(cmd *cobra.Command, ctx context.Context, id, title string) {
 	cfg, err := config.Load()
-	if err != nil || cfg.Memgraph.URI == "" {
+	if err != nil {
 		return
 	}
 
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph init failed (%v) — Task node not created for %s\n", err, id)
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph init failed (%v) — Task node not created for %s\n", err, id)
 		return
 	}
 	defer func() { _ = gc.Close(ctx) }()
 
 	if uErr := gc.UpsertTaskNode(ctx, id, title); uErr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph Task node upsert failed for %s: %v\n", id, uErr)
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph Task node upsert failed for %s: %v\n", id, uErr)
 	}
 }
 
@@ -201,12 +201,12 @@ func upsertTaskDependencyEdges(cmd *cobra.Command, ctx context.Context, id strin
 		return
 	}
 	cfg, err := config.Load()
-	if err != nil || cfg.Memgraph.URI == "" {
+	if err != nil {
 		return
 	}
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph init failed (%v) — dependency edges for %s skipped\n", err, id)
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph init failed (%v) — dependency edges for %s skipped\n", err, id)
 		return
 	}
 	defer func() { _ = gc.Close(ctx) }()
@@ -216,11 +216,11 @@ func upsertTaskDependencyEdges(cmd *cobra.Command, ctx context.Context, id strin
 			continue
 		}
 		if uErr := gc.UpsertTaskNode(ctx, dep, dep); uErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph stub Task node upsert failed for %s: %v\n", dep, uErr)
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph stub Task node upsert failed for %s: %v\n", dep, uErr)
 			continue
 		}
 		if eErr := gc.UpsertDependsOnEdge(ctx, id, dep); eErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph DEPENDS_ON edge %s→%s failed: %v\n", id, dep, eErr)
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph DEPENDS_ON edge %s→%s failed: %v\n", id, dep, eErr)
 		}
 	}
 	for _, bl := range blocks {
@@ -228,11 +228,11 @@ func upsertTaskDependencyEdges(cmd *cobra.Command, ctx context.Context, id strin
 			continue
 		}
 		if uErr := gc.UpsertTaskNode(ctx, bl, bl); uErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph stub Task node upsert failed for %s: %v\n", bl, uErr)
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph stub Task node upsert failed for %s: %v\n", bl, uErr)
 			continue
 		}
 		if eErr := gc.UpsertBlocksEdge(ctx, id, bl); eErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph BLOCKS edge %s→%s failed: %v\n", id, bl, eErr)
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph BLOCKS edge %s→%s failed: %v\n", id, bl, eErr)
 		}
 	}
 }

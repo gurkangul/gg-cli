@@ -120,7 +120,7 @@ func buildSearchResultsWithBackendScoresAndMessages(query string, decisions []st
 
 func newSearchResult(kind string, rank, lexicalScore int, semanticScore float32, backend string, d *store.Decision, r *store.Rejection, t *store.Task, b *store.Bug, n *store.Note, m *store.Message) searchResult {
 	if backend == "" {
-		backend = "qdrant"
+		backend = "sqlite"
 	}
 	return searchResult{
 		Kind:          kind,
@@ -142,6 +142,14 @@ func rankSearchResults(results []searchResult) []searchResult {
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].Score != results[j].Score {
 			return results[i].Score > results[j].Score
+		}
+		// Tie on lexical score (common — every record containing the query term
+		// gets the same +token boost): prefer the more semantically relevant
+		// result before falling back to build/insertion order. Without this a
+		// less-relevant decision can outrank a higher-semantic bug/task purely by
+		// kind precedence, and get truncated off the default --limit (audit VEC-3).
+		if results[i].SemanticScore != results[j].SemanticScore {
+			return results[i].SemanticScore > results[j].SemanticScore
 		}
 		return results[i].Rank < results[j].Rank
 	})

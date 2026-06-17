@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-17
+
+### Changed
+
+- **Single embedded backend — server backends removed entirely.** The opt-in
+  Qdrant/Memgraph server backends (kept as selectable in 1.1.0) are gone. gg now
+  has exactly one storage backend: the embedded, CGO-free SQLite vector store
+  (`.gg/vectorstore.db`) and code graph (`.gg/graph.db`). Each project's brain is
+  fully self-contained and Docker-independent (Ollama remains the only optional
+  external service, native or in its own container).
+  - Removed: the `qdrant:` / `memgraph:` config sections, the `qdrant.backend` /
+    `memgraph.backend` fields, the `GG_VECTOR_BACKEND` / `GG_GRAPH_BACKEND` env
+    overrides, backend resolution, and the `MEMGRAPH_*` credential env vars. Old
+    configs that still carry these keys load fine — the keys are ignored with a
+    one-time warning (removed-key stability contract).
+  - Removed: the Qdrant gRPC dial path (`vectorstore_qdrant.go`), the Memgraph
+    neo4j/Bolt driver path (`graphstore_neo4j.go`), the Docker compose bring-up
+    in `gg init` (`startSharedServices`/`pullOllamaModel`/`init_docker.go`), and
+    all server health checks in `gg doctor`.
+  - **Dependencies dropped:** `github.com/neo4j/neo4j-go-driver/v5`,
+    `github.com/qdrant/go-client`, and `google.golang.org/grpc` are no longer
+    module dependencies. The vector store's data types (payload values, points,
+    filters, requests) are now native Go structs in `internal/store`; the Qdrant
+    protobuf types they replaced are gone. `google.golang.org/protobuf` remains
+    only as an indirect dependency of the SCIP indexer.
+  - **Vector-store payload format changed** from protobuf (`qdrant.Struct`) to
+    JSON. The on-disk vector index (`.gg/vectorstore.db`) is a derived artifact
+    rebuilt from the JSONL brain — **existing projects must run `gg reembed` once**
+    after upgrading (the JSONL source of truth in `.gg/brain/*.jsonl` is never
+    touched, so no data is lost). Integer payload fields round-trip losslessly
+    (whole-number JSON values are coerced back to int64).
+- **Backend-neutral wording (completes TASK-497).** `gg index`/`wave`/`export`/
+  `brain reindex-decisions`/`reembed`/`check`/`doctor`/`index --watch` help text,
+  error messages, and the down-store/offline hints no longer name Qdrant/Memgraph
+  or tell users to `docker compose up`; they describe the embedded vector store /
+  code graph. `gg reembed`'s false "stored knowledge will be lost" warning is
+  corrected (`.gg/brain/*.jsonl` is the never-dropped source of truth). JSON
+  `source_backend` reports `sqlite` on the embedded read path.
+
+### Fixed
+
+- **`gg context <topic>` / `gg context` / `gg context --for-task` now fall back to
+  the JSONL brain** when the embedded collections are not materialized yet (fresh
+  clone before `gg reembed`), instead of hard-erroring with a raw not-found —
+  matching `gg search`'s existing graceful degradation (audit VEC-1).
+- **`gg doctor` no longer reports a freshly-`init`'d project as broken.** A
+  never-indexed code graph (no `index-state.json`) is an advisory warning with the
+  `gg index` hint, not a hard failure; genuine stale/corrupt graphs still fail
+  (audit INFRA-4).
+- **Search ranking uses semantic score as a tiebreaker.** When results share a
+  lexical score, the more semantically relevant item now ranks higher instead of
+  being ordered purely by record-kind precedence (audit VEC-3).
+- **`gg doctor --fix-index` / code-graph freshness no longer depend on a
+  placeholder server URI.** Graph availability is unconditional for the embedded
+  store; blanking the (now-removed) `memgraph.uri` can no longer disable graph
+  reads/writes across `record`/`task`/`bug`/`impact`/`doctor` (audit INFRA-1/2/3/5).
+- **`gg init` seeds collections at the embedding backend's real dimension**
+  (`embedding.EffectiveDim`) instead of a hardcoded 768 (audit EMB-1).
+
 ## [1.1.0] - 2026-06-14
 
 Docker is no longer required. The two heavy database containers (Qdrant,

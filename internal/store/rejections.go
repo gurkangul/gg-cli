@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gurkangul/gg-cli/internal/brain"
-	"github.com/qdrant/go-client/qdrant"
 )
 
 type Rejection struct {
@@ -23,7 +22,7 @@ type Rejection struct {
 }
 
 // AddRejection writes the rejection to .gg/brain/rejections.jsonl first
-// (AC-1: durable, offline-safe), then attempts a Qdrant upsert (AC-2).
+// (AC-1: durable, offline-safe), then attempts a vector-store upsert (AC-2).
 func (c *Client) AddRejection(ctx context.Context, r Rejection, vector []float32) error {
 	if r.ID == "" {
 		r.ID = uuid.New().String()
@@ -49,20 +48,20 @@ func (c *Client) AddRejection(ctx context.Context, r Rejection, vector []float32
 		return semanticVectorMissing(OutboxKindRejection, r.ID)
 	}
 
-	// AC-2: Qdrant secondary best-effort.
-	qdrantPayload, err := qdrant.TryValueMap(rawPayload)
+	// AC-2: the vector store secondary best-effort.
+	vecPayload, err := TryValueMap(rawPayload)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
 	}
 	wait := true
-	uErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	uErr := c.vsUpsert(ctx, &UpsertPoints{
 		CollectionName: c.collRejections(),
 		Wait:           &wait,
-		Points: []*qdrant.PointStruct{
+		Points: []*PointStruct{
 			{
-				Id:      qdrant.NewID(r.ID),
-				Vectors: qdrant.NewVectors(vector...),
-				Payload: qdrantPayload,
+				Id:      NewID(r.ID),
+				Vectors: NewVectors(vector...),
+				Payload: vecPayload,
 			},
 		},
 	})
@@ -73,12 +72,12 @@ func (c *Client) AddRejection(ctx context.Context, r Rejection, vector []float32
 }
 
 func (c *Client) SearchRejections(ctx context.Context, vector []float32, limit uint64) ([]Rejection, error) {
-	results, err := c.qdrantQuery(ctx, &qdrant.QueryPoints{
+	results, err := c.vsQuery(ctx, &QueryPoints{
 		CollectionName: c.collRejections(),
-		Query:          qdrant.NewQuery(vector...),
-		Limit:          qdrant.PtrOf(limit),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
-		Filter:         &qdrant.Filter{Must: []*qdrant.Condition{nonDegradedVectorCondition()}},
+		Query:          NewQuery(vector...),
+		Limit:          PtrOf(limit),
+		WithPayload:    NewWithPayloadEnable(true),
+		Filter:         &Filter{Must: []*Condition{nonDegradedVectorCondition()}},
 	})
 	if err != nil {
 		return nil, err
@@ -95,9 +94,9 @@ func (c *Client) SearchRejections(ctx context.Context, vector []float32, limit u
 
 // ListRejections returns rejections sorted by created_at descending, trimmed to limit.
 func (c *Client) ListRejections(ctx context.Context, limit int) ([]Rejection, error) {
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collRejections(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return nil, err
@@ -115,7 +114,7 @@ func (c *Client) ListRejections(ctx context.Context, limit int) ([]Rejection, er
 	return rejections, nil
 }
 
-func rejectionFromPayload(id string, pay map[string]*qdrant.Value) Rejection {
+func rejectionFromPayload(id string, pay map[string]*Value) Rejection {
 	return Rejection{
 		ID:        id,
 		Approach:  pay["approach"].GetStringValue(),

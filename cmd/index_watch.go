@@ -77,7 +77,7 @@ func runIndexWatch(cmd *cobra.Command) error {
 	for {
 		if err := runIndexWatchTick(cmd.Context(), cmd, cfg, root, ggDir, lang, r); err != nil {
 			fmt.Fprintf(cmd.OutOrStderr(), "watch index failed: %v\n", err)
-			fmt.Fprintln(cmd.OutOrStderr(), "recovery: check gg index status, gg doctor, Memgraph/Qdrant containers, then leave this foreground watcher running")
+			fmt.Fprintln(cmd.OutOrStderr(), "recovery: check gg index status, gg doctor, then leave this foreground watcher running")
 		}
 		if indexWatchOnce {
 			return nil
@@ -106,7 +106,7 @@ func runIndexWatchTick(parent context.Context, cmd *cobra.Command, cfg *config.C
 	case <-timer.C:
 	}
 
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
 		return serviceErr(fmt.Sprintf("memgraph client: %v", err))
 	}

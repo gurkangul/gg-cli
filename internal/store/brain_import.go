@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // brainScanMaxBytes is the per-line limit for the JSONL scanner.
@@ -18,16 +16,16 @@ var brainScanMaxBytes = 64 << 20 // 64 MB
 
 // UpsertWithVector upserts a single point with an explicit vector and payload
 // into the named collection. Exported because seeding helpers in integration
-// tests need to create points on fresh collections (Qdrant requires a vector
+// tests need to create points on fresh collections (the store requires a vector
 // on first create; payload-only upserts work only against pre-existing points).
-func (c *Client) UpsertWithVector(ctx context.Context, kind, id string, vector []float32, payload map[string]*qdrant.Value, wait bool) error {
+func (c *Client) UpsertWithVector(ctx context.Context, kind, id string, vector []float32, payload map[string]*Value, wait bool) error {
 	coll := c.projectID + "-" + kind
-	return c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	return c.vsUpsert(ctx, &UpsertPoints{
 		CollectionName: coll,
 		Wait:           &wait,
-		Points: []*qdrant.PointStruct{{
-			Id:      qdrant.NewID(id),
-			Vectors: qdrant.NewVectors(vector...),
+		Points: []*PointStruct{{
+			Id:      NewID(id),
+			Vectors: NewVectors(vector...),
 			Payload: payload,
 		}},
 	})
@@ -49,25 +47,25 @@ func (c *Client) UpsertBrainRecords(ctx context.Context, kind string, records []
 			end = len(records)
 		}
 		batch := records[i:end]
-		structs := make([]*qdrant.PointStruct, 0, len(batch))
+		structs := make([]*PointStruct, 0, len(batch))
 		for _, r := range batch {
-			payload, err := qdrant.TryValueMap(r.Payload)
+			payload, err := TryValueMap(r.Payload)
 			if err != nil {
 				return fmt.Errorf("build payload for %s: %w", r.ID, err)
 			}
-			// Qdrant requires a vector on first-time create. We seed a zero-vector
+			// the store requires a vector on first-time create. We seed a zero-vector
 			// placeholder so fresh-collection import succeeds; the placeholder is
 			// overwritten by EmbedMissing (auto-triggered after import) which
 			// computes the real embedding from the payload text.
 			placeholder := make([]float32, VectorSize)
-			structs = append(structs, &qdrant.PointStruct{
-				Id:      qdrant.NewID(r.ID),
-				Vectors: qdrant.NewVectors(placeholder...),
+			structs = append(structs, &PointStruct{
+				Id:      NewID(r.ID),
+				Vectors: NewVectors(placeholder...),
 				Payload: payload,
 			})
 		}
 		wait := true
-		if err := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+		if err := c.vsUpsert(ctx, &UpsertPoints{
 			CollectionName: coll,
 			Wait:           &wait,
 			Points:         structs,

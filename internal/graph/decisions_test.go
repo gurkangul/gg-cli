@@ -2,8 +2,6 @@ package graph
 
 import (
 	"testing"
-
-	"github.com/gurkangul/gg-cli/internal/config"
 )
 
 func TestDecisionNode_Properties(t *testing.T) {
@@ -50,39 +48,8 @@ func TestKnowledgeEdgeRelConstants(t *testing.T) {
 	}
 }
 
-// TestUpsertKnowledgeEdge_CrossProjectRejected verifies that upsertKnowledgeEdge
-// uses $pid in both MATCH clauses — so a cross-project edge is structurally
-// impossible (the MATCH would simply return nothing). We can't test live Memgraph
-// here, but we confirm the helper wires up to runQuery (which auto-injects $pid).
-func TestUpsertKnowledgeEdge_NoPanicOnBadConn(t *testing.T) {
-	// Asserts the Memgraph-down ⇒ error contract; pin memgraph so the always-up
-	// embedded SQLite backend (TASK-494) doesn't turn this into a no-error path.
-	t.Setenv(GraphBackendEnv, "memgraph")
-	cfg := &config.MemgraphConfig{URI: "bolt://localhost:19997"}
-	c, err := New(cfg, "proj-test")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	// Expect an error (no Memgraph on 19997), but not a panic.
-	err = c.UpsertDecidesEdge(t.Context(), "decision-id", "task-id")
-	if err == nil {
-		t.Error("expected error from unreachable Memgraph, got nil")
-	}
-}
-
-// TestTaskSiblings_NoPanicOnBadConn verifies TaskSiblings propagates a connection
-// error rather than panicking. The Cypher query structure (two UNION arms) is
-// covered structurally by this test; integration coverage requires live Memgraph.
-func TestTaskSiblings_NoPanicOnBadConn(t *testing.T) {
-	// Asserts the Memgraph-down ⇒ error contract; pin memgraph (see above).
-	t.Setenv(GraphBackendEnv, "memgraph")
-	cfg := &config.MemgraphConfig{URI: "bolt://localhost:19997"}
-	c, err := New(cfg, "proj-test")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	_, err = c.TaskSiblings(t.Context(), "TASK-234")
-	if err == nil {
-		t.Error("expected error from unreachable Memgraph, got nil")
-	}
-}
+// NOTE: TestUpsertKnowledgeEdge_NoPanicOnBadConn and TestTaskSiblings_NoPanicOnBadConn
+// were removed: they asserted the Memgraph-down ⇒ error contract, which no longer
+// exists. The embedded SQLite graph store is always reachable, so those operations
+// succeed instead of erroring. Their query structure is exercised by the embedded
+// CRUD/traversal tests in graphstore_sqlite_test.go.

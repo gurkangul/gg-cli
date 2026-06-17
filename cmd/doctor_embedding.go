@@ -86,7 +86,7 @@ func doctorCheckOllama(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 		return
 	}
 	if len(vec) != store.VectorSize {
-		report.fail("ollama embedding dim", fmt.Sprintf("model %q returns %d-dim vectors, Qdrant expects %d", cfg.Embedding.Model, len(vec), store.VectorSize))
+		report.fail("ollama embedding dim", fmt.Sprintf("model %q returns %d-dim vectors, vector store expects %d", cfg.Embedding.Model, len(vec), store.VectorSize))
 	} else {
 		report.ok("ollama embedding dim", fmt.Sprintf("%d-dim ✓ (model: %s)", len(vec), cfg.Embedding.Model))
 	}

@@ -3,36 +3,39 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
 
-	"github.com/qdrant/go-client/qdrant"
-	"google.golang.org/grpc/codes"
-	grpcstatus "google.golang.org/grpc/status"
 	_ "modernc.org/sqlite" // registers the CGO-free "sqlite" driver
 )
 
-// errCollectionNotFound builds a NotFound error that the package-wide
-// isCollectionNotFoundError check recognizes, so a missing collection on a fresh
-// install behaves identically whether the backend is Qdrant or SQLite.
-func errCollectionNotFound(name string) error {
-	return grpcstatus.Errorf(codes.NotFound, "collection %s not found", name)
+// errCollectionNotFound is the native sentinel raised when a read targets a
+// collection that has not been created. The package-wide
+// isCollectionNotFoundError check (errors.Is) recognizes it, so a missing
+// collection on a fresh install surfaces a NotFound-equivalent that the command
+// layer treats as "fall back to the offline JSONL scan".
+var errCollectionNotFound = errors.New("collection not found")
+
+// collectionNotFoundErr wraps the sentinel with the collection name for context.
+func collectionNotFoundErr(name string) error {
+	return fmt.Errorf("collection %s not found: %w", name, errCollectionNotFound)
 }
 
 // sqliteStore is the pure-Go, CGO-free VectorStore implementation (TASK-493).
 //
-// It replaces the Qdrant Docker container with an embedded brute-force cosine
+// It replaces the the vector store Docker container with an embedded brute-force cosine
 // index. Vectors are stored as little-endian float32 BLOBs in modernc.org/sqlite
 // (already a dependency); semantic search loads the candidate set for a
-// collection, applies the same server-side payload filters Qdrant enforced, and
+// collection, applies the same server-side payload filters the vector store enforced, and
 // computes exact cosine similarity in Go. At the project's scale (~3.5k × 768)
 // this is single-digit milliseconds and is exact rather than approximate, so it
-// matches or strictly improves on Qdrant's HNSW recall.
+// matches or strictly improves on the vector store's HNSW recall.
 //
 // The database lives at <dataDir>/vectorstore.db. Collections are virtual: a
 // row in the `collections` table records the configured dimension, mirroring
-// Qdrant's CreateCollection/ListCollections/DeleteCollection semantics so the
+// the vector store's CreateCollection/ListCollections/DeleteCollection semantics so the
 // dimension-mismatch guard (embedding meta) and `gg reembed` keep working.
 type sqliteStore struct {
 	db *sql.DB
@@ -104,7 +107,7 @@ func (s *sqliteStore) ListCollections(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
-func (s *sqliteStore) CreateCollection(ctx context.Context, req *qdrant.CreateCollection) error {
+func (s *sqliteStore) CreateCollection(ctx context.Context, req *CreateCollection) error {
 	if req == nil || req.CollectionName == "" {
 		return fmt.Errorf("create collection: empty collection name")
 	}
@@ -123,7 +126,7 @@ func (s *sqliteStore) CreateCollection(ctx context.Context, req *qdrant.CreateCo
 
 // collectionDim extracts the configured dense-vector dimension from a
 // CreateCollection request, defaulting to VectorSize when unspecified.
-func collectionDim(req *qdrant.CreateCollection) int64 {
+func collectionDim(req *CreateCollection) int64 {
 	dim := int64(VectorSize)
 	if vc := req.GetVectorsConfig(); vc != nil {
 		if p := vc.GetParams(); p != nil && p.GetSize() > 0 {

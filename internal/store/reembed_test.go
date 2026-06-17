@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 	"testing"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 type countingEmbedder struct{ calls int }
@@ -77,7 +75,7 @@ func TestPayloadExtractors_KeyAlignment(t *testing.T) {
 			if !ok {
 				t.Fatalf("no extractor for collection suffix %q", tc.coll)
 			}
-			pay, err := qdrant.TryValueMap(tc.payload)
+			pay, err := TryValueMap(tc.payload)
 			if err != nil {
 				t.Fatalf("build payload: %v", err)
 			}
@@ -100,10 +98,10 @@ func TestPayloadExtractors_CollectionsCoveredAtLeastOnce(t *testing.T) {
 }
 
 func TestClearDegradedVectorMarkers_RemovesReplayFlags(t *testing.T) {
-	text, _ := qdrant.NewValue("keep me")
-	marker, _ := qdrant.NewValue("reconcile_zero_vector")
-	markedAt, _ := qdrant.NewValue("2026-05-21T00:00:00Z")
-	payload := map[string]*qdrant.Value{
+	text, _ := NewValue("keep me")
+	marker, _ := NewValue("reconcile_zero_vector")
+	markedAt, _ := NewValue("2026-05-21T00:00:00Z")
+	payload := map[string]*Value{
 		"text":                  text,
 		"gg_vector_degraded":    marker,
 		"gg_vector_degraded_at": markedAt,

@@ -62,7 +62,7 @@ func runGraphExport(cmd *cobra.Command, _ []string) error {
 	}
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
-	gc, err := graphstore.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graphstore.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
 		return fmt.Errorf("graph client init: %w", err)
 	}

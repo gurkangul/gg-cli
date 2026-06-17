@@ -3,9 +3,9 @@ package store
 // Standalone correctness tests for the embedded SQLite vector store
 // (TASK-493). These exercise the brute-force cosine search, the float32 codec,
 // the payload-filter parity layer, the write path (upsert/overwrite/setpayload/
-// delete), top-K/threshold limiting and on-disk persistence WITHOUT a Qdrant
+// delete), top-K/threshold limiting and on-disk persistence WITHOUT a the vector store
 // server — so the embedded backend has its own safety net independent of the
-// Qdrant integration oracle.
+// the vector store integration oracle.
 
 import (
 	"context"
@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/qdrant/go-client/qdrant"
 )
 
 func u64ptr(v uint64) *uint64   { return &v }
@@ -34,21 +33,21 @@ func newTestSQLiteStore(t *testing.T, dir string) *sqliteStore {
 
 func createTestCollection(t *testing.T, ss *sqliteStore, name string, dim uint64) {
 	t.Helper()
-	if err := ss.CreateCollection(context.Background(), &qdrant.CreateCollection{
+	if err := ss.CreateCollection(context.Background(), &CreateCollection{
 		CollectionName: name,
-		VectorsConfig:  qdrant.NewVectorsConfig(&qdrant.VectorParams{Size: dim, Distance: qdrant.Distance_Cosine}),
+		VectorsConfig:  NewVectorsConfig(&VectorParams{Size: dim, Distance: Distance_Cosine}),
 	}); err != nil {
 		t.Fatalf("CreateCollection: %v", err)
 	}
 }
 
-func upsertPoint(t *testing.T, ss *sqliteStore, coll, id string, payload map[string]*qdrant.Value, vec ...float32) {
+func upsertPoint(t *testing.T, ss *sqliteStore, coll, id string, payload map[string]*Value, vec ...float32) {
 	t.Helper()
-	if _, err := ss.Upsert(context.Background(), &qdrant.UpsertPoints{
+	if _, err := ss.Upsert(context.Background(), &UpsertPoints{
 		CollectionName: coll,
-		Points: []*qdrant.PointStruct{{
-			Id:      qdrant.NewID(id),
-			Vectors: qdrant.NewVectors(vec...),
+		Points: []*PointStruct{{
+			Id:      NewID(id),
+			Vectors: NewVectors(vec...),
 			Payload: payload,
 		}},
 	}); err != nil {
@@ -56,7 +55,7 @@ func upsertPoint(t *testing.T, ss *sqliteStore, coll, id string, payload map[str
 	}
 }
 
-func query(t *testing.T, ss *sqliteStore, req *qdrant.QueryPoints) []*qdrant.ScoredPoint {
+func query(t *testing.T, ss *sqliteStore, req *QueryPoints) []*ScoredPoint {
 	t.Helper()
 	res, err := ss.Query(context.Background(), req)
 	if err != nil {
@@ -121,9 +120,9 @@ func TestSQLiteVec_QueryRanksByCosine(t *testing.T) {
 	upsertPoint(t, ss, coll, idY, nil, 0, 1, 0)
 	upsertPoint(t, ss, coll, idZ, nil, 0, 0, 1)
 
-	res := query(t, ss, &qdrant.QueryPoints{
+	res := query(t, ss, &QueryPoints{
 		CollectionName: coll,
-		Query:          qdrant.NewQuery(0.9, 0.3, 0),
+		Query:          NewQuery(0.9, 0.3, 0),
 		Limit:          u64ptr(10),
 	})
 	if len(res) != 3 {
@@ -149,8 +148,8 @@ func TestSQLiteVec_QueryTopKLimit(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		upsertPoint(t, ss, coll, uuid.NewString(), nil, float32(i+1), 1)
 	}
-	res := query(t, ss, &qdrant.QueryPoints{
-		CollectionName: coll, Query: qdrant.NewQuery(1, 1), Limit: u64ptr(2),
+	res := query(t, ss, &QueryPoints{
+		CollectionName: coll, Query: NewQuery(1, 1), Limit: u64ptr(2),
 	})
 	if len(res) != 2 {
 		t.Errorf("limit=2 should return 2, got %d", len(res))
@@ -163,8 +162,8 @@ func TestSQLiteVec_QueryScoreThreshold(t *testing.T) {
 	createTestCollection(t, ss, coll, 2)
 	upsertPoint(t, ss, coll, uuid.NewString(), nil, 1, 0)  // cosine 1.0 vs query
 	upsertPoint(t, ss, coll, uuid.NewString(), nil, -1, 0) // cosine -1.0 vs query
-	res := query(t, ss, &qdrant.QueryPoints{
-		CollectionName: coll, Query: qdrant.NewQuery(1, 0),
+	res := query(t, ss, &QueryPoints{
+		CollectionName: coll, Query: NewQuery(1, 0),
 		Limit: u64ptr(10), ScoreThreshold: f32ptr(0.5),
 	})
 	if len(res) != 1 {
@@ -172,41 +171,41 @@ func TestSQLiteVec_QueryScoreThreshold(t *testing.T) {
 	}
 }
 
-// --- 4. payload filters: parity with Qdrant's must / must_not / should ---
+// --- 4. payload filters: parity with the vector store's must / must_not / should ---
 
 func TestSQLiteVec_PayloadFilters(t *testing.T) {
 	ss := newTestSQLiteStore(t, t.TempDir())
 	const coll = "filter"
 	createTestCollection(t, ss, coll, 2)
-	active := map[string]*qdrant.Value{"status": qdrant.NewValueString("active")}
-	resolved := map[string]*qdrant.Value{"status": qdrant.NewValueString("resolved")}
+	active := map[string]*Value{"status": NewValueString("active")}
+	resolved := map[string]*Value{"status": NewValueString("resolved")}
 	upsertPoint(t, ss, coll, "aaaaaaaa-0000-0000-0000-000000000001", active, 1, 0)
 	upsertPoint(t, ss, coll, "aaaaaaaa-0000-0000-0000-000000000002", resolved, 1, 0)
 
 	// Must: only active.
-	res := query(t, ss, &qdrant.QueryPoints{
-		CollectionName: coll, Query: qdrant.NewQuery(1, 0), Limit: u64ptr(10),
-		Filter: &qdrant.Filter{Must: []*qdrant.Condition{qdrant.NewMatchKeyword("status", "active")}},
+	res := query(t, ss, &QueryPoints{
+		CollectionName: coll, Query: NewQuery(1, 0), Limit: u64ptr(10),
+		Filter: &Filter{Must: []*Condition{NewMatchKeyword("status", "active")}},
 	})
 	if len(res) != 1 {
 		t.Fatalf("Must status=active should return 1, got %d", len(res))
 	}
 
 	// MustNot: exclude resolved → only active.
-	res = query(t, ss, &qdrant.QueryPoints{
-		CollectionName: coll, Query: qdrant.NewQuery(1, 0), Limit: u64ptr(10),
-		Filter: &qdrant.Filter{MustNot: []*qdrant.Condition{qdrant.NewMatchKeyword("status", "resolved")}},
+	res = query(t, ss, &QueryPoints{
+		CollectionName: coll, Query: NewQuery(1, 0), Limit: u64ptr(10),
+		Filter: &Filter{MustNot: []*Condition{NewMatchKeyword("status", "resolved")}},
 	})
 	if len(res) != 1 {
 		t.Fatalf("MustNot status=resolved should return 1, got %d", len(res))
 	}
 
 	// Should (OR): both statuses listed → both match.
-	res = query(t, ss, &qdrant.QueryPoints{
-		CollectionName: coll, Query: qdrant.NewQuery(1, 0), Limit: u64ptr(10),
-		Filter: &qdrant.Filter{Should: []*qdrant.Condition{
-			qdrant.NewMatchKeyword("status", "active"),
-			qdrant.NewMatchKeyword("status", "resolved"),
+	res = query(t, ss, &QueryPoints{
+		CollectionName: coll, Query: NewQuery(1, 0), Limit: u64ptr(10),
+		Filter: &Filter{Should: []*Condition{
+			NewMatchKeyword("status", "active"),
+			NewMatchKeyword("status", "resolved"),
 		}},
 	})
 	if len(res) != 2 {
@@ -228,7 +227,7 @@ func TestSQLiteVec_UpsertOverwrites(t *testing.T) {
 	id := "bbbbbbbb-0000-0000-0000-000000000001"
 	upsertPoint(t, ss, coll, id, nil, 1, 0)
 	upsertPoint(t, ss, coll, id, nil, 0, 1)
-	n, err := ss.Count(context.Background(), &qdrant.CountPoints{CollectionName: coll})
+	n, err := ss.Count(context.Background(), &CountPoints{CollectionName: coll})
 	if err != nil {
 		t.Fatalf("Count: %v", err)
 	}
@@ -243,13 +242,13 @@ func TestSQLiteVec_Delete(t *testing.T) {
 	createTestCollection(t, ss, coll, 2)
 	id := "cccccccc-0000-0000-0000-000000000001"
 	upsertPoint(t, ss, coll, id, nil, 1, 0)
-	if _, err := ss.Delete(context.Background(), &qdrant.DeletePoints{
+	if _, err := ss.Delete(context.Background(), &DeletePoints{
 		CollectionName: coll,
-		Points:         qdrant.NewPointsSelector(qdrant.NewID(id)),
+		Points:         NewPointsSelector(NewID(id)),
 	}); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	n, _ := ss.Count(context.Background(), &qdrant.CountPoints{CollectionName: coll})
+	n, _ := ss.Count(context.Background(), &CountPoints{CollectionName: coll})
 	if n != 0 {
 		t.Errorf("after delete count should be 0, got %d", n)
 	}
@@ -260,18 +259,18 @@ func TestSQLiteVec_SetPayload(t *testing.T) {
 	const coll = "sp"
 	createTestCollection(t, ss, coll, 2)
 	id := "dddddddd-0000-0000-0000-000000000001"
-	upsertPoint(t, ss, coll, id, map[string]*qdrant.Value{"status": qdrant.NewValueString("active")}, 1, 0)
-	if _, err := ss.SetPayload(context.Background(), &qdrant.SetPayloadPoints{
+	upsertPoint(t, ss, coll, id, map[string]*Value{"status": NewValueString("active")}, 1, 0)
+	if _, err := ss.SetPayload(context.Background(), &SetPayloadPoints{
 		CollectionName: coll,
-		Payload:        map[string]*qdrant.Value{"status": qdrant.NewValueString("resolved")},
-		PointsSelector: qdrant.NewPointsSelector(qdrant.NewID(id)),
+		Payload:        map[string]*Value{"status": NewValueString("resolved")},
+		PointsSelector: NewPointsSelector(NewID(id)),
 	}); err != nil {
 		t.Fatalf("SetPayload: %v", err)
 	}
 	// After repointing status to resolved, a Must=active filter should exclude it.
-	res := query(t, ss, &qdrant.QueryPoints{
-		CollectionName: coll, Query: qdrant.NewQuery(1, 0), Limit: u64ptr(10),
-		Filter: &qdrant.Filter{Must: []*qdrant.Condition{qdrant.NewMatchKeyword("status", "active")}},
+	res := query(t, ss, &QueryPoints{
+		CollectionName: coll, Query: NewQuery(1, 0), Limit: u64ptr(10),
+		Filter: &Filter{Must: []*Condition{NewMatchKeyword("status", "active")}},
 	})
 	if len(res) != 0 {
 		t.Errorf("SetPayload should have changed status to resolved; got %d active matches", len(res))
@@ -319,8 +318,8 @@ func TestSQLiteVec_PersistenceAcrossReopen(t *testing.T) {
 		t.Fatalf("vectorstore.db must exist on disk: %v", err)
 	}
 	ss2 := newTestSQLiteStore(t, dir)
-	res := query(t, ss2, &qdrant.QueryPoints{
-		CollectionName: coll, Query: qdrant.NewQuery(1, 2, 3), Limit: u64ptr(5),
+	res := query(t, ss2, &QueryPoints{
+		CollectionName: coll, Query: NewQuery(1, 2, 3), Limit: u64ptr(5),
 	})
 	if len(res) != 1 || res[0].GetId().GetUuid() != id {
 		t.Fatalf("data must survive reopen, got %+v", res)
@@ -350,19 +349,19 @@ func TestSQLiteVec_QueryLatencyAtScale(t *testing.T) {
 		}
 		return v
 	}
-	pts := make([]*qdrant.PointStruct, 0, n)
+	pts := make([]*PointStruct, 0, n)
 	for k := 0; k < n; k++ {
-		pts = append(pts, &qdrant.PointStruct{Id: qdrant.NewID(uuid.NewString()), Vectors: qdrant.NewVectors(mk(k)...)})
+		pts = append(pts, &PointStruct{Id: NewID(uuid.NewString()), Vectors: NewVectors(mk(k)...)})
 	}
-	if _, err := ss.Upsert(context.Background(), &qdrant.UpsertPoints{CollectionName: coll, Points: pts}); err != nil {
+	if _, err := ss.Upsert(context.Background(), &UpsertPoints{CollectionName: coll, Points: pts}); err != nil {
 		t.Fatalf("bulk upsert: %v", err)
 	}
-	q := qdrant.NewQuery(mk(1234)...)
-	_ = query(t, ss, &qdrant.QueryPoints{CollectionName: coll, Query: q, Limit: u64ptr(10)})
+	q := NewQuery(mk(1234)...)
+	_ = query(t, ss, &QueryPoints{CollectionName: coll, Query: q, Limit: u64ptr(10)})
 	const iters = 20
 	start := time.Now()
 	for i := 0; i < iters; i++ {
-		if r := query(t, ss, &qdrant.QueryPoints{CollectionName: coll, Query: q, Limit: u64ptr(10)}); len(r) != 10 {
+		if r := query(t, ss, &QueryPoints{CollectionName: coll, Query: q, Limit: u64ptr(10)}); len(r) != 10 {
 			t.Fatalf("want top-10, got %d", len(r))
 		}
 	}

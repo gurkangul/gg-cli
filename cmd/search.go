@@ -70,7 +70,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	defer d.Close()
 
 	if d.qdrantSlow {
-		return fmt.Errorf("%s", withServiceHint("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status", svcQdrant))
+		return fmt.Errorf("%s", withServiceHint("vector store health check timed out — retry or run gg doctor", svcQdrant))
 	}
 	if d.qdrantDown {
 		// AC-4: fall back to JSONL scan first, then LKG cache.
@@ -168,7 +168,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 // rejections, tasks, and bugs. Falls through to the LKG cache when no JSONL
 // files are found (pre-JSONL brain).
 func serveSearchFromJSONL(cmd *cobra.Command, query string) error {
-	const banner = "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)"
+	const banner = "⚠ vector index not built — read served from JSONL (run gg reembed); may miss cross-project context"
 
 	ggDir := config.GGDirOrEmpty()
 	if ggDir == "" {
@@ -237,28 +237,28 @@ func serveSearchFromJSONL(cmd *cobra.Command, query string) error {
 func serveSearchFromCache(cmd *cobra.Command, query string) error {
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached results available")
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ vector store unavailable — no cached results available")
 		return nil
 	}
 	rtDir, err := cfg.RuntimeDir()
 	if err != nil {
-		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached results available")
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ vector store unavailable — no cached results available")
 		return nil
 	}
 
 	var payload searchPayload
 	cachedAt, found, err := cache.Get(rtDir, "search", query, &payload)
 	if err != nil || !found {
-		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached results available for this query")
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ vector store unavailable — no cached results available for this query")
 		return nil
 	}
 
-	banner := fmt.Sprintf("⚠ Qdrant unreachable — cache may be stale; last update at %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
+	banner := fmt.Sprintf("⚠ vector store unavailable — cache may be stale; last update at %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
 	return printSearchResultsWithBackendScoresAndMessages(cmd, query, payload.Decisions, payload.Rejections, payload.Tasks, payload.Bugs, payload.Notes, payload.Messages, banner, cachedAt, "cache", nil)
 }
 
 func printSearchResults(cmd *cobra.Command, query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, banner string, cachedAt time.Time) error {
-	return printSearchResultsWithBackend(cmd, query, decisions, rejections, tasks, bugs, notes, banner, cachedAt, "qdrant")
+	return printSearchResultsWithBackend(cmd, query, decisions, rejections, tasks, bugs, notes, banner, cachedAt, "sqlite")
 }
 
 func printSearchResultsWithBackend(cmd *cobra.Command, query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, banner string, cachedAt time.Time, backend string) error {

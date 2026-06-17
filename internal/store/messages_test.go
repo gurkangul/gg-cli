@@ -3,14 +3,12 @@ package store
 
 import (
 	"testing"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // ── messageFromRetrieved ──────────────────────────────────────────────────────
 
 func TestMessageFromRetrieved_AudienceNormalisedToAll(t *testing.T) {
-	pay, err := qdrant.TryValueMap(map[string]any{
+	pay, err := TryValueMap(map[string]any{
 		"from_role":  "developer",
 		"to_role":    "all",
 		"content":    "hello",
@@ -22,7 +20,7 @@ func TestMessageFromRetrieved_AudienceNormalisedToAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TryValueMap: %v", err)
 	}
-	p := &qdrant.RetrievedPoint{Payload: pay}
+	p := &RetrievedPoint{Payload: pay}
 	msg := messageFromRetrieved(p)
 	if msg.Audience != "all" {
 		t.Errorf("empty audience should normalise to 'all', got %q", msg.Audience)
@@ -30,7 +28,7 @@ func TestMessageFromRetrieved_AudienceNormalisedToAll(t *testing.T) {
 }
 
 func TestMessageFromRetrieved_AudienceAgentsPreserved(t *testing.T) {
-	pay, err := qdrant.TryValueMap(map[string]any{
+	pay, err := TryValueMap(map[string]any{
 		"from_role":  "claude-code",
 		"to_role":    "all",
 		"content":    "TASK-042 done",
@@ -42,7 +40,7 @@ func TestMessageFromRetrieved_AudienceAgentsPreserved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TryValueMap: %v", err)
 	}
-	p := &qdrant.RetrievedPoint{Payload: pay}
+	p := &RetrievedPoint{Payload: pay}
 	msg := messageFromRetrieved(p)
 	if msg.Audience != "agents" {
 		t.Errorf("audience=agents should round-trip, got %q", msg.Audience)
@@ -50,7 +48,7 @@ func TestMessageFromRetrieved_AudienceAgentsPreserved(t *testing.T) {
 }
 
 func TestMessageFromRetrieved_AudienceHumanPreserved(t *testing.T) {
-	pay, err := qdrant.TryValueMap(map[string]any{
+	pay, err := TryValueMap(map[string]any{
 		"from_role":  "developer",
 		"to_role":    "human",
 		"content":    "deploy blocked, need approval",
@@ -62,7 +60,7 @@ func TestMessageFromRetrieved_AudienceHumanPreserved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TryValueMap: %v", err)
 	}
-	p := &qdrant.RetrievedPoint{Payload: pay}
+	p := &RetrievedPoint{Payload: pay}
 	msg := messageFromRetrieved(p)
 	if msg.Audience != "human" {
 		t.Errorf("audience=human should round-trip, got %q", msg.Audience)
@@ -74,7 +72,7 @@ func TestMessageFromRetrieved_AudienceHumanPreserved(t *testing.T) {
 func TestMessage_EmptyAudienceNormalisedInSend(t *testing.T) {
 	// Verify the normalisation branch in SendMessage: audience="" → "all".
 	// We test indirectly by checking the Message struct logic — store-level
-	// integration tests require a live Qdrant (GG_INTEGRATION_TEST=1).
+	// integration tests require a a live vector backend (GG_INTEGRATION_TEST=1).
 	m := Message{
 		FromRole: "dev",
 		ToRole:   "all",

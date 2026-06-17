@@ -79,7 +79,7 @@ func runReject(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 	} else {
-		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)")
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ vector store unavailable — read served from JSONL (may miss cross-project context)")
 	}
 
 	r := store.Rejection{

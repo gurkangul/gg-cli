@@ -64,7 +64,6 @@ func TestLinkedContextRenderingLabelsSourceProjects(t *testing.T) {
 func TestOpenLinkedStoresWarnsForMissingPathWithoutFailing(t *testing.T) {
 	_, warnings := openLinkedStores(&config.Config{
 		ProjectID: "current-project",
-		Qdrant:    config.QdrantConfig{Host: "localhost", Port: 6334},
 		LinkedProjects: []config.LinkedProjectConfig{
 			{Path: "/definitely/missing/gg-linked-project"},
 		},

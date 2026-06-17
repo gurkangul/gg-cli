@@ -24,7 +24,7 @@ type CanonEntry struct {
 }
 
 // canonPath stores canon at <ggDir>/canon.jsonl — deliberately OUTSIDE
-// <ggDir>/brain/, because `gg brain export` rebuilds the brain dir from Qdrant
+// <ggDir>/brain/, because `gg brain export` rebuilds the brain dir from the vector store
 // and would clobber a JSONL-only file there. Canon is append-only with
 // last-write-wins per area (re-setting an area overwrites it).
 func canonPath(ggDir string) string {
@@ -70,7 +70,7 @@ func (c *Client) ListCanon() ([]CanonEntry, error) {
 }
 
 // ReadCanon reads canon directly from a known .gg dir (cwd-independent, no
-// Qdrant) and folds it to one current entry per area. Empty-text areas (cleared)
+// the vector store) and folds it to one current entry per area. Empty-text areas (cleared)
 // are omitted. Missing file => empty, no error.
 func ReadCanon(ggDir string) ([]CanonEntry, error) {
 	f, err := os.Open(canonPath(ggDir))

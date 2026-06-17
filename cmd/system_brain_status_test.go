@@ -14,12 +14,9 @@ import (
 )
 
 func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing.T) {
-	// Asserts the brain-health report shows qdrant=down. Pin the default backends
-	// so an ambient GG_VECTOR_BACKEND/GG_GRAPH_BACKEND=sqlite (always-on stores)
-	// doesn't report the store/graph as up. This test does not route through
-	// setupGGDir.
-	t.Setenv("GG_VECTOR_BACKEND", "qdrant")
-	t.Setenv("GG_GRAPH_BACKEND", "memgraph")
+	// The local vector store is the always-up embedded SQLite store, so the
+	// brain-health report shows qdrant=up. Ollama remains down (no embedding
+	// server). This test does not route through setupGGDir.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	projectRoot := writeSystemBrainProject(t, "proj-a", "proj-a", false, "")
@@ -37,7 +34,7 @@ func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing
 		"registry=ok",
 		"project_id=ok",
 		"snapshot=none",
-		"qdrant=down",
+		"qdrant=up",
 		"ollama=down",
 		"codegraph=not_applicable",
 		"registry_issues=0",
@@ -50,11 +47,9 @@ func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing
 }
 
 func TestSystemBrainStatusJSONReportsMismatchAndFreshSnapshot(t *testing.T) {
-	// Asserts qdrant=down in the JSON report. Pin the default backends so an
-	// ambient GG_VECTOR_BACKEND/GG_GRAPH_BACKEND=sqlite (always-on stores) doesn't
-	// report the store/graph as up. This test does not route through setupGGDir.
-	t.Setenv("GG_VECTOR_BACKEND", "qdrant")
-	t.Setenv("GG_GRAPH_BACKEND", "memgraph")
+	// The embedded SQLite vector store is always up, so the JSON report shows
+	// qdrant=up; ollama stays down (no embedding server). This test does not route
+	// through setupGGDir.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	projectRoot := writeSystemBrainProject(t, "actual-project", "actual-project", true, time.Now().UTC().Format(time.RFC3339))
@@ -111,7 +106,7 @@ func TestSystemBrainStatusJSONReportsMismatchAndFreshSnapshot(t *testing.T) {
 	if got.Snapshot.Status != "fresh" || got.Snapshot.Checksums != "ok" {
 		t.Fatalf("snapshot mismatch: %#v", got.Snapshot)
 	}
-	if got.Qdrant.Status != "down" || got.Ollama.Status != "down" || got.CodeGraph.Status != "not_applicable" {
+	if got.Qdrant.Status != "up" || got.Ollama.Status != "down" || got.CodeGraph.Status != "not_applicable" {
 		t.Fatalf("backend/codegraph status mismatch: qdrant=%#v ollama=%#v codegraph=%#v", got.Qdrant, got.Ollama, got.CodeGraph)
 	}
 }

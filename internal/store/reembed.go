@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // Embedder is the minimal interface required by ReembedAll.
@@ -13,10 +11,10 @@ type Embedder interface {
 }
 
 // collTextExtractor maps a collection name suffix to a function that extracts
-// embeddable text from a Qdrant payload. This mirrors the original embed logic
+// embeddable text from a the vector store payload. This mirrors the original embed logic
 // used when each entity was first stored.
-var collTextExtractors = map[string]func(map[string]*qdrant.Value) string{
-	collSuffixDecisions: func(p map[string]*qdrant.Value) string {
+var collTextExtractors = map[string]func(map[string]*Value) string{
+	collSuffixDecisions: func(p map[string]*Value) string {
 		text := p["text"].GetStringValue()
 		reason := p["reason"].GetStringValue()
 		if reason != "" {
@@ -24,7 +22,7 @@ var collTextExtractors = map[string]func(map[string]*qdrant.Value) string{
 		}
 		return text
 	},
-	collSuffixRejections: func(p map[string]*qdrant.Value) string {
+	collSuffixRejections: func(p map[string]*Value) string {
 		// AddRejection stores text under "approach", not "text".
 		approach := p["approach"].GetStringValue()
 		reason := p["reason"].GetStringValue()
@@ -33,7 +31,7 @@ var collTextExtractors = map[string]func(map[string]*qdrant.Value) string{
 		}
 		return approach
 	},
-	collSuffixTasks: func(p map[string]*qdrant.Value) string {
+	collSuffixTasks: func(p map[string]*Value) string {
 		title := p["title"].GetStringValue()
 		detail := p["detail"].GetStringValue()
 		if detail != "" {
@@ -41,7 +39,7 @@ var collTextExtractors = map[string]func(map[string]*qdrant.Value) string{
 		}
 		return title
 	},
-	collSuffixBugs: func(p map[string]*qdrant.Value) string {
+	collSuffixBugs: func(p map[string]*Value) string {
 		title := p["title"].GetStringValue()
 		detail := p["detail"].GetStringValue()
 		if detail != "" {
@@ -49,14 +47,14 @@ var collTextExtractors = map[string]func(map[string]*qdrant.Value) string{
 		}
 		return title
 	},
-	collSuffixNotes: func(p map[string]*qdrant.Value) string {
+	collSuffixNotes: func(p map[string]*Value) string {
 		return p["text"].GetStringValue()
 	},
-	collSuffixMessages: func(p map[string]*qdrant.Value) string {
+	collSuffixMessages: func(p map[string]*Value) string {
 		// SendMessage stores body under "content", not "text".
 		return p["content"].GetStringValue()
 	},
-	collSuffixDiscussions: func(p map[string]*qdrant.Value) string {
+	collSuffixDiscussions: func(p map[string]*Value) string {
 		// OpenDiscussion stores headline under "topic", not "question".
 		topic := p["topic"].GetStringValue()
 		detail := p["detail"].GetStringValue()
@@ -98,13 +96,13 @@ type ReembedResult struct {
 // and EnsureCollections before retrying ReembedAll.
 func (c *Client) ReembedAll(ctx context.Context, embedder Embedder, newVectorSize uint64) ([]ReembedResult, error) {
 	// --- Step 1: Read all existing points before dropping collections ---
-	// Source of truth is JSONL (BUG-069): the Qdrant scroll is overlaid with the
+	// Source of truth is JSONL (BUG-069): the the vector store scroll is overlaid with the
 	// folded JSONL records so JSONL-only / mutated entries are not dropped.
 	type collectionData struct {
 		name      string
 		suffix    string
 		points    []reembedPoint
-		extractor func(map[string]*qdrant.Value) string
+		extractor func(map[string]*Value) string
 	}
 
 	collData := make([]collectionData, 0, len(collectionSuffixes))
@@ -115,9 +113,9 @@ func (c *Client) ReembedAll(ctx context.Context, embedder Embedder, newVectorSiz
 			continue
 		}
 		var saved []reembedPoint
-		points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+		points, err := c.scrollAll(ctx, &ScrollPoints{
 			CollectionName: name,
-			WithPayload:    qdrant.NewWithPayloadEnable(true),
+			WithPayload:    NewWithPayloadEnable(true),
 		})
 		if err == nil {
 			saved = make([]reembedPoint, 0, len(points))
@@ -168,13 +166,13 @@ func (c *Client) ReembedAll(ctx context.Context, embedder Embedder, newVectorSiz
 
 			payload := clearDegradedVectorMarkers(sp.payload)
 			wait := true
-			upsertErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+			upsertErr := c.vsUpsert(ctx, &UpsertPoints{
 				CollectionName: cd.name,
 				Wait:           &wait,
-				Points: []*qdrant.PointStruct{
+				Points: []*PointStruct{
 					{
-						Id:      qdrant.NewID(sp.id),
-						Vectors: qdrant.NewVectors(vec...),
+						Id:      NewID(sp.id),
+						Vectors: NewVectors(vec...),
 						Payload: payload,
 					},
 				},
@@ -202,8 +200,8 @@ func vectorForReembed(ctx context.Context, suffix string, text string, vectorSiz
 	return embedder.Generate(ctx, text)
 }
 
-func clearDegradedVectorMarkers(payload map[string]*qdrant.Value) map[string]*qdrant.Value {
-	out := make(map[string]*qdrant.Value, len(payload))
+func clearDegradedVectorMarkers(payload map[string]*Value) map[string]*Value {
+	out := make(map[string]*Value, len(payload))
 	for key, value := range payload {
 		if key == "gg_vector_degraded" || key == "gg_vector_degraded_at" {
 			continue

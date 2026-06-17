@@ -63,7 +63,7 @@ func runAuditHealth(cmd *cobra.Command, _ []string) error {
 	w := cmd.OutOrStdout()
 
 	if d.qdrantDown {
-		fmt.Fprintln(cmd.ErrOrStderr(), "warning: Qdrant unreachable — health metrics unavailable")
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: vector store unavailable — health metrics unavailable")
 		return nil
 	}
 

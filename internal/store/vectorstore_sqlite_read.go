@@ -6,15 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // candidate is one loaded point row during a scan.
 type candidate struct {
 	id      string
 	vector  []float32
-	payload map[string]*qdrant.Value
+	payload map[string]*Value
 }
 
 // loadCollection streams every point in a collection, decoding vectors only
@@ -28,7 +26,7 @@ func (s *sqliteStore) loadCollection(ctx context.Context, coll string, withVecto
 		return nil, err
 	}
 	if !exists {
-		return nil, errCollectionNotFound(coll)
+		return nil, collectionNotFoundErr(coll)
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id, vector, payload FROM points WHERE collection=?`, coll)
 	if err != nil {
@@ -58,7 +56,7 @@ func (s *sqliteStore) loadCollection(ctx context.Context, coll string, withVecto
 // Query performs an exact brute-force cosine top-K search: it loads the
 // filtered candidate set, scores each against the query vector, applies the
 // score threshold, and returns the highest-scoring points (limit, default 10).
-func (s *sqliteStore) Query(ctx context.Context, req *qdrant.QueryPoints) ([]*qdrant.ScoredPoint, error) {
+func (s *sqliteStore) Query(ctx context.Context, req *QueryPoints) ([]*ScoredPoint, error) {
 	if req == nil {
 		return nil, fmt.Errorf("query: nil request")
 	}
@@ -77,7 +75,7 @@ func (s *sqliteStore) Query(ctx context.Context, req *qdrant.QueryPoints) ([]*qd
 		threshold = req.GetScoreThreshold()
 	}
 
-	scored := make([]*qdrant.ScoredPoint, 0, len(cands))
+	scored := make([]*ScoredPoint, 0, len(cands))
 	for i := range cands {
 		c := &cands[i]
 		if !matchFilter(c.payload, filter) {
@@ -87,7 +85,7 @@ func (s *sqliteStore) Query(ctx context.Context, req *qdrant.QueryPoints) ([]*qd
 		if hasThreshold && score < threshold {
 			continue
 		}
-		scored = append(scored, &qdrant.ScoredPoint{
+		scored = append(scored, &ScoredPoint{
 			Id:      keyToPointID(c.id),
 			Payload: projectPayload(c.payload, req.GetWithPayload()),
 			Score:   score,
@@ -113,8 +111,8 @@ func (s *sqliteStore) Query(ctx context.Context, req *qdrant.QueryPoints) ([]*qd
 
 // Get returns the points with the requested ids, with payload projected per the
 // WithPayloadSelector. Order follows the request id order, and missing ids are
-// silently skipped (Qdrant behavior).
-func (s *sqliteStore) Get(ctx context.Context, req *qdrant.GetPoints) ([]*qdrant.RetrievedPoint, error) {
+// silently skipped (the prior backend behavior).
+func (s *sqliteStore) Get(ctx context.Context, req *GetPoints) ([]*RetrievedPoint, error) {
 	if req == nil {
 		return nil, fmt.Errorf("get: nil request")
 	}
@@ -123,10 +121,10 @@ func (s *sqliteStore) Get(ctx context.Context, req *qdrant.GetPoints) ([]*qdrant
 		return nil, err
 	}
 	if !exists {
-		return nil, errCollectionNotFound(req.CollectionName)
+		return nil, collectionNotFoundErr(req.CollectionName)
 	}
 	withVecs := wantsVectors(req.GetWithVectors())
-	out := make([]*qdrant.RetrievedPoint, 0, len(req.GetIds()))
+	out := make([]*RetrievedPoint, 0, len(req.GetIds()))
 	for _, id := range req.GetIds() {
 		key := pointIDKey(id)
 		var payBlob, vecBlob []byte
@@ -141,7 +139,7 @@ func (s *sqliteStore) Get(ctx context.Context, req *qdrant.GetPoints) ([]*qdrant
 		if err != nil {
 			return nil, err
 		}
-		rp := &qdrant.RetrievedPoint{
+		rp := &RetrievedPoint{
 			Id:      keyToPointID(key),
 			Payload: projectPayload(payload, req.GetWithPayload()),
 		}
@@ -153,11 +151,11 @@ func (s *sqliteStore) Get(ctx context.Context, req *qdrant.GetPoints) ([]*qdrant
 	return out, nil
 }
 
-// ScrollAndOffset paginates points ordered by id, replicating Qdrant's cursor
+// ScrollAndOffset paginates points ordered by id, replicating the prior backend's cursor
 // contract: Offset is the inclusive start id, the page holds at most Limit
 // points, and the returned next offset is the id of the first point of the
 // following page (nil when exhausted).
-func (s *sqliteStore) ScrollAndOffset(ctx context.Context, req *qdrant.ScrollPoints) ([]*qdrant.RetrievedPoint, *qdrant.PointId, error) {
+func (s *sqliteStore) ScrollAndOffset(ctx context.Context, req *ScrollPoints) ([]*RetrievedPoint, *PointId, error) {
 	if req == nil {
 		return nil, nil, fmt.Errorf("scroll: nil request")
 	}
@@ -189,9 +187,9 @@ func (s *sqliteStore) ScrollAndOffset(ctx context.Context, req *qdrant.ScrollPoi
 		end = len(matched)
 	}
 
-	page := make([]*qdrant.RetrievedPoint, 0, end-start)
+	page := make([]*RetrievedPoint, 0, end-start)
 	for i := start; i < end; i++ {
-		rp := &qdrant.RetrievedPoint{
+		rp := &RetrievedPoint{
 			Id:      keyToPointID(matched[i].id),
 			Payload: projectPayload(matched[i].payload, req.GetWithPayload()),
 		}
@@ -200,7 +198,7 @@ func (s *sqliteStore) ScrollAndOffset(ctx context.Context, req *qdrant.ScrollPoi
 		}
 		page = append(page, rp)
 	}
-	var next *qdrant.PointId
+	var next *PointId
 	if end < len(matched) {
 		next = keyToPointID(matched[end].id)
 	}
@@ -210,7 +208,7 @@ func (s *sqliteStore) ScrollAndOffset(ctx context.Context, req *qdrant.ScrollPoi
 // Count returns the number of points in a collection matching the optional
 // filter. A missing collection surfaces NotFound so callers can treat it as an
 // empty/fresh install.
-func (s *sqliteStore) Count(ctx context.Context, req *qdrant.CountPoints) (uint64, error) {
+func (s *sqliteStore) Count(ctx context.Context, req *CountPoints) (uint64, error) {
 	if req == nil {
 		return 0, fmt.Errorf("count: nil request")
 	}
@@ -220,7 +218,7 @@ func (s *sqliteStore) Count(ctx context.Context, req *qdrant.CountPoints) (uint6
 			return 0, err
 		}
 		if !exists {
-			return 0, errCollectionNotFound(req.CollectionName)
+			return 0, collectionNotFoundErr(req.CollectionName)
 		}
 		var n uint64
 		row := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM points WHERE collection=?`, req.CollectionName)

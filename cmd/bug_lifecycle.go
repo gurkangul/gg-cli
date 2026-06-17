@@ -254,8 +254,8 @@ func runBugFix(cmd *cobra.Command, args []string) error {
 	fixFiles := normalizeBugFiles(parseTags(bugFixFiles))
 	fixSymbols := parseTags(bugFixSymbols)
 	if len(fixFiles) > 0 || len(fixSymbols) > 0 {
-		if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil && cfg.Memgraph.URI != "" {
-			if gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID); gcErr == nil {
+		if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil {
+			if gc, gcErr := graph.New(cfg.DataDir, cfg.ProjectID); gcErr == nil {
 				gctx, gcancel := withTimeout(cmd.Context())
 				defer gcancel()
 				// Fetch the bug title for the node label.

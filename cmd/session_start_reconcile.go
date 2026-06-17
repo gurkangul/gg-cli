@@ -87,7 +87,7 @@ func reconcileOutboxIfNeeded(cmd *cobra.Command, stdout, stderr io.Writer) {
 		return
 	}
 	if drained > 0 {
-		fmt.Fprintf(stdout, "✓ auto-reconciled %d pending write(s) to Qdrant\n", drained)
+		fmt.Fprintf(stdout, "✓ auto-reconciled %d pending write(s) to the vector store\n", drained)
 	}
 }
 

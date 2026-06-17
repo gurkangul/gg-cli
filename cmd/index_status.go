@@ -343,12 +343,8 @@ func (s *codeGraphStatus) fillGraphStats(ctx context.Context, cfg *config.Config
 		s.MemgraphDetail = "not checked"
 		return
 	}
-	if cfg.Memgraph.URI == "" {
-		s.MemgraphDetail = "not configured"
-		return
-	}
 	s.MemgraphConfigured = true
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
 		s.MemgraphDetail = "client init: " + err.Error()
 		return
@@ -391,13 +387,13 @@ func (s *codeGraphStatus) finalize() {
 		if fullCommand := codeGraphFullIndexSuggestionForStatus(*s); fullCommand != "" {
 			s.SuggestedCommand = fullCommand
 		}
-		msg := "Memgraph projection is empty"
+		msg := "code graph is empty"
 		if s.SuggestedCommand != "" {
 			msg += " - run " + s.SuggestedCommand
 		}
 		if s.Detail == "" || strings.HasPrefix(s.Detail, "index-state matches") {
 			s.Detail = msg
-		} else if !strings.Contains(s.Detail, "Memgraph projection") {
+		} else if !strings.Contains(s.Detail, "code graph") {
 			s.Detail += "; " + msg
 		}
 	}
@@ -406,7 +402,7 @@ func (s *codeGraphStatus) finalize() {
 		if fullCommand := codeGraphFullIndexSuggestionForStatus(*s); fullCommand != "" {
 			s.SuggestedCommand = fullCommand
 		}
-		s.Detail = "Memgraph projection stats unavailable"
+		s.Detail = "code graph stats unavailable"
 		if s.MemgraphDetail != "" {
 			s.Detail += ": " + s.MemgraphDetail
 		}
@@ -419,16 +415,16 @@ func (s *codeGraphStatus) finalize() {
 		if fullCommand := codeGraphFullIndexSuggestionForStatus(*s); fullCommand != "" {
 			s.SuggestedCommand = fullCommand
 		}
-		s.Detail = "Memgraph projection unavailable"
+		s.Detail = "code graph unavailable"
 		if s.MemgraphDetail != "" {
 			s.Detail += ": " + s.MemgraphDetail
 		}
 		if s.SuggestedCommand != "" {
-			s.Detail += " - restore Memgraph, then run " + s.SuggestedCommand
+			s.Detail += " - check the code graph (.gg/graph.db), then run " + s.SuggestedCommand
 		}
 	}
 	if !s.MemgraphAvailable && s.Detail == "" {
-		s.Detail = "Memgraph unavailable or not configured"
+		s.Detail = "code graph unavailable"
 	}
 }
 
@@ -480,7 +476,7 @@ func renderCodeGraphStatus(w io.Writer, s codeGraphStatus) {
 	if fresh.Status != codeGraphFreshnessNotApplicable {
 		fmt.Fprintf(w, "  Background refresh: %t\n", fresh.BackgroundRefresh)
 	}
-	fmt.Fprintf(w, "  Memgraph: %s", boolWord(s.MemgraphAvailable, "available", "unavailable"))
+	fmt.Fprintf(w, "  Code graph: %s", boolWord(s.MemgraphAvailable, "available", "unavailable"))
 	if s.MemgraphDetail != "" {
 		fmt.Fprintf(w, " (%s)", s.MemgraphDetail)
 	}

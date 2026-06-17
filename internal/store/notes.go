@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gurkangul/gg-cli/internal/brain"
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // Note is a free-form activity log entry — a timestamped text fragment that
@@ -46,19 +45,19 @@ func (c *Client) AddNote(ctx context.Context, n Note, vector []float32) (string,
 		return n.ID, semanticVectorMissing(OutboxKindNote, n.ID)
 	}
 
-	payload, err := qdrant.TryValueMap(rawPayload)
+	payload, err := TryValueMap(rawPayload)
 	if err != nil {
 		return "", fmt.Errorf("build payload: %w", err)
 	}
 
 	wait := true
-	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	err = c.vsUpsert(ctx, &UpsertPoints{
 		CollectionName: c.collNotes(),
 		Wait:           &wait,
-		Points: []*qdrant.PointStruct{
+		Points: []*PointStruct{
 			{
-				Id:      qdrant.NewID(n.ID),
-				Vectors: qdrant.NewVectors(vector...),
+				Id:      NewID(n.ID),
+				Vectors: NewVectors(vector...),
 				Payload: payload,
 			},
 		},
@@ -70,9 +69,9 @@ func (c *Client) AddNote(ctx context.Context, n Note, vector []float32) (string,
 }
 
 func (c *Client) ListNotes(ctx context.Context, limit int) ([]Note, error) {
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collNotes(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return nil, err
@@ -92,12 +91,12 @@ func (c *Client) ListNotes(ctx context.Context, limit int) ([]Note, error) {
 }
 
 func (c *Client) SearchNotes(ctx context.Context, vector []float32, limit uint64) ([]Note, error) {
-	results, err := c.qdrantQuery(ctx, &qdrant.QueryPoints{
+	results, err := c.vsQuery(ctx, &QueryPoints{
 		CollectionName: c.collNotes(),
-		Query:          qdrant.NewQuery(vector...),
-		Limit:          qdrant.PtrOf(limit),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
-		Filter:         &qdrant.Filter{Must: []*qdrant.Condition{nonDegradedVectorCondition()}},
+		Query:          NewQuery(vector...),
+		Limit:          PtrOf(limit),
+		WithPayload:    NewWithPayloadEnable(true),
+		Filter:         &Filter{Must: []*Condition{nonDegradedVectorCondition()}},
 	})
 	if err != nil {
 		return nil, err
@@ -111,7 +110,7 @@ func (c *Client) SearchNotes(ctx context.Context, vector []float32, limit uint64
 	return notes, nil
 }
 
-func noteFromPayload(id string, pay map[string]*qdrant.Value) Note {
+func noteFromPayload(id string, pay map[string]*Value) Note {
 	return Note{
 		ID:        id,
 		Text:      pay["text"].GetStringValue(),

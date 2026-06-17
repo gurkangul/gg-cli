@@ -97,7 +97,7 @@ func runAuditDecideGaps(cmd *cobra.Command, _ []string) error {
 	w := cmd.OutOrStdout()
 
 	if d.qdrantDown {
-		fmt.Fprintln(cmd.ErrOrStderr(), "warning: Qdrant unreachable — decide-gaps check skipped")
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: vector store unavailable — decide-gaps check skipped")
 		return nil
 	}
 

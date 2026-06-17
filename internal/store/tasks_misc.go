@@ -3,29 +3,27 @@ package store
 import (
 	"context"
 	"fmt"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 func (c *Client) CountTasks(ctx context.Context, status string) (uint64, error) {
-	req := &qdrant.CountPoints{
+	req := &CountPoints{
 		CollectionName: c.collTasks(),
 	}
 	if status != "" {
-		req.Filter = &qdrant.Filter{
-			Must: []*qdrant.Condition{
-				qdrant.NewMatchKeyword("status", status),
+		req.Filter = &Filter{
+			Must: []*Condition{
+				NewMatchKeyword("status", status),
 			},
 		}
 	}
 	return c.vs.Count(ctx, req)
 }
 
-func taskFromRetrieved(p *qdrant.RetrievedPoint) Task {
+func taskFromRetrieved(p *RetrievedPoint) Task {
 	return taskFromPayload(p.GetPayload())
 }
 
-// CancelTask permanently removes a task from Qdrant. The point is deleted by
+// CancelTask permanently removes a task from the vector store. The point is deleted by
 // its deterministic UUID so no scan is needed. The caller is responsible for
 // also removing the Task node from Memgraph (see cmd/task_cancel.go).
 func (c *Client) CancelTask(ctx context.Context, taskID, actor, reason string) error {
@@ -36,12 +34,12 @@ func (c *Client) CancelTask(ctx context.Context, taskID, actor, reason string) e
 	if err != nil {
 		return err
 	}
-	ptID := qdrant.NewID(pointUUIDForTaskID(taskID))
+	ptID := NewID(pointUUIDForTaskID(taskID))
 	wait := true
-	_, err = c.vs.Delete(ctx, &qdrant.DeletePoints{
+	_, err = c.vs.Delete(ctx, &DeletePoints{
 		CollectionName: c.collTasks(),
 		Wait:           &wait,
-		Points:         qdrant.NewPointsSelector(ptID),
+		Points:         NewPointsSelector(ptID),
 	})
 	if err != nil {
 		return fmt.Errorf("cancel task %s: %w", taskID, err)

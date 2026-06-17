@@ -21,16 +21,12 @@ func captureWarnings(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
-// validBody is a minimal config that passes Validate() (required
-// qdrant/embedding/memgraph fields present). Tests prepend extra lines.
-const validBody = `qdrant:
-  host: localhost
-  port: 6334
-embedding:
+// validBody is a minimal config that passes Validate(). The only optional
+// external service is the embedding engine (qdrant/memgraph were removed when
+// the stores became embedded SQLite). Tests prepend extra lines.
+const validBody = `embedding:
   host: http://localhost:11434
   model: nomic-embed-text
-memgraph:
-  uri: bolt://localhost:7687
 `
 
 func writeGGConfig(t *testing.T, body string) string {

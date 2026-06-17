@@ -31,7 +31,7 @@ func runImpactSymbol(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
 		return fmt.Errorf("graph client init: %w", err)
 	}

@@ -1,13 +1,10 @@
 // Package store — unit tests for pure helper functions that do not require
-// a running Qdrant instance. These cover ID parsers, payload deserializers,
+// a running the vector store instance. These cover ID parsers, payload deserializers,
 // and sorting helpers.
 package store
 
 import (
 	"testing"
-
-	"github.com/gurkangul/gg-cli/internal/config"
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // ── ParseTaskID ────────────────────────────────────────────────────────────
@@ -120,12 +117,12 @@ func TestExtractStringList_Nil(t *testing.T) {
 }
 
 func TestExtractStringList_Values(t *testing.T) {
-	v := &qdrant.Value{
-		Kind: &qdrant.Value_ListValue{
-			ListValue: &qdrant.ListValue{
-				Values: []*qdrant.Value{
-					{Kind: &qdrant.Value_StringValue{StringValue: "alpha"}},
-					{Kind: &qdrant.Value_StringValue{StringValue: "beta"}},
+	v := &Value{
+		Kind: &Value_ListValue{
+			ListValue: &ListValue{
+				Values: []*Value{
+					{Kind: &Value_StringValue{StringValue: "alpha"}},
+					{Kind: &Value_StringValue{StringValue: "beta"}},
 				},
 			},
 		},
@@ -156,7 +153,7 @@ func TestSortDecisionsDesc(t *testing.T) {
 // ── decisionFromPayload ───────────────────────────────────────────────────
 
 func TestDecisionFromPayload(t *testing.T) {
-	pay, err := qdrant.TryValueMap(map[string]any{
+	pay, err := TryValueMap(map[string]any{
 		"text":       "use JWT",
 		"reason":     "stateless auth",
 		"tags":       []any{"auth", "security"},
@@ -191,17 +188,15 @@ func TestDecisionFromPayload(t *testing.T) {
 // ── New — validation ──────────────────────────────────────────────────────
 
 func TestNewClient_RequiresProjectID(t *testing.T) {
-	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 19997}
-	if _, err := New(cfg, t.TempDir(), ""); err == nil {
+	if _, err := New(t.TempDir(), ""); err == nil {
 		t.Fatal("expected error for empty projectID")
 	}
 }
 
-func TestNewClient_ConnectsWithAnyHost(t *testing.T) {
-	// New() should succeed even when Qdrant is not listening — it only creates
-	// the client struct, not an actual connection. HealthCheck would fail.
-	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 19997}
-	c, err := New(cfg, t.TempDir(), "test-proj")
+func TestNewClient_OpensEmbeddedStore(t *testing.T) {
+	// New() opens the embedded SQLite vector store under dataDir; it only creates
+	// the client + DB, requiring no external server.
+	c, err := New(t.TempDir(), "test-proj")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -271,7 +266,7 @@ func TestTurnsRoundTrip(t *testing.T) {
 	}
 
 	// Verify the maps round-trip correctly via TryValueMap then extractTurns.
-	pm, err := qdrant.TryValueMap(map[string]any{"turns": encoded})
+	pm, err := TryValueMap(map[string]any{"turns": encoded})
 	if err != nil {
 		t.Fatalf("TryValueMap: %v", err)
 	}

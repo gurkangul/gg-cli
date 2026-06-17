@@ -4,11 +4,10 @@ import (
 	"testing"
 
 	"github.com/gurkangul/gg-cli/internal/brain"
-	"github.com/gurkangul/gg-cli/internal/config"
 )
 
 func TestAppendTaskEvent_WritesJSONL(t *testing.T) {
-	c, err := New(&config.QdrantConfig{Host: "127.0.0.1", Port: 19997}, t.TempDir(), "test-project")
+	c, err := New(t.TempDir(), "test-project")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -46,7 +45,7 @@ func TestAppendTaskEvent_WritesJSONL(t *testing.T) {
 }
 
 func TestAppendTaskEvent_RequiresTaskAndAction(t *testing.T) {
-	c, err := New(&config.QdrantConfig{Host: "127.0.0.1", Port: 19997}, t.TempDir(), "test-project")
+	c, err := New(t.TempDir(), "test-project")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

@@ -91,14 +91,14 @@ func runDoctorReconcile(cmd *cobra.Command) error {
 					needsAction = true
 				case replayed:
 					if collSuffix == "messages" {
-						fmt.Printf("  ✓ replayed message payload to Qdrant with intentional zero vector (collection: %s)\n", collSuffix)
+						fmt.Printf("  ✓ replayed message payload to vector store with intentional zero vector (collection: %s)\n", collSuffix)
 					} else {
-						fmt.Printf("  ✓ replayed payload to Qdrant with placeholder vector (collection: %s)\n", collSuffix)
+						fmt.Printf("  ✓ replayed payload to vector store with placeholder vector (collection: %s)\n", collSuffix)
 						fmt.Printf("    Semantic recall degraded for this entry until `gg reembed` rebuilds vectors.\n")
 					}
 					_ = outbox.Delete(ggDir, e.ID)
 				default:
-					fmt.Printf("  ~ Qdrant unreachable — replay deferred\n")
+					fmt.Printf("  ~ vector store unavailable — replay deferred\n")
 					needsAction = true
 				}
 			default:
@@ -114,7 +114,7 @@ func runDoctorReconcile(cmd *cobra.Command) error {
 						if len(shortSHA) > 8 {
 							shortSHA = shortSHA[:8]
 						}
-						fmt.Printf("  → Memgraph write for sha=%s may be incomplete.\n", shortSHA)
+						fmt.Printf("  → code graph write for sha=%s may be incomplete.\n", shortSHA)
 						fmt.Printf("    Repair: gg index --lang %s\n", p.Lang)
 					} else {
 						fmt.Printf("  → Payload unreadable: %v\n", jsonErr)
@@ -133,7 +133,7 @@ func runDoctorReconcile(cmd *cobra.Command) error {
 
 	// Phase 2: scan JSONL ∖ Qdrant — recover entries written to JSONL but never
 	// reaching Qdrant (SIGKILL window between Append and queueBrainOutbox).
-	fmt.Println("\nJSONL ∖ Qdrant scan:")
+	fmt.Println("\nJSONL ∖ vector store scan:")
 	jsonlGap := runReconcileFromJSONL(cmd.Context(), storeClient, ggDir)
 	if jsonlGap {
 		needsAction = true
@@ -151,7 +151,7 @@ func runDoctorReconcile(cmd *cobra.Command) error {
 // entries needed recovery or Qdrant was unreachable (caller should retry).
 func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) bool {
 	if sc == nil {
-		fmt.Println("  ~ Qdrant unreachable — JSONL scan deferred")
+		fmt.Println("  ~ vector store unavailable — JSONL scan deferred")
 		return true
 	}
 	anyGap := false
@@ -196,7 +196,7 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 				if brain.PayloadVersion(e.Payload) > 1 {
 					if syncErr := sc.SyncBrainPayload(ctx, kind, e.UUID, e.Payload); syncErr != nil {
 						if errors.Is(syncErr, store.ErrQdrantDown) {
-							fmt.Printf("  ~ %s: Qdrant went down mid-scan — deferred\n", kind)
+							fmt.Printf("  ~ %s: vector store went down mid-scan — deferred\n", kind)
 							anyGap = true
 							break
 						}
@@ -211,7 +211,7 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 			// Entry is in JSONL but not in Qdrant — re-upsert.
 			if replayErr := sc.ReplayBrainEntry(ctx, kind, e.UUID, e.Payload); replayErr != nil {
 				if errors.Is(replayErr, store.ErrQdrantDown) {
-					fmt.Printf("  ~ %s: Qdrant went down mid-scan — deferred\n", kind)
+					fmt.Printf("  ~ %s: vector store went down mid-scan — deferred\n", kind)
 					anyGap = true
 					break
 				}
@@ -222,7 +222,7 @@ func runReconcileFromJSONL(ctx context.Context, sc *store.Client, ggDir string) 
 			}
 		}
 		if synced > 0 {
-			fmt.Printf("  ⚠ %s: synced %d JSONL-newer payload(s) into Qdrant\n", kind, synced)
+			fmt.Printf("  ⚠ %s: synced %d JSONL-newer payload(s) into vector store\n", kind, synced)
 		}
 		if recovered > 0 {
 			if kind == "messages" {

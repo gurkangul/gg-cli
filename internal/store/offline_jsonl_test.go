@@ -1,7 +1,10 @@
 // Package store — offline-resilience tests (BUG-030 / TASK-352).
 //
 // These tests verify that brain-write operations succeed (exit 0, JSONL written)
-// when Qdrant is unreachable, producing OutboxQueued instead of a hard failure.
+// and return OutboxQueued (queued-for-replay) instead of a hard failure when the
+// semantic vector is unavailable. With the embedded SQLite store the index is
+// always reachable, so the surviving "JSONL-first durability" contract is
+// exercised by passing an empty vector — the semanticVectorMissing path.
 package store
 
 import (
@@ -13,11 +16,35 @@ import (
 	"time"
 )
 
-// TestRecordOffline_WritesJSONL_NoQdrant (AC-1, AC-5): AddDecision must write
+// newOfflineClient builds an embedded-store Client in a fresh temp dir. Brain
+// writes with an empty vector return *OutboxQueued (JSONL written, replay
+// queued) — the durability contract these tests cover.
+func newOfflineClient(t *testing.T) *Client {
+	t.Helper()
+	c, err := New(t.TempDir(), "test-project-offline")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+// seedSeqFile writes a starting value to a seq file in the client's dataDir so
+// allocTaskID / allocBugID skip any store bootstrap call.
+func seedSeqFile(t *testing.T, c *Client, filename string, n int) {
+	t.Helper()
+	path := filepath.Join(c.dataDir, filename)
+	if err := os.WriteFile(path, []byte("10\n"), 0600); err != nil {
+		t.Fatalf("seed %s: %v", filename, err)
+	}
+	_ = n // n parameter reserved for callers that need a specific value
+}
+
+// TestRecordOffline_WritesJSONL_NoServer (AC-1, AC-5): AddDecision must write
 // to .gg/brain/decisions.jsonl and return OutboxQueued (not a hard error) when
-// Qdrant is unreachable.
-func TestRecordOffline_WritesJSONL_NoQdrant(t *testing.T) {
-	c := newDownClient(t)
+// the vector store is unreachable.
+func TestRecordOffline_WritesJSONL_NoServer(t *testing.T) {
+	c := newOfflineClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -28,7 +55,7 @@ func TestRecordOffline_WritesJSONL_NoQdrant(t *testing.T) {
 		Author: "test-agent",
 	}
 
-	err := c.AddDecision(ctx, dec, make([]float32, VectorSize))
+	err := c.AddDecision(ctx, dec, nil)
 
 	// Must return OutboxQueued (JSONL written) not a hard failure.
 	if err == nil {
@@ -62,10 +89,10 @@ func TestRecordOffline_WritesJSONL_NoQdrant(t *testing.T) {
 	}
 }
 
-// TestRejectionOffline_WritesJSONL_NoQdrant (AC-1, AC-5): AddRejection must
-// write to .gg/brain/rejections.jsonl and return OutboxQueued when Qdrant is down.
-func TestRejectionOffline_WritesJSONL_NoQdrant(t *testing.T) {
-	c := newDownClient(t)
+// TestRejectionOffline_WritesJSONL_NoServer (AC-1, AC-5): AddRejection must
+// write to .gg/brain/rejections.jsonl and return OutboxQueued when the vector store is down.
+func TestRejectionOffline_WritesJSONL_NoServer(t *testing.T) {
+	c := newOfflineClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -76,7 +103,7 @@ func TestRejectionOffline_WritesJSONL_NoQdrant(t *testing.T) {
 		Author:   "test-agent",
 	}
 
-	err := c.AddRejection(ctx, r, make([]float32, VectorSize))
+	err := c.AddRejection(ctx, r, nil)
 	if err == nil {
 		t.Fatal("expected OutboxQueued error, got nil")
 	}
@@ -105,10 +132,10 @@ func TestRejectionOffline_WritesJSONL_NoQdrant(t *testing.T) {
 }
 
 // TestTask_CreateAndComplete_OfflineCycle (AC-1, AC-5): CreateTask must write
-// to .gg/brain/tasks.jsonl and return (taskID, OutboxQueued) when Qdrant is down.
+// to .gg/brain/tasks.jsonl and return (taskID, OutboxQueued) when the vector store is down.
 func TestTask_CreateAndComplete_OfflineCycle(t *testing.T) {
-	c := newDownClient(t)
-	// Seed seq file so allocTaskID skips the Qdrant bootstrap.
+	c := newOfflineClient(t)
+	// Seed seq file so allocTaskID skips the the vector store bootstrap.
 	seedSeqFile(t, c, taskSeqFile, 10)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -119,7 +146,7 @@ func TestTask_CreateAndComplete_OfflineCycle(t *testing.T) {
 		Priority: "high",
 		Author:   "test-agent",
 		Status:   "pending",
-	}, make([]float32, VectorSize))
+	}, nil)
 
 	if id == "" {
 		t.Error("expected non-empty task ID on offline create")
@@ -156,10 +183,10 @@ func TestTask_CreateAndComplete_OfflineCycle(t *testing.T) {
 	}
 }
 
-// TestBugOffline_WritesJSONL_NoQdrant (AC-1, AC-5): ReportBug must write to
-// .gg/brain/bugs.jsonl and return (bugID, OutboxQueued) when Qdrant is down.
-func TestBugOffline_WritesJSONL_NoQdrant(t *testing.T) {
-	c := newDownClient(t)
+// TestBugOffline_WritesJSONL_NoServer (AC-1, AC-5): ReportBug must write to
+// .gg/brain/bugs.jsonl and return (bugID, OutboxQueued) when the vector store is down.
+func TestBugOffline_WritesJSONL_NoServer(t *testing.T) {
+	c := newOfflineClient(t)
 	seedSeqFile(t, c, bugSeqFile, 10)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -169,7 +196,7 @@ func TestBugOffline_WritesJSONL_NoQdrant(t *testing.T) {
 		Title:    "nil pointer in search handler",
 		Severity: "high",
 		By:       "test-agent",
-	}, make([]float32, VectorSize))
+	}, nil)
 
 	if id == "" {
 		t.Error("expected non-empty bug ID on offline report")
@@ -201,8 +228,8 @@ func TestBugOffline_WritesJSONL_NoQdrant(t *testing.T) {
 	}
 }
 
-func TestNoteOffline_WritesJSONL_NoQdrant(t *testing.T) {
-	c := newDownClient(t)
+func TestNoteOffline_WritesJSONL_NoServer(t *testing.T) {
+	c := newOfflineClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -210,7 +237,7 @@ func TestNoteOffline_WritesJSONL_NoQdrant(t *testing.T) {
 		Text:   "semantic fallback should keep notes durable",
 		Tags:   []string{"semantic", "fallback"},
 		TaskID: "TASK-444",
-	}, make([]float32, VectorSize))
+	}, nil)
 
 	if id == "" {
 		t.Error("expected non-empty note ID on offline add")
@@ -244,54 +271,18 @@ func TestNoteOffline_WritesJSONL_NoQdrant(t *testing.T) {
 	}
 }
 
-func TestMessageOffline_WritesJSONL_NoQdrant(t *testing.T) {
-	c := newDownClient(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	err := c.SendMessage(ctx, Message{
-		ID:       "msg-offline-1",
-		FromRole: "developer",
-		ToRole:   "reviewer",
-		Content:  "TASK-444 fallback is ready for review",
-		TaskID:   "TASK-444",
-	})
-
-	if err == nil {
-		t.Fatal("expected OutboxQueued error, got nil")
-	}
-	oq, ok := err.(*OutboxQueued)
-	if !ok {
-		t.Fatalf("expected *OutboxQueued, got %T: %v", err, err)
-	}
-	if oq.Kind != OutboxKindMessage {
-		t.Errorf("OutboxQueued.Kind = %q, want %q", oq.Kind, OutboxKindMessage)
-	}
-
-	jsonlPath := filepath.Join(c.dataDir, "brain", "messages.jsonl")
-	data, readErr := os.ReadFile(jsonlPath)
-	if readErr != nil {
-		t.Fatalf("brain/messages.jsonl not written: %v", readErr)
-	}
-	var entry map[string]any
-	if jsonErr := json.Unmarshal(data[:len(data)-1], &entry); jsonErr != nil {
-		t.Fatalf("invalid JSONL line: %v", jsonErr)
-	}
-	payload, _ := entry["payload"].(map[string]any)
-	if payload["content"] != "TASK-444 fallback is ready for review" {
-		t.Errorf("JSONL payload.content = %v", payload["content"])
-	}
-	if payload["task_id"] != "TASK-444" {
-		t.Errorf("JSONL payload.task_id = %v, want TASK-444", payload["task_id"])
-	}
-}
+// NOTE: the former TestMessageOffline_WritesJSONL_NoServer was removed: SendMessage
+// has no semantic-vector-missing branch (it always upserts a zero vector), so its
+// only OutboxQueued path was a the vector store connectivity failure — a server-down contract
+// that no longer exists with the always-up embedded store. JSONL-first message
+// durability is still covered by the messages mutation/inbox tests.
 
 // TestOutboxQueued_IsIdempotentOnRetry (AC-1): writing the same UUID twice
 // to brain JSONL appends two lines, but replay skips the second (UUID dedup).
 // This test verifies the file structure (two lines) — replay idempotency is
 // tested in the replay path.
 func TestOutboxQueued_IsIdempotentOnRetry(t *testing.T) {
-	c := newDownClient(t)
+	c := newOfflineClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -302,9 +293,9 @@ func TestOutboxQueued_IsIdempotentOnRetry(t *testing.T) {
 	}
 
 	// First write.
-	_ = c.AddDecision(ctx, dec, make([]float32, VectorSize))
+	_ = c.AddDecision(ctx, dec, nil)
 	// Second write with same ID — JSONL appends, outbox dedup is caller's responsibility.
-	_ = c.AddDecision(ctx, dec, make([]float32, VectorSize))
+	_ = c.AddDecision(ctx, dec, nil)
 
 	jsonlPath := filepath.Join(c.dataDir, "brain", "decisions.jsonl")
 	data, err := os.ReadFile(jsonlPath)

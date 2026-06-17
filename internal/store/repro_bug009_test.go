@@ -5,7 +5,7 @@ import "testing"
 // TestIsZeroVector_DetectsPlaceholder guards BUG-009: brain import must seed
 // zero-vector placeholders so EmbedMissing can detect and re-embed them.
 // Before the fix, UpsertBrainRecords did not seed a vector, causing the fresh
-// Qdrant collection to reject points (vector is mandatory).
+// vector-store collection to reject points (vector is mandatory).
 func TestIsZeroVector_DetectsPlaceholder(t *testing.T) {
 	cases := []struct {
 		name string

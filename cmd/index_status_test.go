@@ -356,7 +356,7 @@ func TestRenderCodeGraphStatusCompact(t *testing.T) {
 		HeadSHA:           "1234567890abcdef",
 		MemgraphAvailable: true,
 	})
-	for _, want := range []string{"CodeGraph ready", "idx=12345678", "head=12345678", "memgraph=ok"} {
+	for _, want := range []string{"CodeGraph ready", "idx=12345678", "head=12345678", "codegraph=ok"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
@@ -375,7 +375,7 @@ func TestCodeGraphStatus_FinalizeDowngradesReadyWhenMemgraphUnavailable(t *testi
 	if status.Status != "missing" {
 		t.Fatalf("Status=%q Detail=%q", status.Status, status.Detail)
 	}
-	for _, want := range []string{"Memgraph projection unavailable", "restore Memgraph", "gg index --lang go"} {
+	for _, want := range []string{"code graph unavailable", "check the code graph (.gg/graph.db)", "gg index --lang go"} {
 		if !strings.Contains(status.Detail, want) {
 			t.Fatalf("detail missing %q: %q", want, status.Detail)
 		}
@@ -399,7 +399,7 @@ func TestCodeGraphStatus_FinalizeDowngradesReadyWhenGraphStatsUnavailable(t *tes
 	if status.Status != "missing" {
 		t.Fatalf("Status=%q Detail=%q", status.Status, status.Detail)
 	}
-	for _, want := range []string{"Memgraph projection stats unavailable", "run gg doctor", "gg index --lang go"} {
+	for _, want := range []string{"code graph stats unavailable", "run gg doctor", "gg index --lang go"} {
 		if !strings.Contains(status.Detail, want) {
 			t.Fatalf("detail missing %q: %q", want, status.Detail)
 		}

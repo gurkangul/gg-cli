@@ -20,7 +20,7 @@ const taskSeqFile = ".task-seq"
 // different processes (the core multi-agent use case) never collide.
 //
 // On first allocation, the counter is bootstrapped from the max existing
-// task_id in Qdrant — so deleting the seq file recovers gracefully instead
+// task_id in the vector store — so deleting the seq file recovers gracefully instead
 // of reusing IDs.
 func (c *Client) allocTaskID(ctx context.Context) (string, error) {
 	if c.dataDir == "" {
@@ -48,20 +48,20 @@ func (c *Client) allocTaskID(ctx context.Context) (string, error) {
 	if s := strings.TrimSpace(string(data)); s != "" {
 		parsed, perr := strconv.Atoi(s)
 		if perr != nil || parsed < 0 {
-			return "", fmt.Errorf("corrupt %s: %q — delete this file to re-bootstrap from qdrant", seqPath, s)
+			return "", fmt.Errorf("corrupt %s: %q — delete this file to re-bootstrap from the vector store", seqPath, s)
 		}
 		n = parsed
 	}
 
-	// Bootstrap: seq file is empty or zero. Try Qdrant first; if unavailable,
+	// Bootstrap: seq file is empty or zero. Try the vector store first; if unavailable,
 	// fall back to scanning .gg/brain/tasks.jsonl so offline task creation works.
 	if n == 0 {
 		existingMax, err := c.maxTaskIDNumber(ctx)
 		if err != nil {
-			// Qdrant down — fall back to JSONL scan to avoid reusing IDs.
+			// the vector store down — fall back to JSONL scan to avoid reusing IDs.
 			jsonlMax, jsonlErr := maxTaskIDFromBrainJSONL(c.dataDir)
 			if jsonlErr != nil {
-				return "", fmt.Errorf("bootstrap task seq (qdrant down, jsonl fallback failed): %w", jsonlErr)
+				return "", fmt.Errorf("bootstrap task seq (vector store down, jsonl fallback failed): %w", jsonlErr)
 			}
 			n = jsonlMax
 		} else {
@@ -115,7 +115,7 @@ func lockFileCtx(ctx context.Context, f *os.File) error {
 }
 
 // maxTaskIDFromBrainJSONL scans .gg/brain/tasks.jsonl for the highest numeric
-// suffix in a task_id field.  Used as a Qdrant-free bootstrap for allocTaskID.
+// suffix in a task_id field.  Used as a store-independent bootstrap for allocTaskID.
 // Returns 0 when the file is absent or empty (safe: next allocation is TASK-001).
 func maxTaskIDFromBrainJSONL(ggDir string) (int, error) {
 	entries, err := brain.ReadAll(ggDir, "tasks")

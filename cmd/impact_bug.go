@@ -40,8 +40,8 @@ func runImpactBug(cmd *cobra.Command, bugID string) error {
 	result := bugImpactResult{BugID: bugID}
 
 	cfg, _ := config.Load()
-	if cfg != nil && cfg.Memgraph.URI != "" {
-		gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	if cfg != nil {
+		gc, gcErr := graph.New(cfg.DataDir, cfg.ProjectID)
 		if gcErr != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("graph client init: %v", gcErr))
 		} else {
@@ -57,7 +57,7 @@ func runImpactBug(cmd *cobra.Command, bugID string) error {
 			}
 		}
 	} else {
-		result.Warnings = append(result.Warnings, "Memgraph not configured — graph data unavailable")
+		result.Warnings = append(result.Warnings, "code graph empty — graph data unavailable (run 'gg index' first)")
 	}
 
 	vector, embErr := d.embedder.Generate(ctx, bugID)

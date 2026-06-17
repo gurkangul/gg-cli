@@ -27,10 +27,10 @@ func queueBrainOutbox(oq *store.OutboxQueued, ggDir string) {
 
 func warnBrainOutboxQueued(w io.Writer, cause error) {
 	if errors.Is(cause, store.ErrSemanticVectorUnavailable) {
-		fmt.Fprintln(w, "⚠ saved to JSONL; semantic indexing queued (embedding unavailable or Qdrant degraded). Run `gg doctor --reconcile`; `gg reembed` restores vectors.")
+		fmt.Fprintln(w, "⚠ saved to JSONL; semantic indexing queued (embedding unavailable or vector store degraded). Run `gg doctor --reconcile`; `gg reembed` restores vectors.")
 		return
 	}
-	fmt.Fprintln(w, "⚠ saved to JSONL; semantic indexing queued (Qdrant unreachable). Run `gg doctor --reconcile` after recovery.")
+	fmt.Fprintln(w, "⚠ saved to JSONL; semantic indexing queued (vector store unavailable). Run `gg doctor --reconcile` after recovery.")
 }
 
 // brainOutboxPayload is the shape stored in the outbox for brain-write replay.

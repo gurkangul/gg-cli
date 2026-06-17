@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // ErrSemanticVectorUnavailable means the durable JSONL write succeeded, but no
-// embedding vector was available for Qdrant at write time. The caller should
+// embedding vector was available for the vector store at write time. The caller should
 // queue replay and surface that semantic indexing is pending.
 var ErrSemanticVectorUnavailable = errors.New("semantic vector unavailable")
 
@@ -25,17 +23,17 @@ const (
 )
 
 // OutboxQueued is returned by brain-write methods when the JSONL write
-// succeeded but the Qdrant upsert failed.
+// succeeded but the vector-store upsert failed.
 // The caller should enqueue an outbox entry and print a stderr note, then
 // return exit 0 — the write is durable in JSONL.
 type OutboxQueued struct {
 	Kind  string // OutboxKind* constant
 	UUID  string // entry UUID for idempotent outbox write
-	Cause error  // underlying Qdrant error (for logging)
+	Cause error  // underlying vector-store error (for logging)
 }
 
 func (e *OutboxQueued) Error() string {
-	return fmt.Sprintf("qdrant upsert queued (kind=%s uuid=%s): %v", e.Kind, e.UUID, e.Cause)
+	return fmt.Sprintf("vector upsert queued (kind=%s uuid=%s): %v", e.Kind, e.UUID, e.Cause)
 }
 
 func (e *OutboxQueued) Unwrap() error { return e.Cause }
@@ -58,13 +56,13 @@ func semanticCollectionNames(c *Client) map[string]string {
 
 // CollectionUUIDs returns the set of all point UUIDs present in the given
 // collection suffix (e.g. "decisions"). Used by gg doctor --reconcile to find
-// entries that are in JSONL but missing from Qdrant after a SIGKILL.
+// entries that are in JSONL but missing from the vector store after a SIGKILL.
 func (c *Client) CollectionUUIDs(ctx context.Context, collSuffix string) (map[string]struct{}, error) {
 	collName := c.projectID + "-" + collSuffix
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: collName,
-		Limit:          qdrant.PtrOf(uint32(1000)),
-		WithPayload:    qdrant.NewWithPayloadInclude(), // no payload — IDs only
+		Limit:          PtrOf(uint32(1000)),
+		WithPayload:    NewWithPayloadInclude(), // no payload — IDs only
 	})
 	if err != nil {
 		return nil, fmt.Errorf("scroll %s: %w", collSuffix, err)
@@ -78,7 +76,7 @@ func (c *Client) CollectionUUIDs(ctx context.Context, collSuffix string) (map[st
 	return out, nil
 }
 
-// ReplayBrainEntry upserts a brain JSONL payload into a Qdrant collection
+// ReplayBrainEntry upserts a brain JSONL payload into a vector-store collection
 // without a vector.  The collection name is derived from the collSuffix (e.g.
 // "decisions") combined with the client's projectID prefix.
 // Semantic search quality is degraded until a reindex supplies vectors; the
@@ -90,23 +88,23 @@ func (c *Client) ReplayBrainEntry(ctx context.Context, collSuffix, uuid string, 
 		payload["gg_vector_degraded"] = "reconcile_zero_vector"
 		payload["gg_vector_degraded_at"] = time.Now().UTC().Format(time.RFC3339)
 	}
-	qdrantPayload, err := qdrant.TryValueMap(payload)
+	vecPayload, err := TryValueMap(payload)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
 	}
 	// Zero vector — length must match the collection dimension.
 	// We use VectorSize as the default; mismatched dims will be rejected by
-	// Qdrant, which is the correct outcome (signals a reindex is needed).
+	// the vector store, which is the correct outcome (signals a reindex is needed).
 	zeroVec := make([]float32, VectorSize)
 	wait := true
-	return c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	return c.vsUpsert(ctx, &UpsertPoints{
 		CollectionName: collName,
 		Wait:           &wait,
-		Points: []*qdrant.PointStruct{
+		Points: []*PointStruct{
 			{
-				Id:      qdrant.NewID(uuid),
-				Vectors: qdrant.NewVectors(zeroVec...),
-				Payload: qdrantPayload,
+				Id:      NewID(uuid),
+				Vectors: NewVectors(zeroVec...),
+				Payload: vecPayload,
 			},
 		},
 	})
@@ -118,7 +116,7 @@ func (c *Client) ReplayBrainEntry(ctx context.Context, collSuffix, uuid string, 
 func (c *Client) CollectionPayloadCounts(ctx context.Context) (map[string]uint64, error) {
 	out := make(map[string]uint64)
 	for suffix, collName := range semanticCollectionNames(c) {
-		count, err := c.vs.Count(ctx, &qdrant.CountPoints{CollectionName: collName})
+		count, err := c.vs.Count(ctx, &CountPoints{CollectionName: collName})
 		if err != nil {
 			if isCollectionNotFoundError(err) {
 				continue
@@ -145,10 +143,10 @@ func (c *Client) DegradedVectorCounts(ctx context.Context) (map[string]int, erro
 	collections := semanticCollectionNames(c)
 	out := make(map[string]int, len(collections))
 	for suffix, collName := range collections {
-		points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+		points, err := c.scrollAll(ctx, &ScrollPoints{
 			CollectionName: collName,
-			Limit:          qdrant.PtrOf(uint32(1000)),
-			WithPayload:    qdrant.NewWithPayloadInclude("gg_vector_degraded"),
+			Limit:          PtrOf(uint32(1000)),
+			WithPayload:    NewWithPayloadInclude("gg_vector_degraded"),
 		})
 		if err != nil {
 			if isCollectionNotFoundError(err) {

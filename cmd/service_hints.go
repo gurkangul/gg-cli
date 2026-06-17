@@ -8,19 +8,20 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 )
 
-// Service identifiers for serviceRecoveryHint. These match the service names in
-// the shared docker-compose.yaml (internal/templates/docker-compose.yaml).
+// Service identifiers for serviceRecoveryHint. The vector store and code graph
+// are embedded SQLite files (.gg/vectorstore.db / .gg/graph.db); only Ollama is
+// a real external service.
 const (
-	svcQdrant   = "qdrant"
-	svcMemgraph = "memgraph"
-	svcOllama   = "ollama"
+	svcQdrant   = "qdrant"   // embedded vector store (.gg/vectorstore.db)
+	svcMemgraph = "memgraph" // embedded code graph (.gg/graph.db)
+	svcOllama   = "ollama"   // external embedding engine
 )
 
-// composePathForHint returns the path to the shared docker-compose.yaml that gg
-// provisions in ~/.gg/ (see cmd/init.go startSharedServices). When the home
-// directory cannot be resolved we fall back to the canonical literal so the hint
-// is still actionable rather than empty.
-func composePathForHint() string {
+// ollamaComposePath returns the path to the OPTIONAL Ollama-in-Docker compose
+// file gg writes in ~/.gg/. When the home directory cannot be resolved we fall
+// back to the canonical literal so the hint is still actionable rather than
+// empty.
+func ollamaComposePath() string {
 	sharedDir, err := config.SharedDir()
 	if err != nil {
 		return "~/.gg/docker-compose.yaml"
@@ -29,54 +30,42 @@ func composePathForHint() string {
 }
 
 // serviceRecoveryHint returns a consistent, actionable recovery hint for a
-// backing service that is down or unreachable. The hint names the exact
-// docker-compose commands a user can run to bring the service back up and to
-// tail its logs. All three services (Qdrant, Memgraph, Ollama) are provisioned
-// by the same shared compose file, so the recovery shape is identical.
+// backing service that is down or unreachable. The vector store and code graph
+// are local SQLite files, so their hint points at disk/permissions + gg doctor;
+// Ollama is the only true external service and offers Docker/native/cloud
+// options.
 //
 // service must be one of svcQdrant, svcMemgraph, svcOllama. An unknown service
-// yields a generic compose-up hint (never a panic) so new call sites degrade
+// yields a generic local-store hint (never a panic) so new call sites degrade
 // safely rather than swallowing the situation.
 func serviceRecoveryHint(service string) string {
-	compose := composePathForHint()
 	svc := strings.ToLower(strings.TrimSpace(service))
 
 	// Ollama is the embedding engine, not a stored-data backend: it can run in
 	// Docker, natively, or be replaced by the Voyage cloud backend. Offer all
 	// three so the hint is correct regardless of how the user runs embeddings.
 	if svc == svcOllama {
+		compose := ollamaComposePath()
 		return fmt.Sprintf(
 			"Ollama is unreachable. Restore embeddings any one way:\n"+
-				"  Docker:  docker compose -f %s up -d ollama\n"+
 				"  Native:  brew install ollama && ollama serve && ollama pull nomic-embed-text\n"+
 				"  Cloud:   set embedding.backend: voyage in .gg/config.yaml + export VOYAGE_API_KEY\n"+
-				"  Logs (Docker):  docker compose -f %s logs -f ollama",
-			compose, compose,
+				"  Docker:  docker compose -f %s up -d ollama",
+			compose,
 		)
 	}
 
-	var label string
 	switch svc {
 	case svcQdrant:
-		label = "Qdrant"
+		return "The embedded vector store at .gg/vectorstore.db could not be opened.\n" +
+			"  Check disk space and file permissions on .gg/, then run: gg doctor"
 	case svcMemgraph:
-		label = "Memgraph"
+		return "The embedded code graph at .gg/graph.db could not be opened.\n" +
+			"  Check disk space and file permissions on .gg/, then run: gg doctor"
 	default:
-		// Unknown service: still give the generic compose-up shape.
-		return fmt.Sprintf(
-			"A backing service is unreachable. Start it:\n"+
-				"  docker compose -f %s up -d\n"+
-				"  Logs:  docker compose -f %s logs -f",
-			compose, compose,
-		)
+		return "The embedded store under .gg/ could not be opened.\n" +
+			"  Check disk space and file permissions on .gg/, then run: gg doctor"
 	}
-
-	return fmt.Sprintf(
-		"%s is unreachable. Start it:\n"+
-			"  docker compose -f %s up -d %s\n"+
-			"  Logs:  docker compose -f %s logs -f %s",
-		label, compose, svc, compose, svc,
-	)
 }
 
 // withServiceHint appends the recovery hint for service onto an existing

@@ -12,11 +12,11 @@ import (
 
 var bugReindexCmd = &cobra.Command{
 	Use:   "reindex",
-	Short: "Replay bug AFFECTS edges into Memgraph",
-	Long: `Rebuild Bug→File and Bug→Symbol edges in Memgraph from the Qdrant store.
+	Short: "Replay bug AFFECTS edges into the code graph",
+	Long: `Rebuild Bug→File and Bug→Symbol edges in the code graph from the bug store.
 
-Use this to heal drift that occurs when Memgraph was unreachable during
-gg bug report — Qdrant holds the authoritative affected_files /
+Use this to heal drift that occurs when the code graph was unavailable during
+gg bug report — the bug store holds the authoritative affected_files /
 affected_symbols lists; reindex replays them into the graph.
 
 By default all bugs with at least one affected file or symbol are
@@ -46,10 +46,6 @@ func runBugReindex(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if cfg.Memgraph.URI == "" {
-		return fmt.Errorf("memgraph.uri not configured — run gg init first")
-	}
-
 	d, err := loadDeps(false)
 	if err != nil {
 		return err
@@ -64,7 +60,7 @@ func runBugReindex(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list bugs: %w", err)
 	}
 
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
 		return fmt.Errorf("memgraph: %w", err)
 	}

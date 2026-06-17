@@ -22,7 +22,7 @@ var (
 var reconcileCmd = &cobra.Command{
 	Use:   "reconcile",
 	Short: experimentalShort("Reconcile append-only task events with the live task projection"),
-	Long: experimentalLong(`Compares .gg/brain/task-events.jsonl against the Qdrant task projection.
+	Long: experimentalLong(`Compares .gg/brain/task-events.jsonl against the vector store task projection.
 
 Default mode is read-only: reports missing projections, projection drift,
 orphaned owners/leases, and stale leases. Use --apply to repair safe cases:
@@ -221,12 +221,12 @@ func reconcileTaskDrift(expected map[string]taskProjection, actual map[string]st
 		got, ok := actual[id]
 		switch {
 		case exp.Cancelled && ok:
-			drifts = append(drifts, taskDrift{TaskID: id, Kind: "cancelled_projection", Detail: "cancelled task still exists in Qdrant"})
+			drifts = append(drifts, taskDrift{TaskID: id, Kind: "cancelled_projection", Detail: "cancelled task still exists in the vector store"})
 			continue
 		case exp.Cancelled:
 			continue
 		case !ok:
-			drifts = append(drifts, taskDrift{TaskID: id, Kind: "missing_projection", Detail: "task-events has non-cancelled task but Qdrant is missing it", Fields: projectionFields(exp, nil, now)})
+			drifts = append(drifts, taskDrift{TaskID: id, Kind: "missing_projection", Detail: "task-events has non-cancelled task but the vector store is missing it", Fields: projectionFields(exp, nil, now)})
 			continue
 		}
 		fields := projectionDiffFields(exp, got, now)

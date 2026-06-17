@@ -5,8 +5,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // BugHealthStats summarises the stability trend for a lookback window, giving
@@ -30,9 +28,9 @@ func (c *Client) BugHealthStatsSince(ctx context.Context, sinceDays int) (BugHea
 	if sinceDays <= 0 {
 		sinceDays = 7
 	}
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collBugs(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return BugHealthStats{}, err
@@ -64,9 +62,9 @@ func (c *Client) BugHealthStatsSince(ctx context.Context, sinceDays int) (BugHea
 // BugReopenStats returns the total reopen count across all bugs updated within
 // the past 7 days, plus a breakdown by top-level directory from affected_files.
 func (c *Client) BugReopenStats(ctx context.Context) (total int, byDir map[string]int, err error) {
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collBugs(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return 0, nil, err
@@ -113,9 +111,9 @@ func (c *Client) SurfacePressureSince(ctx context.Context, sinceDays int) (Surfa
 	if sinceDays <= 0 {
 		sinceDays = 7
 	}
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collBugs(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return SurfacePressureStats{}, err

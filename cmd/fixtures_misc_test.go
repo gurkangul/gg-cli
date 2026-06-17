@@ -4,13 +4,10 @@ package cmd
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -296,77 +293,30 @@ func TestGuardProjectLocation_ParentOfSharedDir(t *testing.T) {
 
 // ── dedup.go: promptIfDuplicate with unreachable store ───────────────────────
 
-func TestPromptIfDuplicate_StoreError(t *testing.T) {
-	// Construct a deps with a store pointed at an unreachable port so that
-	// FindNearDups fails. promptIfDuplicate must treat store errors as non-fatal
-	// and return false (proceed with creation).
-	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 19997}
-	sc, err := store.New(cfg, t.TempDir(), "test-dedup-proj")
+func TestPromptIfDuplicate_NoDupsDoesNotAbort(t *testing.T) {
+	// Against the embedded store an un-materialized collection yields no
+	// candidates (FindNearDups treats NotFound as empty), so promptIfDuplicate
+	// must return false (proceed with creation) rather than abort.
+	sc, err := store.New(t.TempDir(), "test-dedup-proj")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
 	defer func() { _ = sc.Close() }()
 
-	d := &deps{store: sc, qdrantDown: true}
+	d := &deps{store: sc}
 	ctx := context.Background()
 
 	result := promptIfDuplicate(ctx, d, "decisions", make([]float32, store.VectorSize))
 	if result {
-		t.Error("expected false (no abort) when dedup store call fails")
+		t.Error("expected false (no abort) when no duplicates exist")
 	}
 }
 
-func TestPromptIfDuplicateThreshold_StoreError(t *testing.T) {
-	// Models the Qdrant-down dedup path (qdrantDown=true). Pin the default backend
-	// so an ambient GG_VECTOR_BACKEND=sqlite (always-on store) doesn't make the
-	// dedup check succeed and suppress the expected warning. This test does not
-	// route through setupGGDir, so it pins the backend directly.
-	t.Setenv("GG_VECTOR_BACKEND", "qdrant")
-	cfg := &config.QdrantConfig{Host: "127.0.0.1", Port: 19997}
-	sc, err := store.New(cfg, t.TempDir(), "test-dedup-thresh-proj")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	defer func() { _ = sc.Close() }()
-
-	d := &deps{store: sc, qdrantDown: true}
-	ctx := context.Background()
-
-	stderr := captureStderrForTest(t, func() {
-		res := promptIfDuplicateThreshold(ctx, d, "bugs", make([]float32, store.VectorSize), 0.85)
-		if res.Abort || res.SawDup {
-			t.Errorf("expected zero dupResult on store error, got %+v", res)
-		}
-	})
-	if !strings.Contains(stderr, "warning: dedup check failed") {
-		t.Fatalf("expected dedup warning on store error, got %q", stderr)
-	}
-}
-
-func captureStderrForTest(t *testing.T, fn func()) string {
-	t.Helper()
-	orig := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("stderr pipe: %v", err)
-	}
-	os.Stderr = w
-	defer func() { os.Stderr = orig }()
-
-	fn()
-
-	if err := w.Close(); err != nil {
-		t.Fatalf("close stderr pipe: %v", err)
-	}
-	data, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read stderr pipe: %v", err)
-	}
-	if err := r.Close(); err != nil {
-		t.Fatalf("close stderr reader: %v", err)
-	}
-	return string(data)
-}
+// NOTE: TestPromptIfDuplicateThreshold_StoreError was removed. It modeled the
+// Qdrant-down dedup path (FindNearDups returns a connectivity error → "warning:
+// dedup check failed"). With the always-up embedded store an un-materialized
+// collection is treated as empty (NotFound → nil, nil), so that error path no
+// longer fires. The non-fatal/no-abort contract is covered above.
 
 // ── dedup.go: appendUniq ─────────────────────────────────────────────────────
 
@@ -387,19 +337,14 @@ func TestAppendUniq(t *testing.T) {
 	}
 }
 
-// ── impact command: store-down path ──────────────────────────────────────────
+// ── impact command: fresh-project (empty code graph) path ────────────────────
 
-func TestImpact_StoreDown(t *testing.T) {
+func TestImpact_FreshProject_Succeeds(t *testing.T) {
 	setupGGDir(t)
-	_, _, err := execCmd(t, "impact", "cmd/impact.go")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
-	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	// The embedded code graph is always reachable; on a fresh project it is simply
+	// empty, so impact reports no dependents rather than the (removed) store-down
+	// error.
+	if _, _, err := execCmd(t, "impact", "cmd/impact.go"); err != nil {
+		t.Fatalf("impact should succeed (empty graph) on a fresh project, got %v", err)
 	}
 }

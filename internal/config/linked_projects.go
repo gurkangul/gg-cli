@@ -66,11 +66,9 @@ func LoadFromGGDir(ggDir string) (*Config, error) {
 	// valid config — docs/stability.md §5 additive-keys rule.
 	warnUnknownConfigKeys(data, filepath.Join(DirName, ConfigFile))
 	cfg.ApplyDefaults()
-	applyMemgraphEnvOverrides(&cfg.Memgraph)
-	// Stamp the resolved .gg directory so the embedded SQLite graph backend
-	// (GG_GRAPH_BACKEND=sqlite) can locate <ggDir>/graph.db. The default
-	// Memgraph backend ignores DataDir.
-	cfg.Memgraph.DataDir = ggDir
+	// Stamp the resolved .gg directory so the embedded SQLite stores can locate
+	// <ggDir>/vectorstore.db and <ggDir>/graph.db.
+	cfg.DataDir = ggDir
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config at %s: %w", path, err)
 	}

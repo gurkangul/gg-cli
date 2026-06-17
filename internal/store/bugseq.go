@@ -42,18 +42,18 @@ func (c *Client) allocBugID(ctx context.Context) (string, error) {
 	if s := strings.TrimSpace(string(data)); s != "" {
 		parsed, perr := strconv.Atoi(s)
 		if perr != nil || parsed < 0 {
-			return "", fmt.Errorf("corrupt %s: %q — delete this file to re-bootstrap from qdrant", seqPath, s)
+			return "", fmt.Errorf("corrupt %s: %q — delete this file to re-bootstrap from the vector store", seqPath, s)
 		}
 		n = parsed
 	}
 
-	// Bootstrap: seq file empty. Try Qdrant; if unavailable, fall back to JSONL.
+	// Bootstrap: seq file empty. Try the vector store; if unavailable, fall back to JSONL.
 	if n == 0 {
 		existingMax, err := c.maxBugIDNumber(ctx)
 		if err != nil {
 			jsonlMax, jsonlErr := maxBugIDFromBrainJSONL(c.dataDir)
 			if jsonlErr != nil {
-				return "", fmt.Errorf("bootstrap bug seq (qdrant down, jsonl fallback failed): %w", jsonlErr)
+				return "", fmt.Errorf("bootstrap bug seq (vector store down, jsonl fallback failed): %w", jsonlErr)
 			}
 			n = jsonlMax
 		} else {
@@ -80,7 +80,7 @@ func (c *Client) allocBugID(ctx context.Context) (string, error) {
 }
 
 // maxBugIDFromBrainJSONL scans .gg/brain/bugs.jsonl for the highest numeric
-// suffix. Used as a Qdrant-free bootstrap for allocBugID.
+// suffix. Used as a store-independent bootstrap for allocBugID.
 // Returns 0 when the file is absent or empty.
 func maxBugIDFromBrainJSONL(ggDir string) (int, error) {
 	entries, err := brain.ReadAll(ggDir, "bugs")

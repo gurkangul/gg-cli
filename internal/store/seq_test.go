@@ -13,7 +13,7 @@ import (
 )
 
 // seededClient returns a Client wired to a temp dir with the seq file
-// pre-seeded to n. The Qdrant client is intentionally nil — the bootstrap
+// pre-seeded to n. The the vector store client is intentionally nil — the bootstrap
 // path (maxTaskIDNumber) must NOT be reached if n > 0.
 func seededTaskClient(t *testing.T, n int) *Client {
 	t.Helper()
@@ -56,7 +56,7 @@ func TestAllocTaskID_Sequential(t *testing.T) {
 }
 
 // TestAllocTaskID_Concurrent verifies that N goroutines each get a unique ID
-// with no duplicates and no gaps. The seq file is pre-seeded so the Qdrant
+// with no duplicates and no gaps. The seq file is pre-seeded so the the vector store
 // bootstrap path is never triggered.
 func TestAllocTaskID_Concurrent(t *testing.T) {
 	const goroutines = 50
@@ -267,7 +267,7 @@ func TestLockFileCtx_DeadlineExceeded(t *testing.T) {
 
 // TestAllocTaskID_CorruptSeqFile verifies that corrupt file content returns a
 // descriptive error rather than silently using a zero counter (which would
-// trigger the Qdrant bootstrap path or reuse IDs).
+// trigger the the vector store bootstrap path or reuse IDs).
 func TestAllocTaskID_CorruptSeqFile(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(dir+"/.task-seq", []byte("notanumber\n"), 0600); err != nil {
@@ -322,17 +322,17 @@ func TestAllocTaskID_NoDataDir(t *testing.T) {
 }
 
 // TestAppendTurnLock_FileCreated verifies that AppendTurn creates the per-disc
-// lock file before reaching Qdrant. When Qdrant is absent the call fails, but
+// lock file before reaching the vector store. When the vector store is absent the call fails, but
 // the lock file must exist in dataDir after the attempt.
 func TestAppendTurnLock_FileCreated(t *testing.T) {
 	dir := t.TempDir()
 	c := &Client{dataDir: dir}
 	// qc is nil — AppendTurn will panic if it gets past the lock step
 	// because qc.Get is called next. We recover from that panic to confirm
-	// the lock file was created before the Qdrant call.
+	// the lock file was created before the the vector store call.
 	defer func() { recover() }() //nolint:errcheck
 	_, _ = c.AppendTurn(context.Background(), "DISC-001", Turn{By: "test", Text: "x"})
-	// Regardless of Qdrant outcome, the lock file must have been created.
+	// Regardless of the vector store outcome, the lock file must have been created.
 	lockPath := dir + "/.disc-DISC-001-turns.lock"
 	if _, err := os.Stat(lockPath); err != nil {
 		t.Fatalf("lock file not created: %v (path: %s)", err, lockPath)
@@ -344,7 +344,7 @@ func TestAppendTurnLock_FileCreated(t *testing.T) {
 // 50 goroutines each increment a shared counter 100 times while holding the
 // lock — if the mutex fails to serialize, the race detector or a lost-update
 // will surface immediately. This mirrors the acceptance criterion for TASK-105
-// without requiring a live Qdrant instance.
+// without requiring a a live vector backend instance.
 func TestAppendTurnLock_SerializesConcurrent(t *testing.T) {
 	const (
 		goroutines   = 50

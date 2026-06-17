@@ -10,25 +10,13 @@ package graph
 import (
 	"context"
 	"testing"
-
-	"github.com/gurkangul/gg-cli/internal/config"
 )
 
 // TestNew_RequiresProjectID verifies that New returns an error when projectID is empty.
 func TestNew_RequiresProjectID(t *testing.T) {
-	cfg := &config.MemgraphConfig{URI: "bolt://localhost:7687"}
-	_, err := New(cfg, "")
+	_, err := New(t.TempDir(), "")
 	if err == nil {
 		t.Fatal("expected error for empty projectID, got nil")
-	}
-}
-
-// TestNew_RequiresURI verifies that New returns an error when URI is empty.
-func TestNew_RequiresURI(t *testing.T) {
-	cfg := &config.MemgraphConfig{URI: ""}
-	_, err := New(cfg, "test-proj")
-	if err == nil {
-		t.Fatal("expected error for empty URI, got nil")
 	}
 }
 
@@ -48,15 +36,12 @@ func TestCreateNode_DoesNotMutateCallerProps(t *testing.T) {
 	// shallow-copy logic by inspecting the contract via New + a no-op call.
 	// The driver call will fail (no Memgraph), but we verify props are untouched.
 
-	// Backend-agnostic prop-mutation contract; pin memgraph so New uses the lazy
-	// Bolt connector (no dir/DB needed) regardless of ambient GG_GRAPH_BACKEND.
-	t.Setenv(GraphBackendEnv, "memgraph")
-	cfg := &config.MemgraphConfig{URI: "bolt://localhost:19998"} // nothing listening
-	c, err := New(cfg, "proj-abc")
+	// Backend-agnostic prop-mutation contract against the embedded store.
+	c, err := New(t.TempDir(), "proj-abc")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	// Don't close — it's a dummy connection; Close would block on a real driver teardown.
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
 
 	original := map[string]any{
 		"name": "TestSymbol",
@@ -66,7 +51,8 @@ func TestCreateNode_DoesNotMutateCallerProps(t *testing.T) {
 	before := map[string]any{"name": original["name"], "lang": original["lang"]}
 
 	n := &Node{Label: "Symbol", Properties: original}
-	// CreateNode will error (no Memgraph listening on port 19998), but must not mutate original.
+	// CreateNode persists to the embedded store; whatever it returns, it must not
+	// mutate the caller's original properties map.
 	_ = c.CreateNode(context.Background(), n)
 
 	for k := range original {
@@ -115,13 +101,12 @@ func TestPackageNode_NoProjectID(t *testing.T) {
 // TestInjectPID verifies that injectPID always adds "pid" = projectID to the
 // returned map without mutating the original and handles a nil input.
 func TestInjectPID(t *testing.T) {
-	// Backend-agnostic helper test; pin memgraph for the lazy connector path.
-	t.Setenv(GraphBackendEnv, "memgraph")
-	cfg := &config.MemgraphConfig{URI: "bolt://localhost:19999"}
-	c, err := New(cfg, "test-proj-abc")
+	// Backend-agnostic helper test against the embedded store.
+	c, err := New(t.TempDir(), "test-proj-abc")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
 
 	t.Run("nil params", func(t *testing.T) {
 		out := c.injectPID(nil)

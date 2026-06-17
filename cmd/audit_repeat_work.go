@@ -141,7 +141,7 @@ func runAuditRepeatWork(cmd *cobra.Command, _ []string) error {
 	defer cancel()
 
 	if d.qdrantDown {
-		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — repeat-work check skipped (advisory only).")
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ vector store unavailable — repeat-work check skipped (advisory only).")
 		return nil
 	}
 

@@ -34,7 +34,7 @@ func withTimeout(parent context.Context) (context.Context, context.CancelFunc) {
 func storeDownErr() error {
 	return &ExitError{
 		Code:    ExitStoreDown,
-		Message: withServiceHint("Qdrant unreachable — writes blocked, reads served from cache", svcQdrant),
+		Message: withServiceHint("vector store unavailable — writes blocked, reads served from cache", svcQdrant),
 	}
 }
 
@@ -71,7 +71,7 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 		dim = meta.Dim
 	}
 
-	client, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	client, err := store.New(ggDir, cfg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ func loadDepsReadOnly(needEmbedding bool) (d *deps, err error) {
 		dim = meta.Dim
 	}
 
-	client, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	client, err := store.New(ggDir, cfg.ProjectID)
 	if err != nil {
 		return nil, err
 	}

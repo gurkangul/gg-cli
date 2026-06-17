@@ -21,7 +21,7 @@ func runProjectContext(cmd *cobra.Command) error {
 	defer d.Close()
 
 	if d.qdrantSlow {
-		return fmt.Errorf("%s", withServiceHint("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status", svcQdrant))
+		return fmt.Errorf("%s", withServiceHint("vector store health check timed out — retry or run gg doctor", svcQdrant))
 	}
 	if d.qdrantDown {
 		return serveContextFromCache(cmd, projectContextQuery)
@@ -85,6 +85,15 @@ func runProjectContext(cmd *cobra.Command) error {
 		bundle.artifacts = artifacts
 	} else {
 		bundle.artifactErr = err
+	}
+
+	// Fresh clone / pre-reembed: collections not materialized yet (vectorstore.db
+	// is derived + gitignored; .gg/brain/*.jsonl is the committed source of truth).
+	// Serve from JSONL instead of hard-erroring with a raw NotFound (audit VEC-1).
+	for _, e := range []error{bundle.decErr, bundle.rejErr, bundle.taskErr, bundle.discErr, bundle.noteErr} {
+		if store.IsCollectionNotFoundError(e) {
+			return serveContextFromJSONL(cmd, projectContextQuery)
+		}
 	}
 
 	errs := collectBundleErrors(bundle)

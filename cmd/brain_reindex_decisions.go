@@ -11,17 +11,17 @@ import (
 
 var brainReindexDecisionsCmd = &cobra.Command{
 	Use:   "reindex-decisions",
-	Short: "Replay Decision nodes into Memgraph from the Qdrant decision store",
-	Long: `Rebuild Decision nodes in Memgraph from the Qdrant decision store.
+	Short: "Replay Decision nodes into the code graph from the decision store",
+	Long: `Rebuild Decision nodes in the code graph from the decision store.
 
 Symmetric with ` + "`gg task reindex`" + ` and ` + "`gg bug reindex`" + `. Lists every
-decision in Qdrant and upserts a matching Decision node in Memgraph so
-historical decisions (created before TASK-228 shipped, or when Memgraph
-was unreachable) participate in graph traversal and ` + "`gg impact`" + ` queries.
+decision in the store and upserts a matching Decision node in the code graph
+so historical decisions (created before TASK-228 shipped, or when the graph
+was unavailable) participate in graph traversal and ` + "`gg impact`" + ` queries.
 
-Only node identity (qdrant_id + text) is mirrored. Status, author,
-tags, and reasons remain in Qdrant — Memgraph Decision nodes exist to
-anchor DECIDES / REJECTS / IMPLEMENTS edges.`,
+Only node identity (id + text) is mirrored. Status, author,
+tags, and reasons remain in the decision store — code-graph Decision nodes
+exist to anchor DECIDES / REJECTS / IMPLEMENTS edges.`,
 	RunE: runBrainReindexDecisions,
 }
 
@@ -36,10 +36,6 @@ func runBrainReindexDecisions(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if cfg.Memgraph.URI == "" {
-		return fmt.Errorf("memgraph.uri not configured — run gg init first")
-	}
-
 	d, err := loadDeps(false)
 	if err != nil {
 		return err
@@ -54,7 +50,7 @@ func runBrainReindexDecisions(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list decisions: %w", err)
 	}
 
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
 		return fmt.Errorf("memgraph: %w", err)
 	}

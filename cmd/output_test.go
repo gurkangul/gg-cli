@@ -78,8 +78,8 @@ func TestStoreDownErr_CodeAndMessage(t *testing.T) {
 	if ee.Code != ExitStoreDown {
 		t.Errorf("code: got %d, want %d", ee.Code, ExitStoreDown)
 	}
-	if !strings.Contains(ee.Message, "Qdrant") {
-		t.Errorf("message should mention Qdrant, got: %q", ee.Message)
+	if !strings.Contains(ee.Message, "vector store unavailable") {
+		t.Errorf("message should mention the vector store being unavailable, got: %q", ee.Message)
 	}
 }
 

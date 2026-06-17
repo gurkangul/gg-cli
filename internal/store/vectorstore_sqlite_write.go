@@ -4,14 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // pointIDKey renders a PointId to the stable string key used as the SQLite
 // primary key. Every upsert in this package uses NewID(uuid) (a UUID), but a
 // numeric id is supported for completeness and round-trips via num: prefix.
-func pointIDKey(id *qdrant.PointId) string {
+func pointIDKey(id *PointId) string {
 	if id == nil {
 		return ""
 	}
@@ -22,18 +20,18 @@ func pointIDKey(id *qdrant.PointId) string {
 }
 
 // keyToPointID reverses pointIDKey for response construction.
-func keyToPointID(key string) *qdrant.PointId {
+func keyToPointID(key string) *PointId {
 	var n uint64
 	if _, err := fmt.Sscanf(key, "num:%d", &n); err == nil {
-		return qdrant.NewIDNum(n)
+		return NewIDNum(n)
 	}
-	return qdrant.NewID(key)
+	return NewID(key)
 }
 
 // denseVector extracts the dense float32 slice a PointStruct carries, tolerating
 // both the structured Dense field (set by NewVectors) and the deprecated flat
 // Data field.
-func denseVector(v *qdrant.Vectors) []float32 {
+func denseVector(v *Vectors) []float32 {
 	if v == nil {
 		return nil
 	}
@@ -44,14 +42,14 @@ func denseVector(v *qdrant.Vectors) []float32 {
 	if d := vec.GetDense(); d != nil && len(d.GetData()) > 0 {
 		return d.GetData()
 	}
-	// GetData is the deprecated flat fallback for older Qdrant protocol versions
+	// GetData is the deprecated flat fallback for older vector format versions
 	// that predate the Dense oneof. Suppressed for both standalone staticcheck
 	// (//lint:ignore) and golangci-lint's embedded staticcheck (//nolint).
-	//lint:ignore SA1019 fallback for older Qdrant protocol versions that predate the Dense oneof
-	return vec.GetData() //nolint:staticcheck // GetData: deprecated flat fallback for pre-Dense-oneof Qdrant
+	//lint:ignore SA1019 fallback for older vector format versions that predate the Dense oneof
+	return vec.GetData() //nolint:staticcheck // GetData: deprecated flat fallback for pre-Dense-oneof the vector store
 }
 
-func (s *sqliteStore) Upsert(ctx context.Context, req *qdrant.UpsertPoints) (*qdrant.UpdateResult, error) {
+func (s *sqliteStore) Upsert(ctx context.Context, req *UpsertPoints) (*UpdateResult, error) {
 	if req == nil {
 		return nil, fmt.Errorf("upsert: nil request")
 	}
@@ -88,14 +86,14 @@ func (s *sqliteStore) Upsert(ctx context.Context, req *qdrant.UpsertPoints) (*qd
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return &qdrant.UpdateResult{}, nil
+	return &UpdateResult{}, nil
 }
 
 // SetPayload merges new payload keys into the existing payload of the selected
-// points, mirroring Qdrant's partial SetPayload (NOT a full overwrite). The
+// points, mirroring the vector store's partial SetPayload (NOT a full overwrite). The
 // PointsSelector is expected to carry explicit ids (the only shape used here);
 // a filter-based selector is also supported.
-func (s *sqliteStore) SetPayload(ctx context.Context, req *qdrant.SetPayloadPoints) (*qdrant.UpdateResult, error) {
+func (s *sqliteStore) SetPayload(ctx context.Context, req *SetPayloadPoints) (*UpdateResult, error) {
 	if req == nil {
 		return nil, fmt.Errorf("set payload: nil request")
 	}
@@ -138,10 +136,10 @@ func (s *sqliteStore) SetPayload(ctx context.Context, req *qdrant.SetPayloadPoin
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return &qdrant.UpdateResult{}, nil
+	return &UpdateResult{}, nil
 }
 
-func (s *sqliteStore) Delete(ctx context.Context, req *qdrant.DeletePoints) (*qdrant.UpdateResult, error) {
+func (s *sqliteStore) Delete(ctx context.Context, req *DeletePoints) (*UpdateResult, error) {
 	if req == nil {
 		return nil, fmt.Errorf("delete: nil request")
 	}
@@ -165,12 +163,12 @@ func (s *sqliteStore) Delete(ctx context.Context, req *qdrant.DeletePoints) (*qd
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return &qdrant.UpdateResult{}, nil
+	return &UpdateResult{}, nil
 }
 
 // selectorKeys resolves a PointsSelector to the set of SQLite primary keys it
 // targets — either explicit ids or every point matching a filter.
-func (s *sqliteStore) selectorKeys(ctx context.Context, tx *sql.Tx, coll string, sel *qdrant.PointsSelector) ([]string, error) {
+func (s *sqliteStore) selectorKeys(ctx context.Context, tx *sql.Tx, coll string, sel *PointsSelector) ([]string, error) {
 	if sel == nil {
 		return nil, nil
 	}

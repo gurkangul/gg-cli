@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // isZeroVector reports whether every component of v is exactly zero.
@@ -59,18 +57,18 @@ func (c *Client) embedMissingInCollection(
 	ctx context.Context,
 	coll, suffix string,
 	embedder Embedder,
-	extractor func(map[string]*qdrant.Value) string,
+	extractor func(map[string]*Value) string,
 	progressWriter io.Writer,
 ) (EmbedMissingResult, error) {
 	res := EmbedMissingResult{Collection: coll}
 
 	pageSize := uint32(64)
-	withVecs := qdrant.NewWithVectorsEnable(true)
-	withPay := qdrant.NewWithPayloadEnable(true)
+	withVecs := NewWithVectorsEnable(true)
+	withPay := NewWithPayloadEnable(true)
 
-	var offset *qdrant.PointId
+	var offset *PointId
 	for {
-		page, next, err := c.scroller.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
+		page, next, err := c.scroller.ScrollAndOffset(ctx, &ScrollPoints{
 			CollectionName: coll,
 			Limit:          &pageSize,
 			Offset:         offset,
@@ -93,7 +91,7 @@ func (c *Client) embedMissingInCollection(
 			}
 
 			// Check if this point already has a REAL vector.
-			// Brain import seeds zero-vector placeholders (Qdrant mandates a
+			// Brain import seeds zero-vector placeholders (the store mandates a
 			// vector on first create); those count as "missing" and must be
 			// re-embedded here.
 			vec := extractVector(p.GetVectors())
@@ -117,13 +115,13 @@ func (c *Client) embedMissingInCollection(
 
 			// Upsert with vector (payload stays as-is, only vector is added).
 			wait := true
-			if upsertErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+			if upsertErr := c.vsUpsert(ctx, &UpsertPoints{
 				CollectionName: coll,
 				Wait:           &wait,
-				Points: []*qdrant.PointStruct{
+				Points: []*PointStruct{
 					{
-						Id:      qdrant.NewID(id),
-						Vectors: qdrant.NewVectors(generated...),
+						Id:      NewID(id),
+						Vectors: NewVectors(generated...),
 						Payload: p.GetPayload(),
 					},
 				},

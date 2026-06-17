@@ -36,145 +36,21 @@ func doctorCheckConfig(report *doctorReport) *config.Config {
 	report.ok("config.yaml", "valid")
 	report.ok("project_id", cfg.ProjectID)
 
-	if cfg.Memgraph.URI == "" {
-		report.warn("memgraph.uri", "not configured — Memgraph features unavailable")
-	}
 	return cfg
 }
 
-// qdrantHealthChecker is a narrow interface for health-checking Qdrant.
-// Production code uses *store.Client; tests inject a fake.
+// qdrantHealthChecker is a narrow interface for health-checking the vector
+// store. Production code uses *store.Client; tests inject a fake.
 type qdrantHealthChecker interface {
 	HealthCheck(ctx context.Context) error
 	CollectionStatus(ctx context.Context) (present, missing []string, err error)
 	Close() error
 }
 
-// doctorQdrantNewClient builds the real Qdrant client. Replaced in tests
-// to inject a fake health checker without a real socket.
+// doctorQdrantNewClient builds the real embedded vector-store client. Replaced
+// in tests to inject a fake health checker without touching disk.
 var doctorQdrantNewClient = func(cfg *config.Config, ggDir string) (qdrantHealthChecker, error) {
-	return store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
-}
-
-// doctorCheckQdrantServer checks Qdrant SERVER connectivity and collection
-// presence. Only reached when the qdrant server backend is explicitly selected;
-// the embedded default is handled by doctorCheckEmbeddedVector (doctor_storage.go).
-func doctorCheckQdrantServer(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
-	ggDir, _ := config.GGDir()
-	c, err := doctorQdrantNewClient(cfg, ggDir)
-	if err != nil {
-		report.fail("qdrant", fmt.Sprintf("client init: %v", err))
-		return
-	}
-	defer func() { _ = c.Close() }()
-
-	ctx, cancel := withTimeout(cmd.Context())
-	defer cancel()
-
-	if err := c.HealthCheck(ctx); err != nil {
-		if hint := sandboxPermissionHint(err); hint != "" {
-			fmt.Fprintf(os.Stderr, "  ✗ qdrant unreachable at %s:%d — operation not permitted (sandbox?)\n", cfg.Qdrant.Host, cfg.Qdrant.Port)
-			fmt.Fprintf(os.Stderr, "    %s\n", hint)
-			report.problems++
-			return
-		}
-		report.fail("qdrant", fmt.Sprintf("unreachable at %s:%d — %v", cfg.Qdrant.Host, cfg.Qdrant.Port, err))
-		return
-	}
-	report.ok("qdrant", fmt.Sprintf("reachable at %s:%d", cfg.Qdrant.Host, cfg.Qdrant.Port))
-
-	present, missing, err := c.CollectionStatus(ctx)
-	if err != nil {
-		report.fail("qdrant collections", err.Error())
-		return
-	}
-	_ = present
-	if len(missing) > 0 {
-		report.fail("qdrant collections", fmt.Sprintf("%d missing: %s — run `gg init`", len(missing), strings.Join(missing, ", ")))
-	} else {
-		report.ok("qdrant collections", "all 7 collections present")
-	}
-	if counter, ok := c.(interface {
-		CollectionPayloadCounts(context.Context) (map[string]uint64, error)
-	}); ok {
-		counts, countErr := counter.CollectionPayloadCounts(ctx)
-		if countErr != nil {
-			report.warn("qdrant payload counts", fmt.Sprintf("could not count payloads: %v", countErr))
-		} else {
-			var parts []string
-			for _, kind := range brainKinds {
-				if n, exists := counts[kind]; exists {
-					parts = append(parts, fmt.Sprintf("%s=%d", kind, n))
-				}
-			}
-			if len(parts) == 0 {
-				report.warn("qdrant payload counts", "no collection counts available")
-			} else {
-				report.ok("qdrant payload counts", strings.Join(parts, ", "))
-			}
-		}
-	}
-	if degraded, ok := c.(interface {
-		DegradedVectorCounts(context.Context) (map[string]int, error)
-	}); ok {
-		counts, countErr := degraded.DegradedVectorCounts(ctx)
-		if countErr != nil {
-			report.warn("qdrant vector quality", fmt.Sprintf("could not scan degraded vectors: %v", countErr))
-			return
-		}
-		total := 0
-		var parts []string
-		for _, kind := range brainKinds {
-			if n := counts[kind]; n > 0 {
-				total += n
-				parts = append(parts, fmt.Sprintf("%s=%d", kind, n))
-			}
-		}
-		if total > 0 {
-			report.warn("qdrant vector quality", fmt.Sprintf("%d payload(s) have placeholder zero vectors (%s) — run `gg reembed` to restore semantic recall", total, strings.Join(parts, ", ")))
-		} else {
-			report.ok("qdrant vector quality", "no placeholder zero vectors detected")
-		}
-	}
-	report.ok("qdrant message vectors", "messages intentionally use zero vectors; degraded placeholders are marked with gg_vector_degraded")
-}
-
-// doctorCheckMemgraphServer checks Memgraph SERVER connectivity and schema
-// indexes. Only reached when the memgraph server backend is explicitly selected;
-// the embedded default is handled by doctorCheckEmbeddedGraph (doctor_storage.go).
-func doctorCheckMemgraphServer(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
-	if cfg.Memgraph.URI == "" {
-		report.warn("memgraph", "not configured — skipped")
-		return
-	}
-
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
-	if err != nil {
-		report.fail("memgraph", fmt.Sprintf("client init: %v", err))
-		return
-	}
-	defer func() { _ = gc.Close(cmd.Context()) }()
-
-	ctx, cancel := withTimeout(cmd.Context())
-	defer cancel()
-
-	if err := gc.HealthCheck(ctx); err != nil {
-		if hint := sandboxPermissionHint(err); hint != "" {
-			fmt.Fprintf(os.Stderr, "  ✗ memgraph unreachable at %s — operation not permitted (sandbox?)\n", cfg.Memgraph.URI)
-			fmt.Fprintf(os.Stderr, "    %s\n", hint)
-			report.problems++
-			return
-		}
-		report.fail("memgraph", fmt.Sprintf("unreachable at %s — %v", cfg.Memgraph.URI, err))
-		return
-	}
-	report.ok("memgraph", fmt.Sprintf("reachable at %s", cfg.Memgraph.URI))
-
-	if err := gc.SchemaInit(ctx); err != nil {
-		report.warn("memgraph schema", fmt.Sprintf("schema init failed: %v", err))
-	} else {
-		report.ok("memgraph schema", "indexes present")
-	}
+	return store.New(ggDir, cfg.ProjectID)
 }
 
 func doctorCheckProjectStructure(report *doctorReport) {
@@ -222,8 +98,8 @@ func doctorCheckProjectStructure(report *doctorReport) {
 }
 
 // doctorCheckCodeGraphFreshness verifies that impact/blast-radius answers are
-// backed by a populated Memgraph index aligned with HEAD, not merely by an
-// index-state.json file existing on disk.
+// backed by a populated embedded code graph (.gg/graph.db) aligned with HEAD,
+// not merely by an index-state.json file existing on disk.
 func doctorCheckCodeGraphFreshness(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
 	if cfg == nil {
 		report.warn("code graph", "skipped — config invalid")
@@ -246,10 +122,22 @@ func doctorCheckCodeGraphFreshness(cmd *cobra.Command, cfg *config.Config, repor
 		detail = notice
 	}
 	fresh := status.freshnessContract()
+	_, indexStateErr := os.Stat(filepath.Join(ggDir, "index-state.json"))
+	neverIndexed := indexStateErr != nil
 	switch fresh.Status {
 	case codeGraphFreshnessReady:
 		report.ok("code graph", detail)
-	case codeGraphFreshnessStale, codeGraphFreshnessMissing, codeGraphFreshnessUnavailable:
+	case codeGraphFreshnessMissing:
+		// A never-indexed project (no index-state.json) is the expected fresh-init
+		// state — `gg init` itself points the user at `gg index` — so this is an
+		// advisory warn, not a hard fail. A "missing" graph WITH an index-state.json
+		// means the recorded index was lost/corrupted and stays a fail (audit INFRA-4).
+		if neverIndexed {
+			report.warn("code graph", detail+" — run `gg index` to build the code graph")
+		} else {
+			report.fail("code graph", detail)
+		}
+	case codeGraphFreshnessStale, codeGraphFreshnessUnavailable:
 		report.fail("code graph", detail)
 	default:
 		report.warn("code graph", detail)
@@ -430,7 +318,7 @@ func runDoctorWipeBrain(cmd *cobra.Command) error {
 
 	if !doctorWipeBrainYes {
 		fmt.Fprintf(os.Stderr,
-			"⚠ --wipe-brain will DELETE all Qdrant collections and Memgraph nodes for project %s.\n"+
+			"⚠ --wipe-brain will DELETE all vector collections and code-graph nodes for project %s.\n"+
 				"  This cannot be undone. Re-run with --yes to confirm.\n", cfg.ProjectID)
 		return fmt.Errorf("--wipe-brain requires --yes")
 	}
@@ -441,7 +329,7 @@ func runDoctorWipeBrain(cmd *cobra.Command) error {
 	fmt.Println("GG Doctor — wipe brain")
 	fmt.Println(strings.Repeat("─", 50))
 
-	sc, storeErr := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	sc, storeErr := store.New(ggDir, cfg.ProjectID)
 	if storeErr != nil {
 		return fmt.Errorf("store init: %w", storeErr)
 	}
@@ -454,21 +342,19 @@ func runDoctorWipeBrain(cmd *cobra.Command) error {
 	}
 
 	if dropErr := sc.DropAllCollections(ctx); dropErr != nil {
-		return fmt.Errorf("drop qdrant collections: %w", dropErr)
+		return fmt.Errorf("drop vector collections: %w", dropErr)
 	}
-	fmt.Println("  ✓ Qdrant collections dropped")
+	fmt.Println("  ✓ Vector collections dropped")
 
-	if cfg.Memgraph.URI != "" {
-		gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID)
-		if gcErr != nil {
-			fmt.Fprintf(os.Stderr, "  ⚠ Memgraph init failed (%v) — skipped\n", gcErr)
-		} else {
-			defer func() { _ = gc.Close(ctx) }()
-			if sweepErr := gc.SweepProject(ctx); sweepErr != nil {
-				return fmt.Errorf("sweep memgraph: %w", sweepErr)
-			}
-			fmt.Println("  ✓ Memgraph project nodes swept")
+	gc, gcErr := graph.New(cfg.DataDir, cfg.ProjectID)
+	if gcErr != nil {
+		fmt.Fprintf(os.Stderr, "  ⚠ code graph init failed (%v) — skipped\n", gcErr)
+	} else {
+		defer func() { _ = gc.Close(ctx) }()
+		if sweepErr := gc.SweepProject(ctx); sweepErr != nil {
+			return fmt.Errorf("sweep code graph: %w", sweepErr)
 		}
+		fmt.Println("  ✓ Code-graph project nodes swept")
 	}
 
 	fmt.Printf("\nProject %s brain wiped. Run 'gg brain import' to restore from snapshot.\n", cfg.ProjectID)

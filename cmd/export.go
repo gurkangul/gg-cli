@@ -14,13 +14,13 @@ import (
 var exportCmd = &cobra.Command{
 	Use:   "export [output.json.gz]",
 	Short: "Export all project data to a portable bundle",
-	Long: `Export all Qdrant data (decisions, tasks, notes, discussions, messages,
+	Long: `Export all project memory (decisions, tasks, notes, discussions, messages,
 rejections, bugs) into a gzip-compressed JSON bundle.
 
 The bundle includes embedding vectors so that 'gg import' can restore the
 project without re-embedding on the target machine.
 
-Note: Memgraph graph data (gg index) is not included in the bundle.
+Note: code graph data (gg index) is not included in the bundle.
 Run 'gg index' after import to rebuild the code graph.
 
 Examples:

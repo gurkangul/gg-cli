@@ -21,7 +21,7 @@ func TestBrainIDLess(t *testing.T) {
 	}
 }
 
-// BUG-080 L4: discussion seq bootstraps from JSONL when Qdrant is unavailable.
+// BUG-080 L4: discussion seq bootstraps from JSONL when the vector store is unavailable.
 func TestMaxDiscIDFromBrainJSONL(t *testing.T) {
 	dir := t.TempDir()
 	for _, id := range []string{"DISC-003", "DISC-011", "DISC-007"} {

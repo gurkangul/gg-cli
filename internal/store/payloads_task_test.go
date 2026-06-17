@@ -3,14 +3,12 @@ package store
 
 import (
 	"testing"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // ── taskFromPayload ───────────────────────────────────────────────────────────
 
 func TestTaskFromPayload_Full(t *testing.T) {
-	pay, err := qdrant.TryValueMap(map[string]any{
+	pay, err := TryValueMap(map[string]any{
 		"task_id":      "TASK-007",
 		"title":        "implement auth",
 		"detail":       "JWT-based auth flow",
@@ -80,7 +78,7 @@ func TestTaskFromPayload_Full(t *testing.T) {
 
 func TestTaskFromPayload_Empty(t *testing.T) {
 	// Nil/missing fields must not panic; they should produce zero values.
-	pay := map[string]*qdrant.Value{}
+	pay := map[string]*Value{}
 	task := taskFromPayload(pay)
 	if task.ID != "" {
 		t.Errorf("expected empty ID, got %q", task.ID)

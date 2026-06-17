@@ -7,23 +7,25 @@ import (
 	"testing"
 )
 
-// ── write commands: fail at loadDeps (ExitStoreDown / exit 6) ────────────────
+// ── write commands: JSONL-first durability on a fresh project ────────────────
 
-// TestDecide_StoreDown verifies that 'gg decide' returns a store-down error
-// when Qdrant is unreachable. This exercises the full decide handler up to
-// the store call and back.
-func TestDecide_StoreDown(t *testing.T) {
-	setupGGDir(t)
+// TestDecide_FreshProject_WritesJSONL verifies that 'gg decide' (the deprecated
+// alias for 'gg record') follows the JSONL-first path on a fresh project: the
+// vector collection is not materialized yet, but the decision is still durably
+// written to brain/decisions.jsonl and the command exits 0.
+func TestDecide_FreshProject_WritesJSONL(t *testing.T) {
+	ggDir := setupGGDir(t)
 	_, _, err := execCmd(t, "decide", "use JWT for auth")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
+	if err != nil {
+		t.Fatalf("expected exit 0 on offline decide, got: %v", err)
 	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	jsonlPath := filepath.Join(ggDir, "brain", "decisions.jsonl")
+	data, readErr := os.ReadFile(jsonlPath)
+	if readErr != nil {
+		t.Fatalf("brain/decisions.jsonl not written: %v", readErr)
 	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if len(data) == 0 {
+		t.Error("brain/decisions.jsonl is empty")
 	}
 }
 

@@ -21,7 +21,7 @@ DISTINCT FROM task done: cancel is "this task should not have existed", not
 "this work is complete". It bypasses the verifier-separation gate because
 there is no work to verify.
 
-Removes the Qdrant point and the Memgraph Task node + all its edges.
+Removes the vector store entry and the code-graph Task node + all its edges.
 
 --reason is required to prevent accidental use.`,
 	Args: cobra.ExactArgs(1),
@@ -76,17 +76,17 @@ func runTaskCancel(cmd *cobra.Command, args []string) error {
 // Non-fatal: Qdrant is the source of truth; Memgraph is a derived view.
 func deleteTaskGraphNode(cmd *cobra.Command, ctx context.Context, taskID string) {
 	cfg, err := config.Load()
-	if err != nil || cfg.Memgraph.URI == "" {
+	if err != nil {
 		return
 	}
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph init failed (%v) — Task node not deleted for %s\n", err, taskID)
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph init failed (%v) — Task node not deleted for %s\n", err, taskID)
 		return
 	}
 	defer func() { _ = gc.Close(ctx) }()
 
 	if dErr := gc.DeleteTaskNode(ctx, taskID); dErr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph Task node delete failed for %s: %v\n", taskID, dErr)
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph Task node delete failed for %s: %v\n", taskID, dErr)
 	}
 }

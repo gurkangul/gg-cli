@@ -108,7 +108,7 @@ func runBrainImport(cmd *cobra.Command, _ []string) error {
 
 	// 8. Report.
 	fmt.Printf("✓ Brain imported from %s\n", brainDir)
-	fmt.Printf("  Qdrant:  %d records\n", totalQdrant)
+	fmt.Printf("  Vector store: %d records\n", totalQdrant)
 	if totalChunks+skippedChunks > 0 {
 		fmt.Printf("  Nodes:   %d imported, %d skipped\n", totalChunks, skippedChunks)
 		fmt.Printf("  Edges:   %d imported, %d skipped\n", totalEdges, skippedEdges)
@@ -166,7 +166,7 @@ func readAndValidateManifest(brainDir string, cfg *config.Config) (brainManifest
 
 // importQdrant upserts Qdrant records from the brain snapshot.
 func importQdrant(ctx context.Context, cfg *config.Config, ggDir, brainDir string) (int, error) {
-	storeClient, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	storeClient, err := store.New(ggDir, cfg.ProjectID)
 	if err != nil {
 		return 0, fmt.Errorf("store init: %w", err)
 	}
@@ -189,7 +189,7 @@ func importQdrant(ctx context.Context, cfg *config.Config, ggDir, brainDir strin
 		if recreateErr := storeClient.EnsureCollections(ctx, uint64(store.VectorSize)); recreateErr != nil {
 			return 0, fmt.Errorf("recreate collections: %w", recreateErr)
 		}
-		fmt.Fprintln(os.Stderr, "✓ Qdrant collections wiped and recreated")
+		fmt.Fprintln(os.Stderr, "✓ vector collections wiped and recreated")
 	}
 
 	total := 0
@@ -212,13 +212,13 @@ func importMemgraph(ctx context.Context, cfg *config.Config, brainDir string, ma
 	chunksPath := filepath.Join(brainDir, "chunks.jsonl")
 	edgesPath := filepath.Join(brainDir, "edges.jsonl")
 
-	if cfg.Memgraph.URI == "" || manifest.Counts["chunks"] == 0 {
+	if manifest.Counts["chunks"] == 0 {
 		return 0, 0, 0, 0, nil
 	}
 
-	gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, gcErr := graph.New(cfg.DataDir, cfg.ProjectID)
 	if gcErr != nil {
-		fmt.Fprintf(os.Stderr, "⚠ Memgraph init failed (%v) — skipping graph import\n", gcErr)
+		fmt.Fprintf(os.Stderr, "⚠ code graph init failed (%v) — skipping graph import\n", gcErr)
 		return 0, 0, 0, 0, nil
 	}
 	defer func() { _ = gc.Close(ctx) }()
@@ -227,7 +227,7 @@ func importMemgraph(ctx context.Context, cfg *config.Config, brainDir string, ma
 		if sweepErr := gc.SweepProject(ctx); sweepErr != nil {
 			return 0, 0, 0, 0, fmt.Errorf("sweep graph: %w", sweepErr)
 		}
-		fmt.Fprintln(os.Stderr, "✓ Memgraph project swept")
+		fmt.Fprintln(os.Stderr, "✓ code graph project swept")
 	}
 
 	chunkResult, chunkErr := gc.ImportChunks(ctx, chunksPath)
@@ -269,7 +269,7 @@ func reembedMissing(cmd *cobra.Command, cfg *config.Config, ggDir string, manife
 	embedCtx, embedCancel := context.WithTimeout(cmd.Context(), 30*time.Minute)
 	defer embedCancel()
 
-	storeClient, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	storeClient, err := store.New(ggDir, cfg.ProjectID)
 	if err != nil {
 		return 0, fmt.Errorf("store init for embed: %w", err)
 	}

@@ -180,24 +180,26 @@ func TestReconcileOutbox_TimeoutBounded(t *testing.T) {
 	}
 }
 
-// autoReconcileReplay (real, not stubbed) must gate on Qdrant reachability: the
-// fixture points at a closed port, so it returns the deferred sentinel and never
-// touches the outbox entry.
-func TestAutoReconcileReplay_StoreDownDefers(t *testing.T) {
+// autoReconcileReplay (real, not stubbed) attempts to drain the outbox against the
+// always-up embedded store. The seeded entry carries an un-replayable payload, so
+// replay fails: nothing drains and the entry survives (retry-incremented, not
+// deleted) for the next reconcile pass. There is no store-down deferral anymore —
+// the embedded store is always reachable.
+func TestAutoReconcileReplay_UnreplayableEntrySurvives(t *testing.T) {
 	ggDir := setupGGDir(t)
 	seedOutbox(t, ggDir)
 
 	drained, err := autoReconcileReplay(context.Background(), ggDir, 1)
 	if drained != 0 {
-		t.Fatalf("expected 0 drained when Qdrant down, got %d", drained)
+		t.Fatalf("expected 0 drained for an un-replayable entry, got %d", drained)
 	}
-	if err != errAutoReconcileStoreDown {
-		t.Fatalf("expected store-down sentinel, got %v", err)
+	if err == nil {
+		t.Fatal("expected a replay error for the un-replayable seeded entry, got nil")
 	}
-	// Entry must survive for the next reconcile pass.
+	// Entry must survive for the next reconcile pass (failed replay → retry, not delete).
 	entries, _ := outbox.List(ggDir)
 	if len(entries) != 1 {
-		t.Fatalf("expected entry to survive a deferred replay, got %d", len(entries))
+		t.Fatalf("expected entry to survive a failed replay, got %d", len(entries))
 	}
 }
 

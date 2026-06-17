@@ -6,9 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/qdrant/go-client/qdrant"
-	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 func TestTaskClaimHelpers(t *testing.T) {
@@ -72,7 +69,7 @@ func TestTaskClaimHelpers(t *testing.T) {
 
 	t.Run("taskVersionedPayload increments and preserves keys", func(t *testing.T) {
 		now := time.Date(2026, 5, 22, 12, 34, 56, 0, time.FixedZone("UTC+2", 2*60*60))
-		base := map[string]*qdrant.Value{"existing": taskStringValue("keep")}
+		base := map[string]*Value{"existing": taskStringValue("keep")}
 		current := &Task{Version: 0}
 		got := taskVersionedPayload(current, base, now)
 		if got["existing"] != base["existing"] {
@@ -81,7 +78,7 @@ func TestTaskClaimHelpers(t *testing.T) {
 		assertValueKind(t, got["task_version"], "integer_value", int64(1))
 		assertValueKind(t, got["updated_at"], "string_value", now.UTC().Format(time.RFC3339))
 
-		next := taskVersionedPayload(&Task{Version: 7}, map[string]*qdrant.Value{}, now)
+		next := taskVersionedPayload(&Task{Version: 7}, map[string]*Value{}, now)
 		assertValueKind(t, next["task_version"], "integer_value", int64(8))
 	})
 
@@ -147,74 +144,94 @@ func TestTaskClaimHelpers(t *testing.T) {
 	})
 }
 
-func assertValueKind(t *testing.T, v *qdrant.Value, wantField string, wantValue any) {
+func assertValueKind(t *testing.T, v *Value, wantField string, wantValue any) {
 	t.Helper()
 	if v == nil {
 		t.Fatal("value is nil")
 	}
-	fields := protoFields(v.ProtoReflect())
-	if len(fields) != 1 {
-		t.Fatalf("expected 1 protobuf field, got %d (%v)", len(fields), fields)
+	gotField, gotValue := valueKindField(v)
+	if gotField != wantField {
+		t.Fatalf("field = %q, want %q", gotField, wantField)
 	}
-	if fields[0].name != wantField {
-		t.Fatalf("field = %q, want %q", fields[0].name, wantField)
-	}
-	if !reflect.DeepEqual(fields[0].value, wantValue) {
-		t.Fatalf("value = %#v, want %#v", fields[0].value, wantValue)
+	if !reflect.DeepEqual(gotValue, wantValue) {
+		t.Fatalf("value = %#v, want %#v", gotValue, wantValue)
 	}
 }
 
-type fieldValue struct {
-	name  string
-	kind  protoreflect.Kind
-	value any
-}
-
-func protoFields(msg protoreflect.Message) []fieldValue {
-	var out []fieldValue
-	msg.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
-		out = append(out, fieldValue{name: string(fd.Name()), kind: fd.Kind(), value: protoreflectValue(fd.Kind(), v)})
-		return true
-	})
-	return out
-}
-
-func protoreflectValue(kind protoreflect.Kind, v protoreflect.Value) any {
-	switch kind {
-	case protoreflect.BoolKind:
-		return v.Bool()
-	case protoreflect.EnumKind:
-		return v.Enum()
-	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
-		return int64(v.Int())
-	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
-		return v.Int()
-	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
-		return uint64(v.Uint())
-	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
-		return v.Uint()
-	case protoreflect.FloatKind:
-		return float64(v.Float())
-	case protoreflect.DoubleKind:
-		return v.Float()
-	case protoreflect.StringKind:
-		return v.String()
-	case protoreflect.BytesKind:
-		return string(v.Bytes())
+// valueKindField reports the oneof variant name (matching the former protobuf
+// field names, e.g. "integer_value") and the underlying Go value of a *Value.
+func valueKindField(v *Value) (string, any) {
+	switch k := v.GetKind().(type) {
+	case *Value_StringValue:
+		return "string_value", k.StringValue
+	case *Value_IntegerValue:
+		return "integer_value", k.IntegerValue
+	case *Value_DoubleValue:
+		return "double_value", k.DoubleValue
+	case *Value_BoolValue:
+		return "bool_value", k.BoolValue
+	case *Value_ListValue:
+		return "list_value", k.ListValue
+	case *Value_StructValue:
+		return "struct_value", k.StructValue
+	case *Value_NullValue:
+		return "null_value", k.NullValue
 	default:
-		return fmt.Sprintf("%v", v.Interface())
+		return "", nil
 	}
 }
 
-func assertFilterConditionStrings(t *testing.T, filter *qdrant.Filter, want []string) {
+func assertFilterConditionStrings(t *testing.T, filter *Filter, want []string) {
 	t.Helper()
 	if filter == nil {
 		t.Fatal("filter is nil")
 	}
-	got := fmt.Sprint(filter)
+	var tokens []string
+	for _, c := range filter.GetMust() {
+		tokens = append(tokens, conditionTokens(c)...)
+	}
+	for _, c := range filter.GetMustNot() {
+		tokens = append(tokens, conditionTokens(c)...)
+	}
+	for _, c := range filter.GetShould() {
+		tokens = append(tokens, conditionTokens(c)...)
+	}
+	got := strings.Join(tokens, " ")
 	for _, s := range want {
 		if !strings.Contains(got, s) {
 			t.Fatalf("filter %s missing %q", got, s)
 		}
 	}
+}
+
+// conditionTokens flattens a Condition into the field key and all match operands
+// (keywords, integers, booleans) as strings, so assertFilterConditionStrings can
+// substring-match the way the former fmt.Sprint(proto) check did.
+func conditionTokens(c *Condition) []string {
+	fc := c.GetField()
+	if fc == nil {
+		return nil
+	}
+	tokens := []string{fc.GetKey()}
+	m := fc.GetMatch()
+	if m == nil {
+		return tokens
+	}
+	switch mv := m.GetMatchValue().(type) {
+	case *Match_Keyword:
+		tokens = append(tokens, mv.Keyword)
+	case *Match_Keywords:
+		tokens = append(tokens, mv.Keywords.GetStrings()...)
+	case *Match_ExceptKeywords:
+		tokens = append(tokens, mv.ExceptKeywords.GetStrings()...)
+	case *Match_Boolean:
+		tokens = append(tokens, fmt.Sprintf("%v", mv.Boolean))
+	case *Match_Integer:
+		tokens = append(tokens, fmt.Sprintf("%d", mv.Integer))
+	case *Match_Integers:
+		for _, iv := range mv.Integers.GetIntegers() {
+			tokens = append(tokens, fmt.Sprintf("%d", iv))
+		}
+	}
+	return tokens
 }

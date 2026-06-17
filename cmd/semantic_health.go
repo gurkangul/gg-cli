@@ -90,7 +90,7 @@ func semanticMemoryActionWarning(ctx context.Context, cfg *config.Config) string
 		parts = append(parts, part)
 	}
 	if cfg != nil {
-		c, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+		c, err := store.New(ggDir, cfg.ProjectID)
 		if err == nil {
 			defer func() { _ = c.Close() }()
 			healthCtx, cancel := context.WithTimeout(ctx, 2*time.Second)

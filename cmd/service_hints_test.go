@@ -8,8 +8,8 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 )
 
-// expectedComposePath mirrors composePathForHint so the test asserts the hint
-// uses the REAL shared compose path gg provisions (~/.gg/docker-compose.yaml),
+// expectedComposePath mirrors ollamaComposePath so the Ollama hint test asserts
+// the real OPTIONAL Ollama-in-Docker compose path gg writes (~/.gg/docker-compose.yaml),
 // derived — not hardcoded.
 func expectedComposePath(t *testing.T) string {
 	t.Helper()
@@ -20,67 +20,80 @@ func expectedComposePath(t *testing.T) string {
 	return filepath.Join(shared, "docker-compose.yaml")
 }
 
+// TestServiceRecoveryHint verifies the backend-neutral hints: the vector store and
+// code graph are embedded SQLite files (disk/permissions + gg doctor), while Ollama
+// is the only true external service and still offers a Docker option.
 func TestServiceRecoveryHint(t *testing.T) {
-	compose := expectedComposePath(t)
+	// Embedded local stores: hint points at disk/permissions + gg doctor, never a
+	// "docker compose" command (there is no server to bring up).
+	t.Run("qdrant", func(t *testing.T) {
+		got := serviceRecoveryHint(svcQdrant)
+		if !strings.Contains(got, "embedded vector store at .gg/vectorstore.db") {
+			t.Fatalf("qdrant hint missing embedded-store message:\n%s", got)
+		}
+		if !strings.Contains(got, "gg doctor") {
+			t.Fatalf("qdrant hint missing 'gg doctor':\n%s", got)
+		}
+		if strings.Contains(got, "docker compose") {
+			t.Fatalf("embedded vector store hint must not suggest docker compose:\n%s", got)
+		}
+	})
 
-	cases := []struct {
-		name      string
-		service   string
-		wantLabel string
-		wantSvc   string // service token in the compose command
-	}{
-		{"qdrant", svcQdrant, "Qdrant is unreachable", "qdrant"},
-		{"memgraph", svcMemgraph, "Memgraph is unreachable", "memgraph"},
-		{"ollama", svcOllama, "Ollama is unreachable", "ollama"},
-		// Case-insensitive / padded input still resolves.
-		{"qdrant-upper", "QDRANT", "Qdrant is unreachable", "qdrant"},
-	}
+	t.Run("qdrant-upper-case-and-padded", func(t *testing.T) {
+		// Case-insensitive / padded input still resolves to the embedded-store hint.
+		got := serviceRecoveryHint("  QDRANT ")
+		if !strings.Contains(got, "embedded vector store at .gg/vectorstore.db") {
+			t.Fatalf("padded/upper qdrant hint did not resolve:\n%s", got)
+		}
+	})
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := serviceRecoveryHint(tc.service)
+	t.Run("memgraph", func(t *testing.T) {
+		got := serviceRecoveryHint(svcMemgraph)
+		if !strings.Contains(got, "embedded code graph at .gg/graph.db") {
+			t.Fatalf("memgraph hint missing embedded-graph message:\n%s", got)
+		}
+		if !strings.Contains(got, "gg doctor") {
+			t.Fatalf("memgraph hint missing 'gg doctor':\n%s", got)
+		}
+		if strings.Contains(got, "docker compose") {
+			t.Fatalf("embedded code graph hint must not suggest docker compose:\n%s", got)
+		}
+	})
 
-			if !strings.Contains(got, tc.wantLabel) {
-				t.Fatalf("hint for %q missing label %q:\n%s", tc.service, tc.wantLabel, got)
-			}
-
-			wantUp := "docker compose -f " + compose + " up -d " + tc.wantSvc
-			if !strings.Contains(got, wantUp) {
-				t.Fatalf("hint for %q missing up command %q:\n%s", tc.service, wantUp, got)
-			}
-
-			wantLogs := "docker compose -f " + compose + " logs -f " + tc.wantSvc
-			if !strings.Contains(got, wantLogs) {
-				t.Fatalf("hint for %q missing logs command %q:\n%s", tc.service, wantLogs, got)
-			}
-		})
-	}
+	t.Run("ollama", func(t *testing.T) {
+		compose := expectedComposePath(t)
+		got := serviceRecoveryHint(svcOllama)
+		if !strings.Contains(got, "Ollama is unreachable") {
+			t.Fatalf("ollama hint missing label:\n%s", got)
+		}
+		wantUp := "docker compose -f " + compose + " up -d ollama"
+		if !strings.Contains(got, wantUp) {
+			t.Fatalf("ollama hint missing docker option %q:\n%s", wantUp, got)
+		}
+	})
 }
 
 func TestServiceRecoveryHintUnknownService(t *testing.T) {
-	compose := expectedComposePath(t)
 	got := serviceRecoveryHint("postgres")
 
 	// Unknown service must not panic and must still give an actionable
-	// compose-up hint (generic, no service token).
-	wantUp := "docker compose -f " + compose + " up -d"
-	if !strings.Contains(got, wantUp) {
-		t.Fatalf("unknown-service hint missing generic up command %q:\n%s", wantUp, got)
+	// generic local-store hint (disk/permissions + gg doctor).
+	if !strings.Contains(got, "embedded store under .gg/") {
+		t.Fatalf("unknown-service hint missing generic local-store message:\n%s", got)
 	}
-	if !strings.Contains(got, "unreachable") {
-		t.Fatalf("unknown-service hint missing 'unreachable':\n%s", got)
+	if !strings.Contains(got, "gg doctor") {
+		t.Fatalf("unknown-service hint missing 'gg doctor':\n%s", got)
 	}
 }
 
 func TestWithServiceHint(t *testing.T) {
-	compose := expectedComposePath(t)
-	got := withServiceHint("Qdrant unreachable — writes blocked", svcQdrant)
+	got := withServiceHint("Vector store unavailable — writes blocked", svcQdrant)
 
-	if !strings.HasPrefix(got, "Qdrant unreachable — writes blocked\n") {
+	if !strings.HasPrefix(got, "Vector store unavailable — writes blocked\n") {
 		t.Fatalf("withServiceHint must preserve the raw message first:\n%s", got)
 	}
-	if !strings.Contains(got, "docker compose -f "+compose+" up -d qdrant") {
-		t.Fatalf("withServiceHint missing qdrant recovery command:\n%s", got)
+	if !strings.Contains(got, "embedded vector store at .gg/vectorstore.db") {
+		t.Fatalf("withServiceHint missing embedded vector-store recovery hint:\n%s", got)
 	}
 }
 
@@ -104,14 +117,13 @@ func TestEmbedErrAttachesOllamaHintOnlyOnConnectivity(t *testing.T) {
 }
 
 func TestMemgraphDownErrCarriesHint(t *testing.T) {
-	compose := expectedComposePath(t)
 	err := memgraphDownErr("schema init", errConnRefused{})
 
 	if !strings.Contains(err.Error(), "schema init") {
 		t.Fatalf("memgraph error must preserve raw context:\n%s", err.Error())
 	}
-	if !strings.Contains(err.Error(), "docker compose -f "+compose+" up -d memgraph") {
-		t.Fatalf("memgraph error must carry recovery hint:\n%s", err.Error())
+	if !strings.Contains(err.Error(), "embedded code graph at .gg/graph.db") {
+		t.Fatalf("memgraph error must carry the embedded code-graph recovery hint:\n%s", err.Error())
 	}
 	// Must be a service-class ExitError so exit codes stay unchanged.
 	var ee *ExitError

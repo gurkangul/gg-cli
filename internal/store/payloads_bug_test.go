@@ -5,14 +5,12 @@ package store
 import (
 	"errors"
 	"testing"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // ── bugFromPayload ────────────────────────────────────────────────────────────
 
 func TestBugFromPayload_Full(t *testing.T) {
-	pay, err := qdrant.TryValueMap(map[string]any{
+	pay, err := TryValueMap(map[string]any{
 		"bug_id":      "BUG-005",
 		"title":       "panic on nil vector",
 		"detail":      "search handler dereferences nil embedding",
@@ -52,7 +50,7 @@ func TestBugFromPayload_Full(t *testing.T) {
 }
 
 func TestBugFromPayload_Empty(t *testing.T) {
-	pay := map[string]*qdrant.Value{}
+	pay := map[string]*Value{}
 	b := bugFromPayload(pay)
 	if b.ID != "" {
 		t.Errorf("expected empty ID, got %q", b.ID)
@@ -89,12 +87,12 @@ func TestIsConnectivityError_Unavailable(t *testing.T) {
 }
 
 // TestIsConnectivityError_ContextDeadline verifies that a context deadline is
-// NOT classified as a connectivity failure — Qdrant is reachable but slow,
+// NOT classified as a connectivity failure — the store is reachable but slow,
 // which callers must signal differently from "unreachable".
 func TestIsConnectivityError_ContextDeadline(t *testing.T) {
 	err := errors.New("context deadline exceeded")
 	if isConnectivityError(err) {
-		t.Errorf("deadline exceeded must not be treated as connectivity error (Qdrant may just be slow)")
+		t.Errorf("deadline exceeded must not be treated as connectivity error (the vector store may just be slow)")
 	}
 	if !isTimeoutError(err) {
 		t.Errorf("expected isTimeoutError=true for deadline exceeded error")
@@ -124,7 +122,7 @@ func TestValueToAny_Nil(t *testing.T) {
 }
 
 func TestValueToAny_String(t *testing.T) {
-	v := &qdrant.Value{Kind: &qdrant.Value_StringValue{StringValue: "hello"}}
+	v := &Value{Kind: &Value_StringValue{StringValue: "hello"}}
 	got := valueToAny(v)
 	s, ok := got.(string)
 	if !ok || s != "hello" {
@@ -133,7 +131,7 @@ func TestValueToAny_String(t *testing.T) {
 }
 
 func TestValueToAny_Integer(t *testing.T) {
-	v := &qdrant.Value{Kind: &qdrant.Value_IntegerValue{IntegerValue: 42}}
+	v := &Value{Kind: &Value_IntegerValue{IntegerValue: 42}}
 	got := valueToAny(v)
 	n, ok := got.(int64)
 	if !ok || n != 42 {
@@ -142,7 +140,7 @@ func TestValueToAny_Integer(t *testing.T) {
 }
 
 func TestValueToAny_Double(t *testing.T) {
-	v := &qdrant.Value{Kind: &qdrant.Value_DoubleValue{DoubleValue: 3.14}}
+	v := &Value{Kind: &Value_DoubleValue{DoubleValue: 3.14}}
 	got := valueToAny(v)
 	f, ok := got.(float64)
 	if !ok || f != 3.14 {
@@ -151,7 +149,7 @@ func TestValueToAny_Double(t *testing.T) {
 }
 
 func TestValueToAny_Bool(t *testing.T) {
-	v := &qdrant.Value{Kind: &qdrant.Value_BoolValue{BoolValue: true}}
+	v := &Value{Kind: &Value_BoolValue{BoolValue: true}}
 	got := valueToAny(v)
 	b, ok := got.(bool)
 	if !ok || !b {
@@ -160,12 +158,12 @@ func TestValueToAny_Bool(t *testing.T) {
 }
 
 func TestValueToAny_List(t *testing.T) {
-	v := &qdrant.Value{
-		Kind: &qdrant.Value_ListValue{
-			ListValue: &qdrant.ListValue{
-				Values: []*qdrant.Value{
-					{Kind: &qdrant.Value_StringValue{StringValue: "a"}},
-					{Kind: &qdrant.Value_StringValue{StringValue: "b"}},
+	v := &Value{
+		Kind: &Value_ListValue{
+			ListValue: &ListValue{
+				Values: []*Value{
+					{Kind: &Value_StringValue{StringValue: "a"}},
+					{Kind: &Value_StringValue{StringValue: "b"}},
 				},
 			},
 		},
@@ -178,7 +176,7 @@ func TestValueToAny_List(t *testing.T) {
 }
 
 func TestValueToAny_NilList(t *testing.T) {
-	v := &qdrant.Value{Kind: &qdrant.Value_ListValue{ListValue: nil}}
+	v := &Value{Kind: &Value_ListValue{ListValue: nil}}
 	got := valueToAny(v)
 	list, ok := got.([]any)
 	if !ok || len(list) != 0 {
@@ -187,11 +185,11 @@ func TestValueToAny_NilList(t *testing.T) {
 }
 
 func TestValueToAny_Struct(t *testing.T) {
-	v := &qdrant.Value{
-		Kind: &qdrant.Value_StructValue{
-			StructValue: &qdrant.Struct{
-				Fields: map[string]*qdrant.Value{
-					"key": {Kind: &qdrant.Value_StringValue{StringValue: "val"}},
+	v := &Value{
+		Kind: &Value_StructValue{
+			StructValue: &Struct{
+				Fields: map[string]*Value{
+					"key": {Kind: &Value_StringValue{StringValue: "val"}},
 				},
 			},
 		},
@@ -204,7 +202,7 @@ func TestValueToAny_Struct(t *testing.T) {
 }
 
 func TestValueToAny_NilStruct(t *testing.T) {
-	v := &qdrant.Value{Kind: &qdrant.Value_StructValue{StructValue: nil}}
+	v := &Value{Kind: &Value_StructValue{StructValue: nil}}
 	got := valueToAny(v)
 	m, ok := got.(map[string]any)
 	if !ok || len(m) != 0 {
@@ -213,9 +211,9 @@ func TestValueToAny_NilStruct(t *testing.T) {
 }
 
 func TestExtractPayload_NonEmpty(t *testing.T) {
-	pay := map[string]*qdrant.Value{
-		"name":  {Kind: &qdrant.Value_StringValue{StringValue: "Alice"}},
-		"score": {Kind: &qdrant.Value_IntegerValue{IntegerValue: 99}},
+	pay := map[string]*Value{
+		"name":  {Kind: &Value_StringValue{StringValue: "Alice"}},
+		"score": {Kind: &Value_IntegerValue{IntegerValue: 99}},
 	}
 	out := extractPayload(pay)
 	if out["name"] != "Alice" {
@@ -227,7 +225,7 @@ func TestExtractPayload_NonEmpty(t *testing.T) {
 }
 
 func TestExtractPayload_Empty(t *testing.T) {
-	out := extractPayload(map[string]*qdrant.Value{})
+	out := extractPayload(map[string]*Value{})
 	if len(out) != 0 {
 		t.Errorf("expected empty map, got %v", out)
 	}
@@ -240,7 +238,7 @@ func TestExtractVector_Nil(t *testing.T) {
 }
 
 func TestExtractVector_NilVector(t *testing.T) {
-	if got := extractVector(&qdrant.VectorsOutput{}); got != nil {
+	if got := extractVector(&VectorsOutput{}); got != nil {
 		t.Errorf("expected nil when no vector set, got %v", got)
 	}
 }

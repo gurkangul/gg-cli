@@ -104,7 +104,7 @@ type systemBrainQdrantClient interface {
 }
 
 var systemBrainNewQdrantClient = func(cfg *config.Config, ggDir string) (systemBrainQdrantClient, error) {
-	return store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	return store.New(ggDir, cfg.ProjectID)
 }
 
 var systemBrainHTTPClient = &http.Client{Timeout: 2 * time.Second}
@@ -213,7 +213,7 @@ func checkSystemBrainQdrant(ctx context.Context, cfg *config.Config, ggDir strin
 	if err := client.HealthCheck(hctx); err != nil {
 		return systemBrainCheck{Status: "down", Detail: compactTrim(err.Error(), 160)}
 	}
-	return systemBrainCheck{Status: "up", Detail: fmt.Sprintf("%s:%d", cfg.Qdrant.Host, cfg.Qdrant.Port)}
+	return systemBrainCheck{Status: "up", Detail: "embedded sqlite (.gg/vectorstore.db)"}
 }
 
 // checkSystemBrainOllama reports the embedding backend's health. It is

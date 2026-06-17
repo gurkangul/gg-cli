@@ -194,7 +194,7 @@ func (s *dashboardServer) clientFor(id string) (*projClient, error) {
 		return nil, fmt.Errorf("unknown project %q", id)
 	}
 	ggDir := filepath.Join(entry.Root, config.DirName)
-	client, err := store.New(&s.base.Qdrant, ggDir, id)
+	client, err := store.New(ggDir, id)
 	if err != nil {
 		return nil, err
 	}

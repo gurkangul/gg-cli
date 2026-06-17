@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // ErrAlreadyInState is returned by UpdateTaskStatus when the task is already
@@ -28,7 +26,7 @@ func (c *Client) UpdateTaskStatusCAS(ctx context.Context, taskID, expectedStatus
 		return fmt.Errorf("%w: task %s already %s — refusing to overwrite (use --force to clobber)", ErrAlreadyInState, taskID, status)
 	}
 
-	payload := map[string]*qdrant.Value{"status": taskStringValue(status)}
+	payload := map[string]*Value{"status": taskStringValue(status)}
 	switch status {
 	case "done":
 		payload["done_summary"] = taskStringValue(extra)

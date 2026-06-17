@@ -15,17 +15,17 @@ import (
 
 var reembedCmd = &cobra.Command{
 	Use:   "reembed",
-	Short: "Migrate all Qdrant collections to the currently configured embedding model",
-	Long: `Drops and recreates all project Qdrant collections at the dimension of
-the currently configured embedding model, then re-embeds every stored point.
+	Short: "Rebuild the embedded vector index (.gg/vectorstore.db) from .gg/brain/*.jsonl",
+	Long: `Drops and recreates the local vector index (.gg/vectorstore.db) at the
+dimension of the currently configured embedding model, then re-embeds every
+record from the durable brain (.gg/brain/*.jsonl).
 
 Use this when you change the embedding model in .gg/config.yaml. Without
 re-embedding, vectors from different models will be mixed in the same
 collections, which breaks semantic search recall.
 
-WARNING: This operation drops all collections before recreating them.
-If the process is interrupted after the drop, stored knowledge (decisions,
-tasks, notes, etc.) will be lost. Back up your Qdrant data if it matters.
+This rebuilds the local vector index from .gg/brain/*.jsonl (the durable source
+of truth, which is never modified). Safe to re-run.
 
 Requires --confirm to proceed.`,
 	RunE: runReembed,
@@ -52,13 +52,12 @@ func runReembed(cmd *cobra.Command, _ []string) error {
 		fmt.Println(strings.Repeat("─", 50))
 		fmt.Println()
 		fmt.Println("This command will:")
-		fmt.Println("  1. Read all stored points (decisions, tasks, notes, etc.) from Qdrant")
-		fmt.Println("  2. Drop all project collections")
-		fmt.Println("  3. Recreate them with the new embedding model's vector size")
-		fmt.Println("  4. Re-embed every point using the new model")
+		fmt.Println("  1. Drop the local vector index collections (.gg/vectorstore.db)")
+		fmt.Println("  2. Recreate them with the new embedding model's vector size")
+		fmt.Println("  3. Re-embed every record from .gg/brain/*.jsonl using the new model")
 		fmt.Println()
-		fmt.Println("WARNING: If interrupted between steps 2 and 4, stored knowledge will be lost.")
-		fmt.Println("         Back up your Qdrant data before proceeding.")
+		fmt.Println("This rebuilds the local vector index from .gg/brain/*.jsonl (the durable")
+		fmt.Println("source of truth, which is never modified). Safe to re-run.")
 		fmt.Println()
 		fmt.Println("To proceed: gg reembed --yes  (or --confirm)")
 		return nil
@@ -89,17 +88,17 @@ func runReembed(cmd *cobra.Command, _ []string) error {
 	newDim := len(probeVec)
 	fmt.Printf("Model %q returns %d-dim vectors.\n\n", effectiveModel, newDim)
 
-	// Connect to Qdrant.
-	sc, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	// Open the embedded vector store.
+	sc, err := store.New(ggDir, cfg.ProjectID)
 	if err != nil {
-		return serviceErr(fmt.Sprintf("qdrant client: %v", err))
+		return serviceErr(fmt.Sprintf("vector store: %v", err))
 	}
 	defer func() { _ = sc.Close() }()
 
 	hctx, hcancel := context.WithTimeout(cmd.Context(), healthCheckTimeout)
 	defer hcancel()
 	if hErr := sc.HealthCheck(hctx); hErr != nil {
-		return fmt.Errorf("qdrant health check failed (is Qdrant running?): %w", hErr)
+		return fmt.Errorf("vector store health check failed: %w", hErr)
 	}
 
 	// Use the full configured dim as expectedDim for the production embedder.

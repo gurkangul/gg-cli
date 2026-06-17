@@ -22,9 +22,10 @@ import (
 
 var indexCmd = &cobra.Command{
 	Use:   "index [--changed] [--lang go|python|swift|typescript]",
-	Short: "Index the codebase into the Memgraph knowledge graph",
+	Short: "Index the codebase into the embedded code graph (.gg/graph.db)",
 	Long: `Runs a SCIP indexer on the project and writes the resulting code graph
-(Symbol, File, Package nodes and DEFINES/IMPORTS edges) to Memgraph.
+(Symbol, File, Package nodes and DEFINES/IMPORTS edges) to the embedded SQLite
+graph store (.gg/graph.db).
 CALLS flow queries are supported when CALLS edges exist, but the built-in SCIP
 parser currently materializes cross-file references as IMPORTS edges.
 
@@ -77,7 +78,7 @@ func runIndexOnce(cmd *cobra.Command, lang runner.Lang, changedMode bool) error 
 		return fmt.Errorf("unsupported language %q — use %s", lang, strings.Join(langNames(runner.SupportedLangs()), ", "))
 	}
 
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
 		return serviceErr(fmt.Sprintf("memgraph client: %v", err))
 	}

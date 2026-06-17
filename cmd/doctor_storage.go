@@ -11,27 +11,17 @@ import (
 	"github.com/gurkangul/gg-cli/internal/graph"
 )
 
-// doctorCheckVectorStore is the backend-aware vector-store check. For the
-// embedded SQLite default it verifies the DB is openable and the collections
-// exist (hinting `gg reembed` when they are missing/empty) — it never probes
-// localhost:6334. Only an explicit qdrant server backend dials the server.
+// doctorCheckVectorStore checks the embedded SQLite vector store: it verifies
+// the DB is openable and the collections exist (hinting `gg reembed` when they
+// are missing/empty). It never probes the network — the store is a local file.
 func doctorCheckVectorStore(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
-	if cfg.Qdrant.UsesEmbedded() {
-		doctorCheckEmbeddedVector(cmd, cfg, report)
-		return
-	}
-	doctorCheckQdrantServer(cmd, cfg, report)
+	doctorCheckEmbeddedVector(cmd, cfg, report)
 }
 
-// doctorCheckGraphStore is the backend-aware graph-store check. For the embedded
-// SQLite default it verifies graph.db is openable; only an explicit memgraph
-// server backend dials the Bolt endpoint.
+// doctorCheckGraphStore checks the embedded SQLite graph store: it verifies
+// graph.db is openable and reports contents. The store is a local file.
 func doctorCheckGraphStore(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
-	if cfg.Memgraph.UsesEmbedded() {
-		doctorCheckEmbeddedGraph(cmd, cfg, report)
-		return
-	}
-	doctorCheckMemgraphServer(cmd, cfg, report)
+	doctorCheckEmbeddedGraph(cmd, cfg, report)
 }
 
 // doctorCheckEmbeddedVector verifies the embedded SQLite vector store. The store
@@ -109,7 +99,7 @@ func doctorReportVectorCounts(ctx context.Context, c qdrantHealthChecker, report
 // detailed freshness/staleness vs HEAD is reported separately by the code-graph
 // freshness check, so here we only confirm openability + emptiness.
 func doctorCheckEmbeddedGraph(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
 		report.fail("graph store", fmt.Sprintf("embedded sqlite init: %v", err))
 		return

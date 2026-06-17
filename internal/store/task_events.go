@@ -10,7 +10,7 @@ import (
 
 const taskEventsKind = "task-events"
 
-// TaskEvent is the append-only audit trail for task lifecycle mutations. Qdrant
+// TaskEvent is the append-only audit trail for task lifecycle mutations. the vector store
 // holds the current task projection; this log records successful state changes
 // so a future replay path can rebuild that projection from JSONL.
 type TaskEvent struct {

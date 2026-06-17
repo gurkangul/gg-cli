@@ -26,8 +26,8 @@ var indexHookNames = []string{"pre-push", "post-merge", "post-commit"}
 // gg binary or a failed index never blocks the git operation.
 const indexHookBody = `#!/bin/sh
 # ` + indexHookMarker + ` — installed by gg (doctor --install-index-hooks / init)
-# Foreground, non-blocking. Refreshes the local Memgraph CodeGraph from the
-# changed files. Not a daemon. A failure warns but never blocks git.
+# Foreground, non-blocking. Refreshes the local code graph (.gg/graph.db) from
+# the changed files. Not a daemon. A failure warns but never blocks git.
 command -v gg >/dev/null 2>&1 || exit 0
 gg index --changed >/dev/null 2>&1 || \
   echo "gg: index --changed failed — CodeGraph may be stale (run 'gg doctor --fix-index')" >&2

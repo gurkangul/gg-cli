@@ -2,17 +2,15 @@ package store
 
 import (
 	"context"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
-// ActiveBugsFilter returns the Qdrant filter that restricts results to bugs
+// ActiveBugsFilter returns the payload filter that restricts results to bugs
 // in an active state (open, fixing, or reopened). Fixed and wontfix bugs are
 // excluded from default retrieval.
-func ActiveBugsFilter() *qdrant.Filter {
-	return &qdrant.Filter{
-		Must: []*qdrant.Condition{
-			qdrant.NewMatchKeywords("status", "open", "fixing", "reopened"),
+func ActiveBugsFilter() *Filter {
+	return &Filter{
+		Must: []*Condition{
+			NewMatchKeywords("status", "open", "fixing", "reopened"),
 		},
 	}
 }
@@ -22,20 +20,20 @@ func ActiveBugsFilter() *qdrant.Filter {
 // bugs are returned — fixed and wontfix bugs are suppressed so agents don't
 // surface resolved issues as current context.
 func (c *Client) SearchBugs(ctx context.Context, vector []float32, limit uint64, includeAll bool) ([]Bug, error) {
-	req := &qdrant.QueryPoints{
+	req := &QueryPoints{
 		CollectionName: c.collBugs(),
-		Query:          qdrant.NewQuery(vector...),
-		Limit:          qdrant.PtrOf(limit),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Query:          NewQuery(vector...),
+		Limit:          PtrOf(limit),
+		WithPayload:    NewWithPayloadEnable(true),
 	}
 	if !includeAll {
 		f := ActiveBugsFilter()
 		f.Must = append(f.Must, nonDegradedVectorCondition())
 		req.Filter = f
 	} else {
-		req.Filter = &qdrant.Filter{Must: []*qdrant.Condition{nonDegradedVectorCondition()}}
+		req.Filter = &Filter{Must: []*Condition{nonDegradedVectorCondition()}}
 	}
-	results, err := c.qdrantQuery(ctx, req)
+	results, err := c.vsQuery(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -49,12 +47,12 @@ func (c *Client) SearchBugs(ctx context.Context, vector []float32, limit uint64,
 }
 
 func (c *Client) CountBugs(ctx context.Context, statusFilter string) (uint64, error) {
-	req := &qdrant.CountPoints{
+	req := &CountPoints{
 		CollectionName: c.collBugs(),
 	}
 	if statusFilter != "" {
-		req.Filter = &qdrant.Filter{
-			Must: []*qdrant.Condition{qdrant.NewMatchKeyword("status", statusFilter)},
+		req.Filter = &Filter{
+			Must: []*Condition{NewMatchKeyword("status", statusFilter)},
 		}
 	}
 	return c.vs.Count(ctx, req)
@@ -62,15 +60,15 @@ func (c *Client) CountBugs(ctx context.Context, statusFilter string) (uint64, er
 
 // CountBugsByTag returns the number of bugs whose tags list contains tag.
 func (c *Client) CountBugsByTag(ctx context.Context, tag string) (uint64, error) {
-	return c.vs.Count(ctx, &qdrant.CountPoints{
+	return c.vs.Count(ctx, &CountPoints{
 		CollectionName: c.collBugs(),
-		Filter: &qdrant.Filter{
-			Must: []*qdrant.Condition{qdrant.NewMatchKeyword("tags", tag)},
+		Filter: &Filter{
+			Must: []*Condition{NewMatchKeyword("tags", tag)},
 		},
 	})
 }
 
-func bugFromPayload(pay map[string]*qdrant.Value) Bug {
+func bugFromPayload(pay map[string]*Value) Bug {
 	return Bug{
 		ID:              pay["bug_id"].GetStringValue(),
 		Title:           pay["title"].GetStringValue(),

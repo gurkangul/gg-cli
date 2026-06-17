@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gurkangul/gg-cli/internal/brain"
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // Audience controls inbox visibility. "agents" = agent-to-agent only (filtered
@@ -53,7 +52,7 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 		return fmt.Errorf("brain jsonl write: %w", err)
 	}
 
-	payload, err := qdrant.TryValueMap(rawPayload)
+	payload, err := TryValueMap(rawPayload)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
 	}
@@ -61,13 +60,13 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 	// Messages use a zero vector — they are filtered by role, not searched semantically.
 	zeroVec := make([]float32, VectorSize)
 	wait := true
-	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	err = c.vsUpsert(ctx, &UpsertPoints{
 		CollectionName: c.collMessages(),
 		Wait:           &wait,
-		Points: []*qdrant.PointStruct{
+		Points: []*PointStruct{
 			{
-				Id:      qdrant.NewID(m.ID),
-				Vectors: qdrant.NewVectors(zeroVec...),
+				Id:      NewID(m.ID),
+				Vectors: NewVectors(zeroVec...),
 				Payload: payload,
 			},
 		},
@@ -87,27 +86,27 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 // next) that never consumes another agent's message — it sees everything not
 // globally dismissed.
 func (c *Client) GetInbox(ctx context.Context, role string, humanOnly bool, reader string) ([]Message, error) {
-	conditions := []*qdrant.Condition{}
+	conditions := []*Condition{}
 	if role != "" {
-		conditions = append(conditions, qdrant.NewMatchKeyword("to_role", role))
+		conditions = append(conditions, NewMatchKeyword("to_role", role))
 	}
-	filter := &qdrant.Filter{Must: conditions}
+	filter := &Filter{Must: conditions}
 	// Exclude legacy globally-dismissed messages, archived broadcasts (TASK-470),
 	// and, for an identified reader, messages already in that reader's read_by set.
-	filter.MustNot = []*qdrant.Condition{
-		qdrant.NewMatchBool("read", true),
-		qdrant.NewMatchBool("archived", true),
+	filter.MustNot = []*Condition{
+		NewMatchBool("read", true),
+		NewMatchBool("archived", true),
 	}
 	if reader != "" {
-		filter.MustNot = append(filter.MustNot, qdrant.NewMatchKeyword("read_by", reader))
+		filter.MustNot = append(filter.MustNot, NewMatchKeyword("read_by", reader))
 	}
 	if humanOnly {
-		filter.MustNot = append(filter.MustNot, qdrant.NewMatchKeyword("audience", "agents"))
+		filter.MustNot = append(filter.MustNot, NewMatchKeyword("audience", "agents"))
 	}
 
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collMessages(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 		Filter:         filter,
 	})
 	if err != nil {
@@ -125,11 +124,11 @@ func (c *Client) GetInbox(ctx context.Context, role string, humanOnly bool, read
 // as read. Returns the count of dismissed messages.
 // ListMessagesSince returns all messages (read and unread) created at or after
 // the given time. Filtering is done in memory because created_at is a string
-// payload and Qdrant range filters require numeric fields.
+// payload and the vector store range filters require numeric fields.
 func (c *Client) ListMessagesSince(ctx context.Context, since time.Time) ([]Message, error) {
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collMessages(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return nil, err
@@ -192,7 +191,7 @@ func (c *Client) MarkMessagesRead(ctx context.Context, ids []string, reader stri
 		})
 		switch {
 		case errors.Is(err, errMutationNoop), errors.Is(err, ErrRecordNotFound):
-			// Already read by this reader, or message only in Qdrant with no
+			// Already read by this reader, or message only in the vector store with no
 			// brain entry — nothing to persist.
 			continue
 		case err != nil:
@@ -211,11 +210,11 @@ var errMutationNoop = errors.New("mutation noop")
 // default inbox but stay in JSONL (forward-only — never deleted), so the inbox
 // stops bloating with stale "TASK-N started/done" pings. Returns the count.
 func (c *Client) ArchiveAgentBroadcasts(ctx context.Context, before time.Time) (int, error) {
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collMessages(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
-		Filter: &qdrant.Filter{Must: []*qdrant.Condition{
-			qdrant.NewMatchKeyword("audience", "agents"),
+		WithPayload:    NewWithPayloadEnable(true),
+		Filter: &Filter{Must: []*Condition{
+			NewMatchKeyword("audience", "agents"),
 		}},
 	})
 	if err != nil {
@@ -248,24 +247,24 @@ func (c *Client) ArchiveAgentBroadcasts(ctx context.Context, before time.Time) (
 }
 
 func (c *Client) markMessagesGloballyRead(ctx context.Context, ids []string) error {
-	pointIDs := make([]*qdrant.PointId, len(ids))
+	pointIDs := make([]*PointId, len(ids))
 	for i, id := range ids {
-		pointIDs[i] = qdrant.NewID(id)
+		pointIDs[i] = NewID(id)
 	}
 	wait := true
-	readVal, _ := qdrant.NewValue(true)
-	_, err := c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	readVal, _ := NewValue(true)
+	_, err := c.vs.SetPayload(ctx, &SetPayloadPoints{
 		CollectionName: c.collMessages(),
 		Wait:           &wait,
-		Payload: map[string]*qdrant.Value{
+		Payload: map[string]*Value{
 			"read": readVal,
 		},
-		PointsSelector: qdrant.NewPointsSelector(pointIDs...),
+		PointsSelector: NewPointsSelector(pointIDs...),
 	})
 	return err
 }
 
-func messageFromRetrieved(p *qdrant.RetrievedPoint) Message {
+func messageFromRetrieved(p *RetrievedPoint) Message {
 	pay := p.GetPayload()
 	audience := pay["audience"].GetStringValue()
 	if audience == "" {

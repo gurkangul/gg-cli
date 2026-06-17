@@ -83,7 +83,7 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorHooksForce, "force", false,
 		"with --install-agent-hooks: bypass detection and install for the named agent(s)")
 	doctorCmd.Flags().BoolVar(&doctorWipeBrain, "wipe-brain", false,
-		"drop all Qdrant collections and Memgraph nodes for this project (destructive — use for testing)")
+		"drop all vector collections and code-graph nodes for this project (destructive — use for testing)")
 	doctorCmd.Flags().BoolVar(&doctorWipeBrainYes, "yes", false,
 		"auto-accept confirmations for state-changing doctor flows (--wipe-brain, --heal RULES.md re-render, --install-task-hooks Makefile test-tier); also honored via GG_YES=1")
 	doctorCmd.Flags().BoolVar(&doctorInstallTaskHooks, "install-task-hooks", false,
@@ -373,7 +373,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	fmt.Println(strings.Repeat("─", 50))
 	if report.problems == 0 {
 		fmt.Println("Core checks passed (connectivity, configured services, code graph freshness, JSONL integrity, and placeholder-vector scan).")
-		fmt.Println("Note: deep JSONL↔Qdrant reconciliation is not part of default doctor; run `gg doctor --reconcile` after crashes or suspected drift.")
+		fmt.Println("Note: deep JSONL↔vector store reconciliation is not part of default doctor; run `gg doctor --reconcile` after crashes or suspected drift.")
 		if driftCount > 0 {
 			fmt.Printf("  ⚠ %d artifact(s) drifted from CLI templates — run `gg doctor --sync-artifacts` to inspect\n", driftCount)
 		}

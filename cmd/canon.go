@@ -25,7 +25,7 @@ agent-driven:
   gg canon gather                       # dump the raw material (active decisions,
                                         #   rejections, fixed-bug root causes)
   # ...agent distills it into durable per-area knowledge...
-  gg canon set architecture "JSONL is source of truth; Qdrant is a derived index…"
+  gg canon set architecture "JSONL is source of truth; the vector store is a derived index…"
   gg canon show                         # what every new agent now starts with`,
 }
 

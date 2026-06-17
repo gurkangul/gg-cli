@@ -10,12 +10,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/gurkangul/gg-cli/internal/brain"
 	"github.com/gurkangul/gg-cli/internal/identity"
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // taskIDNamespace seeds the deterministic UUID derived from a task_id.
 // This guarantees concurrent `gg task create` calls with the same logical
-// ID would upsert into the same Qdrant point rather than creating duplicates.
+// ID would upsert into the same stored point rather than creating duplicates.
 var taskIDNamespace = uuid.MustParse("c0c0c0c0-1a5c-4d0d-bab0-000000000001")
 
 type Task struct {
@@ -55,15 +54,15 @@ type Task struct {
 // scrollAll paginates through every point matching the given request template.
 // It builds a fresh ScrollPoints internally (avoiding the protobuf copylocks
 // hazard of cloning the caller's struct) and uses Limit as the page size.
-func (c *Client) scrollAll(ctx context.Context, req *qdrant.ScrollPoints) ([]*qdrant.RetrievedPoint, error) {
+func (c *Client) scrollAll(ctx context.Context, req *ScrollPoints) ([]*RetrievedPoint, error) {
 	pageSize := uint32(256)
 	if req.Limit != nil {
 		pageSize = *req.Limit
 	}
-	var all []*qdrant.RetrievedPoint
-	var offset *qdrant.PointId
+	var all []*RetrievedPoint
+	var offset *PointId
 	for {
-		page, next, err := c.vs.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
+		page, next, err := c.vs.ScrollAndOffset(ctx, &ScrollPoints{
 			CollectionName:   req.CollectionName,
 			Filter:           req.Filter,
 			Limit:            &pageSize,
@@ -91,13 +90,13 @@ func pointUUIDForTaskID(taskID string) string {
 	return uuid.NewSHA1(taskIDNamespace, []byte(taskID)).String()
 }
 
-// maxTaskIDNumber scans Qdrant for the highest existing task_id suffix.
+// maxTaskIDNumber scans the vector store for the highest existing task_id suffix.
 // Only used to bootstrap the seq file on first allocation.
 func (c *Client) maxTaskIDNumber(ctx context.Context) (int, error) {
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collTasks(),
-		Limit:          qdrant.PtrOf(uint32(1000)),
-		WithPayload:    qdrant.NewWithPayloadInclude("task_id"),
+		Limit:          PtrOf(uint32(1000)),
+		WithPayload:    NewWithPayloadInclude("task_id"),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("scan tasks collection (did you run `gg init`?): %w", err)
@@ -113,7 +112,7 @@ func (c *Client) maxTaskIDNumber(ctx context.Context) (int, error) {
 }
 
 // CreateTask writes the task to .gg/brain/tasks.jsonl first (AC-1: durable,
-// offline-safe), then attempts a Qdrant upsert (AC-2).
+// offline-safe), then attempts a vector-store upsert (AC-2).
 func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (string, error) {
 	id, err := c.allocTaskID(ctx)
 	if err != nil {
@@ -155,7 +154,7 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 		"lease_until":  t.LeaseUntil,
 	}
 
-	// AC-1: JSONL write first — survives Qdrant downtime.
+	// AC-1: JSONL write first — survives vector-store downtime.
 	// Use deterministic point UUID as the brain uuid so outbox replay finds the right point.
 	brainUUID := pointUUIDForTaskID(t.ID)
 	if err := brain.Append(c.dataDir, "tasks", brainUUID, t.Author, rawPayload); err != nil {
@@ -175,22 +174,22 @@ func (c *Client) CreateTask(ctx context.Context, t Task, vector []float32) (stri
 		return t.ID, semanticVectorMissing(OutboxKindTask, brainUUID)
 	}
 
-	// AC-2: Qdrant upsert is secondary best-effort.
-	qdrantPayload, err := qdrant.TryValueMap(rawPayload)
+	// AC-2: vector upsert is secondary best-effort.
+	vecPayload, err := TryValueMap(rawPayload)
 	if err != nil {
 		return "", fmt.Errorf("build payload: %w", err)
 	}
 	wait := true
 	// Deterministic point UUID — concurrent create with same task_id collapses
 	// to one row instead of creating duplicates.
-	uErr := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	uErr := c.vsUpsert(ctx, &UpsertPoints{
 		CollectionName: c.collTasks(),
 		Wait:           &wait,
-		Points: []*qdrant.PointStruct{
+		Points: []*PointStruct{
 			{
-				Id:      qdrant.NewID(brainUUID),
-				Vectors: qdrant.NewVectors(vector...),
-				Payload: qdrantPayload,
+				Id:      NewID(brainUUID),
+				Vectors: NewVectors(vector...),
+				Payload: vecPayload,
 			},
 		},
 	})
@@ -211,19 +210,19 @@ func (c *Client) ListTasksNeedsReview(ctx context.Context) ([]Task, error) {
 }
 
 func (c *Client) listTasksFiltered(ctx context.Context, statusFilter string, needsReview bool) ([]Task, error) {
-	req := &qdrant.ScrollPoints{
+	req := &ScrollPoints{
 		CollectionName: c.collTasks(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 	}
-	var conditions []*qdrant.Condition
+	var conditions []*Condition
 	if statusFilter != "" {
-		conditions = append(conditions, qdrant.NewMatchKeyword("status", statusFilter))
+		conditions = append(conditions, NewMatchKeyword("status", statusFilter))
 	}
 	if needsReview {
-		conditions = append(conditions, qdrant.NewMatchKeywords("review_status", "none", "pending", ""))
+		conditions = append(conditions, NewMatchKeywords("review_status", "none", "pending", ""))
 	}
 	if len(conditions) > 0 {
-		req.Filter = &qdrant.Filter{Must: conditions}
+		req.Filter = &Filter{Must: conditions}
 	}
 	points, err := c.scrollAll(ctx, req)
 	if err != nil {
@@ -243,10 +242,10 @@ func (c *Client) listTasksFiltered(ctx context.Context, statusFilter string, nee
 }
 
 func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
-	points, err := c.vs.Get(ctx, &qdrant.GetPoints{
+	points, err := c.vs.Get(ctx, &GetPoints{
 		CollectionName: c.collTasks(),
-		Ids:            []*qdrant.PointId{qdrant.NewID(pointUUIDForTaskID(taskID))},
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Ids:            []*PointId{NewID(pointUUIDForTaskID(taskID))},
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return nil, err
@@ -297,7 +296,7 @@ func (c *Client) SetReadyForLive(ctx context.Context, taskID, readyBy, plan stri
 	action := readyForLiveActionForStatus(currentStatus)
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	payload := map[string]*qdrant.Value{
+	payload := map[string]*Value{
 		"status":               taskStringValue("ready_for_live"),
 		"ready_for_live_by":    taskStringValue(readyBy),
 		"ready_for_live_agent": taskStringValue(identity.Agent()),
@@ -343,12 +342,12 @@ func (c *Client) UpdateReviewStatus(ctx context.Context, taskID, reviewStatus, r
 		return err
 	}
 
-	rsVal, _ := qdrant.NewValue(reviewStatus)
-	rbVal, _ := qdrant.NewValue(reviewedBy)
-	raVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
-	rnVal, _ := qdrant.NewValue(reviewNotes)
+	rsVal, _ := NewValue(reviewStatus)
+	rbVal, _ := NewValue(reviewedBy)
+	raVal, _ := NewValue(time.Now().UTC().Format(time.RFC3339))
+	rnVal, _ := NewValue(reviewNotes)
 
-	payload := map[string]*qdrant.Value{
+	payload := map[string]*Value{
 		"review_status": rsVal,
 		"reviewed_by":   rbVal,
 		"reviewed_at":   raVal,
@@ -373,13 +372,13 @@ func (c *Client) UpdateReviewStatus(ctx context.Context, taskID, reviewStatus, r
 	})
 }
 
-// ActiveTasksFilter returns the Qdrant filter that restricts results to tasks
+// ActiveTasksFilter returns the payload filter that restricts results to tasks
 // in an active state (pending or in_progress). Exported as a helper so tests
 // can verify it directly.
-func ActiveTasksFilter() *qdrant.Filter {
-	return &qdrant.Filter{
-		Must: []*qdrant.Condition{
-			qdrant.NewMatchKeywords("status", "pending", "in_progress"),
+func ActiveTasksFilter() *Filter {
+	return &Filter{
+		Must: []*Condition{
+			NewMatchKeywords("status", "pending", "in_progress"),
 		},
 	}
 }
@@ -389,20 +388,20 @@ func ActiveTasksFilter() *qdrant.Filter {
 // and in_progress tasks are returned — done and blocked tasks are suppressed so
 // agents don't surface completed or stale work as relevant context.
 func (c *Client) SearchTasks(ctx context.Context, vector []float32, limit uint64, includeAll bool) ([]Task, error) {
-	req := &qdrant.QueryPoints{
+	req := &QueryPoints{
 		CollectionName: c.collTasks(),
-		Query:          qdrant.NewQuery(vector...),
-		Limit:          qdrant.PtrOf(limit),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Query:          NewQuery(vector...),
+		Limit:          PtrOf(limit),
+		WithPayload:    NewWithPayloadEnable(true),
 	}
 	if !includeAll {
 		f := ActiveTasksFilter()
 		f.Must = append(f.Must, nonDegradedVectorCondition())
 		req.Filter = f
 	} else {
-		req.Filter = &qdrant.Filter{Must: []*qdrant.Condition{nonDegradedVectorCondition()}}
+		req.Filter = &Filter{Must: []*Condition{nonDegradedVectorCondition()}}
 	}
-	results, err := c.qdrantQuery(ctx, req)
+	results, err := c.vsQuery(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +414,7 @@ func (c *Client) SearchTasks(ctx context.Context, vector []float32, limit uint64
 	return tasks, nil
 }
 
-func taskFromPayload(pay map[string]*qdrant.Value) Task {
+func taskFromPayload(pay map[string]*Value) Task {
 	rs := pay["review_status"].GetStringValue()
 	if rs == "" {
 		rs = "none"

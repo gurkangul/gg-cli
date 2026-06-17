@@ -16,15 +16,15 @@ var brainCmd = &cobra.Command{
 	Short: "Portable brain snapshot (export / import / status)",
 	Long: `Manage a git-trackable snapshot of gg's shared brain.
 
-  gg brain export   — write .gg/brain/ from current Qdrant + Memgraph state
-  gg brain import   — restore Qdrant + Memgraph from .gg/brain/
+  gg brain export   — write .gg/brain/ from current vector store + code-graph state
+  gg brain import   — restore vector store + code graph from .gg/brain/
   gg brain status   — show snapshot metadata and checksum status`,
 }
 
 var brainExportCmd = &cobra.Command{
 	Use:   "export",
 	Short: "Serialize project brain to .gg/brain/ (JSONL, payload-only)",
-	Long: `Export all Qdrant collections and Memgraph graph data to deterministic
+	Long: `Export all vector store collections and code-graph data to deterministic
 JSONL files under .gg/brain/. Vectors are excluded by default — run
 'gg reindex --embed' after import to rebuild them.
 
@@ -48,8 +48,8 @@ var (
 
 var brainImportCmd = &cobra.Command{
 	Use:   "import",
-	Short: "Restore Qdrant + Memgraph from .gg/brain/ (idempotent)",
-	Long: `Import a brain snapshot from .gg/brain/ into the local Qdrant and Memgraph stores.
+	Short: "Restore vector store + code graph from .gg/brain/ (idempotent)",
+	Long: `Import a brain snapshot from .gg/brain/ into the embedded vector store and code graph.
 
 Validates manifest SHA-256 checksums and embedding model compatibility before writing.
 By default uses upsert semantics — safe to run multiple times.

@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // Bundle is the portable export format for a gg project.
-// It captures all Qdrant collection data for one project and can be imported
+// It captures all vector-store collection data for one project and can be imported
 // into a different machine or project ID without re-embedding.
 //
 // Note: Memgraph graph data (gg index) is not included — it is derived from
@@ -21,7 +19,7 @@ type Bundle struct {
 	Collections     map[string][]BundlePoint `json:"collections"`
 }
 
-// BundlePoint is a single serialized Qdrant point (id + payload + vector).
+// BundlePoint is a single serialized stored point (id + payload + vector).
 type BundlePoint struct {
 	ID      string         `json:"id"`
 	Payload map[string]any `json:"payload"`
@@ -77,13 +75,13 @@ func (c *Client) ImportBundle(ctx context.Context, bundle *Bundle) error {
 // scrollWithVectors pages through all points in coll, returning payload and vector for each.
 func (c *Client) scrollWithVectors(ctx context.Context, coll string) ([]BundlePoint, error) {
 	pageSize := uint32(256)
-	withVecs := qdrant.NewWithVectorsEnable(true)
-	withPay := qdrant.NewWithPayloadEnable(true)
+	withVecs := NewWithVectorsEnable(true)
+	withPay := NewWithPayloadEnable(true)
 
 	var all []BundlePoint
-	var offset *qdrant.PointId
+	var offset *PointId
 	for {
-		page, next, err := c.vs.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
+		page, next, err := c.vs.ScrollAndOffset(ctx, &ScrollPoints{
 			CollectionName: coll,
 			Limit:          &pageSize,
 			Offset:         offset,
@@ -122,23 +120,23 @@ func (c *Client) upsertBundlePoints(ctx context.Context, coll string, points []B
 			end = len(points)
 		}
 		batch := points[i:end]
-		structs := make([]*qdrant.PointStruct, 0, len(batch))
+		structs := make([]*PointStruct, 0, len(batch))
 		for _, bp := range batch {
-			payload, err := qdrant.TryValueMap(bp.Payload)
+			payload, err := TryValueMap(bp.Payload)
 			if err != nil {
 				return fmt.Errorf("build payload for %s: %w", bp.ID, err)
 			}
-			ps := &qdrant.PointStruct{
-				Id:      qdrant.NewID(bp.ID),
+			ps := &PointStruct{
+				Id:      NewID(bp.ID),
 				Payload: payload,
 			}
 			if len(bp.Vector) > 0 {
-				ps.Vectors = qdrant.NewVectors(bp.Vector...)
+				ps.Vectors = NewVectors(bp.Vector...)
 			}
 			structs = append(structs, ps)
 		}
 		wait := true
-		if err := c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+		if err := c.vsUpsert(ctx, &UpsertPoints{
 			CollectionName: coll,
 			Wait:           &wait,
 			Points:         structs,
@@ -149,8 +147,8 @@ func (c *Client) upsertBundlePoints(ctx context.Context, coll string, points []B
 	return nil
 }
 
-// extractPayload converts a Qdrant point payload to a plain Go map.
-func extractPayload(pay map[string]*qdrant.Value) map[string]any {
+// extractPayload converts a stored point payload to a plain Go map.
+func extractPayload(pay map[string]*Value) map[string]any {
 	out := make(map[string]any, len(pay))
 	for k, v := range pay {
 		out[k] = valueToAny(v)
@@ -158,21 +156,21 @@ func extractPayload(pay map[string]*qdrant.Value) map[string]any {
 	return out
 }
 
-// valueToAny converts a *qdrant.Value to the corresponding Go type.
-func valueToAny(v *qdrant.Value) any {
+// valueToAny converts a *Value to the corresponding Go type.
+func valueToAny(v *Value) any {
 	if v == nil {
 		return nil
 	}
 	switch x := v.GetKind().(type) {
-	case *qdrant.Value_StringValue:
+	case *Value_StringValue:
 		return x.StringValue
-	case *qdrant.Value_IntegerValue:
+	case *Value_IntegerValue:
 		return x.IntegerValue
-	case *qdrant.Value_DoubleValue:
+	case *Value_DoubleValue:
 		return x.DoubleValue
-	case *qdrant.Value_BoolValue:
+	case *Value_BoolValue:
 		return x.BoolValue
-	case *qdrant.Value_ListValue:
+	case *Value_ListValue:
 		if x.ListValue == nil {
 			return []any{}
 		}
@@ -181,7 +179,7 @@ func valueToAny(v *qdrant.Value) any {
 			items[i] = valueToAny(item)
 		}
 		return items
-	case *qdrant.Value_StructValue:
+	case *Value_StructValue:
 		if x.StructValue == nil {
 			return map[string]any{}
 		}
@@ -195,9 +193,9 @@ func valueToAny(v *qdrant.Value) any {
 	}
 }
 
-// extractVector returns the float32 slice from a Qdrant VectorsOutput.
+// extractVector returns the float32 slice from a VectorsOutput.
 // Returns nil if no vector data is present.
-func extractVector(vecs *qdrant.VectorsOutput) []float32 {
+func extractVector(vecs *VectorsOutput) []float32 {
 	if vecs == nil {
 		return nil
 	}
@@ -205,12 +203,12 @@ func extractVector(vecs *qdrant.VectorsOutput) []float32 {
 	if vOutput == nil {
 		return nil
 	}
-	// Use the current .Dense field (current Qdrant protocol).
+	// Use the current .Dense field (current vector format).
 	if dense := vOutput.GetDense(); dense != nil {
 		return dense.GetData()
 	}
-	//lint:ignore SA1019 GetData: fallback for older Qdrant protocol versions that predate Dense oneof
-	if data := vOutput.GetData(); len(data) > 0 { //nolint:staticcheck // GetData: deprecated flat fallback for pre-Dense-oneof Qdrant
+	//lint:ignore SA1019 GetData: fallback for older vector format versions that predate Dense oneof
+	if data := vOutput.GetData(); len(data) > 0 { //nolint:staticcheck // GetData: deprecated flat fallback for pre-Dense-oneof the vector store
 		return data
 	}
 	return nil

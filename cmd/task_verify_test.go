@@ -31,20 +31,17 @@ func writePreTaskDoneHook(t *testing.T, ggDir, name, body string) {
 }
 
 // (a) No pre-task-done.d directory → pre-hook stage is a no-op and the command
-// proceeds to the store. Since the test fixture points Qdrant at a dead port,
-// we expect ExitStoreDown — which proves the pre-hook did not block.
+// proceeds past it. The embedded store is always up, so the terminal failure is
+// the downstream hydration gate (no full task read recorded for TASK-001), NOT a
+// pre-hook rejection — which proves the pre-hook stage did not block.
 func TestTaskDone_NoPreHookDir_ReachesStore(t *testing.T) {
 	setupGGDir(t)
 	_, _, err := execCmd(t, "task", "done", "TASK-001", "no pre-hook installed")
 	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
+		t.Fatal("expected a downstream error after the no-op pre-hook stage")
 	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d) when no pre-hook dir, got %d", ExitStoreDown, ee.Code)
+	if strings.Contains(err.Error(), "hook rejected") {
+		t.Errorf("pre-hook stage must be a no-op with no hook dir, but it rejected: %v", err)
 	}
 }
 
@@ -68,22 +65,19 @@ func TestTaskDone_PreHookFails_BlocksTransition(t *testing.T) {
 	}
 }
 
-// (c) A pre-hook that passes MUST let the command continue. With Qdrant dead
-// the expected terminal error is ExitStoreDown — confirming the gate opened.
+// (c) A pre-hook that passes MUST let the command continue. The terminal error
+// is the downstream hydration gate (no full task read recorded), NOT a pre-hook
+// rejection — confirming the gate opened.
 func TestTaskDone_PreHookPasses_FallsThroughToStore(t *testing.T) {
 	t.Setenv("GG_ENFORCEMENT", "1")
 	ggDir := setupGGDir(t)
 	writePreTaskDoneHook(t, ggDir, "01-ok.sh", "echo 'verify ok'\nexit 0")
 	_, _, err := execCmd(t, "task", "done", "TASK-001", "build passed")
 	if err == nil {
-		t.Fatal("expected error when Qdrant is down (pre-hook passed, store still unreachable)")
+		t.Fatal("expected a downstream error after the passing pre-hook")
 	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d) after pre-hook pass, got %d", ExitStoreDown, ee.Code)
+	if strings.Contains(err.Error(), "hook rejected") {
+		t.Errorf("passing pre-hook must not block, but command was rejected by a hook: %v", err)
 	}
 }
 
@@ -163,9 +157,10 @@ func TestTaskDone_PreHookFails_NoAutoNotifyStillRejects(t *testing.T) {
 }
 
 // (f) Opt-out: when GG_ENFORCEMENT=off AND GG_BYPASS_RATIONALE is set, a
-// failing pre-task-done hook MUST NOT block — the gate is a no-op so only
-// the store path is exercised. Terminal error is ExitStoreDown (Qdrant
-// unreachable), never ExitVerifyFailed.
+// failing pre-task-done hook MUST NOT block — the gate is a no-op so only the
+// store path is exercised. The terminal error is now the store rejecting a
+// transition on a non-existent task (collection not materialized), never the
+// ExitVerifyFailed gate.
 // Disable with GG_ENFORCEMENT=off (or 0/false/no) + GG_BYPASS_RATIONALE.
 func TestTaskDone_PreHook_SkippedWhenEnforcementDisabled(t *testing.T) {
 	t.Setenv("GG_ENFORCEMENT", "off")
@@ -173,15 +168,15 @@ func TestTaskDone_PreHook_SkippedWhenEnforcementDisabled(t *testing.T) {
 	ggDir := setupGGDir(t)
 	writePreTaskDoneHook(t, ggDir, "01-fail.sh", "exit 1")
 	_, _, err := execCmd(t, "task", "done", "TASK-001", "gate disabled — should fall through")
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	if err == nil {
+		t.Fatal("expected a store-layer error after the gate was skipped")
 	}
-	if ee.Code == ExitVerifyFailed {
-		t.Fatalf("gate fired while enforcement disabled: got ExitVerifyFailed")
+	// The gate must NOT have fired: no verify-gate rejection while enforcement off.
+	if ee, ok := err.(*ExitError); ok && ee.Code == ExitVerifyFailed {
+		t.Fatalf("gate fired while enforcement disabled: got ExitVerifyFailed (msg=%q)", ee.Message)
 	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d) with enforcement off, got %d", ExitStoreDown, ee.Code)
+	if strings.Contains(err.Error(), "hook rejected") {
+		t.Errorf("failing hook must not block while enforcement off, but it rejected: %v", err)
 	}
 }
 
@@ -196,14 +191,15 @@ func TestTaskDone_PreHook_PersistsRationaleToStateJSON(t *testing.T) {
 	setupGGDir(t)
 
 	// We don't install a pre-hook: enforcement is off so the hook dir is irrelevant.
-	// The command reaches ExitStoreDown (Qdrant dead) — that's expected.
+	// The command reaches the store and is rejected because TASK-318 does not
+	// exist (collection not materialized) — that's expected. What matters here is
+	// that emitGuardSkipEvent persisted the bypass rationale before the store call.
 	_, _, err := execCmd(t, "task", "done", "TASK-318", "persistence test")
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	if err == nil {
+		t.Fatal("expected a store-layer error completing a non-existent task")
 	}
 	// Must NOT fail with ExitVerifyFailed — that would mean the gate fired wrongly.
-	if ee.Code == ExitVerifyFailed {
+	if ee, ok := err.(*ExitError); ok && ee.Code == ExitVerifyFailed {
 		t.Fatalf("gate fired while enforcement disabled: got ExitVerifyFailed; message: %s", ee.Message)
 	}
 

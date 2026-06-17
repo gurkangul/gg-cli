@@ -72,7 +72,7 @@ func runBrainExport(cmd *cobra.Command, _ []string) error {
 	graphNodes, graphEdges, err := collectGraphData(ctx, cfg)
 	if err != nil {
 		// Memgraph optional — warn and continue with empty graph.
-		fmt.Fprintf(os.Stderr, "⚠ Memgraph unavailable (%v) — exporting Qdrant only\n", err)
+		fmt.Fprintf(os.Stderr, "⚠ code graph unavailable (%v) — exporting vector store only\n", err)
 		graphNodes = nil
 		graphEdges = nil
 	}
@@ -236,7 +236,7 @@ func runBrainExport(cmd *cobra.Command, _ []string) error {
 
 // collectQdrantData scrolls all Qdrant collections for the project.
 func collectQdrantData(ctx context.Context, cfg *config.Config, ggDir string) (map[string][]any, error) {
-	client, err := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+	client, err := store.New(ggDir, cfg.ProjectID)
 	if err != nil {
 		return nil, fmt.Errorf("store init: %w", err)
 	}
@@ -269,10 +269,7 @@ func collectQdrantData(ctx context.Context, cfg *config.Config, ggDir string) (m
 // collectGraphData queries Memgraph for nodes and edges.
 // Returns (nil, nil, error) when Memgraph is unavailable.
 func collectGraphData(ctx context.Context, cfg *config.Config) ([]any, []any, error) {
-	if cfg.Memgraph.URI == "" {
-		return nil, nil, fmt.Errorf("memgraph not configured")
-	}
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
 		return nil, nil, err
 	}

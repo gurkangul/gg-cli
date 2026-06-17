@@ -9,9 +9,10 @@ import (
 )
 
 // sandboxProbeTarget is the default TCP address used by --diagnose-sandbox.
-// We probe localhost:6334 (Qdrant's default port) because what matters is
-// whether any TCP socket to localhost is permitted, not whether Qdrant is up.
-const sandboxProbeTarget = "localhost:6334"
+// gg's stores are embedded SQLite files (no network), so this is just an
+// arbitrary localhost port: what matters is whether any TCP socket to localhost
+// is permitted by the sandbox, not whether anything is listening on it.
+const sandboxProbeTarget = "localhost:1"
 
 // sandboxDialer is the TCP dial function used by runDoctorDiagnoseSandbox.
 // Replaced in tests to inject EPERM or connection-refused without real sockets.

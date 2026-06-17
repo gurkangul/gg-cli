@@ -17,9 +17,9 @@ var brainBackfillApply bool
 
 var brainBackfillCmd = &cobra.Command{
 	Use:   "backfill",
-	Short: "Migrate tag-based Task↔Decision links to Memgraph edges",
-	Long: `Scan Qdrant for implicit Task↔Decision relationships and write them as
-explicit Memgraph edges — (Decision)-[:DECIDES]->(Task) — tagged with
+	Short: "Migrate tag-based Task↔Decision links to code-graph edges",
+	Long: `Scan the brain store for implicit Task↔Decision relationships and write them
+as explicit code-graph edges — (Decision)-[:DECIDES]->(Task) — tagged with
 created_by=backfill_v1 for rollback identification.
 
 Two sources are evaluated:
@@ -41,7 +41,7 @@ Examples:
 }
 
 func init() {
-	brainBackfillCmd.Flags().BoolVar(&brainBackfillApply, "apply", false, "write edges to Memgraph (default: dry-run only)")
+	brainBackfillCmd.Flags().BoolVar(&brainBackfillApply, "apply", false, "write edges to the code graph (default: dry-run only)")
 }
 
 // backfillLink is a resolved Task↔Decision pair ready to be written as an edge.
@@ -232,12 +232,9 @@ func runBrainBackfill(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if cfg.Memgraph.URI == "" {
-		return fmt.Errorf("memgraph not configured — set memgraph.uri in .gg/config.yaml")
-	}
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
-		return fmt.Errorf("connect Memgraph: %w", err)
+		return fmt.Errorf("open code graph: %w", err)
 	}
 	defer func() { _ = gc.Close(cmd.Context()) }()
 
@@ -285,7 +282,7 @@ func runBrainBackfill(cmd *cobra.Command, _ []string) error {
 	}
 
 	if written > 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "\nRollback: edges carry created_by=backfill_v1 — query Memgraph to identify and delete if needed.\n")
+		fmt.Fprintf(cmd.OutOrStdout(), "\nRollback: edges carry created_by=backfill_v1 — query the code graph to identify and delete if needed.\n")
 	}
 
 	return nil

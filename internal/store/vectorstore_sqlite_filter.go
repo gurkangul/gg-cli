@@ -1,9 +1,7 @@
 package store
 
-import "github.com/qdrant/go-client/qdrant"
-
-// matchFilter reports whether a point's payload satisfies a Qdrant filter,
-// replicating the server-side filtering Qdrant performed. Only the condition
+// matchFilter reports whether a point's payload satisfies a filter,
+// replicating the server-side filtering the previous backend performed. Only the condition
 // types actually used in this package are implemented:
 //
 //   - Must     — every condition must match (AND).
@@ -14,8 +12,8 @@ import "github.com/qdrant/go-client/qdrant"
 //     gg_vector_degraded exclusion).
 //
 // Unsupported condition types fail closed (return false) so a silent parity gap
-// can never widen a result set beyond what Qdrant would have returned.
-func matchFilter(payload map[string]*qdrant.Value, f *qdrant.Filter) bool {
+// can never widen a result set beyond what the vector store would have returned.
+func matchFilter(payload map[string]*Value, f *Filter) bool {
 	if f == nil {
 		return true
 	}
@@ -44,28 +42,28 @@ func matchFilter(payload map[string]*qdrant.Value, f *qdrant.Filter) bool {
 	return true
 }
 
-func matchCondition(payload map[string]*qdrant.Value, c *qdrant.Condition) bool {
+func matchCondition(payload map[string]*Value, c *Condition) bool {
 	if c == nil {
 		return false
 	}
 	switch opt := c.GetConditionOneOf().(type) {
-	case *qdrant.Condition_Field:
+	case *Condition_Field:
 		return matchField(payload, opt.Field)
-	case *qdrant.Condition_IsEmpty:
+	case *Condition_IsEmpty:
 		return isEmptyValue(payload[opt.IsEmpty.GetKey()])
-	case *qdrant.Condition_IsNull:
+	case *Condition_IsNull:
 		v, ok := payload[opt.IsNull.GetKey()]
-		return ok && v.GetNullValue() == qdrant.NullValue_NULL_VALUE
-	case *qdrant.Condition_Filter:
+		return ok && v.GetNullValue() == NullValue_NULL_VALUE
+	case *Condition_Filter:
 		return matchFilter(payload, opt.Filter)
 	default:
 		// has_id / nested / geo / range / has_vector are unused here. Fail
-		// closed so we never over-match relative to Qdrant.
+		// closed so we never over-match relative to the vector store.
 		return false
 	}
 }
 
-func matchField(payload map[string]*qdrant.Value, fc *qdrant.FieldCondition) bool {
+func matchField(payload map[string]*Value, fc *FieldCondition) bool {
 	if fc == nil {
 		return false
 	}
@@ -79,27 +77,27 @@ func matchField(payload map[string]*qdrant.Value, fc *qdrant.FieldCondition) boo
 		return false
 	}
 	switch mv := m.GetMatchValue().(type) {
-	case *qdrant.Match_Keyword:
+	case *Match_Keyword:
 		return valueHasKeyword(v, mv.Keyword)
-	case *qdrant.Match_Keywords:
+	case *Match_Keywords:
 		for _, kw := range mv.Keywords.GetStrings() {
 			if valueHasKeyword(v, kw) {
 				return true
 			}
 		}
 		return false
-	case *qdrant.Match_ExceptKeywords:
+	case *Match_ExceptKeywords:
 		for _, kw := range mv.ExceptKeywords.GetStrings() {
 			if valueHasKeyword(v, kw) {
 				return false
 			}
 		}
 		return true
-	case *qdrant.Match_Boolean:
+	case *Match_Boolean:
 		return v.GetBoolValue() == mv.Boolean
-	case *qdrant.Match_Integer:
+	case *Match_Integer:
 		return v.GetIntegerValue() == mv.Integer
-	case *qdrant.Match_Integers:
+	case *Match_Integers:
 		for _, iv := range mv.Integers.GetIntegers() {
 			if v.GetIntegerValue() == iv {
 				return true
@@ -111,10 +109,10 @@ func matchField(payload map[string]*qdrant.Value, fc *qdrant.FieldCondition) boo
 	}
 }
 
-// valueHasKeyword reports whether a payload Value matches a keyword. Qdrant
+// valueHasKeyword reports whether a payload Value matches a keyword. the vector store
 // matches a keyword against a scalar string OR any element of a list-valued
 // field (e.g. tags, read_by), so both shapes are handled.
-func valueHasKeyword(v *qdrant.Value, keyword string) bool {
+func valueHasKeyword(v *Value, keyword string) bool {
 	if v == nil {
 		return false
 	}
@@ -129,18 +127,18 @@ func valueHasKeyword(v *qdrant.Value, keyword string) bool {
 	return v.GetStringValue() == keyword
 }
 
-// isEmptyValue mirrors Qdrant's is_empty semantics: a key counts as empty when
+// isEmptyValue mirrors the vector store's is_empty semantics: a key counts as empty when
 // it is absent, explicitly null, or an empty list. A present non-empty scalar or
 // list is NOT empty. This is what keeps normal records (which never set
 // gg_vector_degraded) in search results while dropping marked degraded ones.
-func isEmptyValue(v *qdrant.Value) bool {
+func isEmptyValue(v *Value) bool {
 	if v == nil {
 		return true
 	}
 	switch v.GetKind().(type) {
-	case *qdrant.Value_NullValue:
+	case *Value_NullValue:
 		return true
-	case *qdrant.Value_ListValue:
+	case *Value_ListValue:
 		return len(v.GetListValue().GetValues()) == 0
 	default:
 		return false

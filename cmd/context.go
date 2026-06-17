@@ -70,7 +70,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 	defer d.Close()
 
 	if d.qdrantSlow {
-		return fmt.Errorf("%s", withServiceHint("qdrant health check timed out — Qdrant may be overloaded; retry or check qdrant status", svcQdrant))
+		return fmt.Errorf("%s", withServiceHint("vector store health check timed out — retry or run gg doctor", svcQdrant))
 	}
 	if d.qdrantDown {
 		// BUG-075: prefer a live JSONL scan over the up-to-7-day LKG cache,
@@ -119,6 +119,16 @@ func runContext(cmd *cobra.Command, args []string) error {
 
 	wg.Wait()
 
+	// Fresh clone / pre-reembed: the embedded collections are not materialized yet
+	// (.gg/vectorstore.db is a derived artifact and is gitignored; .gg/brain/*.jsonl
+	// is the committed source of truth). Mirror `gg search` and serve from JSONL
+	// instead of hard-erroring with a raw NotFound (audit VEC-1).
+	for _, e := range []error{bundle.decErr, bundle.rejErr, bundle.taskErr, bundle.discErr, bundle.noteErr} {
+		if store.IsCollectionNotFoundError(e) {
+			return serveContextFromJSONL(cmd, query)
+		}
+	}
+
 	// Persist a full successful bundle to the LKG cache (best-effort).
 	if bundle.decErr == nil && bundle.rejErr == nil && bundle.taskErr == nil &&
 		bundle.discErr == nil && bundle.noteErr == nil && bundle.artifactErr == nil {
@@ -162,19 +172,19 @@ func runContext(cmd *cobra.Command, args []string) error {
 func serveContextFromCache(cmd *cobra.Command, query string) error {
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached context available")
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ vector store unavailable — no cached context available")
 		return nil
 	}
 	rtDir, err := cfg.RuntimeDir()
 	if err != nil {
-		fmt.Fprintln(cmd.OutOrStderr(), "⚠ Qdrant unreachable — no cached context available")
+		fmt.Fprintln(cmd.OutOrStderr(), "⚠ vector store unavailable — no cached context available")
 		return nil
 	}
 
 	var payload contextPayload
 	cachedAt, found, err := cache.Get(rtDir, contextCacheKind, query, &payload)
 	if err != nil || !found {
-		banner := "⚠ Qdrant unreachable — no cached context available for this topic"
+		banner := "⚠ vector store unavailable — no cached context available for this topic"
 		fmt.Fprintln(cmd.OutOrStderr(), banner)
 		bundle := contextBundle{}
 		artifacts, artifactErr := searchContextArtifacts(query, contextLimit)
@@ -190,7 +200,7 @@ func serveContextFromCache(cmd *cobra.Command, query string) error {
 		return printContextBundle(cmd, query, bundle, errs, time.Time{})
 	}
 
-	banner := fmt.Sprintf("⚠ Qdrant unreachable — cache may be stale; last update at %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
+	banner := fmt.Sprintf("⚠ vector store unavailable — cache may be stale; last update at %s", cachedAt.Local().Format("2006-01-02 15:04:05"))
 	fmt.Fprintln(cmd.OutOrStderr(), banner)
 
 	bundle := contextBundle{
@@ -222,10 +232,10 @@ func runContextForTask(cmd *cobra.Command, taskID string) error {
 	defer d.Close()
 
 	if d.qdrantDown {
-		return runContextForTaskJSONLFallback(cmd, taskID, "qdrant unreachable")
+		return runContextForTaskJSONLFallback(cmd, taskID, "vector store unavailable")
 	}
 	if d.qdrantSlow {
-		return runContextForTaskJSONLFallback(cmd, taskID, "qdrant health check timed out")
+		return runContextForTaskJSONLFallback(cmd, taskID, "vector store health check timed out")
 	}
 
 	ctx, cancel := withTimeout(cmd.Context())
@@ -233,6 +243,11 @@ func runContextForTask(cmd *cobra.Command, taskID string) error {
 
 	anchor, err := d.store.GetTask(ctx, taskID)
 	if err != nil {
+		// Fresh clone / pre-reembed: collections not materialized yet — serve from
+		// the committed JSONL brain instead of erroring with a raw NotFound (VEC-1).
+		if store.IsCollectionNotFoundError(err) {
+			return runContextForTaskJSONLFallback(cmd, taskID, "vector index not built (run gg reembed)")
+		}
 		return fmt.Errorf("task %s: %w", taskID, err)
 	}
 

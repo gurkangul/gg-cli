@@ -84,7 +84,7 @@ func runMetricsDogfood(cmd *cobra.Command, _ []string) error {
 	defer cancel()
 
 	if d.qdrantDown {
-		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — dogfood metrics unavailable.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ vector store unavailable — dogfood metrics unavailable.")
 		return nil
 	}
 

@@ -122,7 +122,7 @@ func (s *dashboardServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if pc.qdrantDown || pc.embedder == nil {
-		writeJSONResp(w, map[string]any{"error": "live search needs Qdrant + Ollama; stores are degraded"})
+		writeJSONResp(w, map[string]any{"error": "live search needs the vector store + Ollama; stores are degraded"})
 		return
 	}
 	ctx := r.Context()

@@ -1,4 +1,8 @@
-// Package cmd — store-down tests for bug commands + bug helper functions.
+// Package cmd — fresh-project (un-reembedded) tests for bug commands + bug
+// helper functions. With the embedded SQLite store there is no "store down"
+// state: write commands persist JSONL-first, reads of a missing bug return
+// not-found, and reads of an un-materialized collection surface a not-found
+// error until `gg reembed` materializes the collections.
 package cmd
 
 import (
@@ -38,95 +42,60 @@ func TestBugReport_StoreDown(t *testing.T) {
 	}
 }
 
-func TestBugList_StoreDown(t *testing.T) {
+func TestBugList_FreshProject_NotMaterialized(t *testing.T) {
 	setupGGDir(t)
-	_, _, err := execCmd(t, "bug", "list")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
-	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	// bug list reads the bugs collection directly; on a fresh project it is not
+	// materialized, so the read surfaces a not-found error (no Qdrant-down
+	// sentinel exists anymore).
+	if _, _, err := execCmd(t, "bug", "list"); err == nil {
+		t.Fatal("expected a not-found error listing an un-materialized bugs collection")
 	}
 }
 
-func TestBugGet_StoreDown(t *testing.T) {
+func TestBugGet_FreshProject_NotFound(t *testing.T) {
 	setupGGDir(t)
 	_, _, err := execCmd(t, "bug", "get", "BUG-001")
 	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
+		t.Fatal("expected an error fetching a non-existent bug")
 	}
 	ee, ok := err.(*ExitError)
 	if !ok {
 		t.Fatalf("expected *ExitError, got %T: %v", err, err)
 	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if ee.Code != ExitNotFound {
+		t.Errorf("expected ExitNotFound(%d) for a missing bug, got %d", ExitNotFound, ee.Code)
 	}
 }
 
-func TestBugFix_StoreDown(t *testing.T) {
+func TestBugFix_FreshProject_Fails(t *testing.T) {
 	setupGGDir(t)
 	repro := tempReproFile(t)
-	_, _, err := execCmd(t, "bug", "fix", "BUG-001", "nil deref in search handler", "--root-cause", "missing nil check", "--repro", repro)
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
-	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	// Fixing a bug that does not exist on a fresh project must fail (gate or
+	// not-found) rather than silently succeed.
+	if _, _, err := execCmd(t, "bug", "fix", "BUG-001", "nil deref in search handler", "--root-cause", "missing nil check", "--repro", repro); err == nil {
+		t.Fatal("expected an error fixing a non-existent bug on a fresh project")
 	}
 }
 
-func TestBugStart_StoreDown(t *testing.T) {
+func TestBugStart_FreshProject_Fails(t *testing.T) {
 	setupGGDir(t)
-	_, _, err := execCmd(t, "bug", "start", "BUG-001")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
-	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if _, _, err := execCmd(t, "bug", "start", "BUG-001"); err == nil {
+		t.Fatal("expected an error starting a non-existent bug on a fresh project")
 	}
 }
 
-func TestBugWontFix_StoreDown(t *testing.T) {
+func TestBugWontFix_FreshProject_Fails(t *testing.T) {
 	setupGGDir(t)
 	repro := tempReproFile(t)
-	_, _, err := execCmd(t, "bug", "wontfix", "BUG-001", "not reproducible", "--repro", repro)
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
-	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if _, _, err := execCmd(t, "bug", "wontfix", "BUG-001", "not reproducible", "--repro", repro); err == nil {
+		t.Fatal("expected an error wontfix-ing a non-existent bug on a fresh project")
 	}
 }
 
-func TestBugTriage_StoreDown(t *testing.T) {
+func TestBugTriage_FreshProject_Fails(t *testing.T) {
 	setupGGDir(t)
-	_, _, err := execCmd(t, "bug", "triage", "BUG-001")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
-	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if _, _, err := execCmd(t, "bug", "triage", "BUG-001"); err == nil {
+		t.Fatal("expected an error triaging a non-existent bug on a fresh project")
 	}
 }
 

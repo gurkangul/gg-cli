@@ -22,35 +22,14 @@ const (
 	SharedDirName = ".gg" // ~/.gg/ for shared infrastructure
 )
 
-type QdrantConfig struct {
-	// Backend selects the vector store. Empty (default) resolves to the embedded
-	// CGO-free SQLite store (no Docker); "qdrant" selects the historical Qdrant
-	// server reached at Host:Port. The GG_VECTOR_BACKEND env var overrides this
-	// field. See storage.go (QdrantConfig.ResolveBackend).
-	Backend string `yaml:"backend,omitempty"`
-	Host    string `yaml:"host"`
-	Port    int    `yaml:"port"`
-}
-
 // Embedding-backend types, defaults, and validation live in embedding.go to
 // keep this file focused. See EmbeddingConfig / VoyageConfig there.
-
-type MemgraphConfig struct {
-	// Backend selects the graph store. Empty (default) resolves to the embedded
-	// CGO-free SQLite store (no Docker); "memgraph"/"neo4j" select the historical
-	// Memgraph server reached over Bolt at URI. The GG_GRAPH_BACKEND env var
-	// overrides this field. See storage.go (MemgraphConfig.ResolveBackend).
-	Backend  string `yaml:"backend,omitempty"`
-	URI      string `yaml:"uri"`      // Bolt URI, e.g. bolt://localhost:7687
-	Username string `yaml:"username"` // empty string = no auth (Memgraph default)
-	Password string `yaml:"password"` // empty string = no auth
-
-	// DataDir is the project .gg directory, populated by LoadFromGGDir (never
-	// serialized). It is used only by the embedded SQLite graph backend
-	// (GG_GRAPH_BACKEND=sqlite, TASK-494) to locate <DataDir>/graph.db; the
-	// default Memgraph/Bolt backend ignores it.
-	DataDir string `yaml:"-"`
-}
+//
+// gg has no vector/graph server backend: the durable memory store is the
+// embedded, CGO-free SQLite vector index (.gg/vectorstore.db) and the embedded
+// SQLite code graph (.gg/graph.db). Both live under the project .gg directory
+// (Config.DataDir). The only optional external service is the embedding engine
+// (native Ollama or the Voyage cloud backend) — see EmbeddingConfig.
 
 type BackupConfig struct {
 	// Enabled toggles session-start auto backup. Default true.
@@ -220,14 +199,17 @@ type Config struct {
 	// baseline (CurrentConfigSchemaVersion) — it never fails the load.
 	// ApplyDefaults stamps it when missing. See docs/stability.md §3, §5.
 	SchemaVersion int `yaml:"schema_version,omitempty"`
-	// ProjectID is a unique per-project UUID used to namespace Qdrant
-	// collections. Multiple projects share the same Qdrant instance but see
+	// ProjectID is a unique per-project UUID used to namespace records in the
+	// embedded stores. Multiple projects can share one set of store files but see
 	// only their own decisions/tasks/messages/rejections.
 	ProjectID string          `yaml:"project_id"`
-	Qdrant    QdrantConfig    `yaml:"qdrant"`
 	Embedding EmbeddingConfig `yaml:"embedding"`
-	Memgraph  MemgraphConfig  `yaml:"memgraph"`
 	Backup    BackupConfig    `yaml:"backup"`
+
+	// DataDir is the project .gg directory, populated by LoadFromGGDir (never
+	// serialized). The embedded SQLite stores locate <DataDir>/vectorstore.db and
+	// <DataDir>/graph.db here.
+	DataDir string `yaml:"-"`
 	Hooks     HooksConfig     `yaml:"hooks"`
 	Telemetry TelemetryConfig `yaml:"telemetry"`
 	Doctor    DoctorConfig    `yaml:"doctor"`
@@ -248,27 +230,10 @@ type Config struct {
 func DefaultConfig() *Config {
 	backupEnabled := true
 	return &Config{
-		Qdrant: QdrantConfig{
-			// Embedded SQLite vector store is the default (no Docker). Host/Port
-			// are retained so a user can flip backend: qdrant without re-running
-			// init. See storage.go for the env > field > sqlite precedence.
-			Backend: BackendSQLite,
-			Host:    "localhost",
-			Port:    6334,
-		},
 		Embedding: EmbeddingConfig{
 			Backend: BackendOllama,
 			Host:    "http://localhost:11434",
 			Model:   "nomic-embed-text",
-		},
-		Memgraph: MemgraphConfig{
-			// Embedded SQLite graph store is the default (no Docker). URI is
-			// retained so a user can flip backend: memgraph without re-running
-			// init.
-			Backend:  BackendSQLite,
-			URI:      "bolt://localhost:7687",
-			Username: "",
-			Password: "",
 		},
 		Backup: BackupConfig{
 			Enabled:  &backupEnabled,
@@ -400,36 +365,13 @@ func SamePath(a, b string) bool {
 	return absA == absB
 }
 
-// Load reads the project-local config, applies env var overrides, and validates.
-//
-// Env var precedence (highest wins):
-//
-//	MEMGRAPH_PASSWORD — overrides memgraph.password
-//	MEMGRAPH_USERNAME — overrides memgraph.username
-//	MEMGRAPH_URI      — overrides memgraph.uri
-//
-// Passwords should never be stored in config.yaml. Leave memgraph.password
-// empty and set MEMGRAPH_PASSWORD in the shell environment instead.
+// Load reads the project-local config and validates it.
 func Load() (*Config, error) {
 	ggDir, err := GGDir()
 	if err != nil {
 		return nil, err
 	}
 	return LoadFromGGDir(ggDir)
-}
-
-// applyMemgraphEnvOverrides sets Memgraph credentials from environment variables
-// when they are present, so that passwords are never required in config.yaml.
-func applyMemgraphEnvOverrides(m *MemgraphConfig) {
-	if v := os.Getenv("MEMGRAPH_PASSWORD"); v != "" {
-		m.Password = v
-	}
-	if v := os.Getenv("MEMGRAPH_USERNAME"); v != "" {
-		m.Username = v
-	}
-	if v := os.Getenv("MEMGRAPH_URI"); v != "" {
-		m.URI = v
-	}
 }
 
 // Save writes the config back to .gg/config.yaml in the current project.
@@ -461,12 +403,6 @@ func (c *Config) Save() error {
 func (c *Config) Validate() error {
 	if strings.TrimSpace(c.ProjectID) == "" {
 		return fmt.Errorf("%w — run 'gg init' to generate one", ErrMissingProjectID)
-	}
-	if strings.TrimSpace(c.Qdrant.Host) == "" {
-		return fmt.Errorf("qdrant.host is required")
-	}
-	if c.Qdrant.Port <= 0 || c.Qdrant.Port > 65535 {
-		return fmt.Errorf("qdrant.port must be 1..65535, got %d", c.Qdrant.Port)
 	}
 	if err := c.Embedding.validate(); err != nil {
 		return err

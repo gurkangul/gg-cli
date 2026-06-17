@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // DupCandidate is a near-duplicate result returned by FindNearDups.
@@ -26,12 +24,12 @@ func (c *Client) FindNearDups(ctx context.Context, kind string, vector []float32
 		return nil, err
 	}
 
-	results, err := c.qdrantQuery(ctx, &qdrant.QueryPoints{
+	results, err := c.vsQuery(ctx, &QueryPoints{
 		CollectionName: coll,
-		Query:          qdrant.NewQuery(vector...),
-		Limit:          qdrant.PtrOf(limit),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
-		ScoreThreshold: qdrant.PtrOf(threshold),
+		Query:          NewQuery(vector...),
+		Limit:          PtrOf(limit),
+		WithPayload:    NewWithPayloadEnable(true),
+		ScoreThreshold: PtrOf(threshold),
 	})
 	if err != nil {
 		if isCollectionNotFoundError(err) {
@@ -69,7 +67,7 @@ func (c *Client) FindNearDups(ctx context.Context, kind string, vector []float32
 	return cands, nil
 }
 
-// kindMeta maps a collection kind name to its Qdrant collection, the payload
+// kindMeta maps a collection kind name to its vector-store collection, the payload
 // field used as a human-readable ID (empty string for UUID-keyed types), and
 // the payload field used as the display label.
 func kindMeta(c *Client, kind string) (coll, idField, labelField string, err error) {

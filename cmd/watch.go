@@ -123,7 +123,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 	seenMessageIDs := make(map[string]bool)
 	if !watchNoInbox {
 		ggDir, _ := config.GGDir()
-		ic, icErr := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+		ic, icErr := store.New(ggDir, cfg.ProjectID)
 		if icErr == nil {
 			// Pre-seed seen IDs from the lookback window so we only emit truly new messages.
 			seedCtx, seedCancel := context.WithTimeout(cmd.Context(), 5*time.Second)

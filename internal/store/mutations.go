@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gurkangul/gg-cli/internal/brain"
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // ErrMutationConflict wraps brain.ErrVersionConflict at the store boundary so
@@ -16,7 +15,7 @@ import (
 var ErrMutationConflict = errors.New("mutation conflict: record changed concurrently")
 
 // ErrRecordNotFound is returned by applyBrainMutation when neither JSONL nor
-// Qdrant has the record. Callers translate it into a typed "X not found".
+// the vector store has the record. Callers translate it into a typed "X not found".
 var ErrRecordNotFound = errors.New("record not found")
 
 // cloneAnyMap returns a shallow copy so mutations don't alias the folded entry.
@@ -28,7 +27,7 @@ func cloneAnyMap(m map[string]any) map[string]any {
 	return out
 }
 
-// anyStringList coerces a payload field (string list from JSONL []any or Qdrant
+// anyStringList coerces a payload field (string list from JSONL []any or the vector store
 // list, or a native []string) into []string.
 func anyStringList(v any) []string {
 	switch xs := v.(type) {
@@ -48,7 +47,7 @@ func anyStringList(v any) []string {
 }
 
 // anyInt coerces a numeric payload field to int (handles float64 from JSONL and
-// int64 from Qdrant).
+// int64 from the vector store).
 func anyInt(v any) int {
 	switch n := v.(type) {
 	case float64:
@@ -62,10 +61,10 @@ func anyInt(v any) int {
 	}
 }
 
-// coerceBrainPayloadForQdrant returns a copy with the integer "version" field
+// coerceBrainPayloadForStore returns a copy with the integer "version" field
 // normalised to int64 so future NewMatchInt CAS filters match (JSONL decodes
-// numbers to float64, which would otherwise upsert as a Qdrant DoubleValue).
-func coerceBrainPayloadForQdrant(raw map[string]any) map[string]any {
+// numbers to float64, which would otherwise upsert as a the vector store DoubleValue).
+func coerceBrainPayloadForStore(raw map[string]any) map[string]any {
 	out := make(map[string]any, len(raw))
 	for k, v := range raw {
 		out[k] = v
@@ -77,7 +76,7 @@ func coerceBrainPayloadForQdrant(raw map[string]any) map[string]any {
 }
 
 // currentBrainPayload returns the current folded payload for pointUUID from the
-// JSONL source of truth, falling back to the live Qdrant point for legacy
+// JSONL source of truth, falling back to the live stored point for legacy
 // records that predate JSONL mutation history. version is the JSONL/payload
 // version (0 when legacy/unversioned).
 func (c *Client) currentBrainPayload(ctx context.Context, kind, collection, pointUUID string) (payload map[string]any, version int64, found bool, err error) {
@@ -90,11 +89,11 @@ func (c *Client) currentBrainPayload(ctx context.Context, kind, collection, poin
 			}
 		}
 	}
-	// Legacy fallback: record exists only in Qdrant (created before JSONL).
-	pts, getErr := c.vs.Get(ctx, &qdrant.GetPoints{
+	// Legacy fallback: record exists only in the vector store (created before JSONL).
+	pts, getErr := c.vs.Get(ctx, &GetPoints{
 		CollectionName: collection,
-		Ids:            []*qdrant.PointId{qdrant.NewID(pointUUID)},
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Ids:            []*PointId{NewID(pointUUID)},
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if getErr != nil {
 		return nil, 0, false, getErr
@@ -109,13 +108,13 @@ func (c *Client) currentBrainPayload(ctx context.Context, kind, collection, poin
 // applyBrainMutation performs a JSONL-first, compare-and-swap mutation (the fix
 // for BUG-062 + BUG-063):
 //
-//  1. Load the current full record (JSONL source of truth, Qdrant fallback).
+//  1. Load the current full record (JSONL source of truth, the vector store fallback).
 //  2. Run apply() to mutate the in-memory payload; apply may return a sentinel
 //     error to abort before any write (illegal transition, already-in-state).
 //  3. brain.AppendCAS atomically appends the full updated payload under flock,
 //     enforcing the version guard — this is the durable commit and the CAS gate.
-//  4. Mirror the result to Qdrant best-effort (payload-only SetPayload preserves
-//     the vector); a Qdrant failure yields *OutboxQueued, not data loss.
+//  4. Mirror the result to the vector store best-effort (payload-only SetPayload preserves
+//     the vector); a the vector store failure yields *OutboxQueued, not data loss.
 //
 // Because the full payload is appended every time, fold/reembed/reconcile
 // reconstruct complete current state instead of silently reverting to
@@ -149,43 +148,43 @@ func (c *Client) applyBrainMutation(
 		}
 		return appendErr
 	}
-	return c.mirrorMutationToQdrant(ctx, collection, outboxKind, pointUUID, raw)
+	return c.mirrorMutationToStore(ctx, collection, outboxKind, pointUUID, raw)
 }
 
-// SyncBrainPayload pushes a folded JSONL payload onto an existing Qdrant point
+// SyncBrainPayload pushes a folded JSONL payload onto an existing stored point
 // (payload-only SetPayload, preserving the vector). Used by `gg doctor
-// --reconcile` to repair a Qdrant index that is stale relative to the JSONL
+// --reconcile` to repair a the vector store index that is stale relative to the JSONL
 // source of truth after a JSONL-first mutation (BUG-062).
 func (c *Client) SyncBrainPayload(ctx context.Context, collSuffix, pointUUID string, payload map[string]any) error {
-	qp, err := qdrant.TryValueMap(coerceBrainPayloadForQdrant(payload))
+	qp, err := TryValueMap(coerceBrainPayloadForStore(payload))
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
 	}
 	wait := true
-	_, err = c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	_, err = c.vs.SetPayload(ctx, &SetPayloadPoints{
 		CollectionName: c.projectID + "-" + collSuffix,
 		Wait:           &wait,
 		Payload:        qp,
-		PointsSelector: qdrant.NewPointsSelector(qdrant.NewID(pointUUID)),
+		PointsSelector: NewPointsSelector(NewID(pointUUID)),
 	})
 	return err
 }
 
-// mirrorMutationToQdrant SetPayloads the full updated record to its Qdrant point,
-// preserving the existing vector. Returns *OutboxQueued when Qdrant is
+// mirrorMutationToStore SetPayloads the full updated record to its stored point,
+// preserving the existing vector. Returns *OutboxQueued when the vector store is
 // unreachable so the command layer can surface "queued — durable in JSONL".
-// A missing Qdrant point is recovered later by `gg doctor --reconcile`.
-func (c *Client) mirrorMutationToQdrant(ctx context.Context, collection, outboxKind, pointUUID string, raw map[string]any) error {
-	qp, err := qdrant.TryValueMap(coerceBrainPayloadForQdrant(raw))
+// A missing stored point is recovered later by `gg doctor --reconcile`.
+func (c *Client) mirrorMutationToStore(ctx context.Context, collection, outboxKind, pointUUID string, raw map[string]any) error {
+	qp, err := TryValueMap(coerceBrainPayloadForStore(raw))
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
 	}
 	wait := true
-	if _, setErr := c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	if _, setErr := c.vs.SetPayload(ctx, &SetPayloadPoints{
 		CollectionName: collection,
 		Wait:           &wait,
 		Payload:        qp,
-		PointsSelector: qdrant.NewPointsSelector(qdrant.NewID(pointUUID)),
+		PointsSelector: NewPointsSelector(NewID(pointUUID)),
 	}); setErr != nil {
 		return &OutboxQueued{Kind: outboxKind, UUID: pointUUID, Cause: setErr}
 	}

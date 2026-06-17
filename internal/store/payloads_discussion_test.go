@@ -4,14 +4,12 @@ package store
 
 import (
 	"testing"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // ── discussionFromPayload ─────────────────────────────────────────────────────
 
 func TestDiscussionFromPayload_Full(t *testing.T) {
-	pay, err := qdrant.TryValueMap(map[string]any{
+	pay, err := TryValueMap(map[string]any{
 		"disc_id":       "DISC-003",
 		"topic":         "DB choice",
 		"detail":        "postgres vs sqlite",
@@ -51,7 +49,7 @@ func TestDiscussionFromPayload_Full(t *testing.T) {
 }
 
 func TestDiscussionFromPayload_Empty(t *testing.T) {
-	pay := map[string]*qdrant.Value{}
+	pay := map[string]*Value{}
 	d := discussionFromPayload(pay)
 	if d.ID != "" {
 		t.Errorf("expected empty ID, got %q", d.ID)
@@ -64,7 +62,7 @@ func TestDiscussionFromPayload_Empty(t *testing.T) {
 // ── rejectionFromPayload ──────────────────────────────────────────────────────
 
 func TestRejectionFromPayload_Full(t *testing.T) {
-	pay, err := qdrant.TryValueMap(map[string]any{
+	pay, err := TryValueMap(map[string]any{
 		"approach":   "microservices",
 		"reason":     "too complex for current team size",
 		"tags":       []any{"arch", "scope"},
@@ -99,7 +97,7 @@ func TestRejectionFromPayload_Full(t *testing.T) {
 }
 
 func TestRejectionFromPayload_Empty(t *testing.T) {
-	pay := map[string]*qdrant.Value{}
+	pay := map[string]*Value{}
 	r := rejectionFromPayload("id1", pay)
 	if r.ID != "id1" {
 		t.Errorf("expected ID 'id1', got %q", r.ID)
@@ -112,7 +110,7 @@ func TestRejectionFromPayload_Empty(t *testing.T) {
 // ── noteFromPayload ───────────────────────────────────────────────────────────
 
 func TestNoteFromPayload_Full(t *testing.T) {
-	pay, err := qdrant.TryValueMap(map[string]any{
+	pay, err := TryValueMap(map[string]any{
 		"text":       "high latency on search endpoint",
 		"tags":       []any{"perf", "search"},
 		"task_id":    "TASK-020",
@@ -139,7 +137,7 @@ func TestNoteFromPayload_Full(t *testing.T) {
 }
 
 func TestNoteFromPayload_Empty(t *testing.T) {
-	pay := map[string]*qdrant.Value{}
+	pay := map[string]*Value{}
 	n := noteFromPayload("nid", pay)
 	if n.ID != "nid" {
 		t.Errorf("expected ID 'nid', got %q", n.ID)

@@ -124,7 +124,7 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 	err = printJSON(result, func() { //nolint:gocritic // ifElseChain: branches check distinct variables, switch is not applicable
 		switch {
 		case pendErr != nil || blocErr != nil:
-			fmt.Fprintln(os.Stderr, "warning: could not query tasks (Qdrant unreachable?)")
+			fmt.Fprintln(os.Stderr, "warning: could not query tasks (vector store unavailable?)")
 		case result.OpenTasks > 0:
 			fmt.Fprintf(os.Stderr, "warn  %-30s %d open (%d pending, %d blocked)\n",
 				"open tasks", result.OpenTasks, result.PendingTasks, result.BlockedTasks)

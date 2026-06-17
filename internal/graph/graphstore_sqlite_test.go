@@ -4,8 +4,6 @@ import (
 	"context"
 	"os"
 	"testing"
-
-	"github.com/gurkangul/gg-cli/internal/config"
 )
 
 // newSQLiteClient builds a Client backed by the embedded SQLite graph store in a
@@ -14,9 +12,7 @@ import (
 // public Client API.
 func newSQLiteClient(t *testing.T, projectID string) *Client {
 	t.Helper()
-	t.Setenv(GraphBackendEnv, "sqlite")
-	cfg := &config.MemgraphConfig{DataDir: t.TempDir()}
-	c, err := New(cfg, projectID)
+	c, err := New(t.TempDir(), projectID)
 	if err != nil {
 		t.Fatalf("New(sqlite): %v", err)
 	}
@@ -85,14 +81,13 @@ func TestSQLite_UpsertIsIdempotent(t *testing.T) {
 // embedded DB never see each other's nodes.
 func TestSQLite_CrossProjectIsolation(t *testing.T) {
 	ctx := context.Background()
-	t.Setenv(GraphBackendEnv, "sqlite")
 	dir := t.TempDir()
-	cA, err := New(&config.MemgraphConfig{DataDir: dir}, "proj-A")
+	cA, err := New(dir, "proj-A")
 	if err != nil {
 		t.Fatalf("New A: %v", err)
 	}
 	t.Cleanup(func() { _ = cA.Close(ctx) })
-	cB, err := New(&config.MemgraphConfig{DataDir: dir}, "proj-B")
+	cB, err := New(dir, "proj-B")
 	if err != nil {
 		t.Fatalf("New B: %v", err)
 	}

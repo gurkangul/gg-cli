@@ -42,7 +42,7 @@ func serveContextFromJSONL(cmd *cobra.Command, query string) error {
 		return serveContextFromCache(cmd, query)
 	}
 
-	warn := []string{"⚠ Qdrant offline — results from a live JSONL scan of durable brain files (semantic ranking unavailable; discussions/artifacts omitted)."}
+	warn := []string{"⚠ vector store offline — results from a live JSONL scan of durable brain files (semantic ranking unavailable; discussions/artifacts omitted)."}
 	// Live JSONL data, not a dated cache snapshot — pass a zero time (no staleness banner).
 	return printContextBundle(cmd, query, bundle, warn, time.Time{})
 }

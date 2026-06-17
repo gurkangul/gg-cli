@@ -34,8 +34,8 @@ Task mode (TASK-NNN argument):
   - Downstream dependents (tasks that DEPENDS_ON this one, or are BLOCKED by it)
   - Decisions and related tasks from the knowledge store (semantic search)
 
-Requires Memgraph (gg index must have been run). The knowledge-store search
-works even without Memgraph.
+Requires the code graph (gg index must have been run). The knowledge-store search
+works even without the code graph.
 
 When CodeGraph is missing, stale, or unavailable, impact uses the shared
 freshness notice contract: repair is explicit with gg doctor --fix-index;
@@ -172,8 +172,8 @@ func runImpact(cmd *cobra.Command, args []string) error {
 	} else {
 		result.Warnings = append(result.Warnings, "code graph freshness unknown: config unavailable")
 	}
-	if cfg != nil && cfg.Memgraph.URI != "" {
-		gc, gcErr := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	if cfg != nil {
+		gc, gcErr := graph.New(cfg.DataDir, cfg.ProjectID)
 		if gcErr != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("graph client init: %v", gcErr))
 		} else {
@@ -232,7 +232,7 @@ func runImpact(cmd *cobra.Command, args []string) error {
 			}
 		}
 	} else {
-		result.Warnings = append(result.Warnings, "Memgraph not configured — graph data unavailable (run 'gg index' first)")
+		result.Warnings = append(result.Warnings, "code graph empty — graph data unavailable (run 'gg index' first)")
 	}
 
 	// ── Knowledge-base search (semantic) ────────────────────────────────────

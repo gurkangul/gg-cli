@@ -1,4 +1,9 @@
-// Package cmd — store-down tests for task commands + task ref helpers.
+// Package cmd — fresh-project (un-reembedded) tests for task commands + task ref
+// helpers. With the embedded SQLite store there is no "store down" state: task
+// create persists JSONL-first, reads of a missing task return not-found, reads of
+// an un-materialized collection surface a not-found error, and lifecycle
+// transitions on a non-existent task fail at the gate/store rather than the
+// (removed) Qdrant-down sentinel.
 package cmd
 
 import (
@@ -27,78 +32,58 @@ func TestTaskCreate_StoreDown(t *testing.T) {
 	}
 }
 
-func TestTaskDone_StoreDown(t *testing.T) {
+func TestTaskDone_FreshProject_Fails(t *testing.T) {
 	setupGGDir(t)
-	_, _, err := execCmd(t, "task", "done", "TASK-001", "shipped the feature")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
-	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	// Completing a task that does not exist on a fresh project must fail (gate or
+	// not-found) rather than silently succeed.
+	if _, _, err := execCmd(t, "task", "done", "TASK-001", "shipped the feature"); err == nil {
+		t.Fatal("expected an error completing a non-existent task on a fresh project")
 	}
 }
 
-func TestTaskBlock_StoreDown(t *testing.T) {
+func TestTaskBlock_FreshProject_Fails(t *testing.T) {
 	setupGGDir(t)
-	_, _, err := execCmd(t, "task", "block", "TASK-001", "waiting on infra team")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
-	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if _, _, err := execCmd(t, "task", "block", "TASK-001", "waiting on infra team"); err == nil {
+		t.Fatal("expected an error blocking a non-existent task on a fresh project")
 	}
 }
 
-func TestTaskList_StoreDown(t *testing.T) {
+func TestTaskList_FreshProject_NotMaterialized(t *testing.T) {
 	setupGGDir(t)
-	_, _, err := execCmd(t, "task", "list")
-	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
-	}
-	ee, ok := err.(*ExitError)
-	if !ok {
-		t.Fatalf("expected *ExitError, got %T: %v", err, err)
-	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	// task list reads the tasks collection directly; on a fresh project it is not
+	// materialized, so the read surfaces a not-found error.
+	if _, _, err := execCmd(t, "task", "list"); err == nil {
+		t.Fatal("expected a not-found error listing an un-materialized tasks collection")
 	}
 }
 
-func TestTaskGet_StoreDown(t *testing.T) {
+func TestTaskGet_FreshProject_NotFound(t *testing.T) {
 	setupGGDir(t)
 	_, _, err := execCmd(t, "task", "get", "TASK-001")
 	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
+		t.Fatal("expected an error fetching a non-existent task")
 	}
 	ee, ok := err.(*ExitError)
 	if !ok {
 		t.Fatalf("expected *ExitError, got %T: %v", err, err)
 	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if ee.Code != ExitNotFound {
+		t.Errorf("expected ExitNotFound(%d) for a missing task, got %d", ExitNotFound, ee.Code)
 	}
 }
 
-func TestTaskDeps_StoreDown(t *testing.T) {
+func TestTaskDeps_FreshProject_NotFound(t *testing.T) {
 	setupGGDir(t)
 	_, _, err := execCmd(t, "task", "deps", "TASK-001")
 	if err == nil {
-		t.Fatal("expected error when Qdrant is down")
+		t.Fatal("expected an error resolving deps of a non-existent task")
 	}
 	ee, ok := err.(*ExitError)
 	if !ok {
 		t.Fatalf("expected *ExitError, got %T: %v", err, err)
 	}
-	if ee.Code != ExitStoreDown {
-		t.Errorf("expected ExitStoreDown(%d), got %d", ExitStoreDown, ee.Code)
+	if ee.Code != ExitNotFound {
+		t.Errorf("expected ExitNotFound(%d) for a missing task, got %d", ExitNotFound, ee.Code)
 	}
 }
 

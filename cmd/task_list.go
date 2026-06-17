@@ -451,7 +451,7 @@ func renderRelatedContext(w *bytes.Buffer, rc *relatedContext) {
 	fmt.Fprintln(w, "\n=== Related Context ===")
 
 	if rc == nil {
-		fmt.Fprintln(w, "  (unavailable — Qdrant unreachable or embedding failed)")
+		fmt.Fprintln(w, "  (unavailable — vector store unavailable or embedding failed)")
 		return
 	}
 

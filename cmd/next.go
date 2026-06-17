@@ -66,9 +66,9 @@ func runNext(cmd *cobra.Command, _ []string) error {
 	if d.qdrantDown || d.qdrantSlow {
 		snap.StoreDegraded = true
 		if d.qdrantSlow {
-			snap.StoreDegradeIs = "Qdrant health check timed out"
+			snap.StoreDegradeIs = "vector store health check timed out"
 		} else {
-			snap.StoreDegradeIs = "Qdrant unreachable"
+			snap.StoreDegradeIs = "vector store unavailable"
 		}
 		renderNext(cmd.OutOrStdout(), snap)
 		return nil
@@ -227,7 +227,7 @@ func renderNext(w io.Writer, snap nextSnapshot) {
 		fmt.Fprintf(w, "State lookup degraded: %s.\n", snap.StoreDegradeIs)
 		fmt.Fprintln(w, "Recommended safe checks:")
 		fmt.Fprintln(w, "1. gg doctor")
-		fmt.Fprintln(w, "2. Restore Qdrant if doctor reports store connectivity issues")
+		fmt.Fprintln(w, "2. Check the embedded vector store (.gg/vectorstore.db) if doctor reports store issues")
 		fmt.Fprintln(w, "3. gg reconcile")
 		fmt.Fprintf(w, "4. gg inbox --role %s --peek\n", snap.Role)
 		return

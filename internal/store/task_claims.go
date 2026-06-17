@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
 var (
@@ -15,46 +13,46 @@ var (
 	ErrTaskTransitionConflict = errors.New("task transition conflict")
 )
 
-func taskStringValue(s string) *qdrant.Value {
-	v, _ := qdrant.NewValue(s)
+func taskStringValue(s string) *Value {
+	v, _ := NewValue(s)
 	return v
 }
 
-func taskMutationFilter(taskID string, statuses ...string) *qdrant.Filter {
-	conditions := []*qdrant.Condition{qdrant.NewMatchKeyword("task_id", taskID)}
+func taskMutationFilter(taskID string, statuses ...string) *Filter {
+	conditions := []*Condition{NewMatchKeyword("task_id", taskID)}
 	switch len(statuses) {
 	case 0:
 	case 1:
-		conditions = append(conditions, qdrant.NewMatchKeyword("status", statuses[0]))
+		conditions = append(conditions, NewMatchKeyword("status", statuses[0]))
 	default:
-		conditions = append(conditions, qdrant.NewMatchKeywords("status", statuses...))
+		conditions = append(conditions, NewMatchKeywords("status", statuses...))
 	}
-	return &qdrant.Filter{Must: conditions}
+	return &Filter{Must: conditions}
 }
 
-func taskCurrentMutationFilter(current *Task, statuses ...string) *qdrant.Filter {
+func taskCurrentMutationFilter(current *Task, statuses ...string) *Filter {
 	f := taskMutationFilter(current.ID, statuses...)
 	if current.Version > 0 {
-		f.Must = append(f.Must, qdrant.NewMatchInt("task_version", current.Version))
+		f.Must = append(f.Must, NewMatchInt("task_version", current.Version))
 	}
 	return f
 }
 
-func taskOwnedMutationFilter(taskID, status, owner string) *qdrant.Filter {
+func taskOwnedMutationFilter(taskID, status, owner string) *Filter {
 	f := taskMutationFilter(taskID, status)
-	f.Must = append(f.Must, qdrant.NewMatchKeyword("owner", owner))
+	f.Must = append(f.Must, NewMatchKeyword("owner", owner))
 	return f
 }
 
-func taskCurrentOwnedMutationFilter(current *Task, status, owner string) *qdrant.Filter {
+func taskCurrentOwnedMutationFilter(current *Task, status, owner string) *Filter {
 	f := taskCurrentMutationFilter(current, status)
-	f.Must = append(f.Must, qdrant.NewMatchKeyword("owner", owner))
+	f.Must = append(f.Must, NewMatchKeyword("owner", owner))
 	return f
 }
 
-func taskVersionedPayload(current *Task, payload map[string]*qdrant.Value, now time.Time) map[string]*qdrant.Value {
+func taskVersionedPayload(current *Task, payload map[string]*Value, now time.Time) map[string]*Value {
 	if payload == nil {
-		payload = map[string]*qdrant.Value{}
+		payload = map[string]*Value{}
 	}
 	next := current.Version + 1
 	if next <= 0 {
@@ -65,18 +63,18 @@ func taskVersionedPayload(current *Task, payload map[string]*qdrant.Value, now t
 	return payload
 }
 
-func taskIntValue(n int64) *qdrant.Value {
-	v, _ := qdrant.NewValue(n)
+func taskIntValue(n int64) *Value {
+	v, _ := NewValue(n)
 	return v
 }
 
-func (c *Client) setTaskPayloadByFilter(ctx context.Context, filter *qdrant.Filter, payload map[string]*qdrant.Value) error {
+func (c *Client) setTaskPayloadByFilter(ctx context.Context, filter *Filter, payload map[string]*Value) error {
 	wait := true
-	_, err := c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	_, err := c.vs.SetPayload(ctx, &SetPayloadPoints{
 		CollectionName:   c.collTasks(),
 		Wait:             &wait,
 		Payload:          payload,
-		PointsSelector:   qdrant.NewPointsSelectorFilter(filter),
+		PointsSelector:   NewPointsSelectorFilter(filter),
 		ShardKeySelector: nil,
 	})
 	return err
@@ -132,7 +130,7 @@ func (c *Client) StartTask(ctx context.Context, taskID, owner string, lease time
 	}
 
 	leaseUntil := now.Add(lease).Format(time.RFC3339)
-	payload := map[string]*qdrant.Value{
+	payload := map[string]*Value{
 		"status":       taskStringValue("in_progress"),
 		"owner":        taskStringValue(owner),
 		"claimed_at":   taskStringValue(now.Format(time.RFC3339)),
@@ -192,7 +190,7 @@ func (c *Client) RenewTask(ctx context.Context, taskID, owner string, lease time
 	}
 	now := time.Now().UTC()
 	leaseUntil := now.Add(lease).Format(time.RFC3339)
-	payload := taskVersionedPayload(current, map[string]*qdrant.Value{
+	payload := taskVersionedPayload(current, map[string]*Value{
 		"lease_until": taskStringValue(leaseUntil),
 	}, now)
 	if err := c.setTaskPayloadByFilter(ctx, taskCurrentOwnedMutationFilter(current, "in_progress", owner), payload); err != nil {
@@ -234,7 +232,7 @@ func (c *Client) ReleaseTask(ctx context.Context, taskID, owner string) (*Task, 
 	if current.Owner != owner {
 		return nil, fmt.Errorf("%w: %s is owned by %s", ErrTaskClaimed, taskID, current.Owner)
 	}
-	payload := taskVersionedPayload(current, map[string]*qdrant.Value{
+	payload := taskVersionedPayload(current, map[string]*Value{
 		"status":      taskStringValue("pending"),
 		"owner":       taskStringValue(""),
 		"claimed_at":  taskStringValue(""),

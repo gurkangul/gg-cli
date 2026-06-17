@@ -42,20 +42,20 @@ func (c *Client) allocDiscID(ctx context.Context) (string, error) {
 	if s := strings.TrimSpace(string(data)); s != "" {
 		parsed, perr := strconv.Atoi(s)
 		if perr != nil || parsed < 0 {
-			return "", fmt.Errorf("corrupt %s: %q — delete this file to re-bootstrap from qdrant", seqPath, s)
+			return "", fmt.Errorf("corrupt %s: %q — delete this file to re-bootstrap from the vector store", seqPath, s)
 		}
 		n = parsed
 	}
 
-	// Bootstrap: seq file empty. Try Qdrant; if unavailable, fall back to the
+	// Bootstrap: seq file empty. Try the vector store; if unavailable, fall back to the
 	// JSONL source of truth (BUG-080 L4) — mirrors task/bug seq so the first DISC
-	// allocation works while Qdrant is down.
+	// allocation works while the vector store is down.
 	if n == 0 {
 		existingMax, err := c.maxDiscIDNumber(ctx)
 		if err != nil {
 			jsonlMax, jsonlErr := maxDiscIDFromBrainJSONL(c.dataDir)
 			if jsonlErr != nil {
-				return "", fmt.Errorf("bootstrap disc seq (qdrant down, jsonl fallback failed): %w", jsonlErr)
+				return "", fmt.Errorf("bootstrap disc seq (vector store down, jsonl fallback failed): %w", jsonlErr)
 			}
 			n = jsonlMax
 		} else {
@@ -82,7 +82,7 @@ func (c *Client) allocDiscID(ctx context.Context) (string, error) {
 }
 
 // maxDiscIDFromBrainJSONL scans .gg/brain/discussions.jsonl for the highest
-// numeric DISC suffix. Qdrant-free bootstrap for allocDiscID (BUG-080 L4).
+// numeric DISC suffix. store-independent bootstrap for allocDiscID (BUG-080 L4).
 // Returns 0 when the file is absent or empty.
 func maxDiscIDFromBrainJSONL(ggDir string) (int, error) {
 	entries, err := brain.ReadAll(ggDir, "discussions")

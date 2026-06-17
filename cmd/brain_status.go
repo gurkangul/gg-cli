@@ -96,7 +96,7 @@ func runBrainStatus(cmd *cobra.Command, _ []string) error {
 		liveCtx, liveCancel := context.WithTimeout(cmd.Context(), healthCheckTimeout)
 		defer liveCancel()
 
-		sc, scErr := store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+		sc, scErr := store.New(ggDir, cfg.ProjectID)
 		if scErr == nil {
 			defer func() { _ = sc.Close() }()
 			if hErr := sc.HealthCheck(liveCtx); hErr == nil {
@@ -172,7 +172,7 @@ func runBrainStatus(cmd *cobra.Command, _ []string) error {
 		}
 		fmt.Printf("  Drift:        ⚠ %s — run: gg brain export\n", strings.Join(driftParts, ", "))
 	default:
-		fmt.Println("  Drift:        — (Qdrant unreachable)")
+		fmt.Println("  Drift:        — (vector store unavailable)")
 	}
 	return nil
 }

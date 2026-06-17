@@ -195,7 +195,7 @@ func runAuditGaps(cmd *cobra.Command, _ []string) error {
 	defer d.Close()
 
 	if d.qdrantDown {
-		fmt.Fprintln(cmd.ErrOrStderr(), "warning: Qdrant unreachable — coverage check skipped, listing all changed files as gaps")
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: vector store unavailable — coverage check skipped, listing all changed files as gaps")
 		for _, f := range files {
 			fmt.Fprintln(cmd.OutOrStdout(), f)
 		}

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/qdrant/go-client/qdrant"
 )
 
 // Turn is one deliberation entry in a discussion transcript.
@@ -48,7 +47,7 @@ type Discussion struct {
 }
 
 // PayloadSizeWarnThreshold is the approximate byte count at which AppendTurn
-// emits a warning. Qdrant supports ~1 MB per payload; we warn at 80% headroom.
+// emits a warning. the previous backend supported ~1 MB per payload; we warn at 80% headroom.
 const PayloadSizeWarnThreshold = 800_000
 
 // discTurnsLocks provides per-discussion in-process mutexes for AppendTurn.
@@ -61,10 +60,10 @@ func pointUUIDForDiscID(id string) string {
 }
 
 func (c *Client) maxDiscIDNumber(ctx context.Context) (int, error) {
-	points, err := c.scrollAll(ctx, &qdrant.ScrollPoints{
+	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collDiscussions(),
-		Limit:          qdrant.PtrOf(uint32(1000)),
-		WithPayload:    qdrant.NewWithPayloadInclude("disc_id"),
+		Limit:          PtrOf(uint32(1000)),
+		WithPayload:    NewWithPayloadInclude("disc_id"),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("scan discussions collection: %w", err)
@@ -91,7 +90,7 @@ func (c *Client) OpenDiscussion(ctx context.Context, d Discussion, vector []floa
 	d.CreatedAt = now
 	d.UpdatedAt = now
 
-	payload, err := qdrant.TryValueMap(map[string]any{
+	payload, err := TryValueMap(map[string]any{
 		"disc_id":       d.ID,
 		"topic":         d.Topic,
 		"detail":        d.Detail,
@@ -109,13 +108,13 @@ func (c *Client) OpenDiscussion(ctx context.Context, d Discussion, vector []floa
 	}
 
 	wait := true
-	err = c.qdrantUpsert(ctx, &qdrant.UpsertPoints{
+	err = c.vsUpsert(ctx, &UpsertPoints{
 		CollectionName: c.collDiscussions(),
 		Wait:           &wait,
-		Points: []*qdrant.PointStruct{
+		Points: []*PointStruct{
 			{
-				Id:      qdrant.NewID(pointUUIDForDiscID(d.ID)),
-				Vectors: qdrant.NewVectors(vector...),
+				Id:      NewID(pointUUIDForDiscID(d.ID)),
+				Vectors: NewVectors(vector...),
 				Payload: payload,
 			},
 		},
@@ -127,10 +126,10 @@ func (c *Client) OpenDiscussion(ctx context.Context, d Discussion, vector []floa
 }
 
 func (c *Client) GetDiscussion(ctx context.Context, discID string) (*Discussion, error) {
-	points, err := c.vs.Get(ctx, &qdrant.GetPoints{
+	points, err := c.vs.Get(ctx, &GetPoints{
 		CollectionName: c.collDiscussions(),
-		Ids:            []*qdrant.PointId{qdrant.NewID(pointUUIDForDiscID(discID))},
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Ids:            []*PointId{NewID(pointUUIDForDiscID(discID))},
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return nil, err
@@ -143,13 +142,13 @@ func (c *Client) GetDiscussion(ctx context.Context, discID string) (*Discussion,
 }
 
 func (c *Client) ListDiscussions(ctx context.Context, statusFilter string) ([]Discussion, error) {
-	req := &qdrant.ScrollPoints{
+	req := &ScrollPoints{
 		CollectionName: c.collDiscussions(),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		WithPayload:    NewWithPayloadEnable(true),
 	}
 	if statusFilter != "" {
-		req.Filter = &qdrant.Filter{
-			Must: []*qdrant.Condition{qdrant.NewMatchKeyword("status", statusFilter)},
+		req.Filter = &Filter{
+			Must: []*Condition{NewMatchKeyword("status", statusFilter)},
 		}
 	}
 	points, err := c.scrollAll(ctx, req)
@@ -181,11 +180,11 @@ func (c *Client) DismissDiscussion(ctx context.Context, discID, reason string) e
 }
 
 func (c *Client) closeDiscussion(ctx context.Context, discID, status, via, note, dismissNote string) error {
-	pointID := qdrant.NewID(pointUUIDForDiscID(discID))
-	existing, err := c.vs.Get(ctx, &qdrant.GetPoints{
+	pointID := NewID(pointUUIDForDiscID(discID))
+	existing, err := c.vs.Get(ctx, &GetPoints{
 		CollectionName: c.collDiscussions(),
-		Ids:            []*qdrant.PointId{pointID},
-		WithPayload:    qdrant.NewWithPayloadInclude("disc_id", "status"),
+		Ids:            []*PointId{pointID},
+		WithPayload:    NewWithPayloadInclude("disc_id", "status"),
 	})
 	if err != nil {
 		return err
@@ -197,13 +196,13 @@ func (c *Client) closeDiscussion(ctx context.Context, discID, status, via, note,
 		return fmt.Errorf("discussion %s is already %s", discID, s)
 	}
 
-	statusVal, _ := qdrant.NewValue(status)
-	viaVal, _ := qdrant.NewValue(via)
-	noteVal, _ := qdrant.NewValue(note)
-	dismissVal, _ := qdrant.NewValue(dismissNote)
-	updatedVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
+	statusVal, _ := NewValue(status)
+	viaVal, _ := NewValue(via)
+	noteVal, _ := NewValue(note)
+	dismissVal, _ := NewValue(dismissNote)
+	updatedVal, _ := NewValue(time.Now().UTC().Format(time.RFC3339))
 
-	payload := map[string]*qdrant.Value{
+	payload := map[string]*Value{
 		"status":        statusVal,
 		"resolved_via":  viaVal,
 		"resolved_note": noteVal,
@@ -212,20 +211,20 @@ func (c *Client) closeDiscussion(ctx context.Context, discID, status, via, note,
 	}
 
 	wait := true
-	_, err = c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	_, err = c.vs.SetPayload(ctx, &SetPayloadPoints{
 		CollectionName: c.collDiscussions(),
 		Wait:           &wait,
 		Payload:        payload,
-		PointsSelector: qdrant.NewPointsSelector(pointID),
+		PointsSelector: NewPointsSelector(pointID),
 	})
 	return err
 }
 
-// OpenDiscussionsFilter returns the Qdrant filter that restricts results to
+// OpenDiscussionsFilter returns the payload filter that restricts results to
 // open discussions only. Exported as a helper so tests can verify it directly.
-func OpenDiscussionsFilter() *qdrant.Filter {
-	return &qdrant.Filter{
-		Must: []*qdrant.Condition{qdrant.NewMatchKeyword("status", "open")},
+func OpenDiscussionsFilter() *Filter {
+	return &Filter{
+		Must: []*Condition{NewMatchKeyword("status", "open")},
 	}
 }
 
@@ -234,20 +233,20 @@ func OpenDiscussionsFilter() *qdrant.Filter {
 // discussions are returned — resolved and dismissed items are suppressed so
 // agents don't surface stale context.
 func (c *Client) SearchDiscussions(ctx context.Context, vector []float32, limit uint64, includeResolved bool) ([]Discussion, error) {
-	req := &qdrant.QueryPoints{
+	req := &QueryPoints{
 		CollectionName: c.collDiscussions(),
-		Query:          qdrant.NewQuery(vector...),
-		Limit:          qdrant.PtrOf(limit),
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Query:          NewQuery(vector...),
+		Limit:          PtrOf(limit),
+		WithPayload:    NewWithPayloadEnable(true),
 	}
 	if !includeResolved {
 		f := OpenDiscussionsFilter()
 		f.Must = append(f.Must, nonDegradedVectorCondition())
 		req.Filter = f
 	} else {
-		req.Filter = &qdrant.Filter{Must: []*qdrant.Condition{nonDegradedVectorCondition()}}
+		req.Filter = &Filter{Must: []*Condition{nonDegradedVectorCondition()}}
 	}
-	results, err := c.qdrantQuery(ctx, req)
+	results, err := c.vsQuery(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -259,15 +258,15 @@ func (c *Client) SearchDiscussions(ctx context.Context, vector []float32, limit 
 }
 
 func (c *Client) CountOpenDiscussions(ctx context.Context) (uint64, error) {
-	return c.vs.Count(ctx, &qdrant.CountPoints{
+	return c.vs.Count(ctx, &CountPoints{
 		CollectionName: c.collDiscussions(),
-		Filter: &qdrant.Filter{
-			Must: []*qdrant.Condition{qdrant.NewMatchKeyword("status", "open")},
+		Filter: &Filter{
+			Must: []*Condition{NewMatchKeyword("status", "open")},
 		},
 	})
 }
 
-func discussionFromPayload(pay map[string]*qdrant.Value) Discussion {
+func discussionFromPayload(pay map[string]*Value) Discussion {
 	return Discussion{
 		ID:           pay["disc_id"].GetStringValue(),
 		Topic:        pay["topic"].GetStringValue(),
@@ -283,7 +282,7 @@ func discussionFromPayload(pay map[string]*qdrant.Value) Discussion {
 	}
 }
 
-// turnsToAny serializes []Turn to []any for qdrant.TryValueMap encoding.
+// turnsToAny serializes []Turn to []any for TryValueMap encoding.
 func turnsToAny(turns []Turn) []any {
 	if len(turns) == 0 {
 		return nil
@@ -300,8 +299,8 @@ func turnsToAny(turns []Turn) []any {
 	return out
 }
 
-// extractTurns deserializes a Qdrant ListValue of struct values into []Turn.
-func extractTurns(v *qdrant.Value) []Turn {
+// extractTurns deserializes a list of struct values into []Turn.
+func extractTurns(v *Value) []Turn {
 	if v == nil {
 		return nil
 	}
@@ -368,13 +367,13 @@ func (c *Client) AppendTurn(ctx context.Context, discID string, turn Turn) (size
 		defer func() { _ = unlockFile(f) }()
 	}
 
-	pointID := qdrant.NewID(pointUUIDForDiscID(discID))
+	pointID := NewID(pointUUIDForDiscID(discID))
 
 	// Fetch current turns to append to them.
-	existing, err := c.vs.Get(ctx, &qdrant.GetPoints{
+	existing, err := c.vs.Get(ctx, &GetPoints{
 		CollectionName: c.collDiscussions(),
-		Ids:            []*qdrant.PointId{pointID},
-		WithPayload:    qdrant.NewWithPayloadEnable(true),
+		Ids:            []*PointId{pointID},
+		WithPayload:    NewWithPayloadEnable(true),
 	})
 	if err != nil {
 		return false, err
@@ -389,21 +388,21 @@ func (c *Client) AppendTurn(ctx context.Context, discID string, turn Turn) (size
 	}
 	newTurns := append(append([]Turn(nil), currentTurns...), turn)
 
-	turnsVal, err := qdrant.NewValue(turnsToAny(newTurns))
+	turnsVal, err := NewValue(turnsToAny(newTurns))
 	if err != nil {
 		return false, fmt.Errorf("encode turns: %w", err)
 	}
-	updatedVal, _ := qdrant.NewValue(time.Now().UTC().Format(time.RFC3339))
+	updatedVal, _ := NewValue(time.Now().UTC().Format(time.RFC3339))
 
 	wait := true
-	_, err = c.vs.SetPayload(ctx, &qdrant.SetPayloadPoints{
+	_, err = c.vs.SetPayload(ctx, &SetPayloadPoints{
 		CollectionName: c.collDiscussions(),
 		Wait:           &wait,
-		Payload: map[string]*qdrant.Value{
+		Payload: map[string]*Value{
 			"turns":      turnsVal,
 			"updated_at": updatedVal,
 		},
-		PointsSelector: qdrant.NewPointsSelector(pointID),
+		PointsSelector: NewPointsSelector(pointID),
 	})
 	if err != nil {
 		return false, err

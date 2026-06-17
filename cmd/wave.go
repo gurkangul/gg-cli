@@ -12,11 +12,11 @@ import (
 
 var waveCmd = &cobra.Command{
 	Use:   "wave",
-	Short: "Manage optional wave/milestone buckets — sprints (Memgraph only)",
+	Short: "Manage optional wave/milestone buckets — sprints (code graph only)",
 	Long: `Wave nodes group tasks into time-bounded sprints or milestones.
 Waves are OPTIONAL: projects that don't do time-based planning can ignore this
 command entirely — nothing else depends on waves existing.
-They live in Memgraph only — no Qdrant collection is created.
+They live in the embedded code graph (.gg/graph.db) only — no vector collection is created.
 
   gg wave add wave1 --name "Phase 1" --goal "Ship MVP" --start 2026-01-01 --end 2026-03-31
   gg wave list
@@ -76,7 +76,7 @@ func init() {
 		Use:   "migrate-tags",
 		Short: "Dry-run tag-to-wave migration (--apply to execute)",
 		Long: `Scan tasks with wave* tags (e.g. wave1, wave2) and report which would be
-assigned to Wave nodes. By default this is a dry-run — no Memgraph writes.
+assigned to Wave nodes. By default this is a dry-run — no code-graph writes.
 Pass --apply to create Wave nodes and write IN_WAVE edges.`,
 		RunE: runWaveMigrateTags,
 	}
@@ -282,5 +282,5 @@ func loadGraph() (*graph.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
-	return graph.New(&cfg.Memgraph, cfg.ProjectID)
+	return graph.New(cfg.DataDir, cfg.ProjectID)
 }

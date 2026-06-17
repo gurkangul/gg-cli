@@ -8,17 +8,15 @@ import (
 	"os"
 	"sort"
 	"strconv"
-
-	"github.com/qdrant/go-client/qdrant"
 )
 
-// BrainRecord is a single exported Qdrant point — payload only, no vector.
+// BrainRecord is a single exported stored point — payload only, no vector.
 type BrainRecord struct {
 	ID      string         `json:"id"`
 	Payload map[string]any `json:"payload"`
 }
 
-// BrainKind maps Qdrant collection suffixes to their canonical export file names.
+// BrainKind maps vector-store collection suffixes to their canonical export file names.
 var BrainKind = []string{
 	collSuffixDecisions,
 	collSuffixTasks,
@@ -29,18 +27,18 @@ var BrainKind = []string{
 	collSuffixBugs,
 }
 
-// ExportBrainCollection scrolls a single Qdrant collection and returns its
+// ExportBrainCollection scrolls a single vector-store collection and returns its
 // records sorted by ID — payload only, no vectors.
 func (c *Client) ExportBrainCollection(ctx context.Context, kind string) ([]BrainRecord, error) {
 	coll := c.projectID + "-" + kind
 	pageSize := uint32(256)
-	withVecs := qdrant.NewWithVectorsEnable(false)
-	withPay := qdrant.NewWithPayloadEnable(true)
+	withVecs := NewWithVectorsEnable(false)
+	withPay := NewWithPayloadEnable(true)
 
 	var all []BrainRecord
-	var offset *qdrant.PointId
+	var offset *PointId
 	for {
-		page, next, err := c.scroller.ScrollAndOffset(ctx, &qdrant.ScrollPoints{
+		page, next, err := c.scroller.ScrollAndOffset(ctx, &ScrollPoints{
 			CollectionName: coll,
 			Limit:          &pageSize,
 			Offset:         offset,

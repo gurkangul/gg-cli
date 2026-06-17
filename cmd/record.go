@@ -54,8 +54,8 @@ func init() {
 	recordCmd.Flags().StringVar(&recordStance, "stance", "accept", `stance: "accept" (decision) or "reject" (rejection)`)
 	recordCmd.Flags().StringVar(&recordDecisionStatus, "decision-status", "active", "decision lifecycle status: active, superseded, rejected")
 	recordCmd.Flags().StringVar(&recordRejectedAlternatives, "rejected-alternatives", "", "comma-separated approaches that were considered and rejected")
-	recordCmd.Flags().StringVar(&recordImplements, "implements", "", "TASK-X that implements this decision (writes Memgraph edge)")
-	recordCmd.Flags().StringVar(&recordRejects, "rejects", "", "decision UUID superseded by this one (writes Memgraph edge)")
+	recordCmd.Flags().StringVar(&recordImplements, "implements", "", "TASK-X that implements this decision (writes code-graph edge)")
+	recordCmd.Flags().StringVar(&recordRejects, "rejects", "", "decision UUID superseded by this one (writes code-graph edge)")
 	recordCmd.Flags().BoolVar(&recordPin, "pin", false, "pin this decision so it surfaces first in gg context overview regardless of age (for canon-grade, must-not-be-buried decisions)")
 	recordCmd.Flags().StringVar(&recordEvidence, "evidence", "", "how this was verified (commands run, live smoke, source ref) — empty surfaces as [unverified]")
 	addFromFlag(recordCmd)
@@ -130,7 +130,7 @@ func runRecord(cmd *cobra.Command, args []string) error {
 			}
 		}
 	} else {
-		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Qdrant unreachable — read served from JSONL (may miss cross-project context)")
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ vector store unavailable — read served from JSONL (may miss cross-project context)")
 	}
 
 	if stance == "reject" {
@@ -224,21 +224,21 @@ func runRecord(cmd *cobra.Command, args []string) error {
 // the source of truth. Memgraph is a derived view that can be rebuilt from the export.
 func writeGraphEdges(cmd *cobra.Command, ctx interface{ Done() <-chan struct{} }, dec store.Decision, implementsRef, rejectsRef string) {
 	cfg, err := config.Load()
-	if err != nil || cfg.Memgraph.URI == "" {
-		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ Memgraph unavailable — skipping graph edge write (Qdrant record is intact)")
+	if err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ code graph unavailable — skipping graph edge write (decision record is intact)")
 		return
 	}
 
-	gc, err := graph.New(&cfg.Memgraph, cfg.ProjectID)
+	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph init failed (%v) — skipping graph edges\n", err)
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph init failed (%v) — skipping graph edges\n", err)
 		return
 	}
 	defer func() { _ = gc.Close(cmd.Context()) }()
 
 	// Upsert the Decision node itself.
 	if uErr := gc.UpsertDecisionNode(cmd.Context(), dec.ID, dec.Text); uErr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph Decision node upsert failed: %v\n", uErr)
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph Decision node upsert failed: %v\n", uErr)
 		return
 	}
 
@@ -248,9 +248,9 @@ func writeGraphEdges(cmd *cobra.Command, ctx interface{ Done() <-chan struct{} }
 			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ --implements: %v\n", normErr)
 		} else {
 			if uErr := gc.UpsertTaskNode(cmd.Context(), taskRef, taskRef); uErr != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph Task node upsert failed: %v\n", uErr)
+				fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph Task node upsert failed: %v\n", uErr)
 			} else if eErr := gc.UpsertDecidesEdge(cmd.Context(), dec.ID, taskRef); eErr != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph DECIDES edge failed: %v\n", eErr)
+				fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph DECIDES edge failed: %v\n", eErr)
 			} else {
 				fmt.Fprintf(cmd.ErrOrStderr(), "  Graph: (Decision)-[:DECIDES]->(%s)\n", taskRef)
 			}
@@ -259,9 +259,9 @@ func writeGraphEdges(cmd *cobra.Command, ctx interface{ Done() <-chan struct{} }
 
 	if rejectsRef != "" {
 		if uErr := gc.UpsertDecisionNode(cmd.Context(), rejectsRef, rejectsRef); uErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph rejected Decision node upsert failed: %v\n", uErr)
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph rejected Decision node upsert failed: %v\n", uErr)
 		} else if eErr := gc.UpsertRejectsEdge(cmd.Context(), dec.ID, rejectsRef); eErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ Memgraph REJECTS edge failed: %v\n", eErr)
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚠ code graph REJECTS edge failed: %v\n", eErr)
 		} else {
 			fmt.Fprintf(cmd.ErrOrStderr(), "  Graph: (Decision)-[:REJECTS]->(Decision %s)\n", rejectsRef)
 		}

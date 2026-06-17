@@ -10,7 +10,7 @@ func TestBuildAutoCanon_FiltersNoiseDedupsKeepsImportant(t *testing.T) {
 	decs := []Decision{
 		{ID: "1", Text: "bypass rationale: TASK-468 shipped", Status: "active", CreatedAt: "2026-06-07"},
 		{ID: "2", Text: "bypass rationale: TASK-468 shipped", Status: "active", CreatedAt: "2026-06-07"},
-		{ID: "3", Text: "JSONL is source of truth; Qdrant is derived", Tags: []string{"architecture"}, Status: "active", CreatedAt: "2024-01-01"},
+		{ID: "3", Text: "JSONL is source of truth; the vector store is derived", Tags: []string{"architecture"}, Status: "active", CreatedAt: "2024-01-01"},
 		{ID: "4", Text: "Use cobra for the CLI", Status: "active", CreatedAt: "2026-06-01"},
 		{ID: "5", Text: "Use cobra for the CLI", Status: "active", CreatedAt: "2026-06-02"},
 		{ID: "6", Text: "an old superseded thing", Status: "superseded", CreatedAt: "2026-06-03"},

@@ -194,14 +194,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// --- Backend provisioning (Docker is OPTIONAL) ---
-	// With the embedded SQLite stores (the default) no Docker container is
-	// required: the vector/graph DBs are created on first use under .gg/.
-	// provisionInfra only brings up Docker services that an explicitly-selected
-	// SERVER backend (qdrant/memgraph) needs, and warns — never fails — when the
-	// embedding endpoint (native Ollama) is unreachable. It returns the resolved
-	// config so the rest of init can report accurate, backend-aware guidance.
-	infraCfg, infra := provisionInfra(parentCtx, composePath, ggDir)
+	// --- Provisioning (no Docker required) ---
+	// The embedded SQLite stores (vector + code graph) are created on first use
+	// under .gg/. provisionInfra only probes the optional embedding endpoint
+	// (native Ollama) and warns — never fails — when it is unreachable. It
+	// returns the resolved config so the rest of init can report guidance.
+	infraCfg, infra := provisionInfra(parentCtx, ggDir)
 
 	// Register this project in ~/.gg/projects.json so `gg system sync` can
 	// propagate future contract/hook updates without the user scanning the

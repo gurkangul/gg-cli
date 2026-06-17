@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/embedding"
@@ -55,7 +53,7 @@ var (
 	systemSyncRunCommand = runGGIn
 
 	systemSyncNewQdrantClient = func(cfg *config.Config, ggDir string) (systemSyncQdrant, error) {
-		return store.New(&cfg.Qdrant, ggDir, cfg.ProjectID)
+		return store.New(ggDir, cfg.ProjectID)
 	}
 
 	systemSyncTrackerHealthTimeout = 2 * time.Second
@@ -329,11 +327,7 @@ func systemSyncQdrantUnavailable(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	code := status.Code(err)
-	if code == codes.Unavailable || code == codes.DeadlineExceeded {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, store.ErrQdrantDown) {
 		return true
 	}
 	msg := strings.ToLower(err.Error())
@@ -346,9 +340,6 @@ func systemSyncQdrantUnavailable(err error) bool {
 func systemSyncAlreadyExists(err error) bool {
 	if err == nil {
 		return false
-	}
-	if status.Code(err) == codes.AlreadyExists {
-		return true
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "already exists")
 }
