@@ -165,6 +165,13 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	// GG_NO_AUTO_RECONCILE=1.
 	reconcileOutboxIfNeeded(cmd, os.Stdout, sessionStartStderr)
 
+	// BUG-091: routine-drain the agent firehose. Auto-archive audience=agents
+	// broadcasts older than the default 30d cutoff so month-old "TASK-N done"
+	// pings retire on their own (recent ones stay; JSONL is preserved). Bounded
+	// and failure-tolerant — never blocks or fails session-start. Opt out with
+	// GG_NO_AUTO_DRAIN=1.
+	autoDrainInboxIfNeeded(cmd, os.Stdout, sessionStartStderr)
+
 	// TASK-468: inject the distilled project canon so a fresh agent starts with
 	// the senior-dev knowledge, not just a searchable ledger. Best-effort.
 	emitProjectCanon(cmd.Context(), canonGGDir)

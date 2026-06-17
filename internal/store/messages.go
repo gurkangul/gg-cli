@@ -209,6 +209,18 @@ var errMutationNoop = errors.New("mutation noop")
 // older than `before` as archived (TASK-470). Archived messages drop out of the
 // default inbox but stay in JSONL (forward-only — never deleted), so the inbox
 // stops bloating with stale "TASK-N started/done" pings. Returns the count.
+//
+// BUG-094: this is a bulk-maintenance op that can touch 500-1000 broadcasts. The
+// old path called applyBrainMutation in a per-message loop, which was O(N²) (each
+// call re-folds the whole messages JSONL via brain.ReadLatest, and AppendCAS
+// re-scans the whole file for the version guard) plus N separate vector-store
+// SetPayload round-trips — at 500+ messages that blew the 10s command deadline.
+//
+// The batched path folds the JSONL exactly once, appends one forward-only
+// archived=true line per message (no per-line full-file CAS rescan), and mirrors
+// every archived point to the store in a SINGLE SetPayload transaction. The
+// forward-only JSONL guarantee is preserved: lines are only appended (never
+// deleted), and fold's last-write-wins yields archived=true on rebuild.
 func (c *Client) ArchiveAgentBroadcasts(ctx context.Context, before time.Time) (int, error) {
 	points, err := c.scrollAll(ctx, &ScrollPoints{
 		CollectionName: c.collMessages(),
@@ -220,7 +232,10 @@ func (c *Client) ArchiveAgentBroadcasts(ctx context.Context, before time.Time) (
 	if err != nil {
 		return 0, err
 	}
-	n := 0
+
+	// Collect the UUIDs that actually need archiving (audience=agents, not yet
+	// archived, older than the cutoff).
+	stale := make([]string, 0, len(points))
 	for _, p := range points {
 		pay := p.GetPayload()
 		if pay["archived"].GetBoolValue() {
@@ -230,18 +245,66 @@ func (c *Client) ArchiveAgentBroadcasts(ctx context.Context, before time.Time) (
 		if perr != nil || !ts.Before(before) {
 			continue
 		}
-		id := p.GetId().GetUuid()
-		mErr := c.applyBrainMutation(ctx, "messages", c.collMessages(), OutboxKindMessage, id, "", func(raw map[string]any) error {
-			raw["archived"] = true
-			return nil
-		})
-		if errors.Is(mErr, ErrRecordNotFound) {
+		stale = append(stale, p.GetId().GetUuid())
+	}
+	if len(stale) == 0 {
+		return 0, nil
+	}
+
+	// Fold the messages JSONL ONCE to recover each record's current full payload
+	// and version, instead of re-folding per message inside applyBrainMutation.
+	entries, err := brain.ReadLatest(c.dataDir, "messages")
+	if err != nil {
+		return 0, err
+	}
+	latest := make(map[string]brain.Entry, len(entries))
+	for _, e := range entries {
+		latest[e.UUID] = e
+	}
+
+	// Append one forward-only archived=true line per stale message under a single
+	// pass. brain.Append (not AppendCAS) avoids the per-line whole-file version
+	// rescan; we already hold the folded current version and bump it ourselves so
+	// fold/replay reconstructs complete state (full payload appended every time).
+	archived := make([]*PointId, 0, len(stale))
+	n := 0
+	for _, id := range stale {
+		e, ok := latest[id]
+		if !ok {
+			// Record exists only in the vector store (no JSONL entry) — nothing to
+			// persist durably; skip, mirroring the old ErrRecordNotFound branch.
 			continue
 		}
-		if mErr != nil {
-			return n, mErr
+		raw := cloneAnyMap(e.Payload)
+		raw["archived"] = true
+		raw["updated_at"] = time.Now().UTC().Format(time.RFC3339)
+		raw["version"] = brain.PayloadVersion(e.Payload) + 1
+		author, _ := raw["author"].(string)
+		if err := brain.Append(c.dataDir, "messages", id, author, raw); err != nil {
+			return n, err
 		}
+		archived = append(archived, NewID(id))
 		n++
+	}
+	if n == 0 {
+		return 0, nil
+	}
+
+	// Mirror every archived point to the store in ONE SetPayload transaction
+	// (partial merge of archived=true), replacing N round-trips with one. A store
+	// failure here does not lose data — JSONL is the durable source of truth and
+	// `gg doctor --reconcile` repairs the index from it.
+	archivedVal, _ := NewValue(true)
+	wait := true
+	if _, setErr := c.vs.SetPayload(ctx, &SetPayloadPoints{
+		CollectionName: c.collMessages(),
+		Wait:           &wait,
+		Payload: map[string]*Value{
+			"archived": archivedVal,
+		},
+		PointsSelector: NewPointsSelector(archived...),
+	}); setErr != nil {
+		return n, &OutboxQueued{Kind: OutboxKindMessage, UUID: archived[0].GetUuid(), Cause: setErr}
 	}
 	return n, nil
 }
