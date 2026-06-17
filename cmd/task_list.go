@@ -361,7 +361,7 @@ type relatedContext struct {
 const withContextLimit uint64 = 3
 const withContextMaxBytes = 3072 // ~800 tokens hard cap
 
-// fetchRelatedContext embeds the task title+detail and searches Qdrant for top-3 items.
+// fetchRelatedContext embeds the task title+detail and searches the embedded vector store for top-3 items.
 func fetchRelatedContext(d *deps, t *store.Task) *relatedContext {
 	query := t.Title
 	if t.Detail != "" {
@@ -449,7 +449,7 @@ func renderTaskGetCompact(w io.Writer, t *store.Task) {
 // renderRelatedContext writes the === Related Context === block to w.
 // Each item is a single line (ID/date + 1-sentence summary). The block is
 // capped at withContextMaxBytes to enforce the ≤800-token hard cap.
-// When rc is nil (Qdrant unavailable or embed failed), writes a brief notice.
+// When rc is nil (vector store unavailable or embed failed), writes a brief notice.
 func renderRelatedContext(w *bytes.Buffer, rc *relatedContext) {
 	fmt.Fprintln(w, "\n=== Related Context ===")
 

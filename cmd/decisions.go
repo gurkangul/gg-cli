@@ -6,6 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/brain"
+	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -66,9 +68,10 @@ func runDecisions(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s", withServiceHint("vector store health check timed out — retry or run gg doctor", svcVectorStore))
 	}
 	if d.qdrantDown {
-		// Offline fallback reuses the search JSONL scan; an empty query scans
-		// recent decisions, a non-empty query scores by text match.
-		return serveSearchFromJSONL(cmd, query)
+		// Offline fallback scans the decisions JSONL only — same kind as the
+		// online path (no rejections/tasks/bugs/notes leak). An empty query
+		// returns recent decisions, a non-empty query scores by text match.
+		return serveDecisionsFromJSONL(cmd, query)
 	}
 
 	ctx, cancel := withTimeout(cmd.Context())
@@ -79,7 +82,7 @@ func runDecisions(cmd *cobra.Command, args []string) error {
 		decisions, err = d.store.ListDecisions(ctx, int(decisionsLimit), decisionsIncludeSuperseded)
 		if err != nil {
 			if store.IsCollectionNotFoundError(err) {
-				return serveSearchFromJSONL(cmd, query)
+				return serveDecisionsFromJSONL(cmd, query)
 			}
 			return fmt.Errorf("list decisions: %w", err)
 		}
@@ -95,7 +98,7 @@ func runDecisions(cmd *cobra.Command, args []string) error {
 		decisions, err = d.store.SearchDecisions(ctx, vector, semanticLimit, decisionsIncludeSuperseded)
 		if err != nil {
 			if store.IsCollectionNotFoundError(err) {
-				return serveSearchFromJSONL(cmd, query)
+				return serveDecisionsFromJSONL(cmd, query)
 			}
 			return fmt.Errorf("search decisions: %w", err)
 		}
@@ -103,4 +106,42 @@ func runDecisions(cmd *cobra.Command, args []string) error {
 
 	// Reuse the shared search renderer — decisions only (no rejections/tasks/etc.).
 	return printSearchResults(cmd, query, decisions, nil, nil, nil, nil, "", time.Time{})
+}
+
+// serveDecisionsFromJSONL is the offline fallback for `gg decisions`. Unlike the
+// generic serveSearchFromJSONL (used by `gg search`), it scans ONLY the decisions
+// JSONL so the offline output matches the online ListDecisions/SearchDecisions
+// path — no rejections/tasks/bugs/notes/messages leak (BUG-092c part 2). An empty
+// query returns recent decisions; a non-empty query scores by text match. The
+// renderer is the same one the online decisions output uses, with every non-decision
+// slice nil.
+func serveDecisionsFromJSONL(cmd *cobra.Command, query string) error {
+	const banner = "⚠ vector index not built — decisions served from JSONL (run gg reembed); may miss cross-project context"
+
+	ggDir := config.GGDirOrEmpty()
+	if ggDir == "" {
+		// No brain dir to scan — fall back to the shared LKG cache reader.
+		return serveSearchFromCache(cmd, query)
+	}
+
+	matches, err := brain.SearchByTextScored(ggDir, "decisions", query)
+	if err != nil {
+		// No decisions JSONL (pre-JSONL brain) — fall back to the LKG cache.
+		return serveSearchFromCache(cmd, query)
+	}
+
+	scores := searchScoreOverrides{}
+	var decisions []store.Decision
+	for _, match := range matches {
+		dec := decisionFromJSONLEntry(match.Entry)
+		// Mirror the online suppression: hide superseded/rejected decisions
+		// unless --include-superseded was passed.
+		if !decisionsIncludeSuperseded && dec.Status != "" && dec.Status != "active" {
+			continue
+		}
+		decisions = append(decisions, dec)
+		scores.set("decision", dec.ID, match.Score)
+	}
+
+	return printSearchResultsWithBackendScoresAndMessages(cmd, query, decisions, nil, nil, nil, nil, nil, banner, time.Time{}, "jsonl", scores)
 }

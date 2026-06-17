@@ -42,7 +42,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	// Tasks summary — each sub-count is allowed to fail independently with "?"
-	// so the user sees whatever is available when Qdrant is partially degraded.
+	// so the user sees whatever is available when the embedded vector store is partially degraded.
 	counts := map[string]struct {
 		n   uint64
 		err error
@@ -142,7 +142,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		indexHooksOn = indexHooksInstalled(root)
 	}
 
-	// Outbox backlog — pending Memgraph writes from crashed gg index runs.
+	// Outbox backlog — pending code-graph outbox writes from crashed gg index runs.
 	// Unbounded growth signals that `gg doctor --reconcile` is never run.
 	var outboxCount int
 	var outboxOldestAge string
@@ -245,7 +245,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Outbox — pending Memgraph writes. Any count > 0 is a signal the
+		// Outbox — pending code-graph outbox writes. Any count > 0 is a signal the
 		// reconcile loop has not run since the last crash; the oldest-age
 		// line tells the operator how stale the backlog is.
 		if outboxCount > 0 {
