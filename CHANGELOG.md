@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-06-17
+
+Polish + bug-fix release on top of 2.0.0: completes the backend-neutral cleanup,
+adds self-consistency surfaces, and fixes the inbox firehose + audit findings.
+
+### Added
+
+- `gg decisions [query]` — direct decisions view/search (previously reachable only
+  via `gg search` / `gg context`; the verb was surfaced in telemetry but not runnable).
+- `gg canon show --compact` flag (consistent with `gg context`/`gg search`).
+- Live decision↔task drift badge in `gg canon show` (⚡ CONFLICT / ⚠ live: pending),
+  reusing the `gg context` conflict detector so canon can no longer tell a
+  fresher-but-wronger story than the ledger.
+- Routine firehose drain: `gg session-start` bounded auto-archive of `audience=agents`
+  broadcasts older than 30d (failure-tolerant; JSONL preserved).
+
+### Changed
+
+- `gg telemetry summary`: bars normalized to the max count; leaf/subcommand verbs
+  separated from top-level commands; bare `gg telemetry` now defaults to `summary`.
+- `gg status` MESSAGES: labeled unread breakdown ("N project-wide (+M agent-broadcasts)")
+  instead of one ambiguous count.
+- `gg task <unknown-subcommand>` errors with a suggestion; `gg task show` aliases to `get`.
+- Backend-neutral wording completed: the `gg init` config template no longer writes dead
+  `qdrant:`/`memgraph:` blocks (eliminates the per-command "unrecognized key(s)" warning);
+  `--json` contract keys, hints, internal identifiers, help text, and 14 prose/CLI docs
+  de-branded to the embedded vector store / code graph.
+
+### Fixed
+
+- Inbox unread-count inconsistency across `status`/`inbox`/`--include-agents` and the
+  unbounded `audience=agents` broadcast pileup (BUG-091).
+- `gg inbox archive` blew the 10s command deadline at 500+ broadcasts (BUG-094) —
+  the archive mutation is now batched.
+- `gg decisions` offline (store-down) path returned all record kinds instead of
+  decisions only (BUG-092c).
+- `gg canon show` drift marker substring-matched prefix IDs ("TASK-49" vs "TASK-499") —
+  now anchored to exact TASK/BUG tokens.
+- Inbox role blind-spot hint mis-fired under `--include-agents` and time filters
+  (`--since`/`--older-than`) (TASK-500).
+- Reconcile-from-JSONL test referenced the removed Qdrant path (BUG-090) — rewritten
+  to recover from the embedded SQLite store.
+
 ## [2.0.0] - 2026-06-17
 
 ### Changed
