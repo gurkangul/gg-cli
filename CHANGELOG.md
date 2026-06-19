@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-06-19
+
+Patch: backend-neutral wording follow-up. Qdrant/Memgraph are fully removed
+(embedded SQLite vector + graph since 2.x); this neutralizes the last
+user-facing "qdrant" string. Internal Go symbol names and the persisted
+`qdrant_id` node-identity key are intentionally retained — renaming the latter
+would be a graph-store migration, so it stays for forward storage compatibility.
+
+### Changed
+
+- Neutralize the last user-facing "qdrant" wording: `DeleteTaskNode`'s empty-id
+  guard now returns `task id is required` (was `taskQdrantID is required`). No
+  behavior, schema, or storage-format change.
+
 ## [2.2.0] - 2026-06-17
 
 Distribution + code-intelligence release: gg's brain is now reachable over MCP by

@@ -73,7 +73,7 @@ func (c *Client) UpsertBlocksEdge(ctx context.Context, gaterQdrantID, gatedQdran
 // Idempotent: a no-op if the node doesn't exist.
 func (c *Client) DeleteTaskNode(ctx context.Context, taskQdrantID string) error {
 	if taskQdrantID == "" {
-		return fmt.Errorf("taskQdrantID is required")
+		return fmt.Errorf("task id is required")
 	}
 	_, cleanup, err := c.runQuery(ctx,
 		"MATCH (t:Task {qdrant_id: $tid, project_id: $pid}) DETACH DELETE t",
