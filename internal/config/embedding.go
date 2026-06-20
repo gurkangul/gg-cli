@@ -14,6 +14,12 @@ const (
 	BackendVoyage = "voyage"
 )
 
+// EmbedModelEnv overrides the Ollama embedding model for the current process
+// only — it is read at load time and NEVER written back to config.yaml. A single
+// `export GG_EMBED_MODEL=qwen3-embedding:0.6b` therefore switches the local
+// embedding model across EVERY gg project without editing each per-machine config.
+const EmbedModelEnv = "GG_EMBED_MODEL"
+
 type EmbeddingConfig struct {
 	// Backend selects the embedding provider. Empty/"ollama" (default) uses the
 	// local Ollama HTTP API at Host; "voyage" uses the Voyage AI cloud API.

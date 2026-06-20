@@ -207,11 +207,17 @@ func (s *dashboardServer) clientFor(id string) (*projClient, error) {
 	if hErr := client.HealthCheck(hctx); hErr != nil {
 		pc.qdrantDown = true
 	}
-	dim := store.VectorSize
-	if meta, readErr := embedding.ReadMeta(ggDir); readErr == nil && meta != nil {
-		dim = meta.Dim
+	// Load per-project config to get the project's own embedding model and dim —
+	// different projects can legitimately use different models. Fall back to the
+	// global base config only if the project config is unreadable.
+	projCfg, cfgErr := config.LoadFromGGDir(ggDir)
+	if cfgErr != nil {
+		projCfg = s.base
 	}
-	pc.embedder = embedding.New(&s.base.Embedding, dim)
+	dimCtx, dimCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer dimCancel()
+	dim := embedding.EffectiveDim(dimCtx, &projCfg.Embedding, ggDir, store.VectorSize)
+	pc.embedder = embedding.New(&projCfg.Embedding, dim)
 	s.cache[id] = pc
 	return pc, nil
 }

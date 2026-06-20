@@ -128,12 +128,21 @@ func runReembed(cmd *cobra.Command, _ []string) error {
 	fmt.Println(strings.Repeat("─", 50))
 	fmt.Println("Migration complete:")
 	total := 0
+	failed := 0
 	for _, r := range results {
-		if r.Migrated > 0 || r.Skipped > 0 {
-			fmt.Printf("  %-40s  migrated=%d  skipped=%d\n", r.Collection, r.Migrated, r.Skipped)
+		if r.Migrated > 0 || r.Skipped > 0 || r.Failed > 0 {
+			line := fmt.Sprintf("  %-40s  migrated=%d  skipped=%d", r.Collection, r.Migrated, r.Skipped)
+			if r.Failed > 0 {
+				line += fmt.Sprintf("  failed=%d", r.Failed)
+			}
+			fmt.Println(line)
 		}
 		total += r.Migrated
+		failed += r.Failed
 	}
 	fmt.Printf("\nTotal re-embedded: %d point(s). Model: %s (%d-dim)\n", total, effectiveModel, newDim)
+	if failed > 0 {
+		return fmt.Errorf("%d point(s) could not be embedded — still in JSONL; re-run `gg reembed` to retry", failed)
+	}
 	return nil
 }

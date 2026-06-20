@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-06-20
+
+Configurable local embedding model. gg's Ollama backend can now point at any
+embedding model — not just the 768-dim default — and you can switch it across
+every project with one environment variable. Changing models is a `gg reembed` away.
+
+### Added
+
+- `GG_EMBED_MODEL` environment variable overrides the Ollama embedding model for
+  the current process (read at config load, never written to `config.yaml`). A
+  single `export GG_EMBED_MODEL=qwen3-embedding:0.6b` switches the model for every
+  gg project at once. Ignored under the Voyage backend.
+- `gg reembed` now retries transient embedder failures and skips (with a warning)
+  any single record the model persistently rejects, so one Ollama model-runner
+  hiccup on a large input no longer aborts an entire migration. It still fails fast
+  when many records fail consecutively (model genuinely unavailable). Skipped
+  records stay in the JSONL source of truth and are retried on the next `gg reembed`.
+
+### Fixed
+
+- The Ollama embedding dimension is now resolved authoritatively from
+  `embedding-meta.json` (probed once on first run for a fresh project) instead of
+  being hardcoded to 768 on the everyday search / record / MCP / init paths.
+  Switching to a non-768 model (e.g. `qwen3-embedding:0.6b` = 1024) no longer trips
+  a false "embedding model mismatch — run gg reembed" loop after reembedding.
+  `gg doctor` now checks the live vector size against the resolved dim, not 768.
+
+### Notes
+
+- The shipped default stays `nomic-embed-text` (768-dim) — no forced model pull on
+  existing installs. `store.VectorSize` (768) remains only the Ollama first-run
+  fallback. The persisted `qdrant_id` node-identity key is unchanged.
+
 ## [2.2.1] - 2026-06-19
 
 Patch: backend-neutral wording follow-up. Qdrant/Memgraph are fully removed

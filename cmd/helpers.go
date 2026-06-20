@@ -45,6 +45,60 @@ type deps struct {
 	qdrantSlow bool // true when Qdrant health check timed out — reachable but slow
 }
 
+// resolveEmbeddingDim is the single seam that keeps the embedding-meta.json guard
+// and the Generator's expectedDim in agreement. It resolves the authoritative dim
+// and validates it against stored meta via CheckMeta — which also records the meta
+// on first run. Returning ONE dim for both guard and generator prevents the false
+// ErrModelMismatch loop a non-768 Ollama model used to trigger.
+//
+// On Ollama first run (no meta yet) this probes the live model. If the probe fails
+// (Ollama down / model not pulled), it uses the 768 fallback for the in-process dim
+// but does NOT call CheckMeta — so it does not stamp meta{model,768} with a wrong
+// default that would cause a spurious mismatch once the model becomes available.
+func resolveEmbeddingDim(cfg *config.Config, ggDir string) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+	defer cancel()
+
+	var (
+		dim         int
+		authorative bool // false = probe failed, skip writing meta
+	)
+
+	if cfg.Embedding.ResolvedBackendName() == config.BackendVoyage {
+		// Voyage: always deterministic — no meta or network needed.
+		dim = embedding.EffectiveDim(ctx, &cfg.Embedding, ggDir, store.VectorSize)
+		authorative = true
+	} else {
+		// Ollama: read existing meta first (no network, authoritative in steady state).
+		if meta, err := embedding.ReadMeta(ggDir); err == nil && meta != nil && meta.Dim > 0 {
+			dim = meta.Dim
+			authorative = true
+		} else {
+			// First run — probe the live model so we record its true dim.
+			// If the probe fails (Ollama unreachable / model not pulled), use the
+			// 768 fallback but DON'T write meta: stamping meta{model,768} for a
+			// 1024-dim model would cause a spurious mismatch on the next run.
+			vec, probeErr := embedding.New(&cfg.Embedding, 0).Generate(ctx, "dimension probe")
+			if probeErr == nil && len(vec) > 0 {
+				dim = len(vec)
+				authorative = true
+			} else {
+				dim = store.VectorSize // fallback; meta not written
+				fmt.Fprintf(os.Stderr, "warning: embedding model unreachable — using %d-dim fallback; start Ollama and pull the model, then re-run or run `gg reembed`\n", dim)
+			}
+		}
+	}
+
+	// Only validate/write meta when the dim is authoritative. Skipping CheckMeta
+	// on probe failure prevents persisting a wrong dim that would need `gg reembed`.
+	if authorative {
+		if err := embedding.CheckMeta(ggDir, embedding.EffectiveModelIdentity(&cfg.Embedding), dim); err != nil {
+			return 0, err
+		}
+	}
+	return dim, nil
+}
+
 func loadDeps(needEmbedding bool) (d *deps, err error) {
 	cfg, err := config.Load()
 	if err != nil {
@@ -55,20 +109,12 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 		return nil, err
 	}
 
-	// Fail-fast if the configured embedding backend/model differs from the one
-	// used to create existing Qdrant collections. Mixed-model collections produce
-	// broken recall because vectors from different models are not comparable. The
-	// identity is backend-qualified (e.g. "voyage:voyage-3.5-lite") so switching
-	// backends is detected as a mismatch, not silently mixed.
-	if metaErr := embedding.CheckMeta(ggDir, embedding.EffectiveModelIdentity(&cfg.Embedding), embedding.EffectiveDim(&cfg.Embedding, store.VectorSize)); metaErr != nil {
-		return nil, metaErr
-	}
-
-	// Resolve the expected embedding dimension from the meta file. On first
-	// run CheckMeta has already written the meta, so ReadMeta will succeed.
-	dim := embedding.EffectiveDim(&cfg.Embedding, store.VectorSize)
-	if meta, readErr := embedding.ReadMeta(ggDir); readErr == nil && meta != nil {
-		dim = meta.Dim
+	// Resolve the authoritative embedding dim and fail-fast if the configured
+	// model/backend differs from the one the collections were built with — mixed-model
+	// collections give broken recall (vectors from different models aren't comparable).
+	dim, err := resolveEmbeddingDim(cfg, ggDir)
+	if err != nil {
+		return nil, err
 	}
 
 	client, err := store.New(ggDir, cfg.ProjectID)
@@ -125,13 +171,9 @@ func loadDepsReadOnly(needEmbedding bool) (d *deps, err error) {
 		return nil, err
 	}
 
-	if metaErr := embedding.CheckMeta(ggDir, embedding.EffectiveModelIdentity(&cfg.Embedding), embedding.EffectiveDim(&cfg.Embedding, store.VectorSize)); metaErr != nil {
-		return nil, metaErr
-	}
-
-	dim := embedding.EffectiveDim(&cfg.Embedding, store.VectorSize)
-	if meta, readErr := embedding.ReadMeta(ggDir); readErr == nil && meta != nil {
-		dim = meta.Dim
+	dim, err := resolveEmbeddingDim(cfg, ggDir)
+	if err != nil {
+		return nil, err
 	}
 
 	client, err := store.New(ggDir, cfg.ProjectID)

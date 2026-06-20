@@ -36,7 +36,7 @@ type ollamaBackend struct {
 func newOllamaBackend(cfg *config.EmbeddingConfig) *ollamaBackend {
 	return &ollamaBackend{
 		host:   cfg.Host,
-		model:  cfg.Model,
+		model:  EffectiveModel(cfg), // respects GG_EMBED_MODEL without mutating cfg
 		client: &http.Client{Timeout: 30 * time.Second},
 	}
 }

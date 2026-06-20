@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gurkangul/gg-cli/internal/brain"
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/graph"
 )
@@ -61,13 +62,13 @@ func doctorCheckEmbeddedVector(cmd *cobra.Command, cfg *config.Config, report *d
 	default:
 		report.ok("vector collections", "all 7 collections present")
 	}
-	doctorReportVectorCounts(ctx, c, report)
+	doctorReportVectorCounts(ctx, c, ggDir, report)
 }
 
 // doctorReportVectorCounts reports per-collection payload counts and flags an
 // all-empty store with a reembed hint. Shared by the embedded check; the count
 // methods are backend-agnostic (implemented on *store.Client).
-func doctorReportVectorCounts(ctx context.Context, c qdrantHealthChecker, report *doctorReport) {
+func doctorReportVectorCounts(ctx context.Context, c qdrantHealthChecker, ggDir string, report *doctorReport) {
 	counter, ok := c.(interface {
 		CollectionPayloadCounts(context.Context) (map[string]uint64, error)
 	})
@@ -92,6 +93,33 @@ func doctorReportVectorCounts(ctx context.Context, c qdrantHealthChecker, report
 		return
 	}
 	report.ok("vector payload counts", strings.Join(parts, ", "))
+
+	// Check for drift: JSONL record count vs indexed vector count. A gap means
+	// some records failed to embed during a previous `gg reembed` and are sitting
+	// unindexed in the JSONL source of truth.
+	doctorCheckJSONLDrift(ggDir, counts, report)
+}
+
+// doctorCheckJSONLDrift compares per-collection JSONL record counts against
+// indexed vector counts and warns when records are present in JSONL but absent
+// from the vector store. This surfaces `gg reembed` failures that left records
+// partially indexed.
+func doctorCheckJSONLDrift(ggDir string, vectorCounts map[string]uint64, report *doctorReport) {
+	var driftParts []string
+	for _, kind := range brainKinds {
+		entries, _, err := brain.ReadAllWithCount(ggDir, kind)
+		if err != nil {
+			continue // missing JSONL is not a drift error
+		}
+		jsonlCount := uint64(len(entries))
+		vectorCount := vectorCounts[kind]
+		if jsonlCount > vectorCount {
+			driftParts = append(driftParts, fmt.Sprintf("%s: %d in JSONL, %d indexed", kind, jsonlCount, vectorCount))
+		}
+	}
+	if len(driftParts) > 0 {
+		report.warn("vector drift", fmt.Sprintf("JSONL ahead of index — run `gg reembed`: %s", strings.Join(driftParts, "; ")))
+	}
 }
 
 // doctorCheckEmbeddedGraph verifies the embedded SQLite graph store. graph.db is

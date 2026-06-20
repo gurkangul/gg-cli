@@ -3,6 +3,8 @@ package embedding
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gurkangul/gg-cli/internal/config"
@@ -85,6 +87,22 @@ func resolveBackendName(cfg *config.EmbeddingConfig) string {
 // CheckMeta uses this so a backend switch trips ErrModelMismatch.
 func (g *Generator) ModelIdentity() string { return g.model }
 
+// EffectiveModel returns the Ollama model string that will actually be used —
+// GG_EMBED_MODEL env override if set, otherwise cfg.Model. A no-op under the
+// Voyage backend (returns cfg.Model unchanged; Voyage picks its model from
+// cfg.Voyage.Model). This is the single source of truth for which model string
+// the backend sends to Ollama, so EffectiveModelIdentity and newOllamaBackend
+// both read it instead of cfg.Model directly — the struct is never mutated,
+// so Save() cannot persist an env override into config.yaml.
+func EffectiveModel(cfg *config.EmbeddingConfig) string {
+	if resolveBackendName(cfg) == config.BackendOllama {
+		if m := strings.TrimSpace(os.Getenv(config.EmbedModelEnv)); m != "" {
+			return m
+		}
+	}
+	return cfg.Model
+}
+
 // EffectiveModelIdentity returns the meta identity for cfg WITHOUT constructing
 // a live backend or making any network call. It must agree with the identity a
 // Generator built from the same cfg reports, so CheckMeta and the generator
@@ -98,19 +116,42 @@ func EffectiveModelIdentity(cfg *config.EmbeddingConfig) string {
 		}
 		return "voyage:" + model
 	}
-	return cfg.Model
+	return EffectiveModel(cfg)
 }
 
-// EffectiveDim returns the vector dimension cfg's backend will produce, used to
-// stamp/validate embedding-meta.json. For Ollama the dim is model-defined and
-// only known by probing the server, so the caller's fallback (store.VectorSize)
-// is returned. For Voyage the dim is the configured output_dim (deterministic).
-func EffectiveDim(cfg *config.EmbeddingConfig, fallback int) int {
+// EffectiveDim returns the vector dimension cfg's backend produces. It is the
+// SINGLE source of truth for both the embedding-meta.json dim guard (CheckMeta)
+// and the Generator's expectedDim — if those two disagree, CheckMeta trips a
+// false ErrModelMismatch (the bug that bit a switch to a non-768 Ollama model:
+// the generator used meta.Dim=1024 while the guard used the 768 fallback).
+//
+//   - Voyage: the configured output_dim (deterministic; no network, no meta).
+//   - Ollama with embedding-meta.json present: the recorded meta.Dim — the
+//     authoritative steady-state answer, with NO network call.
+//   - Ollama without meta (first run): one live probe of the configured model so
+//     a non-768 model (e.g. qwen3-embedding:0.6b → 1024) is recorded at its true
+//     dim instead of being forced to the nomic fallback.
+//   - Ollama, no meta, probe unavailable (server down / model missing): the
+//     fallback (store.VectorSize, the nomic 768 default). A wrong stamp here is
+//     self-healing — `gg reembed` probes and rewrites meta with the real dim.
+//
+// ctx bounds the first-run probe; pass a cancellable/timeout context.
+func EffectiveDim(ctx context.Context, cfg *config.EmbeddingConfig, ggDir string, fallback int) int {
 	if resolveBackendName(cfg) == config.BackendVoyage {
 		if cfg.Voyage.OutputDim > 0 {
 			return cfg.Voyage.OutputDim
 		}
 		return config.DefaultVoyageOutputDim
+	}
+	// Ollama: once collections exist, the recorded dim is authoritative and read
+	// without any network call — this is the everyday/steady-state path.
+	if meta, err := ReadMeta(ggDir); err == nil && meta != nil && meta.Dim > 0 {
+		return meta.Dim
+	}
+	// First run (no meta yet): probe the model for its true dimension. expectedDim=0
+	// disables the Generator's own dim guard so the probe itself can't error on size.
+	if vec, err := New(cfg, 0).Generate(ctx, "dimension probe"); err == nil && len(vec) > 0 {
+		return len(vec)
 	}
 	return fallback
 }

@@ -60,22 +60,55 @@ func TestEffectiveModelIdentity(t *testing.T) {
 	if EffectiveModelIdentity(voyage) != NewBackend(voyage, 0).ModelIdentity() {
 		t.Error("EffectiveModelIdentity disagrees with Generator.ModelIdentity for voyage")
 	}
+
+	// GG_EMBED_MODEL overrides the Ollama identity WITHOUT mutating cfg.Model.
+	t.Setenv(config.EmbedModelEnv, "qwen3-embedding:0.6b")
+	ollamaOverride := &config.EmbeddingConfig{Backend: config.BackendOllama, Model: "nomic-embed-text"}
+	if got := EffectiveModelIdentity(ollamaOverride); got != "qwen3-embedding:0.6b" {
+		t.Errorf("ollama identity with env override = %q, want qwen3-embedding:0.6b", got)
+	}
+	// cfg.Model must remain unmutated (the env is read at call time, not baked in).
+	if ollamaOverride.Model != "nomic-embed-text" {
+		t.Errorf("cfg.Model was mutated to %q — must stay nomic-embed-text", ollamaOverride.Model)
+	}
+	// Voyage must be completely unaffected by the Ollama env override.
+	if got := EffectiveModelIdentity(voyage); got != "voyage:voyage-3.5-lite" {
+		t.Errorf("voyage identity changed to %q when GG_EMBED_MODEL is set — must be unaffected", got)
+	}
 }
 
-// TestEffectiveDim confirms Voyage reports its configured output dim while
-// Ollama falls back to the caller-provided value (model-defined, probe-only).
+// TestEffectiveDim confirms the dim resolution contract: Voyage reports its
+// configured output dim (no network/meta), Ollama reads the authoritative dim
+// from embedding-meta.json once it exists, and falls back only when there is
+// neither meta nor a reachable model to probe.
 func TestEffectiveDim(t *testing.T) {
-	ollama := &config.EmbeddingConfig{Backend: config.BackendOllama}
-	if got := EffectiveDim(ollama, 768); got != 768 {
-		t.Errorf("ollama EffectiveDim = %d, want fallback 768", got)
-	}
+	ctx := context.Background()
+
+	// Voyage: configured output dim, no meta needed.
 	voyage := &config.EmbeddingConfig{Backend: config.BackendVoyage, Voyage: config.VoyageConfig{OutputDim: 256}}
-	if got := EffectiveDim(voyage, 768); got != 256 {
+	if got := EffectiveDim(ctx, voyage, t.TempDir(), 768); got != 256 {
 		t.Errorf("voyage EffectiveDim = %d, want configured 256", got)
 	}
 	voyageDefault := &config.EmbeddingConfig{Backend: config.BackendVoyage}
-	if got := EffectiveDim(voyageDefault, 768); got != config.DefaultVoyageOutputDim {
+	if got := EffectiveDim(ctx, voyageDefault, t.TempDir(), 768); got != config.DefaultVoyageOutputDim {
 		t.Errorf("voyage default EffectiveDim = %d, want %d", got, config.DefaultVoyageOutputDim)
+	}
+
+	// Ollama with meta present: meta.Dim is authoritative with NO network call. A
+	// 1024-dim model (e.g. qwen3-embedding:0.6b) must report 1024, not 768.
+	dir := t.TempDir()
+	if err := WriteMeta(dir, &Meta{ModelName: "qwen3-embedding:0.6b", Dim: 1024}); err != nil {
+		t.Fatalf("seed meta: %v", err)
+	}
+	ollama := &config.EmbeddingConfig{Backend: config.BackendOllama, Model: "qwen3-embedding:0.6b"}
+	if got := EffectiveDim(ctx, ollama, dir, 768); got != 1024 {
+		t.Errorf("ollama EffectiveDim with meta = %d, want authoritative 1024", got)
+	}
+
+	// Ollama, no meta, unreachable host: probe fails → nomic fallback.
+	ollamaNoMeta := &config.EmbeddingConfig{Backend: config.BackendOllama, Host: "http://127.0.0.1:1", Model: "nomic-embed-text"}
+	if got := EffectiveDim(ctx, ollamaNoMeta, t.TempDir(), 768); got != 768 {
+		t.Errorf("ollama EffectiveDim no-meta+probe-fail = %d, want fallback 768", got)
 	}
 }
 
@@ -83,12 +116,13 @@ func TestEffectiveDim(t *testing.T) {
 // ErrModelMismatch because the backend-qualified identity (and dim) differ.
 func TestCheckMeta_BackendSwitchMismatch(t *testing.T) {
 	dir := t.TempDir()
-	ollama := &config.EmbeddingConfig{Backend: config.BackendOllama, Model: "nomic-embed-text"}
-	if err := CheckMeta(dir, EffectiveModelIdentity(ollama), EffectiveDim(ollama, 768)); err != nil {
+	ctx := context.Background()
+	ollama := &config.EmbeddingConfig{Backend: config.BackendOllama, Model: "nomic-embed-text", Host: "http://127.0.0.1:1"}
+	if err := CheckMeta(dir, EffectiveModelIdentity(ollama), EffectiveDim(ctx, ollama, dir, 768)); err != nil {
 		t.Fatalf("first run (ollama) should write meta cleanly: %v", err)
 	}
 	voyage := &config.EmbeddingConfig{Backend: config.BackendVoyage, Voyage: config.VoyageConfig{Model: "voyage-3.5-lite", OutputDim: 1024}}
-	err := CheckMeta(dir, EffectiveModelIdentity(voyage), EffectiveDim(voyage, 768))
+	err := CheckMeta(dir, EffectiveModelIdentity(voyage), EffectiveDim(ctx, voyage, dir, 768))
 	if !errors.Is(err, ErrModelMismatch) {
 		t.Fatalf("backend switch should trip ErrModelMismatch, got: %v", err)
 	}
