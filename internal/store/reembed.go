@@ -3,12 +3,28 @@ package store
 import (
 	"context"
 	"fmt"
+	"os"
+	"time"
 )
 
 // Embedder is the minimal interface required by ReembedAll.
 type Embedder interface {
 	Generate(ctx context.Context, text string) ([]float32, error)
 }
+
+const (
+	// reembedMaxRetries is how many extra attempts a single point's embedding gets
+	// on a transient embedder error before it is skipped. A local Ollama model
+	// runner can intermittently 400/EOF on a large input (cold start / memory
+	// pressure) and recover on the next attempt, so one hiccup must not abort a
+	// multi-hundred-record migration.
+	reembedMaxRetries = 3
+	// reembedAbortAfterConsecutive aborts the whole migration once this many points
+	// fail in a row — that signals the embedder is genuinely unavailable (e.g. the
+	// model was never pulled → 404 on every record), where failing fast beats
+	// emitting hundreds of skip warnings and building an empty store.
+	reembedAbortAfterConsecutive = 5
+)
 
 // collTextExtractor maps a collection name suffix to a function that extracts
 // embeddable text from a the vector store payload. This mirrors the original embed logic
@@ -81,6 +97,7 @@ type ReembedResult struct {
 	Collection string
 	Migrated   int
 	Skipped    int // points with no embeddable text
+	Failed     int // points the embedder persistently rejected (kept in JSONL, not vector-indexed)
 }
 
 // ReembedAll migrates all project collections to a new embedding model/dimension.
@@ -154,11 +171,32 @@ func (c *Client) ReembedAll(ctx context.Context, embedder Embedder, newVectorSiz
 	var results []ReembedResult
 	for _, cd := range collData {
 		res := ReembedResult{Collection: cd.name}
+		consecutiveFails := 0
 		for _, sp := range cd.points {
 			vec, err := vectorForReembed(ctx, cd.suffix, sp.text, newVectorSize, embedder)
-			if err != nil {
-				return results, fmt.Errorf("reembed %s point %s: generate: %w", cd.name, sp.id, err)
+			// Retry transient embedder errors (e.g. an Ollama runner that 400/EOFs on
+			// one large input then recovers), spacing attempts so the runner can warm up.
+			for attempt := 1; attempt <= reembedMaxRetries && err != nil; attempt++ {
+				select {
+				case <-ctx.Done():
+					return results, ctx.Err()
+				case <-time.After(time.Duration(attempt) * 500 * time.Millisecond):
+				}
+				vec, err = vectorForReembed(ctx, cd.suffix, sp.text, newVectorSize, embedder)
 			}
+			if err != nil {
+				// Fail fast only when failures pile up consecutively — that means the
+				// embedder is unavailable, not hiccuping. Otherwise skip this one point
+				// (it stays in the JSONL source of truth) and keep migrating the rest.
+				consecutiveFails++
+				if consecutiveFails >= reembedAbortAfterConsecutive {
+					return results, fmt.Errorf("reembed %s: %d consecutive points failed to embed — the embedding model appears unavailable (last on point %s): %w", cd.name, consecutiveFails, sp.id, err)
+				}
+				fmt.Fprintf(os.Stderr, "  ⚠ reembed: skipped %s point %s after %d attempts: %v\n", cd.name, sp.id, reembedMaxRetries+1, err)
+				res.Failed++
+				continue
+			}
+			consecutiveFails = 0
 			if vec == nil {
 				res.Skipped++
 				continue

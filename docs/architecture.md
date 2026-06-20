@@ -20,7 +20,7 @@ gg (CLI, Go)
 │   └── IMPORTS edges              dependency relationships
 │
 └── Embeddings (default: native Ollama localhost:11434, or opt-in Voyage cloud)
-    └── nomic-embed-text (768-dim) semantic search vectors
+    └── nomic-embed-text (768-dim) by default; any Ollama model via GG_EMBED_MODEL (e.g. qwen3-embedding:0.6b = 1024-dim)
 ```
 
 Both stores are embedded SQLite — there is no server backend to opt into and no

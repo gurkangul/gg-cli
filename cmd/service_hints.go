@@ -48,7 +48,7 @@ func serviceRecoveryHint(service string) string {
 		compose := ollamaComposePath()
 		return fmt.Sprintf(
 			"Ollama is unreachable. Restore embeddings any one way:\n"+
-				"  Native:  brew install ollama && ollama serve && ollama pull nomic-embed-text\n"+
+				"  Native:  brew install ollama && ollama serve && ollama pull <embedding.model>   # e.g. nomic-embed-text; GG_EMBED_MODEL overrides per-shell\n"+
 				"  Cloud:   set embedding.backend: voyage in .gg/config.yaml + export VOYAGE_API_KEY\n"+
 				"  Docker:  docker compose -f %s up -d ollama",
 			compose,

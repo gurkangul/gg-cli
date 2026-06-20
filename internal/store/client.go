@@ -26,7 +26,11 @@ const (
 	collSuffixNotes       = "notes"
 	collSuffixBugs        = "bugs"
 
-	VectorSize = 768 // nomic-embed-text dimension
+	// VectorSize is the nomic-embed-text dimension. It is ONLY the Ollama
+	// first-run fallback — the authoritative dim comes from embedding-meta.json
+	// (see embedding.EffectiveDim). Non-nomic models (e.g. qwen3-embedding:0.6b
+	// at 1024) are sized from meta/probe, never forced to this constant.
+	VectorSize = 768
 )
 
 // scrollerIface is the minimal scroll interface used by ExportBrainCollection

@@ -125,6 +125,10 @@ func (s *dashboardServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeJSONResp(w, map[string]any{"error": "live search needs the vector store + Ollama; stores are degraded"})
 		return
 	}
+	if pc.metaErr != nil {
+		writeJSONResp(w, map[string]any{"error": pc.metaErr.Error()})
+		return
+	}
 	ctx := r.Context()
 	t0 := time.Now()
 	vec, err := pc.embedder.Generate(ctx, q)

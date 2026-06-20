@@ -52,6 +52,9 @@ func doctorCheckVoyage(cfg *config.Config, report *doctorReport) {
 // doctorCheckOllama checks Ollama connectivity, vector compatibility, and a
 // small semantic canary before claiming embedding guidance is healthy.
 func doctorCheckOllama(cmd *cobra.Command, cfg *config.Config, report *doctorReport) {
+	// eff is the model name actually in use — respects GG_EMBED_MODEL override
+	// without reading the persisted config.yaml value (which never changes on override).
+	eff := embedding.EffectiveModel(&cfg.Embedding)
 	ollamaURL := cfg.Embedding.Host + "/api/tags"
 	curlCtx, curlCancel := context.WithTimeout(cmd.Context(), 3*time.Second)
 	defer curlCancel()
@@ -63,19 +66,24 @@ func doctorCheckOllama(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 			report.problems++
 			return
 		}
-		report.fail("ollama", fmt.Sprintf("unreachable at %s — install native Ollama (`brew install ollama` + `ollama serve` + `ollama pull %s`) or switch to the Voyage backend (embedding.backend: voyage + export VOYAGE_API_KEY)", cfg.Embedding.Host, cfg.Embedding.Model))
+		report.fail("ollama", fmt.Sprintf("unreachable at %s — install native Ollama (`brew install ollama` + `ollama serve` + `ollama pull %s`) or switch to the Voyage backend (embedding.backend: voyage + export VOYAGE_API_KEY)", cfg.Embedding.Host, eff))
 		return
 	}
-	report.ok("ollama", fmt.Sprintf("reachable at %s (model: %s)", cfg.Embedding.Host, cfg.Embedding.Model))
+	report.ok("ollama", fmt.Sprintf("reachable at %s (model: %s)", cfg.Embedding.Host, eff))
 
 	// AC-2: confirm the configured embedding model is actually present locally
 	// (queryable via /api/tags) before the embedding canaries run, so a missing
 	// model gives the exact `ollama pull` fix instead of a cryptic embed error.
-	doctorCheckEmbeddingModel(cmd.Context(), cfg.Embedding.Host, cfg.Embedding.Model, report)
+	doctorCheckEmbeddingModel(cmd.Context(), cfg.Embedding.Host, eff, report)
 
-	gen := embedding.New(&cfg.Embedding, store.VectorSize)
+	// Resolve the authoritative expected dim (meta.Dim once collections exist, else
+	// a one-time probe, else the nomic fallback) so doctor is green for a non-768
+	// model like qwen3-embedding:0.6b=1024 instead of comparing against a hardcoded 768.
+	ggDir, _ := config.GGDir()
 	dimCtx, dimCancel := withTimeout(cmd.Context())
 	defer dimCancel()
+	expectedDim := embedding.EffectiveDim(dimCtx, &cfg.Embedding, ggDir, store.VectorSize)
+	gen := embedding.New(&cfg.Embedding, expectedDim)
 	vec, err := gen.Generate(dimCtx, "dimension check")
 	if err != nil {
 		if strings.Contains(err.Error(), "dimension mismatch") {
@@ -85,13 +93,13 @@ func doctorCheckOllama(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 		}
 		return
 	}
-	if len(vec) != store.VectorSize {
-		report.fail("ollama embedding dim", fmt.Sprintf("model %q returns %d-dim vectors, vector store expects %d", cfg.Embedding.Model, len(vec), store.VectorSize))
+	if len(vec) != expectedDim {
+		report.fail("ollama embedding dim", fmt.Sprintf("model %q returns %d-dim vectors, vector store expects %d", eff, len(vec), expectedDim))
 	} else {
-		report.ok("ollama embedding dim", fmt.Sprintf("%d-dim ✓ (model: %s)", len(vec), cfg.Embedding.Model))
+		report.ok("ollama embedding dim", fmt.Sprintf("%d-dim ✓ (model: %s)", len(vec), eff))
 	}
 	if norm := vectorNorm(vec); norm == 0 || math.IsNaN(norm) || math.IsInf(norm, 0) {
-		report.fail("ollama embedding quality", fmt.Sprintf("model %q returned invalid/zero vector for canary", cfg.Embedding.Model))
+		report.fail("ollama embedding quality", fmt.Sprintf("model %q returned invalid/zero vector for canary", eff))
 		return
 	}
 	semanticCanaryCheck(cmd, gen, report)

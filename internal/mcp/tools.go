@@ -66,12 +66,18 @@ func openBrain() (*brain, error) {
 	if err != nil {
 		return nil, err
 	}
-	if metaErr := embedding.CheckMeta(ggDir, embedding.EffectiveModelIdentity(&cfg.Embedding), embedding.EffectiveDim(&cfg.Embedding, store.VectorSize)); metaErr != nil {
-		return nil, metaErr
-	}
-	dim := embedding.EffectiveDim(&cfg.Embedding, store.VectorSize)
-	if meta, readErr := embedding.ReadMeta(ggDir); readErr == nil && meta != nil {
-		dim = meta.Dim
+	// Resolve the authoritative dim once and use it for BOTH the meta guard and the
+	// embedder, so a non-768 Ollama model can't trip a false ErrModelMismatch here.
+	dimCtx, dimCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer dimCancel()
+	dim := embedding.EffectiveDim(dimCtx, &cfg.Embedding, ggDir, store.VectorSize)
+	// Only validate against existing meta — don't write on first run from a search
+	// call, because a probe failure here would stamp meta{model,768} even for a
+	// non-768 model (the first-run write belongs to `gg reembed`).
+	if m, _ := embedding.ReadMeta(ggDir); m != nil {
+		if metaErr := embedding.CheckMeta(ggDir, embedding.EffectiveModelIdentity(&cfg.Embedding), dim); metaErr != nil {
+			return nil, metaErr
+		}
 	}
 	client, err := store.New(ggDir, cfg.ProjectID)
 	if err != nil {

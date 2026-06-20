@@ -107,7 +107,7 @@ func doctorReportVectorCounts(ctx context.Context, c qdrantHealthChecker, ggDir 
 func doctorCheckJSONLDrift(ggDir string, vectorCounts map[string]uint64, report *doctorReport) {
 	var driftParts []string
 	for _, kind := range brainKinds {
-		entries, _, err := brain.ReadAllWithCount(ggDir, kind)
+		entries, _, err := brain.ReadLatestWithCount(ggDir, kind)
 		if err != nil {
 			continue // missing JSONL is not a drift error
 		}

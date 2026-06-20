@@ -88,7 +88,7 @@ func provisionEmbeddings(ctx context.Context, cfg *config.Config) bool {
 		fmt.Println("    Native Ollama (recommended):")
 		fmt.Println("      brew install ollama          # or see https://ollama.com/download")
 		fmt.Println("      ollama serve &")
-		fmt.Println("      ollama pull nomic-embed-text")
+		fmt.Printf("      ollama pull %s          # configured model (override per-shell with GG_EMBED_MODEL)\n", embedding.EffectiveModel(&cfg.Embedding))
 		fmt.Println("    Or use the Voyage cloud backend: set embedding.backend: voyage in .gg/config.yaml + export VOYAGE_API_KEY.")
 		fmt.Println("    Then populate the embedded vector store: gg reembed")
 		return false
@@ -149,8 +149,10 @@ func setupProjectCollections(ctx context.Context, projectID, ggDir string) error
 	setupCtx, cancelSetup := context.WithTimeout(ctx, 10*time.Second)
 	defer cancelSetup()
 	// Size the collections to the active embedding backend's dimension (audit
-	// EMB-1) so vectors are not silently truncated/rejected at insert time.
-	dim := embedding.EffectiveDim(&cfg.Embedding, store.VectorSize)
+	// EMB-1) so vectors are not silently truncated/rejected at insert time. On a
+	// fresh project this probes the configured model once, so a non-768 model
+	// (e.g. qwen3-embedding:0.6b=1024) gets correctly-sized collections.
+	dim := embedding.EffectiveDim(setupCtx, &cfg.Embedding, ggDir, store.VectorSize)
 	if err := client.EnsureCollections(setupCtx, uint64(dim)); err != nil {
 		return fmt.Errorf("setup collections: %w", err)
 	}

@@ -158,7 +158,8 @@ Prerequisites:
 
 - Go matching the version in [`go.mod`](go.mod)
 - An embedding provider: native Ollama (`brew install ollama` + `ollama serve` +
-  `ollama pull nomic-embed-text`) — or the opt-in Voyage cloud backend
+  `ollama pull nomic-embed-text`, the default; any Ollama embedding model works —
+  override per-shell with `GG_EMBED_MODEL`) — or the opt-in Voyage cloud backend
 - Docker is NOT required — the vector and graph stores are embedded SQLite, and
   there is no server backend to run.
 
@@ -181,7 +182,8 @@ gg doctor --install-agent-hooks
 
 - an embedded SQLite vector store (`.gg/vectorstore.db`) for semantic search
 - an embedded SQLite graph store (`.gg/graph.db`) for CodeGraph queries
-- embeddings via native Ollama (`nomic-embed-text`); if Ollama is unreachable,
+- embeddings via native Ollama (`nomic-embed-text` by default; override per-shell
+  with `GG_EMBED_MODEL`, e.g. `qwen3-embedding:0.6b`); if Ollama is unreachable,
   init WARNS with install guidance rather than failing — set Ollama up (or the
   Voyage backend), then run `gg reembed` to populate the vector store.
 

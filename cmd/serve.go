@@ -146,6 +146,7 @@ type projClient struct {
 	runtimeDir string
 	projectID  string
 	qdrantDown bool
+	metaErr    error // non-nil when embedding-meta.json check failed (model/dim mismatch)
 }
 
 type dashboardServer struct {
@@ -218,6 +219,9 @@ func (s *dashboardServer) clientFor(id string) (*projClient, error) {
 	defer dimCancel()
 	dim := embedding.EffectiveDim(dimCtx, &projCfg.Embedding, ggDir, store.VectorSize)
 	pc.embedder = embedding.New(&projCfg.Embedding, dim)
+	// Stash meta validation result — surfaced to clients at search time rather than
+	// failing construction, so the dashboard still loads even on mismatch.
+	pc.metaErr = embedding.CheckMeta(ggDir, embedding.EffectiveModelIdentity(&projCfg.Embedding), dim)
 	s.cache[id] = pc
 	return pc, nil
 }
