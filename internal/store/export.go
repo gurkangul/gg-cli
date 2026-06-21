@@ -52,11 +52,34 @@ func (c *Client) ExportBundle(ctx context.Context) (*Bundle, error) {
 	return bundle, nil
 }
 
+// bundleVectorDim returns the embedding dimension of the first non-empty vector
+// in the bundle, or 0 when the bundle carries no vectors. All points in a bundle
+// share one embedding model, so the first vector's length is authoritative.
+func bundleVectorDim(bundle *Bundle) int {
+	for _, points := range bundle.Collections {
+		for _, p := range points {
+			if len(p.Vector) > 0 {
+				return len(p.Vector)
+			}
+		}
+	}
+	return 0
+}
+
 // ImportBundle upserts all points from bundle into this project's collections.
 // Vectors are reused as-is — no re-embedding required.
 // Existing points with the same ID are overwritten (upsert semantics).
 func (c *Client) ImportBundle(ctx context.Context, bundle *Bundle) error {
-	if err := c.EnsureCollections(ctx, uint64(VectorSize)); err != nil {
+	// Size collections to the bundle's actual vector dimension, not a hardcoded
+	// default: a bundle exported from a non-768 model (e.g. qwen3-embedding=1024)
+	// must not be loaded into 768-sized collections, which would silently store
+	// mismatched-length vectors and break recall. An empty/vectorless bundle falls
+	// back to the nomic default.
+	dim := bundleVectorDim(bundle)
+	if dim == 0 {
+		dim = VectorSize
+	}
+	if err := c.EnsureCollections(ctx, uint64(dim)); err != nil {
 		return fmt.Errorf("ensure collections: %w", err)
 	}
 

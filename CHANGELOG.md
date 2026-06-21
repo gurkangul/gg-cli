@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `gg import` and `gg brain import` now size vector collections to the imported
+  data's real embedding dimension — from the bundle's own vectors (`gg import`)
+  or the project's `embedding-meta.json` (`gg brain import`) — instead of a
+  hardcoded 768. Importing a non-768 bundle/brain (e.g. `qwen3-embedding:0.6b`
+  = 1024) no longer builds 768-sized collections that silently break recall.
+
 ## [2.3.0] - 2026-06-21
 
 Configurable local embedding model. gg's Ollama backend can now point at any

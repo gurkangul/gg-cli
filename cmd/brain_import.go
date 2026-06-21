@@ -178,7 +178,11 @@ func importQdrant(ctx context.Context, cfg *config.Config, ggDir, brainDir strin
 		return 0, storeDownErr()
 	}
 
-	if err := storeClient.EnsureCollections(ctx, uint64(store.VectorSize)); err != nil {
+	// Size collections to the active embedding model's dimension (meta/probe), not
+	// a hardcoded 768 — a project on a non-768 model (e.g. qwen3-embedding=1024)
+	// must get correctly-sized collections, matching what reembedMissing will fill.
+	dim := embedding.EffectiveDim(ctx, &cfg.Embedding, ggDir, store.VectorSize)
+	if err := storeClient.EnsureCollections(ctx, uint64(dim)); err != nil {
 		return 0, fmt.Errorf("ensure collections: %w", err)
 	}
 
@@ -186,7 +190,7 @@ func importQdrant(ctx context.Context, cfg *config.Config, ggDir, brainDir strin
 		if dropErr := storeClient.DropAllCollections(ctx); dropErr != nil {
 			return 0, fmt.Errorf("drop collections: %w", dropErr)
 		}
-		if recreateErr := storeClient.EnsureCollections(ctx, uint64(store.VectorSize)); recreateErr != nil {
+		if recreateErr := storeClient.EnsureCollections(ctx, uint64(dim)); recreateErr != nil {
 			return 0, fmt.Errorf("recreate collections: %w", recreateErr)
 		}
 		fmt.Fprintln(os.Stderr, "✓ vector collections wiped and recreated")
