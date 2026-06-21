@@ -1,10 +1,13 @@
 #!/bin/sh
-# BUG-030: brain-write verbs hard-fail when Qdrant is down — no JSONL fallback.
-# This repro verifies that AddDecision with a dead Qdrant client returns a non-error
-# (write succeeds via JSONL) rather than propagating ErrQdrantDown.
+# BUG-030: brain-write verbs hard-fail when the vector store / embedder is
+# unavailable — no JSONL fallback. This repro verifies AddDecision still writes
+# durably (JSONL) and returns OutboxQueued (queued-for-replay) instead of a hard
+# error when no embedding is available.
 #
-# Pre-fix (a283566): AddDecision returns ErrQdrantDown → repro exits 1 (bug present).
-# Post-fix (2014261): AddDecision appends to JSONL and returns nil → repro exits 0.
+# Pre-fix (a283566): AddDecision returned a bare error → write permanently lost.
+# Post-fix (2014261): AddDecision appends to JSONL and returns nil/OutboxQueued.
+# Refreshed post-e16c9ac (Qdrant removed → embedded SQLite): the offline path is
+# exercised by passing a nil vector, mirroring internal/store/offline_jsonl_test.go.
 set -eu
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
@@ -25,35 +28,36 @@ import (
 	"time"
 )
 
-// TestBUG030_AddDecision_QdrantDown_MustNotPropagateErr proves that AddDecision
-// does NOT propagate a raw ErrQdrantDown when Qdrant is unreachable.
-// Pre-fix (a283566): AddDecision returned a bare ErrQdrantDown — write is permanently lost.
-// Post-fix (2014261): AddDecision writes to JSONL first, then returns OutboxQueued
-//   (soft signal: write is durable, Qdrant upsert is queued). ErrQdrantDown is still
-//   in the error chain but wrapped inside OutboxQueued — the caller can exit 0.
-func TestBUG030_AddDecision_QdrantDown_MustNotPropagateErr(t *testing.T) {
-	c := newDownClient(t)
+// TestBUG030_AddDecision_VectorUnavailable_MustNotPropagateErr proves AddDecision
+// does NOT propagate a raw error when no embedding is available. A nil vector
+// exercises the offline path: the write must land in JSONL and return nil or
+// OutboxQueued (durable, replay queued), never a hard failure.
+func TestBUG030_AddDecision_VectorUnavailable_MustNotPropagateErr(t *testing.T) {
+	c, err := New(t.TempDir(), "test-project-bug030")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer func() { _ = c.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := c.AddDecision(ctx, Decision{
+	err = c.AddDecision(ctx, Decision{
 		Text:   "use JWT for auth",
 		Reason: "stateless, portable",
 		Tags:   []string{"auth", "security"},
-	}, make([]float32, VectorSize))
+	}, nil)
 
-	// Post-fix: must be nil or OutboxQueued. Never a bare ErrQdrantDown.
-	// Check: error must either be nil, or be (or wrap) OutboxQueued.
+	// Must be nil or OutboxQueued. Never a bare hard error.
 	if err == nil {
 		return // clean success — acceptable
 	}
 	var oq *OutboxQueued
 	if errors.As(err, &oq) {
-		return // OutboxQueued — write was accepted, queued for replay — acceptable
+		return // OutboxQueued — write accepted, queued for replay — acceptable
 	}
 	t.Fatalf("BUG-030: AddDecision returned unexpected error (neither nil nor OutboxQueued): %v", err)
 }
 EOF
 
 cd "$repo_root"
-go test ./internal/store/ -run TestBUG030_AddDecision_QdrantDown_MustNotPropagateErr -count=1 -timeout=30s
+go test ./internal/store/ -run TestBUG030_AddDecision_VectorUnavailable_MustNotPropagateErr -count=1 -timeout=30s
