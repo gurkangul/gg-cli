@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.3.0] - 2026-06-20
+## [2.3.0] - 2026-06-21
 
 Configurable local embedding model. gg's Ollama backend can now point at any
 embedding model — not just the 768-dim default — and you can switch it across
