@@ -196,6 +196,16 @@ func importQdrant(ctx context.Context, cfg *config.Config, ggDir, brainDir strin
 		fmt.Fprintln(os.Stderr, "✓ vector collections wiped and recreated")
 	}
 
+	// Stamp the embedding meta to the dim/model the collections were just sized to,
+	// so reembedMissing (and a later standalone `gg reembed`) resolve the same dim —
+	// prevents a probe/no-probe split that would hard-fail re-embed for non-768 models.
+	if metaErr := embedding.WriteMeta(ggDir, &embedding.Meta{
+		ModelName: embedding.EffectiveModelIdentity(&cfg.Embedding),
+		Dim:       dim,
+	}); metaErr != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not stamp embedding meta: %v\n", metaErr)
+	}
+
 	total := 0
 	for _, kind := range store.BrainKind {
 		fname := filepath.Join(brainDir, kind+".jsonl")
@@ -279,10 +289,10 @@ func reembedMissing(cmd *cobra.Command, cfg *config.Config, ggDir string, manife
 	}
 	defer func() { _ = storeClient.Close() }()
 
-	dim := store.VectorSize
-	if embMeta != nil {
-		dim = embMeta.Dim
-	}
+	// Resolve the dim the same way importQdrant sized the collections (meta if
+	// present, else a probe of the configured model) so the generator's expectedDim
+	// matches the collection size — a split here hard-fails re-embed for non-768 models.
+	dim := embedding.EffectiveDim(cmd.Context(), &cfg.Embedding, ggDir, store.VectorSize)
 	gen := embedding.New(&cfg.Embedding, dim)
 	embedResults, embedErr := storeClient.EmbedMissing(embedCtx, gen, os.Stderr)
 	if embedErr != nil {
