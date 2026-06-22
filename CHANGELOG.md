@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.2] - 2026-06-22
+
+### Fixed
+
+- `gg index` and the `gg index --changed` git hooks installed by
+  `gg doctor --install-index-hooks` now refresh the language(s) the project was
+  actually indexed as — resolved from `index-state.json` — when `--lang` is not
+  passed, instead of defaulting to `go`. Previously the language-agnostic
+  auto-refresh hook silently failed with "no go modules found" on every non-go
+  project (TypeScript/Vue/Swift/Python), so their CodeGraph never auto-updated on
+  commit/push/merge. Explicit `--lang` still wins; a never-indexed project still
+  defaults to `go`. (BUG-095)
+
 ## [2.3.1] - 2026-06-22
 
 ### Fixed

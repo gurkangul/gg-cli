@@ -56,7 +56,41 @@ func runIndex(cmd *cobra.Command, _ []string) error {
 	if indexWatch {
 		return runIndexWatch(cmd)
 	}
+	// BUG-095: when --lang is not explicitly passed, refresh the language(s) the
+	// project was already indexed as (recorded in index-state) instead of the
+	// "go" flag default. The git hooks installed by `gg doctor --install-index-hooks`
+	// run a language-agnostic `gg index --changed`; without this, that hook defaults
+	// to go and silently fails ("no go modules found") on every non-go project, so
+	// the CodeGraph never auto-refreshes for TS/Vue/Swift/Python repos. Explicit
+	// --lang always wins; a never-indexed project still falls back to the go default.
+	if !cmd.Flags().Changed("lang") {
+		if langs := indexStateLanguages(); len(langs) > 0 {
+			var firstErr error
+			for _, l := range langs {
+				if err := runIndexOnce(cmd, runner.Lang(l), indexChanged); err != nil && firstErr == nil {
+					firstErr = err
+				}
+			}
+			return firstErr
+		}
+	}
 	return runIndexOnce(cmd, runner.Lang(indexLang), indexChanged)
+}
+
+// indexStateLanguages returns the languages recorded in this project's
+// index-state (deterministic order), or nil when the root/state can't be read or
+// nothing has been indexed yet. Lets a no-`--lang` `gg index` refresh exactly the
+// languages already present in the project's graph instead of assuming go.
+func indexStateLanguages() []string {
+	root, err := config.FindRoot()
+	if err != nil {
+		return nil
+	}
+	s, err := state.Read(root + "/.gg")
+	if err != nil {
+		return nil
+	}
+	return s.IndexedLanguages()
 }
 
 func runIndexOnce(cmd *cobra.Command, lang runner.Lang, changedMode bool) error {
