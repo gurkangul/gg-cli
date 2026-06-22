@@ -33,6 +33,8 @@ agent-driven:
 ### SEE ALSO
 
 * [gg](gg.md)	 - Shared brain for AI agents
+* [gg canon apply](gg_canon_apply.md)	 - Apply a filled canon op contract (add/edit/delete curated areas) — deterministic, offline
 * [gg canon gather](gg_canon_gather.md)	 - Dump active decisions + rejections + fixed-bug root causes as raw material to distill
 * [gg canon set](gg_canon_set.md)	 - Write/overwrite the canon for an area (e.g. architecture, auth, gotchas)
 * [gg canon show](gg_canon_show.md)	 - Show the project canon (the distilled knowledge injected at session-start)
+* [gg canon suggest](gg_canon_suggest.md)	 - Emit the distilled-vs-raw packet + a structured op contract the agent fills (NO LLM, offline)

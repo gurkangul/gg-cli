@@ -17,6 +17,10 @@ Or via environment variable (temporary):
 Disable permanently:
   gg config set telemetry.enabled false
 
+```
+gg telemetry [flags]
+```
+
 ### Options
 
 ```

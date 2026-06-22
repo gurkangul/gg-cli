@@ -9,7 +9,8 @@ gg canon show [area] [flags]
 ### Options
 
 ```
-  -h, --help   help for show
+      --compact   one line per canon area — drops full body to preserve agent context window
+  -h, --help      help for show
 ```
 
 ### Options inherited from parent commands

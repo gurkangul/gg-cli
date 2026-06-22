@@ -26,7 +26,7 @@ gg doctor [flags]
 ### Options
 
 ```
-      --agent string             restrict --install-agent-hooks to a single agent (claude, cursor, codex, bmad, gsd)
+      --agent string             restrict --install-agent-hooks to a single agent (claude, cursor, codex, gemini, openhands, bmad, gsd)
       --apply                    with --sync-artifacts: re-install drifted or missing artifacts
       --bypass-audit             list GG_ENFORCEMENT=off bypass events from ~/.gg/projects/<id>/state.json (default: last 7d)
       --bypass-since string      with --bypass-audit: time window (7d, 24h, 30d, or RFC3339 timestamp) (default "7d")

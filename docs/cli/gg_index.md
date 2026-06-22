@@ -25,12 +25,15 @@ gg index [--changed] [--lang go|python|swift|typescript] [flags]
 ### Options
 
 ```
-      --changed                   incremental: re-index only files changed since last index
-  -h, --help                      help for index
-      --lang string               language to index: go, python, swift, typescript (default "go")
-      --watch                     foreground watch mode: debounce source changes and run incremental index updates
-      --watch-debounce duration   foreground watch debounce before indexing (default 2s)
-      --watch-poll duration       foreground watch poll interval (default 1s)
+      --changed                           incremental: re-index only files changed since last index
+  -h, --help                              help for index
+      --lang string                       language to index: go, python, swift, typescript (default "go")
+      --watch                             foreground watch mode: debounce source changes and run incremental index updates
+      --watch-breaker-cooldown duration   how long the circuit breaker pauses reindexing after it trips (default 1m0s)
+      --watch-debounce duration           coalesce a burst of saves into one incremental reindex (debounce quiescence window) (default 2s)
+      --watch-failure-threshold int       consecutive reindex failures before the circuit breaker pauses reindexing (default 3)
+      --watch-op-timeout duration         per-reindex watchdog timeout; a wedged indexer is logged+skipped, the watcher keeps running (default 10m0s)
+      --watch-poll duration               foreground watch poll interval (default 1s)
 ```
 
 ### Options inherited from parent commands

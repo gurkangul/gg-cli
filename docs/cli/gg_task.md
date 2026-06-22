@@ -2,6 +2,10 @@
 
 Manage tasks
 
+```
+gg task [flags]
+```
+
 ### Options
 
 ```

@@ -22,6 +22,7 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg check](gg_check.md)	 - Pre-push health check — open tasks, unresolved discussions
 * [gg config](gg_config.md)	 - Inspect or modify project configuration
 * [gg context](gg_context.md)	 - Fetch a unified context bundle for the project, a topic, or a task
+* [gg decisions](gg_decisions.md)	 - List or search decisions
 * [gg doctor](gg_doctor.md)	 - Diagnose and repair gg configuration
 * [gg export](gg_export.md)	 - Export all project data to a portable bundle
 * [gg graph](gg_graph.md)	 - Work with the local code graph
@@ -31,6 +32,8 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg inbox](gg_inbox.md)	 - Read unread messages
 * [gg index](gg_index.md)	 - Index the codebase into the embedded code graph (.gg/graph.db)
 * [gg init](gg_init.md)	 - Initialize shared gg infrastructure (~/.gg/) and register this project
+* [gg lsp](gg_lsp.md)	 - Live, type-aware code intelligence via a language server
+* [gg mcp](gg_mcp.md)	 - Model Context Protocol server — expose the project brain to MCP clients
 * [gg metrics](gg_metrics.md)	 - [experimental] Project health metrics
 * [gg next](gg_next.md)	 - Recommend the next safe agent command
 * [gg onboard](gg_onboard.md)	 - Print what a new agent inherits — the distilled project briefing + how to work here
