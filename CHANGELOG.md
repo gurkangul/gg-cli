@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-06-22
+
 ### Fixed
 
 - `gg import` and `gg brain import` now size vector collections to the imported
@@ -14,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or the project's `embedding-meta.json` (`gg brain import`) — instead of a
   hardcoded 768. Importing a non-768 bundle/brain (e.g. `qwen3-embedding:0.6b`
   = 1024) no longer builds 768-sized collections that silently break recall.
+- `gg brain import` now stamps `embedding-meta.json` to the model/dimension the
+  collections were sized to, so the post-import re-embed (and any later
+  `gg reembed`) resolves the same dimension instead of splitting between a probe
+  and the metadata — which previously hard-failed re-embed on non-768 models.
 
 ## [2.3.0] - 2026-06-21
 
