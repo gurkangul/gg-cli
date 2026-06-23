@@ -1,35 +1,67 @@
 #!/bin/sh
 set -eu
 
+# BUG-060 (regression guard, rewritten for self-update):
+# Originally: `gg update` trusted a stale Go module proxy and installed an older
+# @latest than `check` reported. That whole problem class is gone — self-update
+# now resolves the latest release directly from the GitHub release API and
+# atomically swaps the running binary, so there is no proxy cache to lag behind.
+#
+# This repro pins the NEW invariant: `gg update` installs the exact latest tag
+# advertised by the release API (never an older one), verified against an
+# httptest-stubbed API + asset (no real network). It reuses the test helpers in
+# cmd/update_test.go (makeReleaseArchive / releaseServer / withStubbedExe /
+# captureUpdateOutput), which share the cmd package.
+
 cat > cmd/update_bug060_repro_test.go <<'GO'
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
-	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
-func TestBUG060UpdatePinsDirectLatest(t *testing.T) {
-	oldVersion := rootCmd.Version
+// TestBUG060UpdateInstallsAdvertisedLatest asserts gg update reaches the exact
+// latest release tag served by the API and replaces the binary with that
+// release's payload — the stale-source regression BUG-060 guarded, now under
+// the GitHub-release self-update mechanism.
+func TestBUG060UpdateInstallsAdvertisedLatest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("self-update binary replacement not supported on windows")
+	}
+	oldVer := version
 	oldJSON := jsonOutput
-	oldSkipSync := updateSkipSync
 	oldForce := updateForce
-	rootCmd.Version = "v0.3.9"
+	oldFromSource := updateFromSource
+	oldSkip := updateSkipSync
+	oldLook := updateLookPath
+	version = "v0.3.15" // behind latest
 	jsonOutput = false
-	updateSkipSync = true
 	updateForce = false
+	updateFromSource = false
+	updateSkipSync = true // avoid invoking the freshly-written fake binary
+	updateLookPath = func(string) (string, error) { return "", fmt.Errorf("not found") }
 	t.Cleanup(func() {
-		rootCmd.Version = oldVersion
+		version = oldVer
 		jsonOutput = oldJSON
-		updateSkipSync = oldSkipSync
 		updateForce = oldForce
+		updateFromSource = oldFromSource
+		updateSkipSync = oldSkip
+		updateLookPath = oldLook
 	})
 
-	logPath := filepath.Join(t.TempDir(), "go.log")
-	installBUG060FakeGo(t, "v0.3.9", "v0.3.10", logPath)
+	payload := []byte("RELEASE-0.3.16-BINARY")
+	archive := makeReleaseArchive(t, payload)
+	srv, _ := releaseServer(t, "v0.3.16", archive, false)
+	oldBase := ggReleaseAPIBase
+	t.Cleanup(func() { ggReleaseAPIBase = oldBase })
+	ggReleaseAPIBase = srv.URL + "/latest"
+	exePath := withStubbedExe(t)
 
 	stdout, stderr, err := captureUpdateOutput(t, func() error {
 		cmd := *updateCmd
@@ -39,53 +71,19 @@ func TestBUG060UpdatePinsDirectLatest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
 	}
-	logBytes, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatalf("read go log: %v", err)
+	if !strings.Contains(stdout, "updated v0.3.15 → v0.3.16") {
+		t.Fatalf("expected update to advertised latest v0.3.16, got:\n%s", stdout)
 	}
-	got := string(logBytes)
-	want := "install github.com/gurkangul/gg-cli/cmd/gg@v0.3.10 GOPROXY=direct"
-	if !strings.Contains(got, want) {
-		t.Fatalf("go install log = %q, want %q", got, want)
+	got, readErr := os.ReadFile(exePath)
+	if readErr != nil {
+		t.Fatalf("read replaced binary: %v", readErr)
 	}
-}
-
-func installBUG060FakeGo(t *testing.T, proxyVersion, directVersion, logPath string) {
-	t.Helper()
-	dir := t.TempDir()
-	goPathRoot := filepath.Join(t.TempDir(), "gopath")
-	goPath := filepath.Join(dir, "go")
-	t.Setenv("GG_UPDATE_TEST_LOG", logPath)
-	script := "#!/bin/sh\n" +
-		"if [ \"$1 $2 $3\" = \"list -m -json\" ]; then\n" +
-		"  if [ \"$GOPROXY\" = \"direct\" ]; then\n" +
-		"    printf '{\"Path\":\"github.com/gurkangul/gg-cli\",\"Version\":\"" + directVersion + "\"}\\n'\n" +
-		"  else\n" +
-		"    printf '{\"Path\":\"github.com/gurkangul/gg-cli\",\"Version\":\"" + proxyVersion + "\"}\\n'\n" +
-		"  fi\n" +
-		"  exit 0\n" +
-		"fi\n" +
-		"if [ \"$1\" = \"install\" ]; then\n" +
-		"  printf 'install %s GOPROXY=%s\\n' \"$2\" \"${GOPROXY:-}\" >> \"$GG_UPDATE_TEST_LOG\"\n" +
-		"  exit 0\n" +
-		"fi\n" +
-		"if [ \"$1 $2\" = \"env GOBIN\" ]; then\n" +
-		"  printf '\\n'\n" +
-		"  exit 0\n" +
-		"fi\n" +
-		"if [ \"$1 $2\" = \"env GOPATH\" ]; then\n" +
-		"  printf '" + goPathRoot + "\\n'\n" +
-		"  exit 0\n" +
-		"fi\n" +
-		"echo unexpected go args: \"$@\" >&2\n" +
-		"exit 1\n"
-	if err := os.WriteFile(goPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake go: %v", err)
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("binary not replaced with latest release payload: %q", got)
 	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 GO
 
 trap 'rm -f cmd/update_bug060_repro_test.go' EXIT
 
-go test ./cmd -run TestBUG060UpdatePinsDirectLatest -count=1
+go test ./cmd -run TestBUG060UpdateInstallsAdvertisedLatest -count=1

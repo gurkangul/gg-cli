@@ -8,6 +8,10 @@ Track defects from discovery through fix. Bugs are stored in the project
 vector store and searchable by description. Each bug moves through a lifecycle:
   open → fixing → fixed | wontfix → reopened → fixing → fixed
 
+```
+gg bug [flags]
+```
+
 ### Options
 
 ```

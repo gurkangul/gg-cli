@@ -133,8 +133,14 @@ func runSessionStart(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Public update notice: opt-in only because it performs a network-backed
-	// Go module lookup. Silent on errors and when the current binary is fresh.
+	// release lookup. Silent on errors and when the current binary is fresh.
 	emitUpdateNotice(os.Stdout)
+
+	// Throttled binary auto-update: best-effort, bounded (~3s), and silent on
+	// any failure. Skips on dev/source builds, when GG_NO_AUTO_UPDATE or
+	// GG_PIN_VERSION is set, or when the last check was <24h ago. When a newer
+	// release exists it self-updates the binary and prints one concise line.
+	autoUpdateIfDue(cmd, os.Stdout, sessionStartStderr)
 
 	// Bypass-audit notice: surface GG_ENFORCEMENT=off events from the last
 	// 7 days so the human at the keyboard sees bypass pressure before
