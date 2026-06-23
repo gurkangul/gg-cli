@@ -84,25 +84,16 @@ func isDevBuild(v string) bool {
 
 // releaseAssetName returns the goreleaser archive name for the running platform.
 // goreleaser names archives `gg_<VERSION>_<OS>_<ARCH>.tar.gz` where VERSION has
-// no leading 'v', OS is the title-cased runtime.GOOS (darwin→Darwin) and ARCH is
-// runtime.GOARCH. tag is the release tag ("vX.Y.Z"); the leading 'v' is stripped.
+// no leading 'v', OS is runtime.GOOS verbatim (lowercase: darwin/linux/windows)
+// and ARCH is runtime.GOARCH. tag is the release tag ("vX.Y.Z"); the leading 'v'
+// is stripped.
 func releaseAssetName(tag, goos, goarch string) string {
 	version := strings.TrimPrefix(strings.TrimSpace(tag), "v")
-	osName := titleOS(goos)
 	ext := "tar.gz"
 	if goos == "windows" {
 		ext = "zip"
 	}
-	return fmt.Sprintf("gg_%s_%s_%s.%s", version, osName, goarch, ext)
-}
-
-// titleOS title-cases a GOOS value the way goreleaser does (darwin→Darwin,
-// linux→Linux, windows→Windows). Only the first rune is upper-cased.
-func titleOS(goos string) string {
-	if goos == "" {
-		return goos
-	}
-	return strings.ToUpper(goos[:1]) + goos[1:]
+	return fmt.Sprintf("gg_%s_%s_%s.%s", version, goos, goarch, ext)
 }
 
 // fetchLatestRelease resolves the latest gg release via the GitHub API. The

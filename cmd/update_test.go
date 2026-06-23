@@ -78,12 +78,12 @@ func TestReleaseAssetName(t *testing.T) {
 		goarch string
 		want   string
 	}{
-		{tag: "v2.3.3", goos: "darwin", goarch: "arm64", want: "gg_2.3.3_Darwin_arm64.tar.gz"},
-		{tag: "v2.3.3", goos: "darwin", goarch: "amd64", want: "gg_2.3.3_Darwin_amd64.tar.gz"},
-		{tag: "v2.3.3", goos: "linux", goarch: "amd64", want: "gg_2.3.3_Linux_amd64.tar.gz"},
-		{tag: "v2.3.3", goos: "linux", goarch: "arm64", want: "gg_2.3.3_Linux_arm64.tar.gz"},
-		{tag: "2.3.3", goos: "linux", goarch: "amd64", want: "gg_2.3.3_Linux_amd64.tar.gz"}, // tag without leading v
-		{tag: "v2.3.3", goos: "windows", goarch: "amd64", want: "gg_2.3.3_Windows_amd64.zip"},
+		{tag: "v2.3.3", goos: "darwin", goarch: "arm64", want: "gg_2.3.3_darwin_arm64.tar.gz"},
+		{tag: "v2.3.3", goos: "darwin", goarch: "amd64", want: "gg_2.3.3_darwin_amd64.tar.gz"},
+		{tag: "v2.3.3", goos: "linux", goarch: "amd64", want: "gg_2.3.3_linux_amd64.tar.gz"},
+		{tag: "v2.3.3", goos: "linux", goarch: "arm64", want: "gg_2.3.3_linux_arm64.tar.gz"},
+		{tag: "2.3.3", goos: "linux", goarch: "amd64", want: "gg_2.3.3_linux_amd64.tar.gz"}, // tag without leading v
+		{tag: "v2.3.3", goos: "windows", goarch: "amd64", want: "gg_2.3.3_windows_amd64.zip"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.goos+"_"+tt.goarch, func(t *testing.T) {
@@ -95,12 +95,12 @@ func TestReleaseAssetName(t *testing.T) {
 }
 
 func TestChecksumFor(t *testing.T) {
-	manifest := "deadbeef  gg_2.3.3_Linux_amd64.tar.gz\n" +
-		"cafef00d  gg_2.3.3_Darwin_arm64.tar.gz\n"
-	if sum, ok := checksumFor(manifest, "gg_2.3.3_Darwin_arm64.tar.gz"); !ok || sum != "cafef00d" {
+	manifest := "deadbeef  gg_2.3.3_linux_amd64.tar.gz\n" +
+		"cafef00d  gg_2.3.3_darwin_arm64.tar.gz\n"
+	if sum, ok := checksumFor(manifest, "gg_2.3.3_darwin_arm64.tar.gz"); !ok || sum != "cafef00d" {
 		t.Fatalf("checksumFor darwin = %q/%v, want cafef00d/true", sum, ok)
 	}
-	if _, ok := checksumFor(manifest, "gg_9.9.9_Linux_amd64.tar.gz"); ok {
+	if _, ok := checksumFor(manifest, "gg_9.9.9_linux_amd64.tar.gz"); ok {
 		t.Fatalf("checksumFor missing entry returned ok=true")
 	}
 }

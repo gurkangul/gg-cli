@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-06-23
+
+### Fixed
+
+- Self-update now resolves release assets using goreleaser's **lowercase** OS in
+  the archive name (`gg_<version>_darwin_arm64.tar.gz`), not a title-cased
+  `Darwin`/`Linux`/`Windows`. The 2.4.0 self-updater looked for the title-cased
+  name and could not find any published asset, so `gg update` and the
+  session-start auto-update failed with "no asset for this platform". (Follow-up
+  to 2.4.0; verified end-to-end against the real GitHub release.)
+
 ## [2.4.0] - 2026-06-23
 
 ### Added
