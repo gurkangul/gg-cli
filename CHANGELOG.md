@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-06-23
+
+### Added
+
+- `gg update` now self-updates by downloading the platform release binary from
+  the GitHub release (and verifying its SHA-256 against `checksums.txt`), then
+  atomically replacing the running binary. This replaces the previous
+  `go install @latest` path, which could not reach v2.x releases — the module
+  path lacks a `/v2` suffix, so the Go proxy only ever resolved v1.x. A new
+  `--force` flag overrides the guards; `gg update --from-source` (build from a
+  local checkout) is unchanged. Source/dev builds (Go VCS pseudo-versions) are
+  guarded against accidental clobbering by a release binary.
+- Throttled auto-update on `gg session-start`: when a newer release exists, gg
+  installs it (at most one check per 24h window) and prints a one-line notice.
+  Opt out with `GG_NO_AUTO_UPDATE=1` or pin a version with `GG_PIN_VERSION`;
+  source/dev builds and offline/rate-limited runs are skipped silently so
+  session start never blocks or fails on the update check.
+
 ## [2.3.3] - 2026-06-23
 
 ### Fixed
