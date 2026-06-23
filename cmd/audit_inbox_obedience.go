@@ -117,7 +117,7 @@ func computeObedienceRows(ctx context.Context, client obedienceStoreClient, sinc
 				byRole[role].staleFiltered++
 				continue
 			}
-			if m.Read {
+			if messageAcknowledged(m) {
 				byRole[role].acknowledged++
 			}
 		}
@@ -148,6 +148,20 @@ func computeObedienceRows(ctx context.Context, client obedienceStoreClient, sinc
 	// Sort deterministically by role name.
 	sortObedienceRows(rows)
 	return rows, nil
+}
+
+// messageAcknowledged reports whether a role-targeted message counts as
+// acknowledged. BUG-091 facet C: a real (non-peek) `gg inbox --role <role>` read
+// records the recipient in the per-recipient read_by set (BUG-082), NOT the
+// legacy global read flag — only an anonymous/operator dismiss sets read=true.
+// Counting only m.Read therefore reported diligent role recipients as 0%
+// acknowledged ("reviewer 0/15"). A non-empty read_by means an identified
+// recipient consumed the message, so it is acknowledged. This is safe for the
+// audit because targetRoles already excludes to_role="all" broadcasts (where a
+// single read bit cannot prove per-agent acknowledgement); only explicitly
+// role-targeted or @mention messages reach this check.
+func messageAcknowledged(m store.Message) bool {
+	return m.Read || len(m.ReadBy) > 0
 }
 
 func isResolvedAssignment(ctx context.Context, client obedienceStoreClient, m store.Message) bool {

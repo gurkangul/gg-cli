@@ -196,6 +196,35 @@ func TestObedience_AllAcknowledged_NotLowCompliance(t *testing.T) {
 	}
 }
 
+// TestObedience_ReadByCountsAsAcknowledged is the BUG-091 facet-C regression
+// guard: a real (non-peek) role-targeted read records the recipient in read_by
+// (BUG-082 per-recipient model), NOT the legacy global read flag. The audit must
+// count read_by membership as acknowledgement so a diligent reviewer no longer
+// shows a false 0% ("reviewer 0/15"). Mixed with one stale (read=false, no
+// read_by) message to confirm the ratio reflects reality.
+func TestObedience_ReadByCountsAsAcknowledged(t *testing.T) {
+	client := &fakeMessageClient{messages: []store.Message{
+		{FromRole: "developer", ToRole: "reviewer", Content: "TASK-1 ready", Read: false, ReadBy: []string{"codex-1"}, CreatedAt: now()},
+		{FromRole: "developer", ToRole: "reviewer", Content: "TASK-2 ready", Read: false, ReadBy: []string{"claude-code-abc12345"}, CreatedAt: now()},
+		{FromRole: "developer", ToRole: "reviewer", Content: "TASK-3 ready", Read: false, CreatedAt: now()},
+	}}
+	rows, err := computeObedienceRowsFromClient(context.Background(), client,
+		time.Now().UTC().Add(-time.Hour), "reviewer")
+	if err != nil {
+		t.Fatalf("compute: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 row for reviewer, got %d", len(rows))
+	}
+	r := rows[0]
+	if r.Received != 3 || r.Acknowledged != 2 {
+		t.Fatalf("read_by reads must count as acknowledged: received=%d acknowledged=%d (want 3, 2)", r.Received, r.Acknowledged)
+	}
+	if r.ObedienceRatio < 0.66 || r.ObedienceRatio > 0.67 {
+		t.Fatalf("ratio should be 2/3 ~0.667, got %f", r.ObedienceRatio)
+	}
+}
+
 func TestObedience_FiltersResolvedTaskLinkedMessages(t *testing.T) {
 	client := &fakeMessageClient{
 		messages: []store.Message{
