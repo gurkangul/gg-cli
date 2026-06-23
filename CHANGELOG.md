@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.3] - 2026-06-23
+
+### Fixed
+
+- `gg audit inbox-obedience` now counts a per-recipient `read_by` read as
+  acknowledgement, not only the legacy global read flag. A role recipient who
+  consumes messages via a non-peek `gg inbox --role <role>` (which records them
+  in `read_by`, not the global flag) previously showed as 0% compliant
+  ("reviewer 0/15"); role-targeted handoffs now reflect real acknowledgement.
+  The audit still excludes `to_role="all"` broadcasts. (BUG-091)
+- Parent commands `gg task`, `gg bug`, and `gg telemetry` now exit non-zero with
+  an error on a missing or unknown subcommand instead of silently printing help
+  and exiting 0; `gg task show` / `gg bug show` alias to `get`. Help via
+  `--help` / `gg help <cmd>` is unaffected. (BUG-093)
+- `gg telemetry` summary no longer conflates user-invoked CLI command verbs with
+  internal brain-kind access labels — they are counted and rendered separately.
+  (BUG-092)
+- Rewrote the obsolete Qdrant-era reconcile test
+  (`TestReconcile_FromJSONL_RecoversMissingFromQdrant`) to exercise the embedded
+  SQLite reconcile path with a valid UUID and `EnsureCollections`, removing
+  dead-backend references. (BUG-090)
+
+### Changed
+
+- Backend-neutral user-facing wording: `gg system brain status` reports
+  `embeddings=` instead of `ollama=` (accurate under the Voyage cloud backend;
+  the JSON key `ollama` is unchanged for machine consumers). `AGENTS.md`
+  corrected to state the embedded SQLite stores are the only backend — the
+  former Qdrant/Memgraph server backends were removed. (TASK-496, TASK-497)
+
 ## [2.3.2] - 2026-06-22
 
 ### Fixed
