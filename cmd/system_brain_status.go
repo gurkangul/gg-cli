@@ -413,7 +413,10 @@ func (p *systemBrainProjectStatus) addDerivedProblems() {
 		p.addProblem("vector=" + p.Vector.Status)
 	}
 	if p.Ollama.Status != "up" {
-		p.addProblem("ollama=" + p.Ollama.Status)
+		// Human-readable label is backend-neutral ("embeddings"): the same field
+		// also covers the Voyage cloud backend, so "ollama=" would be cosmetically
+		// wrong under Voyage. The JSON key (`ollama`) stays stable for consumers.
+		p.addProblem("embeddings=" + p.Ollama.Status)
 	}
 	if p.CodeGraph.Status != "ready" && p.CodeGraph.Status != "not_applicable" {
 		p.addProblem("codegraph=" + p.CodeGraph.Status)
@@ -439,7 +442,7 @@ func renderSystemBrainStatus(w io.Writer, report systemBrainStatusReport) {
 	}
 	for _, p := range report.Projects {
 		fmt.Fprintf(w, "• %-20s  %s\n", p.Name, p.Root)
-		fmt.Fprintf(w, "  registry=%s project_id=%s snapshot=%s vector=%s ollama=%s codegraph=%s\n",
+		fmt.Fprintf(w, "  registry=%s project_id=%s snapshot=%s vector=%s embeddings=%s codegraph=%s\n",
 			p.RegistryStatus, p.ProjectIDStatus, p.Snapshot.Status, p.Vector.Status, p.Ollama.Status, p.CodeGraph.Status)
 		if len(p.Problems) > 0 {
 			fmt.Fprintf(w, "  problems: %s\n", strings.Join(p.Problems, "; "))

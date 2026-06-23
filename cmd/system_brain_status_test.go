@@ -15,8 +15,9 @@ import (
 
 func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing.T) {
 	// The local vector store is the always-up embedded SQLite store, so the
-	// brain-health report shows vector=up. Ollama remains down (no embedding
-	// server). This test does not route through setupGGDir.
+	// brain-health report shows vector=up. The embedding backend remains down (no
+	// embedding server); the human-readable label is backend-neutral
+	// ("embeddings="). This test does not route through setupGGDir.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	projectRoot := writeSystemBrainProject(t, "proj-a", "proj-a", false, "")
@@ -35,7 +36,7 @@ func TestSystemBrainStatusCommandSeparatesContractSyncFromBrainHealth(t *testing
 		"project_id=ok",
 		"snapshot=none",
 		"vector=up",
-		"ollama=down",
+		"embeddings=down",
 		"codegraph=not_applicable",
 		"registry_issues=0",
 		"drifted_snapshot=0",
