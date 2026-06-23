@@ -28,8 +28,10 @@ Or via environment variable (temporary):
 
 Disable permanently:
   gg config set telemetry.enabled false`),
-	// BUG-093(e): bare `gg telemetry` now defaults to the summary view instead
-	// of printing the experimental help blurb.
+	// BUG-093: bare `gg telemetry` defaults to the summary view instead of
+	// printing the experimental help blurb. An unknown subcommand (e.g.
+	// `gg telemetry frob`) reaches this RunE with a non-empty args slice and is
+	// rejected there rather than silently falling through to the summary.
 	RunE: runTelemetrySummary,
 }
 
@@ -89,7 +91,16 @@ func init() {
 	rootCmd.AddCommand(telemetryCmd)
 }
 
-func runTelemetrySummary(cmd *cobra.Command, _ []string) error {
+func runTelemetrySummary(cmd *cobra.Command, args []string) error {
+	// BUG-093: bare `gg telemetry` shows the summary, but an unknown subcommand
+	// (e.g. `gg telemetry frob`) must not silently fall through to it. Any
+	// positional arg here is an unrecognised subcommand — reject it. `summary`
+	// itself takes no positional args, so this guard is also correct for the
+	// `gg telemetry summary <extra>` form.
+	if len(args) > 0 {
+		return fmt.Errorf("unknown telemetry subcommand %q — run `gg telemetry --help` to list subcommands (bare `gg telemetry` shows the summary)", args[0])
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)

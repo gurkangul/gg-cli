@@ -12,20 +12,22 @@ import (
 var taskCmd = &cobra.Command{
 	Use:   "task",
 	Short: "Manage tasks",
-	// BUG-093(d): an unknown subcommand (e.g. `gg task show`, `gg task frob`)
-	// used to silently print the help blurb. Reject it with a suggestion
-	// instead. Bare `gg task` (no args) still prints help.
+	// BUG-093: an unknown subcommand (e.g. `gg task frob`) and bare `gg task`
+	// used to silently print the help blurb and exit 0, misleading fresh agents.
+	// Reject both with a non-zero error. `--help` / `gg help task` still work
+	// because cobra handles the help flag before RunE. (`gg task show` now routes
+	// to the `show`→`get` alias, so it no longer reaches this path.)
 	RunE: runTaskParent,
 }
 
 func runTaskParent(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
-		return cmd.Help()
+		return fmt.Errorf("`gg task` needs a subcommand — run `gg task --help` to list them")
 	}
 	sub := args[0]
 	hint := "run `gg task --help` to list subcommands"
 	switch sub {
-	case "show", "view", "info", "details":
+	case "view", "info", "details":
 		hint = "did you mean `gg task get`?"
 	}
 	return fmt.Errorf("unknown task subcommand %q — %s", sub, hint)

@@ -21,10 +21,13 @@ var bugListCmd = &cobra.Command{
 }
 
 var bugGetCmd = &cobra.Command{
-	Use:   "get BUG-ID",
-	Short: "Show bug details",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runBugGet,
+	Use: "get BUG-ID",
+	// BUG-093: `show` is the natural verb agents reach for; alias it to get so
+	// `gg bug show BUG-1` works instead of falling through to help.
+	Aliases: []string{"show"},
+	Short:   "Show bug details",
+	Args:    cobra.ExactArgs(1),
+	RunE:    runBugGet,
 }
 
 var (

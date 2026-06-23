@@ -15,6 +15,24 @@ var bugCmd = &cobra.Command{
 	Long: `Track defects from discovery through fix. Bugs are stored in the project
 vector store and searchable by description. Each bug moves through a lifecycle:
   open → fixing → fixed | wontfix → reopened → fixing → fixed`,
+	// BUG-093: bare `gg bug` and unknown subcommands (e.g. `gg bug show`) used to
+	// silently print the help blurb and exit 0, misleading fresh agents. Reject
+	// both with a non-zero error instead. `--help` / `gg help bug` still work
+	// because cobra handles the help flag before RunE.
+	RunE: runBugParent,
+}
+
+func runBugParent(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("`gg bug` needs a subcommand — run `gg bug --help` to list them")
+	}
+	sub := args[0]
+	hint := "run `gg bug --help` to list subcommands"
+	switch sub {
+	case "view", "info", "details":
+		hint = "did you mean `gg bug get`?"
+	}
+	return fmt.Errorf("unknown bug subcommand %q — %s", sub, hint)
 }
 
 var validSeverities = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
