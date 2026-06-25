@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-06-25
+
+### Changed
+
+- The durable-memory contract (injected into every project's `AGENTS.md` /
+  `CLAUDE.md` / etc. and refreshed by `gg doctor --check-contract --fix`) now
+  tells agents to **self-enable the commit-message gate** when the project has a
+  recorded commit convention: if a decision or canon entry (e.g. tagged
+  `convention`/`policy`) defines a commit format, the agent turns the gate on via
+  `.gg/commit-msg.conf` instead of trusting memory — closing the loop between the
+  surfaced rule (2.5.0) and mechanical enforcement. Run `gg system sync` to push
+  the updated contract to existing projects.
+
+### Internal
+
+- Extracted the commit-time git-hook installation (secret-scan + commit-message
+  gate + their `.git/hooks` dispatchers) into `installCommitGitHooks`, keeping
+  `cmd/doctor_install.go` under the 500-line source limit. Behaviour-neutral.
+
 ## [2.5.0] - 2026-06-25
 
 ### Added
