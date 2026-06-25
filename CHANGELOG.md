@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-06-25
+
+### Added
+
+- Durable rules and policies now reliably survive in the session-start canon.
+  `gg record --pin` is documented (in `--help` and the agent protocol) as the way
+  to keep a rule — commit conventions, ownership rules, invariants — in the
+  always-surfaced PROJECT CANON, and the auto-canon importance heuristic now also
+  recognizes any tag containing `convention`, `policy`, or `workflow` (in addition
+  to the existing `architecture`/`constraint`/`invariant`/`canon`/`security`),
+  matched as a substring — so `commit-convention`, `naming-convention`, or
+  `team-policy` all qualify without the recording agent guessing one exact magic
+  word. Closes the gap that let a recorded commit convention fall off session-start
+  and get missed in review. (TASK-513)
+- New **commit-message convention gate** (`commit-msg` hook at
+  `.gg/hooks/commit-msg.d/30-commit-msg.sh`). It checks the commit subject for
+  length (default 72), file paths / source filenames, and an optional
+  project-configurable prefix regex. It is **off by default** — opt in per project
+  with `GG_COMMIT_MSG_GATE=warn|on` (or `.gg/commit-msg.conf`) — so propagating it
+  across projects via `gg system sync` never surprise-blocks a commit. Implemented
+  as a `commit-msg` hook (not `pre-commit`, which runs before the message exists);
+  `gg init` / `gg doctor --install-task-hooks` now also wire a
+  `.git/hooks/commit-msg` dispatcher. Knobs documented in `docs/hook-env-vars.md`.
+  (TASK-514)
+
+### Changed
+
+- `gg status` / `gg session-start` no longer truncate **RECENT DECISIONS**
+  silently. When more active decisions exist than are shown, the header reads
+  `RECENT DECISIONS (5 of N shown)` and a trailing breadcrumb points to
+  `gg decisions`, `gg search "<topic>"`, and `gg canon show` — so an older durable
+  decision that has slipped past the top-5 window stays discoverable instead of
+  vanishing without a trace. (TASK-513)
+
 ## [2.4.1] - 2026-06-23
 
 ### Fixed
