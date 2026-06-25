@@ -272,38 +272,12 @@ func runDoctorInstallTaskHooks() error {
 		installed += n
 	}
 
-	// 20-secret-scan.sh: runs gitleaks (or narrow-regex fallback) against staged
-	// files before a commit. Exits 7 on findings. Bypassable via GG_BYPASS_RATIONALE.
-	secretScanPath := filepath.Join(preCommitDir, "20-secret-scan.sh")
-	if n, err := installHookIfAbsent(secretScanPath, "PreCommitSecretScanHook", templates.PreCommitSecretScanHook,
-		"secret scan gate — blocks commit when gitleaks finds secrets; falls back to narrow-regex (GG_SECRET_SCAN=on|warn|off)"); err != nil {
+	// Commit-time git hooks (secret scan + commit-message gate) and their
+	// .git/hooks dispatchers live in one helper to keep this installer cohesive.
+	if n, err := installCommitGitHooks(projectRoot, preCommitDir, commitMsgDir); err != nil {
 		return err
 	} else {
 		installed += n
-	}
-
-	// Wire the .git/hooks/pre-commit dispatcher so the gg pre-commit.d hooks
-	// actually fire on `git commit`. Without this the scripts sit in the .gg
-	// directory but are never called by git.
-	if err := installGitPreCommitDispatcher(projectRoot, preCommitDir); err != nil {
-		fmt.Fprintf(os.Stderr, "⚠ could not install .git/hooks/pre-commit dispatcher: %v\n", err)
-	}
-
-	// 30-commit-msg.sh: commit-message convention check (subject length, no file
-	// paths in subject, optional prefix regex). DEFAULT OFF so it is inert until a
-	// project opts in (GG_COMMIT_MSG_GATE=warn|on) — safe to propagate everywhere.
-	commitMsgPath := filepath.Join(commitMsgDir, "30-commit-msg.sh")
-	if n, err := installHookIfAbsent(commitMsgPath, "CommitMsgGateHook", templates.CommitMsgGateHook,
-		"commit-message convention gate — default off; opt in with GG_COMMIT_MSG_GATE=warn|on"); err != nil {
-		return err
-	} else {
-		installed += n
-	}
-
-	// Wire the .git/hooks/commit-msg dispatcher so the gg commit-msg.d hooks fire
-	// on `git commit` (commit-msg, unlike pre-commit, receives the message file).
-	if err := installGitCommitMsgDispatcher(projectRoot, commitMsgDir); err != nil {
-		fmt.Fprintf(os.Stderr, "⚠ could not install .git/hooks/commit-msg dispatcher: %v\n", err)
 	}
 
 	// Makefile tier template: written to .gg/templates/ so humans can discover

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/gurkangul/gg-cli/internal/templates"
 )
 
 // preCommitDispatcherBody is the git pre-commit dispatcher script. It fans
@@ -168,4 +170,47 @@ func installGitCommitMsgDispatcher(projectRoot, commitMsgDir string) error {
 	fmt.Printf("✓ Installed .git/hooks/commit-msg dispatcher\n")
 	fmt.Printf("  hooks directory: %s\n", commitMsgDir)
 	return nil
+}
+
+// installCommitGitHooks installs the commit-time gg hooks (secret scan and the
+// commit-message convention gate) into the project's .gg hook dirs and wires the
+// matching .git/hooks dispatchers. Returns the number of hook scripts installed.
+func installCommitGitHooks(projectRoot, preCommitDir, commitMsgDir string) (int, error) {
+	installed := 0
+
+	// 20-secret-scan.sh: runs gitleaks (or narrow-regex fallback) against staged
+	// files before a commit. Exits 7 on findings. Bypassable via GG_BYPASS_RATIONALE.
+	secretScanPath := filepath.Join(preCommitDir, "20-secret-scan.sh")
+	n, err := installHookIfAbsent(secretScanPath, "PreCommitSecretScanHook", templates.PreCommitSecretScanHook,
+		"secret scan gate — blocks commit when gitleaks finds secrets; falls back to narrow-regex (GG_SECRET_SCAN=on|warn|off)")
+	if err != nil {
+		return installed, err
+	}
+	installed += n
+
+	// Wire the .git/hooks/pre-commit dispatcher so the gg pre-commit.d hooks
+	// actually fire on `git commit`. Without this the scripts sit in the .gg
+	// directory but are never called by git.
+	if err := installGitPreCommitDispatcher(projectRoot, preCommitDir); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not install .git/hooks/pre-commit dispatcher: %v\n", err)
+	}
+
+	// 30-commit-msg.sh: commit-message convention check (subject length, no file
+	// paths in subject, optional prefix regex). DEFAULT OFF so it is inert until a
+	// project opts in (GG_COMMIT_MSG_GATE=warn|on) — safe to propagate everywhere.
+	commitMsgPath := filepath.Join(commitMsgDir, "30-commit-msg.sh")
+	n, err = installHookIfAbsent(commitMsgPath, "CommitMsgGateHook", templates.CommitMsgGateHook,
+		"commit-message convention gate — default off; opt in with GG_COMMIT_MSG_GATE=warn|on")
+	if err != nil {
+		return installed, err
+	}
+	installed += n
+
+	// Wire the .git/hooks/commit-msg dispatcher so the gg commit-msg.d hooks fire
+	// on `git commit` (commit-msg, unlike pre-commit, receives the message file).
+	if err := installGitCommitMsgDispatcher(projectRoot, commitMsgDir); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not install .git/hooks/commit-msg dispatcher: %v\n", err)
+	}
+
+	return installed, nil
 }
