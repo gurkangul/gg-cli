@@ -34,7 +34,7 @@ const (
 )
 
 // importantDecisionTags mark durable architecture/constraint knowledge that must
-// always surface in the canon regardless of age.
+// always surface in the canon regardless of age (exact match).
 var importantDecisionTags = map[string]bool{
 	"architecture": true,
 	"constraint":   true,
@@ -42,6 +42,13 @@ var importantDecisionTags = map[string]bool{
 	"canon":        true,
 	"security":     true,
 }
+
+// importantTagStems are policy-family stems matched as a substring of a tag, so a
+// durable rule tagged "commit-convention", "naming-convention", "team-policy", or
+// "workflow-rule" still surfaces. Promotion must not hinge on the recording agent
+// guessing one exact magic word — that brittleness is what let a recorded commit
+// convention fall off session-start and get missed in review (TASK-513).
+var importantTagStems = []string{"convention", "policy", "workflow"}
 
 type canonLimits struct {
 	decisions int // routine cap (full) or hard total cap (compact)
@@ -275,8 +282,14 @@ func FilterDecisionNoise(decs []Decision) []Decision {
 
 func hasImportantTag(tags []string) bool {
 	for _, t := range tags {
-		if importantDecisionTags[strings.ToLower(strings.TrimSpace(t))] {
+		norm := strings.ToLower(strings.TrimSpace(t))
+		if importantDecisionTags[norm] {
 			return true
+		}
+		for _, stem := range importantTagStems {
+			if strings.Contains(norm, stem) {
+				return true
+			}
 		}
 	}
 	return false

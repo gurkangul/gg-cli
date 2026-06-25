@@ -143,3 +143,30 @@ func TestFilterDecisionNoise(t *testing.T) {
 		t.Fatalf("expected only [a real decision], got %+v", out)
 	}
 }
+
+// TestHasImportantTag_ExactAndPolicyStems locks in that durable policy/convention
+// rules auto-surface as canon-important without the agent guessing one exact magic
+// word: the original tags match exactly, and any tag CONTAINING a policy-family
+// stem (convention/policy/workflow) matches as a substring (TASK-513).
+func TestHasImportantTag_ExactAndPolicyStems(t *testing.T) {
+	cases := []struct {
+		tags []string
+		want bool
+	}{
+		{[]string{"architecture"}, true},      // exact, original
+		{[]string{"Security"}, true},          // exact, case-insensitive
+		{[]string{"commit-convention"}, true}, // substring stem
+		{[]string{"naming-convention"}, true},
+		{[]string{"team-policy"}, true},
+		{[]string{"workflow-rule"}, true},
+		{[]string{"  Convention "}, true}, // trimmed + lowercased
+		{[]string{"auth", "api"}, false},  // unrelated
+		{[]string{"bug", "perf"}, false},
+		{nil, false},
+	}
+	for _, c := range cases {
+		if got := hasImportantTag(c.tags); got != c.want {
+			t.Errorf("hasImportantTag(%v) = %v, want %v", c.tags, got, c.want)
+		}
+	}
+}

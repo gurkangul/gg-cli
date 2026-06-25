@@ -100,10 +100,19 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "warning: list discussions:", discsErr)
 	}
 
-	// Recent decisions
-	decisions, decisionsErr := d.store.ListDecisions(ctx, 5, false)
+	// Recent decisions — fetch all active to learn the true total, then show only
+	// the top few. The breadcrumb below makes the cap non-silent so a durable rule
+	// that has slipped past the window is still discoverable instead of vanishing
+	// (TASK-513).
+	const recentDecisionsShown = 5
+	allActiveDecisions, decisionsErr := d.store.ListDecisions(ctx, 0, false)
 	if decisionsErr != nil {
 		fmt.Fprintln(os.Stderr, "warning: list decisions:", decisionsErr)
+	}
+	totalActiveDecisions := len(allActiveDecisions)
+	decisions := allActiveDecisions
+	if len(decisions) > recentDecisionsShown {
+		decisions = decisions[:recentDecisionsShown]
 	}
 
 	// Recent rejections
@@ -299,12 +308,19 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 
 		if decisionsErr == nil && len(decisions) > 0 {
-			fmt.Println("\nRECENT DECISIONS:")
+			if totalActiveDecisions > len(decisions) {
+				fmt.Printf("\nRECENT DECISIONS (%d of %d shown):\n", len(decisions), totalActiveDecisions)
+			} else {
+				fmt.Println("\nRECENT DECISIONS:")
+			}
 			for _, dec := range decisions {
 				fmt.Printf("  • %s\n", dec.Text)
 				if len(dec.Tags) > 0 {
 					fmt.Printf("    Tags: %s\n", strings.Join(dec.Tags, ", "))
 				}
+			}
+			if totalActiveDecisions > len(decisions) {
+				fmt.Printf("  …%d older not shown — gg decisions · gg search \"<topic>\" · gg canon show\n", totalActiveDecisions-len(decisions))
 			}
 		}
 

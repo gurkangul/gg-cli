@@ -56,7 +56,7 @@ func init() {
 	recordCmd.Flags().StringVar(&recordRejectedAlternatives, "rejected-alternatives", "", "comma-separated approaches that were considered and rejected")
 	recordCmd.Flags().StringVar(&recordImplements, "implements", "", "TASK-X that implements this decision (writes code-graph edge)")
 	recordCmd.Flags().StringVar(&recordRejects, "rejects", "", "decision UUID superseded by this one (writes code-graph edge)")
-	recordCmd.Flags().BoolVar(&recordPin, "pin", false, "pin this decision so it surfaces first in gg context overview regardless of age (for canon-grade, must-not-be-buried decisions)")
+	recordCmd.Flags().BoolVar(&recordPin, "pin", false, "pin this decision so it surfaces first in gg context overview AND in the session-start PROJECT CANON regardless of age — use for durable rules/policies (commit conventions, ownership, invariants) that must not fall off the recent-decisions window; tagging constraint/convention/policy has the same effect")
 	recordCmd.Flags().StringVar(&recordEvidence, "evidence", "", "how this was verified (commands run, live smoke, source ref) — empty surfaces as [unverified]")
 	addFromFlag(recordCmd)
 	rootCmd.AddCommand(recordCmd)

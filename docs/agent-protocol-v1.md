@@ -194,6 +194,18 @@ Use `gg record` for accepted decisions:
 gg record "use JWT for auth" --reason "stateless, simple to deploy" --tags "auth,api"
 ```
 
+For durable **rules and policies** every future session must see — commit
+conventions, who-pushes, ownership rules, invariants — add `--pin` (or tag
+`constraint`/`convention`/`policy`). Plain decisions age out of the recent
+window; pinned or policy-tagged ones stay in the always-surfaced PROJECT CANON
+so a reviewer can never miss them:
+
+```bash
+gg record "ONE commit per task; subject <type>(scope): summary — no filenames in subject" \
+  --tags "commit,convention" --pin \
+  --reason "must outlive the recent-decisions window so reviews always see it"
+```
+
 Use `gg record --decision-status rejected` for approaches that should not be
 re-proposed:
 
