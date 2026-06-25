@@ -117,6 +117,7 @@ func runDoctorInstallTaskHooks() error {
 	preDir := filepath.Join(ggDir, "hooks", "pre-task-done.d")
 	postDir := filepath.Join(ggDir, "hooks", "task-done.d")
 	preCommitDir := filepath.Join(ggDir, "hooks", "pre-commit.d")
+	commitMsgDir := filepath.Join(ggDir, "hooks", "commit-msg.d")
 	if mkErr := os.MkdirAll(preDir, 0o755); mkErr != nil {
 		return fmt.Errorf("create pre-hook dir: %w", mkErr)
 	}
@@ -125,6 +126,9 @@ func runDoctorInstallTaskHooks() error {
 	}
 	if mkErr := os.MkdirAll(preCommitDir, 0o755); mkErr != nil {
 		return fmt.Errorf("create pre-commit hook dir: %w", mkErr)
+	}
+	if mkErr := os.MkdirAll(commitMsgDir, 0o755); mkErr != nil {
+		return fmt.Errorf("create commit-msg hook dir: %w", mkErr)
 	}
 
 	skipDirs, maxDepth := hookInstallSettings()
@@ -283,6 +287,23 @@ func runDoctorInstallTaskHooks() error {
 	// directory but are never called by git.
 	if err := installGitPreCommitDispatcher(projectRoot, preCommitDir); err != nil {
 		fmt.Fprintf(os.Stderr, "⚠ could not install .git/hooks/pre-commit dispatcher: %v\n", err)
+	}
+
+	// 30-commit-msg.sh: commit-message convention check (subject length, no file
+	// paths in subject, optional prefix regex). DEFAULT OFF so it is inert until a
+	// project opts in (GG_COMMIT_MSG_GATE=warn|on) — safe to propagate everywhere.
+	commitMsgPath := filepath.Join(commitMsgDir, "30-commit-msg.sh")
+	if n, err := installHookIfAbsent(commitMsgPath, "CommitMsgGateHook", templates.CommitMsgGateHook,
+		"commit-message convention gate — default off; opt in with GG_COMMIT_MSG_GATE=warn|on"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
+	// Wire the .git/hooks/commit-msg dispatcher so the gg commit-msg.d hooks fire
+	// on `git commit` (commit-msg, unlike pre-commit, receives the message file).
+	if err := installGitCommitMsgDispatcher(projectRoot, commitMsgDir); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not install .git/hooks/commit-msg dispatcher: %v\n", err)
 	}
 
 	// Makefile tier template: written to .gg/templates/ so humans can discover

@@ -129,6 +129,39 @@ and the `$PATH` lookup.
 GG_GITLEAKS_BIN=/opt/homebrew/bin/gitleaks git commit ...
 ```
 
+### `GG_COMMIT_MSG_GATE` — commit-message convention gate (`commit-msg.d/30-commit-msg.sh`)
+
+Checks the commit subject (length, no file paths/source filenames, optional
+prefix). This is a `commit-msg` hook (it needs the message, which `pre-commit`
+never sees). **Default off** so it is inert until a project opts in — safe to
+propagate everywhere via `gg system sync`.
+
+| Value | Effect |
+|---|---|
+| `off` *(default)* | Gate is skipped entirely (inert) |
+| `warn` | Prints convention advice; does not block the commit |
+| `on` | Exits 7 (blocks the commit) on a violation |
+
+Per-project config can also live in `.gg/commit-msg.conf` (shell `key=value`,
+sourced by the hook); a real environment variable overrides the file.
+
+**Bypass (audited):** set `GG_BYPASS_RATIONALE="<reason>"`.
+
+### `GG_COMMIT_MSG_MAX_SUBJECT` — max subject length
+
+Maximum commit subject length before the gate flags it. Default `72`.
+
+### `GG_COMMIT_MSG_PREFIX` — required subject prefix (ERE)
+
+Optional extended-regex the subject must match, e.g.
+`^(feat|fix|chore|docs|refactor|test|perf|build|ci)(\(.+\))?: `. Empty (default)
+means the prefix is not checked — projects set their own format.
+
+### `GG_COMMIT_MSG_ALLOW_FILENAMES` — allow file names in the subject
+
+Set to `1` to disable the "no file path / source filename in subject" check.
+Default `0` (the check is active when the gate is on/warn).
+
 ### `GG_IMPACT_ATTESTATION` — impact-analysis gate (`60-impact-attestation.sh`)
 
 Requires an `Impact-Reviewed:` trailer in the commit body when ≥3 source

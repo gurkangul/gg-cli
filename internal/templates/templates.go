@@ -63,6 +63,9 @@ var MakefileTestTiers string
 //go:embed pre-commit-secret-scan.sh
 var PreCommitSecretScanHook string
 
+//go:embed commit-msg-convention.sh
+var CommitMsgGateHook string
+
 // ArtifactSHAs returns a map of artifact key → SHA256 of the bundled template.
 // Keys are paths relative to .gg/ (e.g. "RULES.md",
 // "hooks/pre-task-done.d/05-smoke-e2e.sh"). This is the canonical set of
@@ -86,6 +89,7 @@ func ArtifactSHAs() map[string]string {
 		"hooks/task-done.d/80-task-done-go.sh":           TaskDoneGoHook,
 		"templates/makefile-test-tiers.mk":               MakefileTestTiers,
 		"hooks/pre-commit.d/20-secret-scan.sh":           PreCommitSecretScanHook,
+		"hooks/commit-msg.d/30-commit-msg.sh":            CommitMsgGateHook,
 	}
 	out := make(map[string]string, len(entries))
 	for k, v := range entries {

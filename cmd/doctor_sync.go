@@ -154,6 +154,8 @@ func artifactContent(key string) (string, bool) {
 		return templates.PreTaskDoneReviewConvergenceHook, true
 	case "hooks/pre-commit.d/20-secret-scan.sh":
 		return templates.PreCommitSecretScanHook, true
+	case "hooks/commit-msg.d/30-commit-msg.sh":
+		return templates.CommitMsgGateHook, true
 	case "hooks/task-done.d/80-task-done-go.sh":
 		return templates.TaskDoneGoHook, true
 	case "templates/makefile-test-tiers.mk":
