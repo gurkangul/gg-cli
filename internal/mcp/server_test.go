@@ -135,12 +135,12 @@ func TestToolsCallContentShape(t *testing.T) {
 }
 
 // TestReadOnlyToolSurface locks in the read-only guarantee: the real Host must
-// advertise exactly the six gg_* read tools and zero write tools.
+// advertise exactly the seven gg_* read tools and zero write tools.
 func TestReadOnlyToolSurface(t *testing.T) {
 	tools := NewHost().ListTools()
 	want := map[string]bool{
 		"gg_search": false, "gg_context": false, "gg_impact": false,
-		"gg_canon": false, "gg_task_get": false, "gg_bug_get": false,
+		"gg_def": false, "gg_canon": false, "gg_task_get": false, "gg_bug_get": false,
 	}
 	mutating := []string{"record", "create", "update", "delete", "write", "set", "send", "done", "task_start", "reject", "tell"}
 	for _, tool := range tools {
@@ -162,8 +162,8 @@ func TestReadOnlyToolSurface(t *testing.T) {
 			t.Fatalf("expected read tool %q not advertised", name)
 		}
 	}
-	if len(tools) != 6 {
-		t.Fatalf("expected exactly 6 read tools, got %d", len(tools))
+	if len(tools) != 7 {
+		t.Fatalf("expected exactly 7 read tools, got %d", len(tools))
 	}
 }
 

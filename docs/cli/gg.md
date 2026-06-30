@@ -23,6 +23,7 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg config](gg_config.md)	 - Inspect or modify project configuration
 * [gg context](gg_context.md)	 - Fetch a unified context bundle for the project, a topic, or a task
 * [gg decisions](gg_decisions.md)	 - List or search decisions
+* [gg def](gg_def.md)	 - Find where a symbol is defined (code graph, offline)
 * [gg doctor](gg_doctor.md)	 - Diagnose and repair gg configuration
 * [gg export](gg_export.md)	 - Export all project data to a portable bundle
 * [gg graph](gg_graph.md)	 - Work with the local code graph

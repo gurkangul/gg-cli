@@ -18,9 +18,9 @@ An MCP client (Claude Desktop, an IDE, another agent) spawns 'gg mcp serve' as a
 child process and exchanges newline-delimited JSON-RPC 2.0 messages over the
 child's stdin/stdout. There is no port and no daemon.
 
-The server exposes only read tools (gg_search, gg_context, gg_impact, gg_canon,
-gg_task_get, gg_bug_get). No write tools exist — the brain cannot be mutated
-through MCP.`,
+The server exposes only read tools (gg_search, gg_context, gg_impact, gg_def,
+gg_canon, gg_task_get, gg_bug_get). No write tools exist — the brain cannot be
+mutated through MCP.`,
 }
 
 var mcpServeProject string

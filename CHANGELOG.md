@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`gg def <name>`** — resolve a symbol name to where it is defined (file + kind)
+  straight from the code graph, offline. The grep-free answer to "where is X
+  defined", and the static complement to the live `gg lsp def`. Also exposed as
+  the read-only **`gg_def`** MCP tool, so MCP-connected agents get it in their
+  tool list. Empty results are reported explicitly (run `gg index`), never as a
+  silent "not found".
+
+### Changed
+
+- The synced **agent contract** now tells agents to get a shared symbol's blast
+  radius from the code graph — `gg impact` / `gg lsp` / `gg def`, not grep —
+  before editing it. The rule propagates to every CLAUDE.md / AGENTS.md /
+  `.cursorrules` at the next session-start via the contract-version hash. Closes
+  the affordance gap where the code-graph tools existed but agents reached for
+  text search instead.
+- **MCP `gg_impact`** no longer returns silently-empty dependents on a missing or
+  unbuilt graph: it adds a `warnings` entry so an agent never reads "no
+  dependents" as proof when the graph simply has not been indexed.
+- **MCP tool descriptions** (`gg_impact`, `gg_search`) rewritten to position them
+  against grep/ripgrep — `gg_impact` follows the real import graph and catches
+  re-exports/barrels and aliased imports that text search misses; `gg_search`
+  surfaces rejected approaches grep cannot.
+
 ## [2.5.1] - 2026-06-25
 
 ### Changed

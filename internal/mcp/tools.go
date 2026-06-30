@@ -135,7 +135,7 @@ func (h *Host) ListTools() []Tool {
 	return []Tool{
 		{
 			Name:        "gg_search",
-			Description: "Semantic search across the project brain (decisions, rejections, tasks, bugs, notes). Use before starting work to check prior decisions and rejected approaches.",
+			Description: "Semantic search across the project brain (decisions, rejections, tasks, bugs, notes). Run before changing behavior to surface prior decisions and REJECTED approaches — what was already tried and ruled out, which grep/Read cannot show.",
 			InputSchema: objSchema(map[string]map[string]any{
 				"query":   strProp("the search query"),
 				"compact": boolProp("also include a per-collection counts map for a quick size estimate"),
@@ -152,11 +152,18 @@ func (h *Host) ListTools() []Tool {
 		},
 		{
 			Name:        "gg_impact",
-			Description: "Blast radius of changing a file, or of a BUG-NNN / TASK-NNN. Returns downstream dependents and related knowledge-base records.",
+			Description: "Find every file affected by changing a file (or a BUG-NNN / TASK-NNN). Use INSTEAD of grep/ripgrep for \"what depends on X\": it follows the real import graph and catches re-exports/barrels and aliased imports that text search misses, plus related decisions, tasks, and bugs. Call before editing a shared or exported file. (For the exact callers of one symbol, use gg_def then `gg lsp refs`.)",
 			InputSchema: objSchema(map[string]map[string]any{
 				"target": strProp("source file path, BUG-NNN, or TASK-NNN"),
 				"hops":   intProp("downstream dependency hops to traverse in file mode (default 1)"),
 			}, "target"),
+		},
+		{
+			Name:        "gg_def",
+			Description: "Find where a symbol is defined — returns the file(s) and kind for a symbol name. Use INSTEAD of grep for \"where is X defined\". Graph-backed and offline; complements gg_impact.",
+			InputSchema: objSchema(map[string]map[string]any{
+				"name": strProp("the symbol name, e.g. DependentsOf"),
+			}, "name"),
 		},
 		{
 			Name:        "gg_canon",
@@ -203,6 +210,8 @@ func (h *Host) CallTool(ctx context.Context, name string, args map[string]any) (
 		return b.toolContext(cctx, args)
 	case "gg_impact":
 		return b.toolImpact(cctx, args)
+	case "gg_def":
+		return b.toolDef(cctx, args)
 	case "gg_canon":
 		return b.toolCanon(cctx, args)
 	case "gg_task_get":

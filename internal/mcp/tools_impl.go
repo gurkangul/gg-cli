@@ -290,11 +290,22 @@ func (b *brain) toolImpact(ctx context.Context, args map[string]any) ([]ContentB
 	}
 
 	result := map[string]any{"target": target}
+	var warnings []string
 
 	// Graph dependents/symbols are optional — they require gg index to have run.
+	// But "optional" must not mean "silently empty": an agent that receives an
+	// empty dependents list from a missing/unbuilt graph would wrongly conclude
+	// "nothing depends on this" and fall back to grep. Surface the gap explicitly
+	// (parity with the CLI's freshness/empty-graph notices in cmd/impact.go).
 	gc, gcErr := graph.New(b.cfg.DataDir, b.cfg.ProjectID)
+	if gcErr != nil {
+		warnings = append(warnings, "code graph unavailable ("+gcErr.Error()+"): dependents and symbols omitted — knowledge-base results only. Run 'gg index' if you expected graph data.")
+	}
 	if gcErr == nil {
 		defer func() { _ = gc.Close(ctx) }()
+		if n, err := gc.CountFileNodes(ctx); err == nil && n == 0 {
+			warnings = append(warnings, "code graph is empty (0 files indexed): an empty 'dependents' list is NOT proof that nothing depends on this target — run 'gg index' first.")
+		}
 		hops := argInt(args, "hops", 1)
 		if hops < 1 {
 			hops = 1
@@ -358,6 +369,38 @@ func (b *brain) toolImpact(ctx context.Context, args map[string]any) ([]ContentB
 		result["rejections"] = rejections
 	}
 
+	if len(warnings) > 0 {
+		result["warnings"] = warnings
+	}
+	return jsonContent(result), false
+}
+
+// ── gg_def ────────────────────────────────────────────────────────────────
+
+// toolDef answers "where is symbol X defined" from the code graph — the
+// offline, grep-free complement to gg_impact. It resolves a bare symbol name to
+// every Symbol node (a name can be defined in more than one file), returning
+// file + kind for each. An empty match set is reported as a warning, never a
+// silent empty list, so the agent does not read "not found" as "does not exist"
+// when the graph is simply unbuilt.
+func (b *brain) toolDef(ctx context.Context, args map[string]any) ([]ContentBlock, bool) {
+	name := argString(args, "name")
+	if name == "" {
+		return TextBlock(`gg_def requires a "name" (symbol name, e.g. DependentsOf)`), true
+	}
+	gc, err := graph.New(b.cfg.DataDir, b.cfg.ProjectID)
+	if err != nil {
+		return TextBlock("code graph unavailable (run 'gg index'): " + err.Error()), true
+	}
+	defer func() { _ = gc.Close(ctx) }()
+	matches, err := gc.FindSymbols(ctx, name)
+	if err != nil {
+		return TextBlock("gg_def: " + err.Error()), true
+	}
+	result := map[string]any{"query": name, "matches": matches}
+	if len(matches) == 0 {
+		result["warnings"] = []string{"no symbol named " + name + " in the code graph — run 'gg index', or it may be unexported/aliased (try gg_impact on the file, or grep as a last resort)"}
+	}
 	return jsonContent(result), false
 }
 

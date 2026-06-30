@@ -32,7 +32,7 @@ gg record "text" [flags]
       --from string                    author/role recording this (defaults to $GG_ROLE)
   -h, --help                           help for record
       --implements string              TASK-X that implements this decision (writes code-graph edge)
-      --pin                            pin this decision so it surfaces first in gg context overview regardless of age (for canon-grade, must-not-be-buried decisions)
+      --pin                            pin this decision so it surfaces first in gg context overview AND in the session-start PROJECT CANON regardless of age — use for durable rules/policies (commit conventions, ownership, invariants) that must not fall off the recent-decisions window; tagging constraint/convention/policy has the same effect
       --reason string                  why this decision was made (or rejected)
       --rejected-alternatives string   comma-separated approaches that were considered and rejected
       --rejects string                 decision UUID superseded by this one (writes code-graph edge)
