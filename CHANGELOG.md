@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Symbol-level `REFERENCES` edges + `gg uses <name>`** — the indexer now
+  persists a `(File)-[:REFERENCES]->(Symbol)` edge for every cross-file symbol
+  reference SCIP already reports (previously collapsed into a file→file `IMPORTS`
+  edge and discarded). This gives a **symbol-exact, barrel-proof reverse
+  blast-radius**: `gg uses <name>` (and the read-only **`gg_uses`** MCP tool)
+  answers "which files use symbol X" by matching the specific Symbol — so a
+  barrel/re-export (`export * from './X'`) never over-reports consumers of a
+  *sibling* symbol the way 2-hop file-level `gg impact` does. Reverse traversal
+  rides the existing edge dst-index; `gg index` populates the edges (re-index
+  required), and incremental `--changed` runs resolve targets outside the write
+  set so cross-file edges to unchanged files are not dropped. REFERENCES is the
+  semantic (SCIP) tier only, so an empty result on an unbuilt/syntactic graph is
+  reported as a warning, not silent "no users".
 - **`gg def <name>`** — resolve a symbol name to where it is defined (file + kind)
   straight from the code graph, offline. The grep-free answer to "where is X
   defined", and the static complement to the live `gg lsp def`. Also exposed as

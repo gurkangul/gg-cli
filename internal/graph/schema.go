@@ -29,10 +29,11 @@ const (
 
 // Relationship types between nodes.
 const (
-	RelDefines  = "DEFINES"  // (File)-[:DEFINES]->(Symbol)
-	RelContains = "CONTAINS" // (Package)-[:CONTAINS]->(File)
-	RelCalls    = "CALLS"    // (Symbol)-[:CALLS]->(Symbol)
-	RelImports  = "IMPORTS"  // (Symbol|File)-[:IMPORTS]->(Package)
+	RelDefines    = "DEFINES"    // (File)-[:DEFINES]->(Symbol)
+	RelContains   = "CONTAINS"   // (Package)-[:CONTAINS]->(File)
+	RelCalls      = "CALLS"      // (Symbol)-[:CALLS]->(Symbol)
+	RelImports    = "IMPORTS"    // (Symbol|File)-[:IMPORTS]->(Package)
+	RelReferences = "REFERENCES" // (File)-[:REFERENCES]->(Symbol) — a file uses a specific symbol (barrel-exact reverse blast-radius)
 
 	// Knowledge-graph relationship types.
 	RelDecides    = "DECIDES"    // (Decision)-[:DECIDES]->(Task)

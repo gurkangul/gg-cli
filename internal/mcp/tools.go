@@ -166,6 +166,14 @@ func (h *Host) ListTools() []Tool {
 			}, "name"),
 		},
 		{
+			Name:        "gg_uses",
+			Description: "Find which files USE (reference) a symbol — the symbol-exact \"who uses X\". Use INSTEAD of grep before changing or deleting a shared/exported symbol: it matches the specific symbol, so a barrel (export *) re-export never over-reports consumers of sibling symbols the way file-level impact does. Pass file to disambiguate a name defined in multiple files.",
+			InputSchema: objSchema(map[string]map[string]any{
+				"name": strProp("the symbol name, e.g. CollapsePanel"),
+				"file": strProp("optional defining source file, to disambiguate a name defined in multiple files"),
+			}, "name"),
+		},
+		{
 			Name:        "gg_canon",
 			Description: "The project canon: distilled institutional memory plus an auto-derived live digest of the ledger. Read at session start.",
 			InputSchema: objSchema(map[string]map[string]any{
@@ -212,6 +220,8 @@ func (h *Host) CallTool(ctx context.Context, name string, args map[string]any) (
 		return b.toolImpact(cctx, args)
 	case "gg_def":
 		return b.toolDef(cctx, args)
+	case "gg_uses":
+		return b.toolUses(cctx, args)
 	case "gg_canon":
 		return b.toolCanon(cctx, args)
 	case "gg_task_get":

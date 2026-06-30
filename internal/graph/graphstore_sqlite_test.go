@@ -190,6 +190,50 @@ func TestSQLite_DependentsOf(t *testing.T) {
 	}
 }
 
+// TestSQLite_ReferencersOf proves the symbol-exact reverse blast-radius is
+// barrel-proof: a consumer that references a *sibling* symbol re-exported by the
+// same barrel must NOT appear among a symbol's referencers — the exact false
+// positive that file-level 2-hop impact produces.
+func TestSQLite_ReferencersOf(t *testing.T) {
+	ctx := context.Background()
+	c := newSQLiteClient(t, "proj-ref")
+
+	// Two sibling symbols, each defined in its own file.
+	collapse := &Node{Label: "Symbol", Properties: map[string]any{"name": "CollapsePanel", "source_file": "ui/collapse.ts"}}
+	accordion := &Node{Label: "Symbol", Properties: map[string]any{"name": "Accordion", "source_file": "ui/accordion.ts"}}
+	// Two consumer files: FaqSection uses CollapsePanel; Login uses only Accordion
+	// (a sibling re-exported by the same barrel). At the file level both would be
+	// transitive dependents of collapse.ts through the barrel — the pollution.
+	faq := &Node{Label: "File", Properties: map[string]any{"path": "app/FaqSection.tsx"}}
+	login := &Node{Label: "File", Properties: map[string]any{"path": "app/Login.tsx"}}
+	for _, n := range []*Node{collapse, accordion, faq, login} {
+		if err := c.CreateNode(ctx, n); err != nil {
+			t.Fatalf("CreateNode %v: %v", n.Properties, err)
+		}
+	}
+	if err := c.CreateEdge(ctx, &Edge{FromID: faq.ID, ToID: collapse.ID, Type: RelReferences}); err != nil {
+		t.Fatalf("CreateEdge FaqSection->CollapsePanel: %v", err)
+	}
+	if err := c.CreateEdge(ctx, &Edge{FromID: login.ID, ToID: accordion.ID, Type: RelReferences}); err != nil {
+		t.Fatalf("CreateEdge Login->Accordion: %v", err)
+	}
+
+	refs, err := c.ReferencersOf(ctx, collapse.ID)
+	if err != nil {
+		t.Fatalf("ReferencersOf: %v", err)
+	}
+	if len(refs) != 1 || refs[0] != "app/FaqSection.tsx" {
+		t.Fatalf("barrel pollution: expected only [app/FaqSection.tsx], got %v", refs)
+	}
+	refsB, err := c.ReferencersOf(ctx, accordion.ID)
+	if err != nil {
+		t.Fatalf("ReferencersOf accordion: %v", err)
+	}
+	if len(refsB) != 1 || refsB[0] != "app/Login.tsx" {
+		t.Fatalf("expected only [app/Login.tsx], got %v", refsB)
+	}
+}
+
 // TestSQLite_ImportEdgesFromJSONL verifies the embedded store can be populated
 // through the same edges.jsonl import path Memgraph uses (gg brain import).
 func TestSQLite_ImportEdgesFromJSONL(t *testing.T) {

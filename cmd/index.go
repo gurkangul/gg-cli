@@ -464,17 +464,20 @@ func index(ctx context.Context, projectRoot, moduleDir string, lang runner.Lang,
 	fmt.Printf("parsing %s ...\n", result.IndexPath)
 
 	h := &graphHandler{
-		gc:              gc,
-		root:            projectRoot,
-		moduleDir:       moduleDir,
-		moduleRelRoot:   moduleRelRoot,
-		fileFilter:      fileFilter,
-		headSHA:         headSHA,
-		modulePath:      readModulePath(moduleDir),
-		fileNodeByPath:  make(map[string]*graph.Node),
-		scipToFile:      make(map[string]string),
-		seenImportEdges: make(map[string]bool),
-		seenPackages:    make(map[string]string),
+		gc:               gc,
+		root:             projectRoot,
+		moduleDir:        moduleDir,
+		moduleRelRoot:    moduleRelRoot,
+		fileFilter:       fileFilter,
+		headSHA:          headSHA,
+		modulePath:       readModulePath(moduleDir),
+		fileNodeByPath:   make(map[string]*graph.Node),
+		scipToFile:       make(map[string]string),
+		scipToSymbolID:   make(map[string]string),
+		scipToSymbolName: make(map[string]string),
+		seenImportEdges:  make(map[string]bool),
+		seenRefEdges:     make(map[string]bool),
+		seenPackages:     make(map[string]string),
 	}
 	if err := parser.ParseFile(ctx, result.IndexPath, string(lang), h); err != nil {
 		return fmt.Errorf("parse scip: %w", err)
@@ -484,7 +487,7 @@ func index(ctx context.Context, projectRoot, moduleDir string, lang runner.Lang,
 	// all definitions are in scipToFile.
 	h.flushRefs(ctx)
 
-	fmt.Printf("indexed %d files, %d symbols, %d references → %d import edges, %d packages\n",
-		h.files, h.symbols, h.refs, h.imports, len(h.seenPackages))
+	fmt.Printf("indexed %d files, %d symbols, %d references → %d import edges, %d reference edges, %d packages\n",
+		h.files, h.symbols, h.refs, h.imports, h.references, len(h.seenPackages))
 	return nil
 }

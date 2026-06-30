@@ -51,6 +51,35 @@ func (s *sqliteStore) dependentsOf(ctx context.Context, params map[string]any) (
 	return scanStringColumn(rows, "dep")
 }
 
+// referencersOf handles
+// "MATCH (d:File)-[:REFERENCES]->(s:Symbol) WHERE id(s) = $id RETURN DISTINCT d.path AS dep".
+// It is the symbol-exact reverse of dependentsOf: given a Symbol node id, return
+// the distinct files that reference it, ordered by path.
+func (s *sqliteStore) referencersOf(ctx context.Context, params map[string]any) (*GraphResult, error) {
+	pid := pidOf(params)
+	idStr, _ := params["id"].(string)
+	symID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		return newGraphResult([]string{"dep"}, nil), nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT json_extract(d.props, '$.path') AS dep
+		 FROM nodes d
+		 JOIN edges e ON e.src = d.internal_id
+		 JOIN nodes sym ON sym.internal_id = e.dst
+		 WHERE e.project_id = ? AND e.type = 'REFERENCES'
+		   AND d.label = 'File' AND d.project_id = ?
+		   AND sym.label = 'Symbol' AND sym.project_id = ?
+		   AND sym.internal_id = ?
+		 ORDER BY dep`,
+		pid, pid, pid, symID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	return scanStringColumn(rows, "dep")
+}
+
 // bugsAffectingFile handles
 // "MATCH (b:Bug)-[:AFFECTS]->(f:File {path: $path}) RETURN b.bug_id, b.title".
 func (s *sqliteStore) bugsAffectingFile(ctx context.Context, params map[string]any) (*GraphResult, error) {

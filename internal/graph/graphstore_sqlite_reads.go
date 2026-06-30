@@ -26,6 +26,8 @@ func (s *sqliteStore) runRead(ctx context.Context, c, cypher string, params map[
 		return s.callees(ctx, params)
 	case strings.Contains(c, "-[:IMPORTS]->(f:File {path: $path"):
 		return s.dependentsOf(ctx, params)
+	case strings.Contains(c, "-[:REFERENCES]->(s:Symbol"):
+		return s.referencersOf(ctx, params)
 	case strings.Contains(c, "(b:Bug {project_id: $pid})-[:AFFECTS]->(f:File {path: $path"):
 		return s.bugsAffectingFile(ctx, params)
 	case strings.Contains(c, "(b:Bug {bug_id: $bug_id, project_id: $pid})-[:AFFECTS]->(target)"):

@@ -23,14 +23,18 @@ type graphHandler struct {
 	symbols          int
 	refs             int
 	imports          int
+	references       int
 	skippedOutOfTree int // files skipped because their path escaped project root (e.g. go-build cache)
 
 	// BUG-013/014: per-run lookup tables built during indexing.
-	fileNodeByPath  map[string]*graph.Node // relPath → file node (with ID)
-	scipToFile      map[string]string      // scip symbol string → source relPath (for ref resolution)
-	seenImportEdges map[string]bool        // "fromID|toID" → written (dedup)
-	seenPackages    map[string]string      // import_path → package node ID
-	pendingRefs     []pendingRef
+	fileNodeByPath   map[string]*graph.Node // relPath → file node (with ID)
+	scipToFile       map[string]string      // scip symbol string → source relPath (for ref resolution)
+	scipToSymbolID   map[string]string      // scip symbol string → defining Symbol node ID (for REFERENCES edges)
+	scipToSymbolName map[string]string      // scip symbol string → symbol name, for filtered-out targets (incremental resolve)
+	seenImportEdges  map[string]bool        // "fromID|toID" → written (dedup)
+	seenRefEdges     map[string]bool        // "fromFileID|symbolID" → REFERENCES written (dedup)
+	seenPackages     map[string]string      // import_path → package node ID
+	pendingRefs      []pendingRef
 }
 
 // pendingRef is a cross-file reference collected during OnReference and resolved after ParseFile.
@@ -108,6 +112,13 @@ func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNo
 	if h.fileFilter != nil && !h.fileFilter[relPath] {
 		if scipSymbol != "" {
 			h.scipToFile[scipSymbol] = relPath
+			// Incremental: this target symbol's file is outside the write filter,
+			// so its node id isn't captured this run. Remember its name so a
+			// REFERENCES edge from a changed file can resolve the existing node
+			// lazily in flushRefs (mirrors the File-node fallback in OnFile).
+			if name, _ := symNode.Properties["name"].(string); name != "" {
+				h.scipToSymbolName[scipSymbol] = name
+			}
 		}
 		return nil
 	}
@@ -119,8 +130,13 @@ func (h *graphHandler) OnSymbol(ctx context.Context, fileNode *graph.Node, symNo
 		return err
 	}
 	// BUG-013: record scip→file mapping for cross-file reference resolution.
+	// Also map scip→Symbol node id so flushRefs can write symbol-level REFERENCES
+	// edges (barrel-exact reverse blast-radius), not only file-level IMPORTS.
 	if scipSymbol != "" {
 		h.scipToFile[scipSymbol] = relPath
+		if symNode.ID != "" {
+			h.scipToSymbolID[scipSymbol] = symNode.ID
+		}
 	}
 	if fileNode.ID != "" && symNode.ID != "" {
 		edge := &graph.Edge{
@@ -149,30 +165,88 @@ func (h *graphHandler) OnReference(ctx context.Context, fromFileNode *graph.Node
 	return nil
 }
 
-// flushRefs resolves collected pending references and writes IMPORTS edges.
-// Must be called after ParseFile — at that point all definitions are in scipToFile.
+// flushRefs resolves collected pending references and writes the cross-file
+// edges. Must be called after ParseFile — at that point all definitions are in
+// scipToFile/scipToSymbolID. Two edges are written per resolved reference:
+//   - File→File IMPORTS (coarse blast-radius + --changed invalidation), and
+//   - File→Symbol REFERENCES (symbol-exact reverse blast-radius). Because the
+//     REFERENCES edge targets the specific Symbol node, a barrel/re-export file
+//     never makes a consumer of a *sibling* symbol look like a user of this one.
 func (h *graphHandler) flushRefs(ctx context.Context) {
 	for _, ref := range h.pendingRefs {
 		targetFile := h.scipToFile[ref.scipSymbol]
 		if targetFile == "" {
 			continue // external/stdlib symbol — no node in this project's graph
 		}
-		targetNode := h.fileNodeByPath[targetFile]
-		if targetNode == nil || targetNode.ID == "" || targetNode.ID == ref.fromFileID {
-			continue // target not indexed or self-reference
+
+		// File-level IMPORTS edge.
+		if targetNode := h.fileNodeByPath[targetFile]; targetNode != nil && targetNode.ID != "" && targetNode.ID != ref.fromFileID {
+			edgeKey := ref.fromFileID + "|" + targetNode.ID
+			if !h.seenImportEdges[edgeKey] {
+				h.seenImportEdges[edgeKey] = true
+				edge := &graph.Edge{FromID: ref.fromFileID, ToID: targetNode.ID, Type: graph.RelImports}
+				if err := h.gc.UpsertEdge(ctx, edge); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: upsert IMPORTS edge: %v\n", err)
+				} else {
+					h.imports++
+				}
+			}
 		}
-		edgeKey := ref.fromFileID + "|" + targetNode.ID
-		if h.seenImportEdges[edgeKey] {
+
+		// Symbol-level REFERENCES edge.
+		symbolID := h.resolveSymbolID(ctx, ref.scipSymbol, targetFile)
+		if symbolID == "" {
 			continue
 		}
-		h.seenImportEdges[edgeKey] = true
-		edge := &graph.Edge{FromID: ref.fromFileID, ToID: targetNode.ID, Type: graph.RelImports}
+		refKey := ref.fromFileID + "|" + symbolID
+		if h.seenRefEdges[refKey] {
+			continue
+		}
+		h.seenRefEdges[refKey] = true
+		edge := &graph.Edge{FromID: ref.fromFileID, ToID: symbolID, Type: graph.RelReferences}
 		if err := h.gc.UpsertEdge(ctx, edge); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: upsert IMPORTS edge: %v\n", err)
+			fmt.Fprintf(os.Stderr, "warning: upsert REFERENCES edge: %v\n", err)
 		} else {
-			h.imports++
+			h.references++
 		}
 	}
+}
+
+// resolveSymbolID returns the defining Symbol node id for a scip symbol. Symbols
+// in files written this run are in scipToSymbolID directly. For targets outside
+// the write filter (incremental --changed runs) it resolves the existing node by
+// (name, source_file) once and caches it, so REFERENCES edges to unchanged
+// targets are not silently dropped — the symbol-level analogue of the File-node
+// fallback in OnFile.
+func (h *graphHandler) resolveSymbolID(ctx context.Context, scipSymbol, targetFile string) string {
+	if id := h.scipToSymbolID[scipSymbol]; id != "" {
+		return id
+	}
+	name := h.scipToSymbolName[scipSymbol]
+	if name == "" {
+		return ""
+	}
+	id := h.findExistingSymbolID(ctx, name, targetFile)
+	if id != "" {
+		h.scipToSymbolID[scipSymbol] = id // cache the resolved id
+	}
+	return id
+}
+
+// findExistingSymbolID resolves an already-indexed Symbol node id by its name and
+// defining source file, used during incremental runs for targets outside the
+// write filter.
+func (h *graphHandler) findExistingSymbolID(ctx context.Context, name, sourceFile string) string {
+	matches, err := h.gc.FindSymbols(ctx, name)
+	if err != nil {
+		return ""
+	}
+	for _, m := range matches {
+		if m.SourceFile == sourceFile {
+			return m.ID
+		}
+	}
+	return ""
 }
 
 // upsertPackage creates or retrieves a Package node for the given import path.
