@@ -89,7 +89,7 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorInstallTaskHooks, "install-task-hooks", false,
 		"install verify-gate (pre-task-done.d) + post-done task-done.d hooks; auto-detects Go (go.mod) and/or Node/Bun (package.json)")
 	doctorCmd.Flags().BoolVar(&doctorInstallIndexHooks, "install-index-hooks", false,
-		"install opt-in git hooks (pre-push + post-merge) that run gg index --changed to keep the local CodeGraph fresh; foreground + non-blocking, not a daemon")
+		"install opt-in git hooks (pre-push/post-merge/post-commit) that run gg index --changed to keep the local CodeGraph fresh; detached + non-blocking (background, logs to .gg/index-hook.log), not a daemon")
 	doctorCmd.Flags().BoolVar(&doctorStrict, "strict", false,
 		"exit non-zero when artifact drift is detected (for CI); without --strict, drift is advisory and does not affect the exit code")
 	doctorCmd.Flags().BoolVar(&doctorInstallAgentsMD, "install-agents-md", false,

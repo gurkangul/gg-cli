@@ -17,20 +17,20 @@ const indexHookMarker = "gg-index-hook"
 // the graph stays fresh during commit→commit local dev, not only at push/pull.
 var indexHookNames = []string{"pre-push", "post-merge", "post-commit"}
 
-// indexHookBody refreshes the local CodeGraph after a git operation. It is a
-// FOREGROUND git hook, not a background daemon — it runs `gg index --changed`
-// to completion and is non-blocking: any failure warns on stderr but never
-// aborts the git operation (a stale graph must not stop a push/merge/commit).
-// This keeps the recorded no-daemon CodeGraph contract intact while giving
-// opt-in freshness (TASK-471, TASK-502). The hook ALWAYS exits 0 so a missing
-// gg binary or a failed index never blocks the git operation.
+// indexHookBody refreshes the local CodeGraph after a git operation. It launches
+// `gg index --changed` DETACHED (nohup … &) so git never waits on indexing — the
+// hook returns immediately and the graph refreshes in the background. It is not a
+// daemon: one fire-and-forget run per git op, concurrency-guarded by gg's index
+// lock (see index_lock.go) so overlapping commit→push runs never race the graph.
+// Output goes to .gg/index-hook.log; the hook ALWAYS exits 0 so a missing gg
+// binary or a failed index never blocks the git operation (TASK-471, TASK-502).
 const indexHookBody = `#!/bin/sh
 # ` + indexHookMarker + ` — installed by gg (doctor --install-index-hooks / init)
-# Foreground, non-blocking. Refreshes the local code graph (.gg/graph.db) from
-# the changed files. Not a daemon. A failure warns but never blocks git.
+# Detached, non-blocking: refreshes the local code graph (.gg/graph.db) in the
+# BACKGROUND so git never waits on indexing. Not a daemon — one fire-and-forget
+# run per git op, concurrency-guarded and logged by gg (.gg/index-hook.log).
 command -v gg >/dev/null 2>&1 || exit 0
-gg index --changed >/dev/null 2>&1 || \
-  echo "gg: index --changed failed — CodeGraph may be stale (run 'gg doctor --fix-index')" >&2
+nohup gg index --changed >>.gg/index-hook.log 2>&1 </dev/null &
 exit 0
 `
 
@@ -55,7 +55,7 @@ func installGitIndexHooks(projectRoot string) error {
 		}
 	}
 	fmt.Println("  CodeGraph now refreshes on commit (post-commit), push (pre-push), and after pulling (post-merge).")
-	fmt.Println("  Non-blocking: an index failure warns but never aborts git.")
+	fmt.Println("  Detached & non-blocking: indexing runs in the background (see .gg/index-hook.log); it never blocks or aborts git.")
 	return nil
 }
 
@@ -78,6 +78,21 @@ func indexHooksInstalled(projectRoot string) bool {
 // (TASK-502 AC-3). When the graph is fresh it is an ok/warn line; when the
 // graph needs a notice AND the hooks are missing it fails with the install
 // prompt so a stale graph that nothing is auto-refreshing is loud, not silent.
+// anyIndexHookInstalled reports whether at least one gg-owned index hook is
+// present. `gg system sync` uses this to REFRESH index hooks only where the
+// project already opted in, so a project that deliberately runs without them
+// (init --no-index-hooks) is never force-installed into during a host-wide sync.
+func anyIndexHookInstalled(projectRoot string) bool {
+	hooksDir := filepath.Join(projectRoot, ".git", "hooks")
+	for _, name := range indexHookNames {
+		data, err := os.ReadFile(filepath.Join(hooksDir, name)) //nolint:gosec
+		if err == nil && strings.Contains(string(data), indexHookMarker) {
+			return true
+		}
+	}
+	return false
+}
+
 func doctorCheckIndexHooks(root string, fresh codeGraphFreshness, report *doctorReport) {
 	if indexHooksInstalled(root) {
 		report.ok("index hooks", "installed (pre-push/post-merge/post-commit auto-refresh the CodeGraph)")
@@ -94,13 +109,33 @@ func installOneIndexHook(path, name string) error {
 	existing, readErr := os.ReadFile(path) //nolint:gosec
 	if readErr == nil {
 		if strings.Contains(string(existing), indexHookMarker) {
+			// A gg-owned hook that still holds ONLY gg's own lines is safe to rewrite:
+			// upgrade it in place when its body drifts from the current template so
+			// existing installs pick up new behavior (e.g. the foreground→detached
+			// switch). A foreign hook we only appended a stanza to, or a gg hook the
+			// user has since added their own commands to, must never be overwritten.
+			if isGGOwnedIndexHook(string(existing)) && strings.TrimSpace(string(existing)) != strings.TrimSpace(indexHookBody) {
+				if !isPristineGGIndexHook(string(existing)) {
+					fmt.Printf("✓ .git/hooks/%s is a gg hook with local edits — left as-is (switch the `gg index --changed` line to the detached form by hand)\n", name)
+					return nil
+				}
+				if err := os.WriteFile(path, []byte(indexHookBody), 0o755); err != nil { //nolint:gosec
+					return fmt.Errorf("upgrade .git/hooks/%s: %w", name, err)
+				}
+				fmt.Printf("✓ Upgraded .git/hooks/%s to detached gg index\n", name)
+				return nil
+			}
 			fmt.Printf("✓ .git/hooks/%s already runs gg index — skipping\n", name)
 			return nil
 		}
-		// Foreign hook present — append our non-blocking stanza.
+		// Foreign hook present — append our detached, non-blocking stanza. The whole
+		// group is backgrounded with its fds redirected ({ … } >log </dev/null &):
+		// backgrounding an `A && B` list runs it in a subshell that would otherwise
+		// keep git's inherited stdout/stderr pipe open until the index finishes,
+		// making git BLOCK. Redirecting the group's fds is what lets git return at once.
 		stanza := "\n# " + indexHookMarker + " (appended by gg doctor --install-index-hooks)\n" +
-			"command -v gg >/dev/null 2>&1 && { gg index --changed >/dev/null 2>&1 || " +
-			`echo "gg: index --changed failed — CodeGraph may be stale" >&2; }` + "\n"
+			"{ command -v gg >/dev/null 2>&1 && nohup gg index --changed; } " +
+			">>.gg/index-hook.log 2>&1 </dev/null &\n"
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o755) //nolint:gosec
 		if err != nil {
 			return fmt.Errorf("open .git/hooks/%s: %w", name, err)
@@ -117,4 +152,40 @@ func installOneIndexHook(path, name string) error {
 	}
 	fmt.Printf("✓ Installed .git/hooks/%s (gg index --changed)\n", name)
 	return nil
+}
+
+// isGGOwnedIndexHook reports whether the hook file is one gg wrote in full (our
+// shebang + marker on the first lines), as opposed to a foreign hook we only
+// appended a stanza to. Only fully-owned hooks are safe to overwrite on upgrade;
+// a foreign hook (detected by the append marker) must be left intact.
+func isGGOwnedIndexHook(body string) bool {
+	if !strings.HasPrefix(body, "#!/bin/sh\n# "+indexHookMarker) {
+		return false
+	}
+	return !strings.Contains(body, "(appended by gg")
+}
+
+// isPristineGGIndexHook reports whether a gg-owned index hook still contains ONLY
+// gg's own lines — the shebang, comments, the `command -v gg` guard, the
+// `gg index --changed` invocation (foreground or detached), and gg's own echo
+// warnings / `exit 0`. If the user has added their own command to the file, this
+// returns false so the upgrade path leaves it untouched instead of silently
+// discarding that edit. It is deliberately permissive about gg's own lines so
+// every historical gg template (which differ only in comment wording) still
+// upgrades cleanly.
+func isPristineGGIndexHook(body string) bool {
+	for line := range strings.SplitSeq(body, "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case t == "", t == "exit 0", t == "\\":
+			continue
+		case strings.HasPrefix(t, "#"), strings.HasPrefix(t, "echo "):
+			continue
+		case strings.Contains(t, "command -v gg"), strings.Contains(t, "gg index --changed"):
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }

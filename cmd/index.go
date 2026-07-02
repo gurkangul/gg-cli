@@ -14,7 +14,6 @@ import (
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/graph"
 	"github.com/gurkangul/gg-cli/internal/index/changed"
-	"github.com/gurkangul/gg-cli/internal/index/parser"
 	"github.com/gurkangul/gg-cli/internal/index/runner"
 	"github.com/gurkangul/gg-cli/internal/index/state"
 	"github.com/gurkangul/gg-cli/internal/outbox"
@@ -111,6 +110,20 @@ func runIndexOnce(cmd *cobra.Command, lang runner.Lang, changedMode bool) error 
 	if !ok {
 		return fmt.Errorf("unsupported language %q — use %s", lang, strings.Join(langNames(runner.SupportedLangs()), ", "))
 	}
+
+	// Serialize graph writes. The detached git hooks fire-and-forget this, so a
+	// quick commit→push can start a second run before the first finishes; skip
+	// rather than race the graph DB. The running index covers the newer delta, or
+	// the next git op re-fires the hook.
+	release, acquired, lockErr := acquireIndexLock(ggDir, root, string(lang))
+	if lockErr != nil {
+		return fmt.Errorf("acquire index lock: %w", lockErr)
+	}
+	if !acquired {
+		fmt.Println("gg index: another index run is active — skipping (graph refreshes on the next git op)")
+		return nil
+	}
+	defer release()
 
 	gc, err := graph.New(cfg.DataDir, cfg.ProjectID)
 	if err != nil {
@@ -430,64 +443,4 @@ func sweepIndexOutbox(ggDir, root, lang, currentID string) {
 			}
 		}
 	}
-}
-
-// index runs the SCIP indexer for a single module and processes the output into Memgraph.
-// projectRoot is the repo/gg root used as the storage path origin.
-// moduleDir is the directory scip-go runs in (where the language manifest — go.mod,
-// package.json, pyproject.toml — lives). For single-module repos both are equal.
-// fileFilter, when non-nil, limits processing to project-relative paths in the set.
-// headSHA is stamped on every written node as indexed_at_commit.
-func index(ctx context.Context, projectRoot, moduleDir string, lang runner.Lang, r runner.Runner, gc *graph.Client, fileFilter map[string]bool, headSHA string) error {
-	moduleRelRoot, err := relForwardSlash(projectRoot, moduleDir)
-	if err != nil {
-		return fmt.Errorf("module dir %s outside project root %s: %w", moduleDir, projectRoot, err)
-	}
-	if moduleRelRoot != "." {
-		fmt.Printf("→ module %s (scip cwd=%s)\n", moduleRelRoot, moduleDir)
-	}
-
-	req := &runner.IndexRequest{
-		Root: moduleDir,
-		Lang: lang,
-	}
-	result, err := r.Index(ctx, req)
-	if err != nil {
-		return fmt.Errorf("scip index (%s): %w", moduleRelRoot, err)
-	}
-	defer func() { _ = os.Remove(result.IndexPath) }() // temp file cleanup
-
-	if len(result.Stderr) > 0 {
-		fmt.Fprintf(os.Stderr, "indexer: %s\n", result.Stderr)
-	}
-
-	fmt.Printf("parsing %s ...\n", result.IndexPath)
-
-	h := &graphHandler{
-		gc:               gc,
-		root:             projectRoot,
-		moduleDir:        moduleDir,
-		moduleRelRoot:    moduleRelRoot,
-		fileFilter:       fileFilter,
-		headSHA:          headSHA,
-		modulePath:       readModulePath(moduleDir),
-		fileNodeByPath:   make(map[string]*graph.Node),
-		scipToFile:       make(map[string]string),
-		scipToSymbolID:   make(map[string]string),
-		scipToSymbolName: make(map[string]string),
-		seenImportEdges:  make(map[string]bool),
-		seenRefEdges:     make(map[string]bool),
-		seenPackages:     make(map[string]string),
-	}
-	if err := parser.ParseFile(ctx, result.IndexPath, string(lang), h); err != nil {
-		return fmt.Errorf("parse scip: %w", err)
-	}
-
-	// BUG-013: resolve cross-file references and write IMPORTS edges now that
-	// all definitions are in scipToFile.
-	h.flushRefs(ctx)
-
-	fmt.Printf("indexed %d files, %d symbols, %d references → %d import edges, %d reference edges, %d packages\n",
-		h.files, h.symbols, h.refs, h.imports, h.references, len(h.seenPackages))
-	return nil
 }

@@ -84,6 +84,15 @@ func runDoctorFixIndex(cmd *cobra.Command) error {
 	after := collectCodeGraphStatus(verifyCtx, root, ggDir, cfg)
 	verifyCancel()
 	if after.Status != "ready" {
+		// Our own refresh may have been lock-skipped because another index is
+		// already writing the graph (a detached commit/push hook still in flight,
+		// or a watcher). That is not a repair failure — the in-flight run will
+		// leave the graph fresh — so report it and let the user retry instead of
+		// hard-failing the documented repair command.
+		if indexLockActive(ggDir) {
+			fmt.Println("↷ another index is currently running — the code graph will be fresh once it finishes; re-run `gg doctor --fix-index` if it stays stale")
+			return nil
+		}
 		detail := after.Detail
 		if detail == "" {
 			detail = after.Status

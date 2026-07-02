@@ -29,6 +29,7 @@ Stages per project:
   2. gg doctor --check-contract --fix      (contract block drift repair)
   3. gg doctor --install-agent-hooks       (idempotent agent-hook refresh)
   4. gg doctor --install-task-hooks        (idempotent task-hook refresh)
+  5. gg doctor --install-index-hooks       (refresh CodeGraph git hooks — only where already installed)
 
 Projects whose root directory no longer exists are skipped with a
 warning — prune them with 'gg system register --prune' after verifying.
@@ -164,6 +165,17 @@ func runSystemSync(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("  ✗ task-hook refresh failed: %v\n", runErr)
 				failed++
 				continue
+			}
+			// Refresh the CodeGraph git hooks ONLY where the project already opted
+			// in, so a detached-hook template update reaches existing installs
+			// without force-installing index hooks into projects that run without
+			// them (init --no-index-hooks).
+			if anyIndexHookInstalled(p.Root) {
+				if runErr := systemSyncRunCommand(self, p.Root, "doctor", "--install-index-hooks"); runErr != nil {
+					fmt.Printf("  ✗ index-hook refresh failed: %v\n", runErr)
+					failed++
+					continue
+				}
 			}
 			if drifted, err := reportHookTemplateDriftForProject(p.Root); err != nil {
 				fmt.Printf("  ✗ hook template drift check failed: %v\n", err)
@@ -356,6 +368,9 @@ func runSystemSyncDryRunStages(root string) {
 	if !systemSyncContractOnly {
 		fmt.Println("  (dry-run) would run: gg doctor --install-agent-hooks")
 		fmt.Println("  (dry-run) would run: gg doctor --install-task-hooks")
+		if anyIndexHookInstalled(root) {
+			fmt.Println("  (dry-run) would run: gg doctor --install-index-hooks (refresh detached CodeGraph hooks)")
+		}
 		if drifted, err := countHookTemplateDriftInProject(root); err == nil {
 			fmt.Printf("  (dry-run) would refresh %d drifted hook(s)\n", drifted)
 		} else {

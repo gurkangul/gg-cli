@@ -312,7 +312,7 @@ func printIndexHooksBanner(installed bool) {
 		fmt.Println("CodeGraph auto-refresh: ON — git hooks reindex changed files on every commit, push, and merge (foreground, non-blocking; no daemon).")
 		return
 	}
-	fmt.Println("CodeGraph auto-refresh: OFF — install the foreground git hooks anytime with: gg doctor --install-index-hooks")
+	fmt.Println("CodeGraph auto-refresh: OFF — install the detached (background) git hooks anytime with: gg doctor --install-index-hooks")
 }
 
 // ensureProjectConfig creates .gg/config.yaml if missing, generating a fresh

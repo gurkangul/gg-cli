@@ -416,3 +416,52 @@ func TestSystemSync_RootContextCanceledAbortsWithoutTrackerOrDoctor(t *testing.T
 		t.Fatal("context.Canceled must not be classified as qdrant unavailable")
 	}
 }
+
+// TestSystemSync_RefreshesIndexHooksOnlyWhenPresent verifies the CodeGraph
+// git-hook refresh stage runs for a project that already opted in (index hook
+// present) and is skipped for a project that has none — so `gg system sync`
+// propagates a detached-hook template update without force-installing index
+// hooks into opt-out projects.
+func TestSystemSync_RefreshesIndexHooksOnlyWhenPresent(t *testing.T) {
+	setupGGDir(t)
+	home, _ := os.UserHomeDir()
+
+	withHooks := newSystemSyncRunFixture(t, true)
+	hooksDir := filepath.Join(withHooks.root, ".git", "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooksDir, "pre-push"), []byte(indexHookBody), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	without := newSystemSyncRunFixture(t, true)
+	writeProjectRegistry(t, home, *withHooks, *without)
+
+	trackerClient := &fakeSystemSyncClient{present: []string{"existing"}}
+	oldClient := systemSyncNewQdrantClient
+	oldRun := systemSyncRunCommand
+	indexRefreshRoots := map[string]bool{}
+	systemSyncNewQdrantClient = func(cfg *config.Config, _ string) (systemSyncQdrant, error) {
+		return trackerClient, nil
+	}
+	systemSyncRunCommand = func(_, dir string, args ...string) error {
+		if len(args) >= 2 && args[0] == "doctor" && args[1] == "--install-index-hooks" {
+			indexRefreshRoots[dir] = true
+		}
+		return nil
+	}
+	t.Cleanup(func() {
+		systemSyncNewQdrantClient = oldClient
+		systemSyncRunCommand = oldRun
+	})
+
+	if _, _, err := execCmd(t, "system", "sync"); err != nil {
+		t.Fatalf("system sync failed: %v", err)
+	}
+	if !indexRefreshRoots[withHooks.root] {
+		t.Errorf("index-hook refresh should run for opted-in project %s", withHooks.root)
+	}
+	if indexRefreshRoots[without.root] {
+		t.Errorf("index-hook refresh must NOT run for opt-out project %s", without.root)
+	}
+}

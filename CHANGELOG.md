@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CodeGraph git hooks now refresh the graph DETACHED (in the background)** so
+  `git push` / `commit` / `merge` never block on indexing. The hooks already ran
+  the incremental `gg index --changed` (the graph *write* only touches changed
+  files + their 1-hop dependents), but the SCIP generation step
+  (`scip-go`/`scip-typescript`) has **no per-file mode** — it re-analyzes the
+  whole module every run — so the wait was ~constant regardless of diff size and
+  felt like a full re-index. The hooks now launch `gg index --changed` as
+  `nohup … >>.gg/index-hook.log 2>&1 </dev/null &` and return immediately; the
+  refresh finishes in the background and logs to `.gg/index-hook.log`. `git`
+  wall-time on the hook drops to ~0s (measured 4s → 0s against a slow-index
+  stand-in). The hook still always `exit 0` and never aborts git.
+- **`gg index` runs are now concurrency-guarded** by a per-project lock
+  (`.gg/index.lock`). Because the detached hooks fire-and-forget, a quick
+  commit→push can start a second `gg index` before the first finishes; the guard
+  makes the later run **skip** instead of racing the graph DB (it also yields to a
+  live `gg index --watch`). The skipped delta is picked up by the running index
+  or the next git op.
+- **`gg doctor --install-index-hooks` now UPGRADES an outdated gg-owned hook** in
+  place instead of skipping it whenever the marker is present. Previously a new
+  hook template never reached existing installs; re-running the installer (or
+  `gg doctor --fix-index`) now rewrites a stale gg hook to the current
+  (detached) form. Foreign hooks are still only appended to, never overwritten.
+- **`gg system sync` now refreshes the CodeGraph git hooks** across every
+  host-local project (new stage 5) so a hook-template change like the
+  foreground→detached switch propagates without cd'ing into each repo. It is
+  opt-in-preserving: the refresh runs **only where an index hook is already
+  installed**, so a project set up with `init --no-index-hooks` is never
+  force-installed into.
+
 ## [2.6.0] - 2026-06-30
 
 ### Added
