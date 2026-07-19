@@ -40,6 +40,7 @@ const (
 	compactRendererV_repeatWork = 2
 	compactRendererV_auditGaps  = 1
 	compactRendererV_dogfood    = 1
+	compactRendererV_backlinks  = 1
 )
 
 // isCompactActive returns true when the caller wants compact rendering.
