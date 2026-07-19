@@ -86,6 +86,11 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
+	// TASK-516: warn when part of the brain is missing from the semantic index
+	// (outbox backlog / degraded placeholder vectors). Without this a thin result
+	// set is indistinguishable from "nothing was ever recorded".
+	emitSemanticCoverageNotice(ctx, cmd, d.store)
+
 	vector, err := d.embedder.Generate(ctx, query)
 	if err != nil {
 		return embedErr("generate embedding", err)
@@ -145,6 +150,19 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 	tasks = prependExactTask(ctx, d.store, query, tasks)
 	bugs = prependExactBug(ctx, d.store, query, bugs)
+
+	// TASK-516: always-on lexical tier over brain records. Until now the JSONL
+	// lexical scan only ran when the store was down or the collection missing,
+	// so a record the vector tier could not see — never embedded (written while
+	// the embedder was down), carrying a degraded zero-vector, or simply below
+	// the semantic cutoff — produced a silent "No results found." Union the
+	// lexical hits into the candidate set so a verbatim match can never be
+	// silently invisible. Ranking stays vector-primary and the status filters
+	// mirror the vector path (BUG-064 must not regress).
+	decisions, rejections, tasks, bugs, notes = hybridCandidates(
+		query, decisions, rejections, tasks, bugs, notes,
+		searchIncludeSuperseded, int(semanticLimit),
+	)
 
 	if searchIncludeLinked {
 		cfg, cfgErr := config.Load()

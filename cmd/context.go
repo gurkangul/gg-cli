@@ -82,6 +82,11 @@ func runContext(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
+	// TASK-516: surface partial semantic coverage (outbox backlog / degraded
+	// placeholder vectors) so a thin context bundle is never mistaken for an
+	// empty project history.
+	emitSemanticCoverageNotice(ctx, cmd, d.store)
+
 	vector, err := d.embedder.Generate(ctx, query)
 	if err != nil {
 		return embedErr("generate embedding", err)
@@ -240,6 +245,9 @@ func runContextForTask(cmd *cobra.Command, taskID string) error {
 
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
+
+	// TASK-516: same partial-coverage signal on the task-anchored bundle.
+	emitSemanticCoverageNotice(ctx, cmd, d.store)
 
 	anchor, err := d.store.GetTask(ctx, taskID)
 	if err != nil {

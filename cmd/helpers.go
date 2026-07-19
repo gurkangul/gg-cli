@@ -45,28 +45,43 @@ type deps struct {
 	qdrantSlow bool // true when Qdrant health check timed out — reachable but slow
 }
 
-// resolveEmbeddingDim is the single seam that keeps the embedding-meta.json guard
-// and the Generator's expectedDim in agreement. It resolves the authoritative dim
-// and validates it against stored meta via CheckMeta — which also records the meta
-// on first run. Returning ONE dim for both guard and generator prevents the false
-// ErrModelMismatch loop a non-768 Ollama model used to trigger.
+// resolveEmbedding is the single seam that keeps the embedding-meta.json guard,
+// the query-embedding model, and the Generator's expectedDim in agreement. It
+// resolves the corpus-aligned embedding config plus the authoritative dim and
+// validates both against stored meta via CheckMeta — which also records the meta
+// on first run. Returning ONE config+dim for guard and generator prevents the
+// false ErrModelMismatch loop a non-768 Ollama model used to trigger, and stops a
+// drifted config.yaml from embedding queries in a different vector space than the
+// stored corpus (TASK-516).
 //
 // On Ollama first run (no meta yet) this probes the live model. If the probe fails
 // (Ollama down / model not pulled), it uses the 768 fallback for the in-process dim
 // but does NOT call CheckMeta — so it does not stamp meta{model,768} with a wrong
 // default that would cause a spurious mismatch once the model becomes available.
-func resolveEmbeddingDim(cfg *config.Config, ggDir string) (int, error) {
+func resolveEmbedding(cfg *config.Config, ggDir string) (config.EmbeddingConfig, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
 	defer cancel()
+
+	// TASK-516: align the query-embedding model to the model the corpus was
+	// actually built with BEFORE anything else reads it, so the CheckMeta guard
+	// and the Generator can never disagree — and so a config.yaml that has
+	// drifted from embedding-meta.json no longer forces the operator to export
+	// GG_EMBED_MODEL in every shell just to get recall back.
+	embCfg, aligned := embedding.CorpusAlignedConfig(&cfg.Embedding, ggDir)
+	if aligned && os.Getenv("GG_QUIET") != "1" {
+		fmt.Fprintf(os.Stderr,
+			"note: embedding model resolved from embedding-meta.json (corpus model %q); config.yaml says %q — queries use the corpus model so recall stays valid (align config.yaml, or run `gg reembed` to migrate)\n",
+			embCfg.Model, cfg.Embedding.Model)
+	}
 
 	var (
 		dim         int
 		authorative bool // false = probe failed, skip writing meta
 	)
 
-	if cfg.Embedding.ResolvedBackendName() == config.BackendVoyage {
+	if embCfg.ResolvedBackendName() == config.BackendVoyage {
 		// Voyage: always deterministic — no meta or network needed.
-		dim = embedding.EffectiveDim(ctx, &cfg.Embedding, ggDir, store.VectorSize)
+		dim = embedding.EffectiveDim(ctx, &embCfg, ggDir, store.VectorSize)
 		authorative = true
 	} else {
 		// Ollama: read existing meta first (no network, authoritative in steady state).
@@ -78,7 +93,7 @@ func resolveEmbeddingDim(cfg *config.Config, ggDir string) (int, error) {
 			// If the probe fails (Ollama unreachable / model not pulled), use the
 			// 768 fallback but DON'T write meta: stamping meta{model,768} for a
 			// 1024-dim model would cause a spurious mismatch on the next run.
-			vec, probeErr := embedding.New(&cfg.Embedding, 0).Generate(ctx, "dimension probe")
+			vec, probeErr := embedding.New(&embCfg, 0).Generate(ctx, "dimension probe")
 			if probeErr == nil && len(vec) > 0 {
 				dim = len(vec)
 				authorative = true
@@ -92,11 +107,11 @@ func resolveEmbeddingDim(cfg *config.Config, ggDir string) (int, error) {
 	// Only validate/write meta when the dim is authoritative. Skipping CheckMeta
 	// on probe failure prevents persisting a wrong dim that would need `gg reembed`.
 	if authorative {
-		if err := embedding.CheckMeta(ggDir, embedding.EffectiveModelIdentity(&cfg.Embedding), dim); err != nil {
-			return 0, err
+		if err := embedding.CheckMeta(ggDir, embedding.EffectiveModelIdentity(&embCfg), dim); err != nil {
+			return embCfg, 0, err
 		}
 	}
-	return dim, nil
+	return embCfg, dim, nil
 }
 
 func loadDeps(needEmbedding bool) (d *deps, err error) {
@@ -112,7 +127,7 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 	// Resolve the authoritative embedding dim and fail-fast if the configured
 	// model/backend differs from the one the collections were built with — mixed-model
 	// collections give broken recall (vectors from different models aren't comparable).
-	dim, err := resolveEmbeddingDim(cfg, ggDir)
+	embCfg, dim, err := resolveEmbedding(cfg, ggDir)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +152,7 @@ func loadDeps(needEmbedding bool) (d *deps, err error) {
 	}
 
 	if needEmbedding {
-		d.embedder = embedding.New(&cfg.Embedding, dim)
+		d.embedder = embedding.New(&embCfg, dim)
 	}
 	return d, nil
 }
@@ -171,7 +186,7 @@ func loadDepsReadOnly(needEmbedding bool) (d *deps, err error) {
 		return nil, err
 	}
 
-	dim, err := resolveEmbeddingDim(cfg, ggDir)
+	embCfg, dim, err := resolveEmbedding(cfg, ggDir)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +213,7 @@ func loadDepsReadOnly(needEmbedding bool) (d *deps, err error) {
 	}
 
 	if needEmbedding {
-		d.embedder = embedding.New(&cfg.Embedding, dim)
+		d.embedder = embedding.New(&embCfg, dim)
 	}
 	return d, nil
 }

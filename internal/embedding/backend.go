@@ -103,6 +103,51 @@ func EffectiveModel(cfg *config.EmbeddingConfig) string {
 	return cfg.Model
 }
 
+// CorpusAlignedConfig returns a copy of cfg whose Model is the model the corpus
+// was actually embedded with, as recorded in embedding-meta.json.
+//
+// A query MUST be embedded with the same model as the stored vectors — vectors
+// from two different models are not comparable. When config.yaml drifts from
+// the corpus (e.g. config says nomic-embed-text while the collections were
+// built with qwen3-embedding:0.6b), every semantic read either hard-fails with
+// ErrModelMismatch or, worse, compares vectors across embedding spaces. Before
+// this, the only remedy was a human exporting GG_EMBED_MODEL in every shell,
+// which made recall depend on operator memory (TASK-516).
+//
+// Precedence:
+//  1. An explicit GG_EMBED_MODEL is honoured untouched — setting it is a
+//     deliberate migration signal, so a real mismatch still trips CheckMeta and
+//     points the operator at `gg reembed`.
+//  2. Otherwise embedding-meta.json beats config.yaml, because meta records what
+//     the vectors on disk were actually built with.
+//  3. No meta (fresh project) or a non-Ollama backend leaves cfg unchanged.
+//
+// The bool reports whether an alignment happened, so callers can surface the
+// drift once rather than silently diverging from config.yaml.
+func CorpusAlignedConfig(cfg *config.EmbeddingConfig, ggDir string) (config.EmbeddingConfig, bool) {
+	if cfg == nil {
+		return config.EmbeddingConfig{}, false
+	}
+	out := *cfg
+	if resolveBackendName(cfg) != config.BackendOllama {
+		return out, false
+	}
+	// Explicit override = migration intent; do not second-guess it.
+	if strings.TrimSpace(os.Getenv(config.EmbedModelEnv)) != "" {
+		return out, false
+	}
+	meta, err := ReadMeta(ggDir)
+	if err != nil || meta == nil {
+		return out, false
+	}
+	corpus := strings.TrimSpace(meta.ModelName)
+	if corpus == "" || corpus == strings.TrimSpace(cfg.Model) {
+		return out, false
+	}
+	out.Model = corpus
+	return out, true
+}
+
 // EffectiveModelIdentity returns the meta identity for cfg WITHOUT constructing
 // a live backend or making any network call. It must agree with the identity a
 // Generator built from the same cfg reports, so CheckMeta and the generator
