@@ -65,6 +65,12 @@ func runACAttestationHookTwoCommits(t *testing.T, taskJSON, taskCommitMsg, headC
 		"GG_ACTOR=developer",
 		"PATH="+binDir+":"+os.Getenv("PATH"),
 		"HOME="+dir,
+		// BUG-099: same ambient-bypass neutralisation as runACAttestationHook —
+		// os.Environ() inherits the caller's shell, so an exported
+		// GG_ALLOW_INCOMPLETE_AC would flip this test onto the bypass path.
+		// extraEnv is appended below and still wins.
+		"GG_ALLOW_INCOMPLETE_AC=",
+		"GG_AC_ATTESTATION=",
 	)
 	for k, v := range extraEnv {
 		env = append(env, k+"="+v)

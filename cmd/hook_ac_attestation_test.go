@@ -86,6 +86,15 @@ func runACAttestationHook(t *testing.T, taskJSON, commitMsg string, extraEnv map
 		"GG_ACTOR=developer",
 		"PATH="+binDir+":"+os.Getenv("PATH"),
 		"HOME="+dir,
+		// BUG-099: neutralise ambient gate-bypass state. os.Environ() inherits the
+		// caller's shell, so an exported GG_ALLOW_INCOMPLETE_AC — the very escape
+		// hatch this gate documents — silently flipped these tests onto the bypass
+		// path and failed the suite, which in turn tripped the repro gate. Using
+		// the documented bypass therefore made a task impossible to close.
+		// Tests that WANT a bypass pass it through extraEnv, appended below, which
+		// wins over these defaults.
+		"GG_ALLOW_INCOMPLETE_AC=",
+		"GG_AC_ATTESTATION=",
 	)
 	for k, v := range extraEnv {
 		env = append(env, k+"="+v)
