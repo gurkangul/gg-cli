@@ -159,8 +159,11 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	// lexical hits into the candidate set so a verbatim match can never be
 	// silently invisible. Ranking stays vector-primary and the status filters
 	// mirror the vector path (BUG-064 must not regress).
-	decisions, rejections, tasks, bugs, notes = hybridCandidates(
-		query, decisions, rejections, tasks, bugs, notes,
+	// messages start empty: the store has no vector search for them, so the
+	// lexical tier is their only path into a healthy-path result set.
+	var messages []store.Message
+	decisions, rejections, tasks, bugs, notes, messages = hybridCandidates(
+		query, decisions, rejections, tasks, bugs, notes, messages,
 		searchIncludeSuperseded, int(semanticLimit),
 	)
 
@@ -169,7 +172,11 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		if cfgErr != nil {
 			return cfgErr
 		}
-		results := labelSearchResults(buildSearchResults(query, decisions, rejections, tasks, bugs, notes), cfg.ProjectID)
+		// Carry messages here too, or --include-linked would silently drop the one
+		// kind that has no vector path at all.
+		results := labelSearchResults(
+			buildSearchResultsWithBackendScoresAndMessages(query, decisions, rejections, tasks, bugs, notes, messages, "sqlite", nil),
+			cfg.ProjectID)
 		linkedResults, warnings := linkedSearchResults(ctx, cfg, query, vector, semanticLimit)
 		results = trimSearchResults(rankSearchResults(append(results, linkedResults...)), searchLimit)
 		return printSearchMatches(cmd, query, results, "", time.Time{}, warnings)
@@ -179,7 +186,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	if cfg, cfgErr := config.Load(); cfgErr == nil {
 		if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
 			_ = cache.Put(rtDir, "search", query, searchPayload{
-				Decisions: decisions, Rejections: rejections, Tasks: tasks, Bugs: bugs, Notes: notes,
+				Decisions: decisions, Rejections: rejections, Tasks: tasks, Bugs: bugs, Notes: notes, Messages: messages,
 			})
 		}
 	}
@@ -191,7 +198,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	// or empty index is silent and never blocks the semantic answer.
 	symbols := lexicalSymbolMatches(ctx, query, int(searchLimit))
 
-	return printSearchResultsWithSymbols(cmd, query, decisions, rejections, tasks, bugs, notes, symbols, "", time.Time{})
+	return printSearchResultsWithSymbols(cmd, query, decisions, rejections, tasks, bugs, notes, messages, symbols, "", time.Time{})
 }
 
 // emitSearchGraphNotice prints the one-line stale/empty code-graph notice to

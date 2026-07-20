@@ -50,12 +50,13 @@ func hybridCandidates(
 	tasks []store.Task,
 	bugs []store.Bug,
 	notes []store.Note,
+	messages []store.Message,
 	includeAll bool,
 	perKind int,
-) ([]store.Decision, []store.Rejection, []store.Task, []store.Bug, []store.Note) {
+) ([]store.Decision, []store.Rejection, []store.Task, []store.Bug, []store.Note, []store.Message) {
 	ggDir := config.GGDirOrEmpty()
 	if ggDir == "" || strings.TrimSpace(query) == "" || perKind <= 0 {
-		return decisions, rejections, tasks, bugs, notes
+		return decisions, rejections, tasks, bugs, notes, messages
 	}
 
 	seen := func(ids map[string]bool, id string) bool {
@@ -161,7 +162,32 @@ func hybridCandidates(
 		}
 	}
 
-	return decisions, rejections, tasks, bugs, notes
+	// Messages are lexical-ONLY: the store has no SearchMessages, so on the
+	// healthy path they were never queried at all — a handoff captured in a
+	// `gg tell` was findable when the vector store was DOWN (the JSONL fallback
+	// does scan messages) and invisible when it was healthy. The command's own
+	// help has always promised "semantic search across decisions, tasks, and
+	// messages"; this is what makes that true.
+	if matches, err := brain.SearchByTextScored(ggDir, "messages", query); err == nil {
+		ids := make(map[string]bool, len(messages))
+		for _, m := range messages {
+			ids[m.ID] = true
+		}
+		added := 0
+		for _, m := range matches {
+			if added >= perKind {
+				break
+			}
+			msg := messageFromJSONLEntry(m.Entry)
+			if seen(ids, msg.ID) {
+				continue
+			}
+			messages = append(messages, msg)
+			added++
+		}
+	}
+
+	return decisions, rejections, tasks, bugs, notes, messages
 }
 
 // hybridDecisionVisible mirrors ActiveDecisionsFilter: superseded and rejected

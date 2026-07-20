@@ -49,20 +49,20 @@ func lexicalSymbolMatches(ctx context.Context, query string, limit int) []graph.
 // labeled "SYMBOL MATCHES (lexical)" block and a symbol_matches JSON key. The
 // semantic results are built and rendered exactly as the semantic-only printer
 // does, so default/compact/JSON behaviour for them is unchanged.
-func printSearchResultsWithSymbols(cmd *cobra.Command, query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, symbols []graph.SymbolMatch, banner string, cachedAt time.Time) error {
+func printSearchResultsWithSymbols(cmd *cobra.Command, query string, decisions []store.Decision, rejections []store.Rejection, tasks []store.Task, bugs []store.Bug, notes []store.Note, messages []store.Message, symbols []graph.SymbolMatch, banner string, cachedAt time.Time) error {
 	const backend = "sqlite"
-	results := trimSearchResults(buildSearchResultsWithBackendScoresAndMessages(query, decisions, rejections, tasks, bugs, notes, nil, backend, nil), searchLimit)
+	results := trimSearchResults(buildSearchResultsWithBackendScoresAndMessages(query, decisions, rejections, tasks, bugs, notes, messages, backend, nil), searchLimit)
 	jsonMap := map[string]any{
 		"decisions":  decisions,
 		"rejections": rejections,
 		"tasks":      tasks,
 		"bugs":       bugs,
 		"notes":      notes,
-		// messages: this live-semantic path never carries messages, but the
-		// canonical printer (printSearchResultsWithBackendScoresAndMessages)
-		// always emits the key (as null when empty). Emit it here too for --json
-		// schema parity so consumers see a stable set of keys. TASK-509.
-		"messages":       []store.Message(nil),
+		// TASK-520: this path now DOES carry messages — the lexical tier is their
+		// only route in, since the store has no vector search for them. The key
+		// was already emitted (as null) for --json schema parity under TASK-509;
+		// it now carries the real slice.
+		"messages":       messages,
 		"matches":        results,
 		"symbol_matches": symbols,
 		"ranking":        "semantic results plus a bm25/FTS5 lexical code-symbol tier (exact/keyword identifier matches)",
