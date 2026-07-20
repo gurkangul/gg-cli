@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -160,7 +161,13 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := d.store.UpdateTaskStatus(ctx, taskID, "done", summary); err != nil {
+	// The verifier is who certified this closure, so that is the actor the audit
+	// trail should name; fall back to the running agent when --verifier is unset.
+	doneActor := taskDoneVerifier
+	if strings.TrimSpace(doneActor) == "" {
+		doneActor = identity.Agent()
+	}
+	if err := d.store.UpdateTaskStatus(ctx, taskID, "done", summary, doneActor); err != nil {
 		return err
 	}
 
@@ -204,7 +211,7 @@ func runTaskBlock(cmd *cobra.Command, args []string) error {
 	ctx, cancel := withTimeout(cmd.Context())
 	defer cancel()
 
-	if err := d.store.UpdateTaskStatus(ctx, taskID, "blocked", reason); err != nil {
+	if err := d.store.UpdateTaskStatus(ctx, taskID, "blocked", reason, identity.Agent()); err != nil {
 		return err
 	}
 

@@ -89,8 +89,17 @@ func promptIfDuplicateThreshold(ctx context.Context, d *deps, kind string, vecto
 	// 3-way prompt: force-file / add-note-to-existing / cancel.
 	topID := cands[0].ID
 	fmt.Fprintf(os.Stderr, "[f]ile anyway / [n]ote on %s / [c]ancel: ", topID)
-	line, _ := newStdinReader().ReadString('\n')
+	line, readErr := newStdinReader().ReadString('\n')
 	answer := strings.ToLower(strings.TrimSpace(line))
+	// Belt and braces behind the isTerminal fix: if the read ends immediately
+	// with nothing typed, there is no human here whatever stat claimed. Create
+	// rather than cancel — silently dropping a record the caller believes was
+	// saved is the worse of the two failures, and a duplicate is recoverable.
+	if readErr != nil && answer == "" {
+		fmt.Fprintln(os.Stderr, "   (no input on stdin — creating anyway)")
+		res.UserChoice = "auto-force"
+		return res
+	}
 	switch answer {
 	case "f", "force", "y", "yes":
 		res.UserChoice = "force"
@@ -106,12 +115,28 @@ func promptIfDuplicateThreshold(ctx context.Context, d *deps, kind string, vecto
 }
 
 // isTerminal reports whether f is a character device (i.e. a real terminal).
+// isTerminal reports whether f is an interactive terminal a human can answer on.
+//
+// A plain ModeCharDevice test is not enough: /dev/null is ALSO a character
+// device, so an agent invoked with stdin redirected from /dev/null was
+// misdetected as interactive. gg then printed the dedup prompt, read EOF, fell
+// through to the "cancel" default and dropped the record — while exiting 0, so
+// the caller believed it had been saved. Piping into stdin took the correct
+// non-interactive path, which made the two behave in opposite ways for the same
+// headless context. Excluding the null device keeps this a cheap stat-based
+// check while closing that hole.
 func isTerminal(f *os.File) bool {
 	fi, err := f.Stat()
 	if err != nil {
 		return false
 	}
-	return fi.Mode()&os.ModeCharDevice != 0
+	if fi.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	if devNull, statErr := os.Stat(os.DevNull); statErr == nil && os.SameFile(fi, devNull) {
+		return false
+	}
+	return true
 }
 
 // newStdinReader returns a buffered reader for os.Stdin.

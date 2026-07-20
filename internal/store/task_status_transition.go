@@ -10,11 +10,15 @@ import (
 // in the requested status.
 var ErrAlreadyInState = fmt.Errorf("task already in target state")
 
-func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra string) error {
-	return c.UpdateTaskStatusCAS(ctx, taskID, "", status, extra)
+// actor is recorded on the emitted task event so the audit trail says WHO made
+// the transition, not just that it happened. It used to be omitted entirely,
+// which left the terminal "done" event — the one verifier_separation exists to
+// police — with an empty actor while claim events carried theirs.
+func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, status, extra, actor string) error {
+	return c.UpdateTaskStatusCAS(ctx, taskID, "", status, extra, actor)
 }
 
-func (c *Client) UpdateTaskStatusCAS(ctx context.Context, taskID, expectedStatus, status, extra string) error {
+func (c *Client) UpdateTaskStatusCAS(ctx context.Context, taskID, expectedStatus, status, extra, actor string) error {
 	current, err := c.GetTask(ctx, taskID)
 	if err != nil {
 		return err
@@ -66,6 +70,7 @@ func (c *Client) UpdateTaskStatusCAS(ctx context.Context, taskID, expectedStatus
 		FromStatus: current.Status,
 		ToStatus:   updated.Status,
 		Owner:      updated.Owner,
+		Actor:      actor,
 		Detail:     extra,
 	})
 }
