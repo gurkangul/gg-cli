@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.5] - 2026-07-20
+
+### Added
+
+- **`gg search` now finds messages on the healthy path.** Messages were the one
+  brain kind with no vector search at all, and TASK-516's lexical tier had left
+  them out — so a handoff captured in a `gg tell` was findable when the vector
+  store was DOWN (the JSONL fallback does scan messages) and invisible when it
+  was healthy, the exact inverse of what anyone would expect. The command's help
+  has always advertised "semantic search across decisions, tasks, and messages";
+  it is now true. `--include-linked` and the last-known-good cache carry them too.
+- **Degraded vectors now repair themselves on read.** 2.7.0 made partial coverage
+  visible and pointed at `gg reembed`, but that remedy assumes a human — a
+  headless agent saw the warning, had nobody to run the command, and the project
+  stayed degraded indefinitely. Reads now re-embed a bounded batch of placeholder
+  vectors AFTER serving their results, so a slow embedder can never delay an
+  answer. Capped at 8 points and 5s per read and single-flighted on the existing
+  reconcile lock, so coverage converges over several reads instead of stalling
+  one, and parallel agents share the work rather than stampeding the embedder.
+  It is not a reembed — only the broken points are touched. `GG_NO_HEAL=1` opts
+  out.
+
 ## [2.7.4] - 2026-07-20
 
 ### Fixed
