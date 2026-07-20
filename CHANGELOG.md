@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.8] - 2026-07-20
+
+### Fixed
+
+- **`gg doctor --sync-artifacts` no longer claims every artifact is missing when
+  only `installed.json` is absent.** The drift check decides from the manifest
+  alone and never stats the filesystem, and the report path had no
+  empty-manifest guard — so a project whose manifest was never written listed all
+  17 artifacts as missing even with every file present. Beyond the false alarm,
+  the report advised `--apply`, which would have rewritten those files including
+  locally customised hooks on the strength of a claim never checked against disk.
+  The report now says plainly that drift cannot be assessed and points at the
+  directories to inspect; `--apply` still runs, since re-installing is how a
+  missing manifest gets established. `doctorCheckArtifactDrift` already guarded
+  this case, so the two paths now agree.
+
 ## [2.7.7] - 2026-07-20
 
 ### Internal
