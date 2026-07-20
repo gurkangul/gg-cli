@@ -52,6 +52,36 @@ func runDoctorSyncArtifacts(apply bool) error {
 		return fmt.Errorf("read installed.json: %w", err)
 	}
 	current := templates.ArtifactSHAs()
+
+	// No manifest means there is nothing to compare against, NOT that the
+	// artifacts are absent. artifacts.Diff maps an unrecorded key to "missing"
+	// without ever looking at disk, so a project whose installed.json was never
+	// written reports every artifact as missing even when all of them are
+	// present — a false alarm, and a real hazard if the operator then runs
+	// --apply and rewrites customised hooks on the strength of it.
+	//
+	// doctorCheckArtifactDrift already guards this case and returns 0; this path
+	// did not, so the same question got two different answers depending on which
+	// command asked it.
+	// Only short-circuit the REPORT. --apply must still run, since re-installing
+	// is exactly how a missing manifest gets established.
+	if len(m.Artifacts) == 0 && !apply {
+		fmt.Println("Artifact Drift Report")
+		fmt.Println(strings.Repeat("─", 60))
+		fmt.Println("  No installed.json manifest in this project.")
+		fmt.Println()
+		fmt.Println("  Drift cannot be assessed: the manifest records what gg installed, and")
+		fmt.Println("  without it every artifact would be reported \"missing\" whether or not it")
+		fmt.Println("  is actually on disk. Inspect .gg/hooks/, .gg/RULES.md and AGENTS.md")
+		fmt.Println("  before assuming anything is absent.")
+		fmt.Println()
+		fmt.Println("  To establish the manifest (re-installs from the current templates —")
+		fmt.Println("  review local hook customisations first):")
+		fmt.Println("    gg doctor --sync-artifacts --apply")
+		fmt.Println(strings.Repeat("─", 60))
+		return nil
+	}
+
 	entries := artifacts.Diff(m, current)
 
 	fmt.Println("Artifact Drift Report")
