@@ -42,6 +42,7 @@ const (
 	compactRendererV_dogfood    = 1
 	compactRendererV_backlinks  = 1
 	compactRendererV_related    = 1
+	compactRendererV_auditRot   = 1
 )
 
 // isCompactActive returns true when the caller wants compact rendering.

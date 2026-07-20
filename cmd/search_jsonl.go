@@ -48,14 +48,22 @@ func bugFromJSONLEntry(e brain.Entry) store.Bug {
 
 func decisionFromJSONLEntry(e brain.Entry) store.Decision {
 	return store.Decision{
-		ID:        e.UUID,
-		Text:      stringPayload(e.Payload, "text", ""),
-		Reason:    stringPayload(e.Payload, "reason", ""),
-		Status:    stringPayload(e.Payload, "status", ""),
-		Tags:      stringSlicePayload(e.Payload, "tags"),
-		TaskID:    stringPayload(e.Payload, "task_id", ""),
-		Author:    stringPayload(e.Payload, "author", e.Author),
-		CreatedAt: stringPayload(e.Payload, "created_at", e.CreatedAt),
+		ID:     e.UUID,
+		Text:   stringPayload(e.Payload, "text", ""),
+		Reason: stringPayload(e.Payload, "reason", ""),
+		Status: stringPayload(e.Payload, "status", ""),
+		Tags:   stringSlicePayload(e.Payload, "tags"),
+		TaskID: stringPayload(e.Payload, "task_id", ""),
+		Author: stringPayload(e.Payload, "author", e.Author),
+		// Evidence and Pinned are written to the JSONL payload by AddDecision but
+		// used to be dropped here, so any decision served from the ledger rather
+		// than the vector store rendered as "[unverified]" and lost its pin —
+		// wrong on the offline fallback, and wrong for the TASK-516 lexical tier,
+		// which builds live results through this same converter.
+		Evidence:             stringPayload(e.Payload, "evidence", ""),
+		Pinned:               boolPayload(e.Payload, "pinned"),
+		RejectedAlternatives: stringSlicePayload(e.Payload, "rejected_alternatives"),
+		CreatedAt:            stringPayload(e.Payload, "created_at", e.CreatedAt),
 	}
 }
 

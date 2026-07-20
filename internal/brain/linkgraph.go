@@ -191,6 +191,17 @@ func (g *LinkGraph) Edges() []GraphEdge {
 	return out
 }
 
+// Degree returns how many resolved edges touch a reference, in either
+// direction. Zero means the entry is an orphan: nothing points at it and it
+// points at nothing, so it can only ever be found by search, never by walking.
+func (g *LinkGraph) Degree(ref string) int {
+	key, ok := g.resolve(NormalizeRef(ref))
+	if !ok {
+		return 0
+	}
+	return len(g.in[key]) + len(g.out[key])
+}
+
 // Related walks outward from ref up to maxHops and returns every node reached,
 // nearest first. The anchor itself is excluded. Each node is reported once, at
 // the shortest distance it was found (BFS order guarantees this).
