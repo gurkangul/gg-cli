@@ -52,7 +52,7 @@ type VoyageConfig struct {
 const (
 	DefaultVoyageModel     = "voyage-3.5-lite"
 	DefaultVoyageOutputDim = 1024
-	DefaultVoyageAPIKeyEnv = "VOYAGE_API_KEY"
+	DefaultVoyageAPIKeyEnv = "VOYAGE_API_KEY" //nolint:gosec // G101: the NAME of the env var to read, never a key value
 )
 
 // validVoyageDims is the set of output dimensions the Voyage embeddings API

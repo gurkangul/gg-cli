@@ -91,6 +91,7 @@ func normalizeMarkdownEOF(dir string) error {
 		if normalized == string(data) {
 			continue
 		}
+		//nolint:gosec // G703: path is built from this tool's own output dir + generated filename, not user input
 		if err := os.WriteFile(path, []byte(normalized), 0o644); err != nil {
 			return err
 		}

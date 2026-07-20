@@ -311,7 +311,7 @@ func queryTerms(query string) []string {
 	seen := map[string]bool{}
 	var terms []string
 	for _, part := range strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
-		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_')
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' && r != '_'
 	}) {
 		part = strings.TrimSpace(part)
 		if part == "" || seen[part] {

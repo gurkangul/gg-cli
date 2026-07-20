@@ -15,7 +15,7 @@ func TestAC1AC2AC3AC4AC5NativeWorkflowMemorySyncSmoke(t *testing.T) {
 	t.Setenv("GG_AGENT", "native-smoke")
 	t.Setenv("GG_ROLE", "implementer")
 
-	const token = "bmadsync462"
+	const token = "bmadsync462" //nolint:gosec // G101: test fixture string, not a credential
 	const gsdToken = "gsdmirror462"
 	const unmirroredToken = "unmirrored462"
 

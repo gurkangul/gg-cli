@@ -19,9 +19,9 @@ import (
 // original model. Voyage config must be completely unaffected by the env var.
 func TestGGEmbedModel_RoundTrip(t *testing.T) {
 	const (
-		originalModel  = "nomic-embed-text"
-		overrideModel  = "qwen3-embedding:0.6b"
-		testProjectID  = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+		originalModel = "nomic-embed-text"
+		overrideModel = "qwen3-embedding:0.6b"
+		testProjectID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
 	)
 
 	// Build a temp project with a fixed Ollama model.
@@ -91,7 +91,7 @@ func TestGGEmbedModel_VoyageUnaffected(t *testing.T) {
 	cfg := &EmbeddingConfig{
 		Backend: BackendVoyage,
 		Model:   "ignored-ollama-field",
-		Voyage: VoyageConfig{
+		Voyage: VoyageConfig{ //nolint:gosec // G101: APIKeyEnv below holds an env var NAME, not a key
 			Model:     "voyage-3.5-lite",
 			OutputDim: 1024,
 			APIKeyEnv: "VOYAGE_API_KEY", //nolint:gosec // env var NAME
@@ -106,4 +106,3 @@ func TestGGEmbedModel_VoyageUnaffected(t *testing.T) {
 		t.Errorf("cfg.Voyage.Model = %q, want voyage-3.5-lite", cfg.Voyage.Model)
 	}
 }
-
