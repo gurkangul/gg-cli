@@ -146,6 +146,51 @@ func (g *LinkGraph) Dangling(ref string) []Ref {
 	return g.dangling[key]
 }
 
+// GraphEdge is one resolved edge, for callers that need the whole graph rather
+// than a walk from one anchor (e.g. visualization export).
+type GraphEdge struct {
+	Src string
+	Dst string
+	Via string
+}
+
+// Nodes returns every node, ordered by key so exports are byte-stable across
+// runs (map iteration order is not).
+func (g *LinkGraph) Nodes() []LinkNode {
+	out := make([]LinkNode, 0, len(g.nodes))
+	for _, n := range g.nodes {
+		out = append(out, n)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}
+
+// Edges returns every resolved edge, deduped and in stable order.
+func (g *LinkGraph) Edges() []GraphEdge {
+	seen := map[string]bool{}
+	var out []GraphEdge
+	for src, edges := range g.out {
+		for _, e := range edges {
+			key := src + "\x00" + e.To + "\x00" + e.Via
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, GraphEdge{Src: src, Dst: e.To, Via: e.Via})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Src != out[j].Src {
+			return out[i].Src < out[j].Src
+		}
+		if out[i].Dst != out[j].Dst {
+			return out[i].Dst < out[j].Dst
+		}
+		return out[i].Via < out[j].Via
+	})
+	return out
+}
+
 // Related walks outward from ref up to maxHops and returns every node reached,
 // nearest first. The anchor itself is excluded. Each node is reported once, at
 // the shortest distance it was found (BFS order guarantees this).
