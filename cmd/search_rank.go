@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gurkangul/gg-cli/internal/store"
 )
@@ -139,6 +140,9 @@ func newSearchResult(kind string, rank, lexicalScore int, semanticScore float32,
 }
 
 func rankSearchResults(results []searchResult) []searchResult {
+	// Evaluated once: a clock read inside the comparator could change mid-sort
+	// and make the ordering non-deterministic.
+	now := time.Now()
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].Score != results[j].Score {
 			return results[i].Score > results[j].Score
@@ -150,6 +154,17 @@ func rankSearchResults(results []searchResult) []searchResult {
 		// kind precedence, and get truncated off the default --limit (audit VEC-3).
 		if results[i].SemanticScore != results[j].SemanticScore {
 			return results[i].SemanticScore > results[j].SemanticScore
+		}
+		// TASK-519: verification age as the LAST tie-break, and only between two
+		// decisions. Everything primary is already equal here, so this can only
+		// separate otherwise-identical matches — a fresh verified decision edges
+		// out an equally-matching stale one, and nothing can be reordered across
+		// a difference in lexical or semantic score.
+		if di, dj := results[i].Decision, results[j].Decision; di != nil && dj != nil {
+			ti, tj := trustRankWeight(trustTier(*di, now)), trustRankWeight(trustTier(*dj, now))
+			if ti != tj {
+				return ti > tj
+			}
 		}
 		return results[i].Rank < results[j].Rank
 	})

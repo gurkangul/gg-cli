@@ -158,11 +158,14 @@ func renderContextDefault(w io.Writer, query string, bundle contextBundle, errs 
 				fmt.Fprintf(w, "    Reason: %s\n", dec.Reason)
 			}
 			// BUG-086: surface evidence so a verified fact is distinguishable from
-			// an unverified claim.
+			// an unverified claim. TASK-519: and so a check made eight months ago
+			// is distinguishable from one made this morning — the tier is derived
+			// from verification age and never changes the decision's validity.
+			tier := trustTier(dec, time.Now())
 			if dec.Evidence != "" {
-				fmt.Fprintf(w, "    Evidence: %s\n", dec.Evidence)
+				fmt.Fprintf(w, "    Evidence: %s %s\n", dec.Evidence, trustLabel(tier))
 			} else {
-				fmt.Fprintln(w, "    [unverified]")
+				fmt.Fprintf(w, "    %s\n", trustLabel(tier))
 			}
 			if len(dec.Tags) > 0 {
 				fmt.Fprintf(w, "    Tags: %s\n", strings.Join(dec.Tags, ", "))
