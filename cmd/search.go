@@ -208,23 +208,6 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	return printErr
 }
 
-// emitSearchGraphNotice prints the one-line stale/empty code-graph notice to
-// stderr (TASK-504). It is fully best-effort: any config/root failure or a
-// fresh/not-applicable graph is silent, and the bounded status collection
-// cannot stall search.
-func emitSearchGraphNotice(cmd *cobra.Command) {
-	cfg, err := config.Load()
-	if err != nil {
-		return
-	}
-	root, err := config.FindRoot()
-	if err != nil {
-		return
-	}
-	status := codeGraphStatusWithTimeout(root, root+"/"+config.DirName, cfg)
-	emitGraphStatusNotice(cmd.OutOrStderr(), status)
-}
-
 // serveSearchFromJSONL performs a text-scan of the brain JSONL files as a
 // lightweight offline fallback when Qdrant is unreachable. Scans decisions,
 // rejections, tasks, and bugs. Falls through to the LKG cache when no JSONL
