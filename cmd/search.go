@@ -198,7 +198,14 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	// or empty index is silent and never blocks the semantic answer.
 	symbols := lexicalSymbolMatches(ctx, query, int(searchLimit))
 
-	return printSearchResultsWithSymbols(cmd, query, decisions, rejections, tasks, bugs, notes, messages, symbols, "", time.Time{})
+	printErr := printSearchResultsWithSymbols(cmd, query, decisions, rejections, tasks, bugs, notes, messages, symbols, "", time.Time{})
+
+	// TASK-521: repair a bounded batch of degraded vectors now that the answer is
+	// already on stdout, so a slow embedder can never delay the read. Coverage
+	// converges across several reads instead of requiring a human to run reembed.
+	healSemanticCoverageOnRead(cmd, d)
+
+	return printErr
 }
 
 // emitSearchGraphNotice prints the one-line stale/empty code-graph notice to
