@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.3] - 2026-07-20
+
+### Fixed
+
+- **`gg record` no longer silently drops a decision when stdin is `/dev/null`.**
+  `isTerminal()` tested only `ModeCharDevice`, and the null device IS a character
+  device — so a headless agent was misdetected as interactive: on a near-duplicate
+  gg printed the dedup prompt, read EOF as an empty answer, took the "cancel"
+  default and discarded the record, all while exiting 0 so the caller believed it
+  had been saved. Piping into stdin took the correct non-interactive path, so the
+  same headless context produced two opposite outcomes — and the losing path is
+  the common one, since most agent harnesses close stdin or wire it to
+  `/dev/null`. An immediate EOF with no input now also creates rather than
+  cancels: a duplicate is recoverable, a silently dropped record is not.
+- **Task transitions now record who made them.** `UpdateTaskStatus` had no actor
+  parameter, so the `TaskEvent` it appends left `Actor` empty. Claim events
+  already carried theirs, so the audit trail named who STARTED a task but not who
+  CLOSED it — the terminal transition `verifier_separation` exists to police.
+  `gg task done` now records `--verifier` (falling back to the running agent) and
+  `gg task block` records the acting agent.
+
 ## [2.7.2] - 2026-07-20
 
 ### Added
