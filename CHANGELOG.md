@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.4] - 2026-07-20
+
+### Fixed
+
+- **The AC-attestation gate's own bypass no longer makes a task impossible to
+  close.** `50-ac-attestation.sh` documents `GG_ALLOW_INCOMPLETE_AC=<reason>` as
+  its audited escape hatch, but the pre-task-done chain then runs the repro gate
+  in the SAME environment, and the `TestACAttestation_*` helpers built their env
+  from `os.Environ()`. The exported bypass therefore leaked into the hook under
+  test, flipped it onto the bypass path and failed seven tests — so satisfying
+  one gate guaranteed the next one refused. Both helpers now neutralise
+  `GG_ALLOW_INCOMPLETE_AC` and `GG_AC_ATTESTATION` before applying their own
+  overrides, so a test that genuinely wants the bypass still gets it.
+
+### Internal
+
+- Silenced a self-introduced gosec G703 on the config write-back's atomic temp
+  write; the path is internally derived (`filepath.Join(ggDir, ConfigFile)`), so
+  the taint warning does not apply. Lint is back to the 5-issue baseline.
+
 ## [2.7.3] - 2026-07-20
 
 ### Fixed
