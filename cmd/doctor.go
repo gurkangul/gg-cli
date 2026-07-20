@@ -354,6 +354,9 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// 6. Binary freshness — advisory warn, never blocks default run.
 	doctorPrintln("\nBinary:")
 	doctorCheckBinaryAdvisory(report)
+	// Committing is not shipping: a fix behind the latest tag reaches no project
+	// and no shell, however finished it looks in git.
+	doctorCheckReleaseAdvisory(report)
 
 	// 7. Hook template drift — marker-backed, blocks on drift but not customization.
 	doctorPrintln("\nHook templates:")
