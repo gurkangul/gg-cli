@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.2] - 2026-07-20
+
+### Added
+
+- **`gg doctor` now warns when commits on HEAD were never released.** Committing
+  and pushing a fix is not the same as shipping it: `gg update` installs the
+  newest RELEASE binary and syncs every registered project from it, so work
+  sitting behind the latest tag reaches nobody — not other projects, not other
+  machines, not even the maintainer's own shell — while looking completely done
+  in git. The 2.7.1 cycle walked into exactly this: BUG-096 was fixed, committed
+  and pushed while the installed binary still carried the bug, because no tag
+  followed. The check is maintainer-facing (silent outside a local gg-cli source
+  checkout) and advisory — unreleased work is a normal mid-development state, so
+  it warns and never changes doctor's exit code.
+
 ## [2.7.1] - 2026-07-20
 
 ### Fixed
