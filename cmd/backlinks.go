@@ -26,6 +26,7 @@ import (
 var (
 	backlinksCompact  bool
 	backlinksOutgoing bool
+	backlinksUnlinked bool
 )
 
 var backlinksCmd = &cobra.Command{
@@ -51,6 +52,7 @@ See also: gg impact (code + task blast radius), gg search (find by meaning)`,
 func init() {
 	backlinksCmd.Flags().BoolVar(&backlinksCompact, "compact", false, "one line per link — preserves agent context window")
 	backlinksCmd.Flags().BoolVar(&backlinksOutgoing, "outgoing", false, "also list what this entry links OUT to")
+	backlinksCmd.Flags().BoolVar(&backlinksUnlinked, "unlinked", false, "also list entries whose prose names this entry without linking it")
 	rootCmd.AddCommand(backlinksCmd)
 }
 
@@ -74,7 +76,16 @@ func runBacklinks(cmd *cobra.Command, args []string) error {
 
 	var outgoing []brain.Ref
 	if backlinksOutgoing && resolved {
-		outgoing = brain.OutgoingRefs(anchor)
+		outgoing = brain.OutgoingRefsForKind(anchor, anchorKind)
+	}
+
+	// Unlinked mentions need the resolved graph (to know what IS already linked),
+	// so they are only built when asked for.
+	var unlinked []brain.LinkNode
+	if backlinksUnlinked && resolved {
+		if g, gErr := brain.LoadLinkGraph(ggDir); gErr == nil {
+			unlinked = g.UnlinkedMentions(ref)
+		}
 	}
 
 	jsonMap := map[string]any{
@@ -83,19 +94,22 @@ func runBacklinks(cmd *cobra.Command, args []string) error {
 		"anchor_kind": anchorKind,
 		"backlinks":   backlinkJSON(hits),
 		"outgoing":    outgoing,
+		"unlinked":    unlinkedJSON(unlinked),
 		"count":       len(hits),
 	}
 
 	return printJSON(jsonMap, func() {
 		if isCompactActive(cmd) {
 			emitCompact(cmd, "backlinks",
-				func(w io.Writer) { renderBacklinksDefault(w, ref, anchor, anchorKind, resolved, hits, outgoing) },
-				func(w io.Writer) { renderBacklinksCompact(w, ref, hits, outgoing) },
+				func(w io.Writer) {
+					renderBacklinksDefault(w, ref, anchor, anchorKind, resolved, hits, outgoing, unlinked)
+				},
+				func(w io.Writer) { renderBacklinksCompact(w, ref, hits, outgoing, unlinked) },
 				compactRendererV_backlinks,
 			)
 			return
 		}
-		renderBacklinksDefault(cmd.OutOrStdout(), ref, anchor, anchorKind, resolved, hits, outgoing)
+		renderBacklinksDefault(cmd.OutOrStdout(), ref, anchor, anchorKind, resolved, hits, outgoing, unlinked)
 	})
 }
 
@@ -109,6 +123,19 @@ func backlinkJSON(hits []brain.LinkHit) []map[string]any {
 			"summary":    brainEntrySummary(h.Entry),
 			"created_at": h.Entry.CreatedAt,
 			"via":        h.Via,
+		})
+	}
+	return out
+}
+
+func unlinkedJSON(nodes []brain.LinkNode) []map[string]any {
+	out := make([]map[string]any, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, map[string]any{
+			"kind":    n.Kind,
+			"uuid":    n.Entry.UUID,
+			"id":      n.ID,
+			"summary": brainEntrySummary(n.Entry),
 		})
 	}
 	return out
@@ -172,7 +199,7 @@ func backlinkKindIcon(kind string) string {
 	}
 }
 
-func renderBacklinksDefault(w io.Writer, ref string, anchor brain.Entry, anchorKind string, resolved bool, hits []brain.LinkHit, outgoing []brain.Ref) {
+func renderBacklinksDefault(w io.Writer, ref string, anchor brain.Entry, anchorKind string, resolved bool, hits []brain.LinkHit, outgoing []brain.Ref, unlinked []brain.LinkNode) {
 	if resolved {
 		fmt.Fprintf(w, "BACKLINKS → %s (%s: %s)\n\n", strings.ToUpper(ref), strings.TrimSuffix(anchorKind, "s"), compactTrim(brainEntrySummary(anchor), 80))
 	} else {
@@ -194,12 +221,26 @@ func renderBacklinksDefault(w io.Writer, ref string, anchor brain.Entry, anchorK
 			fmt.Fprintf(w, "  → %-20s (%s)\n", r.Raw, r.Via)
 		}
 	}
+
+	if len(unlinked) > 0 {
+		fmt.Fprintln(w, "\nUNLINKED MENTIONS (name it in prose but carry no link):")
+		for _, n := range unlinked {
+			label := n.ID
+			if label == n.Entry.UUID {
+				label = brainEntryDate(n.Entry)
+			}
+			fmt.Fprintf(w, "  ~ %s %-12s %s\n", backlinkKindIcon(n.Kind), label, compactTrim(brainEntrySummary(n.Entry), 80))
+		}
+	}
 }
 
-func renderBacklinksCompact(w io.Writer, ref string, hits []brain.LinkHit, outgoing []brain.Ref) {
+func renderBacklinksCompact(w io.Writer, ref string, hits []brain.LinkHit, outgoing []brain.Ref, unlinked []brain.LinkNode) {
 	fmt.Fprintf(w, "backlinks %s — %d in", strings.ToUpper(ref), len(hits))
 	if len(outgoing) > 0 {
 		fmt.Fprintf(w, " %d out", len(outgoing))
+	}
+	if len(unlinked) > 0 {
+		fmt.Fprintf(w, " %d unlinked", len(unlinked))
 	}
 	fmt.Fprintf(w, "\n\n")
 
@@ -212,5 +253,12 @@ func renderBacklinksCompact(w io.Writer, ref string, hits []brain.LinkHit, outgo
 	}
 	for _, r := range outgoing {
 		fmt.Fprintf(w, "→ %s [%s]\n", compactTrim(r.Raw, 60), r.Via)
+	}
+	for _, n := range unlinked {
+		label := n.ID
+		if label == n.Entry.UUID {
+			label = brainEntryDate(n.Entry)
+		}
+		fmt.Fprintf(w, "~ %s %s %s [unlinked]\n", backlinkKindIcon(n.Kind), label, compactTrim(brainEntrySummary(n.Entry), 60))
 	}
 }
