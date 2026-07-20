@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.6] - 2026-07-20
+
+### Performance
+
+- **`gg search` no longer walks the code graph when it is provably fresh.**
+  Emitting the stale-graph notice meant collecting graph status on EVERY
+  interactive search — a filesystem walk, git subprocesses and a graph.db ping,
+  bounded at ~3s — even when the graph was up to date and no notice could print.
+  A cheap pre-check now compares the recorded index SHA against HEAD and skips
+  the collection when they match. Measured 293ms → 201ms (~31%) on five warm runs.
+  Deliberately conservative: missing or unreadable state, an empty-tree SHA, a git
+  failure, or any genuine mismatch all fall through to the full walk, so the gate
+  can only save time and never suppress a notice that was due — verified against
+  fresh, corrupted-SHA and missing-state cases.
+
+  This optimisation was written on 2026-06-17 but never reached main; it was
+  recovered from a stale worktree during cleanup, one commit away from being
+  deleted.
+
+### Internal
+
+- Lint debt cleared: the five standing findings are resolved (four scoped
+  suppressions that each name the rule and why it does not apply, one genuine
+  simplification) and the baseline is recaptured at 0, so a new finding now fails
+  the gate instead of hiding under accepted debt.
+
 ## [2.7.5] - 2026-07-20
 
 ### Added
