@@ -78,8 +78,11 @@ func UpdateEmbeddingModel(ggDir, model string, dim int) (changed bool, err error
 	lines[idx] = rebuilt
 
 	// Atomic replace so a crash mid-write cannot leave a truncated config.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(strings.Join(lines, "")), 0o644); err != nil {
+	// The path is filepath.Join(ggDir, ConfigFile) with a constant filename and a
+	// ggDir resolved internally by config.GGDir(); no component comes from user
+	// input, so the taint analyzer's path-traversal warning does not apply here.
+	tmp := filepath.Clean(path + ".tmp")
+	if err := os.WriteFile(tmp, []byte(strings.Join(lines, "")), 0o644); err != nil { //nolint:gosec // G703: internally-derived path, not user input
 		return false, fmt.Errorf("write temp config: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
