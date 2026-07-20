@@ -123,6 +123,28 @@ func runReembed(cmd *cobra.Command, _ []string) error {
 		fmt.Printf("warning: could not update embedding-meta.json: %v\n", writeErr)
 	}
 
+	// BUG-096: keep config.yaml in step with the corpus we just rebuilt. Without
+	// this the file keeps naming the OLD model forever, so every later command
+	// faces a project whose config contradicts its own vectors — which either
+	// hard-fails as a model mismatch or forces the operator to export
+	// GG_EMBED_MODEL in every shell. Writing it back is what makes a migration
+	// actually finish.
+	//
+	// Ollama only: under Voyage the model lives in embedding.voyage.model, and
+	// effectiveModel here is the "voyage:<model>" identity, not a bare name.
+	// Best-effort — a config that cannot be updated must not fail a migration
+	// that already succeeded.
+	if cfg.Embedding.ResolvedBackendName() == config.BackendOllama {
+		bare := embedding.EffectiveModel(&cfg.Embedding)
+		switch changed, cfgErr := config.UpdateEmbeddingModel(ggDir, bare, newDim); {
+		case cfgErr != nil:
+			fmt.Printf("warning: could not update embedding.model in config.yaml: %v\n", cfgErr)
+			fmt.Printf("         set it to %q manually, or GG_EMBED_MODEL stays required\n", bare)
+		case changed:
+			fmt.Printf("Updated embedding.model in config.yaml → %q (%d-dim).\n", bare, newDim)
+		}
+	}
+
 	// Print summary.
 	fmt.Println()
 	fmt.Println(strings.Repeat("─", 50))
