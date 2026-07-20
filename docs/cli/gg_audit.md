@@ -37,5 +37,6 @@ Set GG_NO_AUDIT=1 to suppress both the track and report hooks.
 * [gg audit inbox-obedience](gg_audit_inbox-obedience.md)	 - Measure role-targeted handoff acknowledgement per agent role
 * [gg audit repeat-work](gg_audit_repeat-work.md)	 - Surface multi-iteration patterns that likely indicate a bug loop
 * [gg audit report](gg_audit_report.md)	 - Emit audit warning at session end if mutations are untracked (Stop hook)
+* [gg audit rot](gg_audit_rot.md)	 - Report decaying ledger entries: stale evidence, unproven load-bearing rules, orphans
 * [gg audit track](gg_audit_track.md)	 - Record one file mutation in the session audit log (PostToolUse hook)
 * [gg audit trends](gg_audit_trends.md)	 - Quality-signal metrics: bug reopen rate over a lookback window

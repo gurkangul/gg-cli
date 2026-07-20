@@ -16,6 +16,7 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 ### SEE ALSO
 
 * [gg audit](gg_audit.md)	 - [experimental] Session mutation audit (called by PostToolUse and Stop hooks)
+* [gg backlinks](gg_backlinks.md)	 - Show every brain entry that references this task, bug, or decision
 * [gg brain](gg_brain.md)	 - Portable brain snapshot (export / import / status)
 * [gg bug](gg_bug.md)	 - Manage bug lifecycle
 * [gg canon](gg_canon.md)	 - Distilled institutional memory — the durable knowledge every agent should start with
@@ -41,6 +42,7 @@ GG — One brain, any agent. A shared knowledge base CLI for AI agents.
 * [gg reconcile](gg_reconcile.md)	 - [experimental] Reconcile append-only task events with the live task projection
 * [gg record](gg_record.md)	 - Record that a decision was made (the canonical knowledge-capture verb)
 * [gg reembed](gg_reembed.md)	 - Rebuild the embedded vector index (.gg/vectorstore.db) from .gg/brain/*.jsonl
+* [gg related](gg_related.md)	 - Walk the link graph outward from a task, bug, or decision
 * [gg search](gg_search.md)	 - Find relevant context — semantic search across decisions, tasks, and messages
 * [gg serve](gg_serve.md)	 - Local dashboard — visualize every gg project's brain (decisions, work, live search)
 * [gg session-start](gg_session-start.md)	 - Print session bootstrap briefing (called by agent SessionStart hooks)

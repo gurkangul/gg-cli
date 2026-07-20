@@ -12,6 +12,7 @@ gg graph export [flags]
       --format string    export format: html (default "html")
   -h, --help             help for export
       --symbol-cap int   include symbol view only when symbol count is at or below this cap (default 500)
+      --view string      what to render: code (files/symbols), memory (decisions/tasks/bugs), or all (default "code")
 ```
 
 ### Options inherited from parent commands

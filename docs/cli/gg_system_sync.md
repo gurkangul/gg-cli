@@ -13,6 +13,7 @@ Stages per project:
   2. gg doctor --check-contract --fix      (contract block drift repair)
   3. gg doctor --install-agent-hooks       (idempotent agent-hook refresh)
   4. gg doctor --install-task-hooks        (idempotent task-hook refresh)
+  5. gg doctor --install-index-hooks       (refresh CodeGraph git hooks — only where already installed)
 
 Projects whose root directory no longer exists are skipped with a
 warning — prune them with 'gg system register --prune' after verifying.
