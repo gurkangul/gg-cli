@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.7] - 2026-07-20
+
+### Internal
+
+- Verification for the 2.7.0 trust tiers, which had shipped unchecked. The tier a
+  decision renders with is time-dependent, and Go boundary tests were ruled out
+  by the project's no-unit-tests policy — so the gap was written down as needing
+  a policy exception. It did not: the clock never needed faking, the record dates
+  did. `testdata/regression/trust-tiers.sh` writes decisions with chosen
+  `created_at` values and asserts the rendered labels through the real
+  `gg context` path, covering fresh, aging, stale, evidence-less and
+  pinned-exempt. That exercises `trustTier`, the exemption rules and the renderer
+  together — stronger than the unit test it replaces.
+
 ## [2.7.6] - 2026-07-20
 
 ### Performance
