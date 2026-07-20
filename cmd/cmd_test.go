@@ -306,6 +306,26 @@ func TestTaskCreate_MetaGuard_Blocked(t *testing.T) {
 	}
 }
 
+// TestTaskCreate_MetaGuard_NoSubstringFalsePositive guards the regression where
+// the bare "meta" token blocked real product work whose title merely contained
+// the substring (embedding-meta.json, metadata, ...). These titles must reach
+// the config error, never the meta-guard's ExitNotFound.
+func TestTaskCreate_MetaGuard_NoSubstringFalsePositive(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("GG_ALLOW_META", "")
+	titles := []string{
+		"resolve embed model from embedding-meta.json",
+		"persist richer metadata on decisions",
+	}
+	for _, title := range titles {
+		_, _, err := execCmd(t, "task", "create", "--requester=user", title)
+		var exitErr *ExitError
+		if errors.As(err, &exitErr) && exitErr.Code == ExitNotFound {
+			t.Errorf("meta-guard false-positive on %q — substring match must not block product work", title)
+		}
+	}
+}
+
 func TestTaskCreate_MetaGuard_AllowedWithEnv(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("GG_ALLOW_META", "stabilization exception: fixing docs pipeline")

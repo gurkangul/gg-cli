@@ -19,7 +19,14 @@ import (
 // meta-backlog (AGENTS.md edits, CHANGELOG bumps, tracker-rule enforcement,
 // hook wiring, parity work). These are frozen under stabilization mode.
 // Override with GG_ALLOW_META=<reason>.
-var metaTaskPattern = regexp.MustCompile(`(?i)(AGENTS\.md|CHANGELOG|tracker.?rule|hook|parity|meta|enforcement)`)
+//
+// The "meta" token is matched as meta-task / meta-work, not bare "meta": the
+// bare form fired on any title merely containing the substring — "metadata",
+// "embedding-meta", "embed-model-from-manifest-meta" — and blocked real product
+// work that has nothing to do with the meta-backlog this freeze exists to stop.
+// RE2 has no lookbehind, and \bmeta\b does not help because a hyphen is itself a
+// word boundary, so the fix is to match the intent instead of the substring.
+var metaTaskPattern = regexp.MustCompile(`(?i)(AGENTS\.md|CHANGELOG|tracker.?rule|hook|parity|meta[-\s]?task|meta[-\s]?work|enforcement)`)
 
 // validRequesters are the allowed values for --requester.
 var validRequesters = map[string]bool{"user": true, "agent": true, "system": true}
