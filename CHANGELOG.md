@@ -7,8 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-07-20
+
+The memory layer becomes recallable, linked and self-auditing. Until now gg had a
+rich graph for CODE (REFERENCES/DEFINES/IMPORTS) and a flat list for MEMORY:
+decisions could only be reached by semantic search, never walked, and a search
+that came back empty was indistinguishable from a project with no history.
+
+### Added
+
+- **`gg backlinks <ref>` — reverse link traversal.** Answers "what links TO this
+  task/bug/decision", which gg could never answer before. It recognises the
+  relations gg already writes (`task_id`, `depends_on`, `blocks`) *and* prose
+  refs: an Obsidian-style `[[wiki link]]` or a bare `TASK-042` / `BUG-084`
+  mention in a decision's reason now creates a real, reversible edge with no
+  extra flag. `--outgoing` shows the other direction, `--unlinked` surfaces
+  entries whose prose names the anchor without linking it. Computed live from the
+  folded JSONL, so it needs neither the embedder nor Memgraph and cannot drift
+  from the ledger. On the gg-cli ledger itself this made existing history
+  walkable with zero backfill (`gg backlinks BUG-064` → 4 inbound records, all
+  found through prose mentions alone).
+- **`gg related <ref> --hops N` — multi-hop walk over the link graph.** `gg
+  context` and `gg impact` surface "related decisions" by vector similarity —
+  things that *sound* alike. This walks what is actually *connected*, which is a
+  different question: a decision can be the direct cause of a bug and share
+  almost no vocabulary with it. Traversal is undirected with per-edge direction
+  reported; references that resolve to nothing are kept as dangling rather than
+  silently dropped.
+- **`gg audit rot` — read-only sweep for ledger decay.** Reports three kinds of
+  rot: `stale` (evidence old enough to re-check), `unproven` (pinned or
+  policy-tagged decisions carrying no evidence at all — the entries every session
+  inherits first, never verified), and `orphan` (active decisions with no link in
+  either direction). Strictly a report: it never supersedes, retags or rewrites,
+  and always exits 0.
+- **`gg graph export --view code|memory|all`.** The offline visualization
+  rendered only files and symbols — every memory node was filtered out, so the
+  one picture gg shipped showed the code and none of the reasoning behind it.
+  Memory nodes are derived from the JSONL link graph (not read back from
+  Memgraph), so the view includes prose refs and renders for a project that has
+  never been code-indexed. Default stays `code`; memory is opt-in.
+
 ### Changed
 
+- **`gg search` now runs an always-on lexical tier over BRAIN RECORDS**, fused
+  with the vector results and deduped by record id. The lexical JSONL scan
+  already existed but only ever fired as a break-glass fallback when the store
+  was down or the collection missing; on the healthy path the only lexical tier
+  covered code symbols. That left a silent recall hole — a record that was never
+  embedded (written while the embedder was unreachable), one carrying a degraded
+  placeholder vector, or one below the semantic cutoff simply printed "No results
+  found." with no error, which an agent reads as "never decided" and re-decides.
+  Ranking is unchanged and stays vector-primary, and the status filters mirror
+  the vector path exactly so superseded/rejected decisions and fixed/wontfix bugs
+  still cannot leak into results (BUG-064).
+- **Reads now warn when part of the brain is missing from the semantic index.**
+  `gg search` and `gg context` print a one-line notice when the outbox has
+  unembedded records or degraded placeholder vectors are being filtered out, with
+  the `gg reembed` remedy. Partial recall is no longer indistinguishable from an
+  empty project. Bounded and best-effort; silent when coverage is complete or
+  under `GG_QUIET=1`.
+- **Evidence now carries a verification AGE, not just presence.** A decision used
+  to render either `Evidence: …` or `[unverified]`, treating a claim checked this
+  morning and one checked eight months ago as equally solid. Decisions now read
+  `[verified]`, `[verified · aging]` or `[verified · stale — reverify]`. The tier
+  is derived, never stored, and affects only rendering and — as the last
+  tie-break between two decisions — ranking. It never changes validity, never
+  hides anything and never mutates status. Pins and
+  `constraint`/`convention`/`policy`/`canon` tags bypass decay entirely: a
+  recorded rule is not a measurement that expires.
 - **CodeGraph git hooks now refresh the graph DETACHED (in the background)** so
   `git push` / `commit` / `merge` never block on indexing. The hooks already ran
   the incremental `gg index --changed` (the graph *write* only touches changed
@@ -37,6 +103,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opt-in-preserving: the refresh runs **only where an index hook is already
   installed**, so a project set up with `init --no-index-hooks` is never
   force-installed into.
+
+### Fixed
+
+- **The query embedding model is now resolved from `embedding-meta.json`** — the
+  model the corpus was actually built with — instead of a `config.yaml` that may
+  have drifted from it. A drifted config previously made every brain command
+  hard-fail with a model mismatch, and the only remedy was for a human to export
+  `GG_EMBED_MODEL` in every shell, which made recall depend on operator memory.
+  An explicit `GG_EMBED_MODEL` is still honoured as migration intent, so a
+  genuine mismatch still trips `CheckMeta` and points at `gg reembed`.
+- **`decisionFromJSONLEntry` dropped `Evidence`, `Pinned` and
+  `RejectedAlternatives`** even though `AddDecision` writes all three to the
+  payload. Any decision served from the ledger rather than the vector store
+  therefore rendered as `[unverified]` and lost its pin — wrong on the offline
+  fallback, and newly relevant now that the lexical tier builds live results
+  through the same converter.
+- **The stabilization freeze no longer fires on any task title containing the
+  substring "meta".** The guard matched bare `meta`, so real product work was
+  blocked for merely naming a file (`embedding-meta.json`). It now matches on
+  intent (`meta-task` / `meta-work`); RE2 has no lookbehind and `\bmeta\b` does
+  not help because a hyphen is itself a word boundary, so narrowing the token is
+  the only formulation that separates the two cases. Everything the freeze
+  targets — `AGENTS.md`, `CHANGELOG`, tracker-rule, hook, parity, enforcement and
+  genuine meta-task titles — is still blocked.
 
 ## [2.6.0] - 2026-06-30
 
