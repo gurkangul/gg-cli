@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.1] - 2026-07-20
+
+### Fixed
+
+- **`gg reembed` now writes the migrated model and dimension back to
+  `config.yaml`.** It probed the configured model, rebuilt every collection at
+  its dimension and rewrote `embedding-meta.json` — but left `embedding.model`
+  naming the OLD model, so a migration never actually finished: the config
+  contradicted its own vectors permanently, and `GG_EMBED_MODEL` stayed
+  mandatory in every shell. Measured across one host, 8 of 11 registered
+  projects had drifted this way. 2.7.0 made recall survive the drift by
+  resolving the query model from `embedding-meta.json`; this removes the drift at
+  its source. The update is a targeted line rewrite rather than `Save()`, which
+  round-trips through `yaml.Marshal` and would discard every comment in the file,
+  and it refreshes the stale `<N>-dim` claim in the trailing comment. Only the
+  `model:` key directly under `embedding:` is touched — `embedding.voyage.model`
+  is a different setting and is left alone. Ollama-only and best-effort: a config
+  that cannot be written never fails a migration that already succeeded.
+
+### Internal
+
+- `docs/cli/` regenerated for the 2.7.0 command surface (`gg backlinks`,
+  `gg related`, `gg audit rot`, `gg graph export --view`). The docs-drift CI job
+  had been red since 2026-07-02, when the `gg system sync` stage-5 line first
+  drifted.
+
 ## [2.7.0] - 2026-07-20
 
 The memory layer becomes recallable, linked and self-auditing. Until now gg had a
