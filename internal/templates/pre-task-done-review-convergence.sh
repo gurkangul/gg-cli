@@ -102,8 +102,19 @@ fi
 
 CATS=0
 if [ -n "$(printf '%s' "$TRAILER" | tr -d '[:space:]')" ]; then
+  # BUG-104: count each category only when its keyword starts a WORD, not as a
+  # bare substring. Plain `grep -qi behavior` let one concept trip three keywords
+  # ("retested the latest docstrings for stale imports" -> test/docs/stale -> a
+  # false PASS), and BUG-101's fold widened that collision surface. Match against
+  # a space-normalised, space-prefixed copy with "[^a-zA-Z]<kw>": a portable POSIX
+  # negated class (BSD grep -E mishandles ^ inside an alternation, and -w would
+  # wrongly reject the legitimate plural/gerund forms tests/testing/tested). The
+  # guaranteed leading space supplies the left boundary for a keyword at position
+  # 0; only the START of the word is anchored, so tests/testing/tested still match
+  # while latest/retested/attestation do not.
+  CHECK=" $(printf '%s' "$TRAILER" | tr -s '[:space:]' ' ')"
   for kw in behavior negative legacy stale docs smoke test; do
-    if printf '%s' "$TRAILER" | grep -qi "$kw"; then
+    if printf '%s' "$CHECK" | grep -qiE "[^a-zA-Z]${kw}"; then
       CATS=$((CATS + 1))
     fi
   done
