@@ -155,7 +155,9 @@ func runImpact(cmd *cobra.Command, args []string) error {
 		result.Traversal.Truncated = true
 		result.Warnings = append(result.Warnings, fmt.Sprintf("--hops capped at %d (requested %d)", maxImpactHops, impactHops))
 	}
+	fileExistsOnDisk := true
 	if _, statErr := os.Stat(filepath.Join(projRoot, filepath.FromSlash(relPath))); os.IsNotExist(statErr) {
+		fileExistsOnDisk = false
 		result.Warnings = append(result.Warnings, fmt.Sprintf("target file %s does not exist in the working tree; if it was deleted, run gg index --changed to remove stale graph nodes", relPath))
 	}
 
@@ -187,8 +189,12 @@ func runImpact(cmd *cobra.Command, args []string) error {
 			defer gcancel()
 
 			// 0. Detect empty graph — Memgraph is up but nothing has been indexed yet.
-			if fileCount, fcErr := gc.CountFileNodes(gctx); fcErr == nil && fileCount == 0 {
-				result.Warnings = append(result.Warnings, impactGraphEmptyWarning(graphStatus, graphStatusKnown))
+			graphFileCount := int64(-1)
+			if fileCount, fcErr := gc.CountFileNodes(gctx); fcErr == nil {
+				graphFileCount = fileCount
+				if fileCount == 0 {
+					result.Warnings = append(result.Warnings, impactGraphEmptyWarning(graphStatus, graphStatusKnown))
+				}
 			}
 
 			// 1. Downstream dependents.
@@ -224,6 +230,23 @@ func runImpact(cmd *cobra.Command, args []string) error {
 			} else {
 				for _, n := range symbols {
 					result.Symbols = append(result.Symbols, n.Properties)
+				}
+			}
+
+			// 2b. BUG-105: distinguish "0 dependents because genuine leaf" from
+			// "0 dependents because this file is ABSENT from the graph". A file
+			// excluded from the host-platform index (e.g. //go:build windows on a
+			// darwin host) or otherwise skipped returns empty deps+symbols exactly
+			// like a real leaf, while the git-sha freshness contract still reports
+			// fresh — so the empty blast radius looks authoritative but is a false
+			// negative. Only probe when the file is on disk (a missing path is
+			// already warned) and the graph is non-empty (the never-indexed case is
+			// already warned via CountFileNodes==0).
+			if fileExistsOnDisk && graphFileCount > 0 && len(result.Dependents) == 0 && len(result.Symbols) == 0 {
+				if inGraph, memErr := gc.FileNodeExists(gctx, relPath); memErr != nil {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("graph membership query: %v", memErr))
+				} else if !inGraph {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("%s is not a node in the code graph — it may be build-tagged/excluded from the host-platform index or skipped by the indexer; the graph reports fresh but does not cover this file. This 0-dependents result is NOT authoritative (indistinguishable from a genuine leaf) — verify with grep or `gg lsp refs`, or run `gg index`.", relPath))
 				}
 			}
 
@@ -449,6 +472,7 @@ func impactHasCodeGraphWarning(warnings []string) bool {
 			strings.Contains(lower, "code graph stale or missing") ||
 			strings.Contains(lower, "code graph missing/stale") ||
 			strings.Contains(lower, "code graph freshness unknown") ||
+			strings.Contains(lower, "not a node in the code graph") ||
 			strings.Contains(warning, "graph is empty") ||
 			strings.Contains(warning, "graph data unavailable") ||
 			strings.Contains(warning, "graph client init:") ||

@@ -106,6 +106,9 @@ func (s *sqliteStore) queryNodes(ctx context.Context, sqlText string, args ...an
 func (s *sqliteStore) countQuery(ctx context.Context, c string, params map[string]any) (*GraphResult, error) {
 	pid := pidOf(params)
 	switch {
+	case strings.Contains(c, "(f:File {path: $path"):
+		// BUG-105: path-scoped File-node existence check (FileNodeExists).
+		return s.countFileByPath(ctx, params)
 	case strings.Contains(c, "(f:File {project_id: $pid}) RETURN count(f)"):
 		return s.countNodes(ctx, LabelFile, pid)
 	case strings.Contains(c, "(s:Symbol {project_id: $pid}) RETURN count(s)"):
@@ -125,6 +128,21 @@ func (s *sqliteStore) countNodes(ctx context.Context, label, pid string) (*Graph
 	var n int64
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT count(*) FROM nodes WHERE label = ? AND project_id = ?`, label, pid).Scan(&n); err != nil {
+		return nil, err
+	}
+	return scalarResult(n), nil
+}
+
+// countFileByPath counts File nodes matching a specific project-relative path
+// (BUG-105 FileNodeExists). File nodes store their path at props.$.path, the same
+// column dependentsOf matches on.
+func (s *sqliteStore) countFileByPath(ctx context.Context, params map[string]any) (*GraphResult, error) {
+	path, _ := params["path"].(string)
+	var n int64
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM nodes
+		 WHERE label = 'File' AND project_id = ? AND json_extract(props, '$.path') = ?`,
+		pidOf(params), path).Scan(&n); err != nil {
 		return nil, err
 	}
 	return scalarResult(n), nil

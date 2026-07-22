@@ -278,6 +278,35 @@ func (c *Client) CountFileNodes(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
+// FileNodeExists reports whether a File node for the given project-relative path
+// exists in the graph. BUG-105: `gg impact` needs to distinguish a file that has
+// zero dependents because it is a genuine leaf from a file that has zero
+// dependents because it is ABSENT from the graph (build-tagged and excluded from
+// the host-platform index, skipped by the indexer, or a path mismatch). Both
+// look identical in DependentsOf/FileSymbols output, and the git-sha freshness
+// contract reports "fresh" either way, so without this check an authoritative-
+// looking empty blast radius can be a false negative.
+func (c *Client) FileNodeExists(ctx context.Context, filePath string) (bool, error) {
+	result, cleanup, err := c.runQuery(ctx,
+		"MATCH (f:File {path: $path, project_id: $pid}) RETURN count(f) AS n",
+		map[string]any{"path": filePath},
+	)
+	if err != nil {
+		return false, fmt.Errorf("file node exists %s: %w", filePath, err)
+	}
+	defer cleanup()
+
+	record, err := result.Single(ctx)
+	if err != nil {
+		return false, fmt.Errorf("file node exists %s single: %w", filePath, err)
+	}
+	n, _, err := recordValue[int64](record, "n")
+	if err != nil {
+		return false, fmt.Errorf("file node exists %s get value: %w", filePath, err)
+	}
+	return n > 0, nil
+}
+
 // SweepProject removes ALL nodes (and their edges) belonging to this project.
 // Call this only when intentionally rebuilding the entire project graph.
 // Language-specific indexing should use SweepProjectLang so Go/Python/TS graph
