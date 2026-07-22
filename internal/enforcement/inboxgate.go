@@ -28,15 +28,28 @@ type InboxGateResult struct {
 	Bypassed bool
 	// BypassReason is the value of GG_ALLOW_INBOX_SKIP (empty when not bypassed).
 	BypassReason string
+	// Reader is the per-recipient read-state key the gate filtered by. Empty
+	// means an unidentified caller, which falls back to legacy global-read
+	// semantics — the same state an anonymous dismiss writes.
+	Reader string
 }
 
 // CheckInboxGate evaluates whether role-targeted handoffs need attention before
 // a state-changing command writes new shared memory. It returns a result
 // indicating whether the caller should be blocked until the durable handoff or
 // evidence context is read, replied to, or consciously bypassed.
+//
+// reader is the per-recipient read-state key — the SAME identity gg inbox writes
+// into a message's read_by set (identity.Agent(), not the role string). Passing
+// it makes the gate query byte-identical to the user-facing inbox, so an agent
+// that has actually read its mail clears the gate (BUG-102). reader="" degrades
+// to legacy global-read semantics, which is exactly what an anonymous dismiss
+// also writes, so gate and remedy still agree. GetInbox performs no writes, so
+// supplying a reader is a pure filter and never consumes another agent's message.
+//
 // When GG_ALLOW_INBOX_SKIP is set the gate is always bypassed (result.Bypassed=true).
 // When role is empty or enforcement is disabled the gate is skipped (result.Blocked=false).
-func CheckInboxGate(ctx context.Context, client inboxChecker, role string) (InboxGateResult, error) {
+func CheckInboxGate(ctx context.Context, client inboxChecker, role, reader string) (InboxGateResult, error) {
 	if !Enabled() || role == "" {
 		return InboxGateResult{}, nil
 	}
@@ -46,7 +59,7 @@ func CheckInboxGate(ctx context.Context, client inboxChecker, role string) (Inbo
 		return InboxGateResult{Bypassed: true, BypassReason: reason}, nil
 	}
 
-	msgs, err := client.GetInbox(ctx, role, false, "")
+	msgs, err := client.GetInbox(ctx, role, false, reader)
 	if err != nil {
 		// Store unreachable — fail open so a down Qdrant doesn't block work.
 		return InboxGateResult{}, nil
@@ -69,9 +82,9 @@ func CheckInboxGate(ctx context.Context, client inboxChecker, role string) (Inbo
 	}
 
 	if len(targeted) == 0 {
-		return InboxGateResult{}, nil
+		return InboxGateResult{Reader: reader}, nil
 	}
-	return InboxGateResult{Blocked: true, Count: len(targeted), Messages: targeted}, nil
+	return InboxGateResult{Blocked: true, Count: len(targeted), Messages: targeted, Reader: reader}, nil
 }
 
 func assignmentResolved(ctx context.Context, client inboxChecker, m store.Message) bool {
@@ -93,8 +106,12 @@ func assignmentResolved(ctx context.Context, client inboxChecker, m store.Messag
 
 // FormatBlockMessage formats the inbox-gate block error message shown to the agent.
 func FormatBlockMessage(role string, result InboxGateResult) string {
+	who := result.Reader
+	if who == "" {
+		who = "this (unidentified) process"
+	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "MISSING DURABLE HANDOFF CONTEXT: %d unread role-targeted message(s) for role %s\n", result.Count, role)
+	fmt.Fprintf(&sb, "MISSING DURABLE HANDOFF CONTEXT: %d message(s) unread by %s for role %s\n", result.Count, who, role)
 	for _, m := range result.Messages {
 		preview := m.Content
 		if len(preview) > 80 {
@@ -102,6 +119,14 @@ func FormatBlockMessage(role string, result InboxGateResult) string {
 		}
 		fmt.Fprintf(&sb, "  [%s → %s] %s\n", m.FromRole, m.ToRole, preview)
 	}
+	// The remedy names a read that actually clears the gate: gg inbox records
+	// the read in this reader's own read_by set (BUG-082), the same key the gate
+	// now filters by (BUG-102). --include-agents is REQUIRED: the gate scans all
+	// audiences (GetInbox humanOnly=false), so an agent-to-agent handoff
+	// (gg tell <role> --audience agents) blocks here but is hidden from the
+	// default human-facing `gg inbox`; without --include-agents the advertised
+	// remedy would print "No unread messages." and never clear the block.
+	fmt.Fprintf(&sb, "Run: gg inbox --role %s --include-agents   (marks these read for %s only, which clears this gate)\n", role, who)
 	sb.WriteString("Read or respond so future agents can see the blocker, decision, review request, or evidence path. If you already handled it elsewhere, set GG_ALLOW_INBOX_SKIP=<reason> to record an audited bypass.")
 	return sb.String()
 }

@@ -82,9 +82,12 @@ func (c *Client) SendMessage(ctx context.Context, m Message) error {
 //
 // BUG-082: read-state is per-recipient. A message is hidden from reader only
 // when it carries the legacy global read=true flag OR reader appears in its
-// per-recipient read_by set. reader="" means an anonymous/preview view (status,
-// next) that never consumes another agent's message — it sees everything not
-// globally dismissed.
+// per-recipient read_by set. reader="" means a PROJECT-WIDE, identity-independent
+// view (status, status-render, the STATUS.md drift artifact) whose count must be
+// the same for every agent — it is NOT a "safe default". GetInbox performs no
+// writes, so passing a reader can never consume another agent's message; any
+// surface scoped to ONE agent's own mail (inbox, next, the inbox gate) MUST pass
+// a reader or it silently ignores that agent's own reads (BUG-102).
 func (c *Client) GetInbox(ctx context.Context, role string, humanOnly bool, reader string) ([]Message, error) {
 	conditions := []*Condition{}
 	if role != "" {

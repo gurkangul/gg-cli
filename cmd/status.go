@@ -296,7 +296,10 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				fmt.Printf("  … and %d more (run `gg inbox` for full list)\n", truncated)
 			}
 			if len(messages) > 0 {
-				fmt.Println("  (run `gg inbox` to mark as read)")
+				// BUG-102: this count is project-wide (reader-agnostic). `gg inbox`
+				// marks the invoking agent's OWN copy read (read_by) and will not
+				// reduce this number, so don't promise that it will.
+				fmt.Println("  (project-wide; `gg inbox` marks your own copy read)")
 			}
 		}
 

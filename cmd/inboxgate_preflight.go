@@ -39,7 +39,12 @@ func requireAgentIdentity() error {
 // commandName is used in the bypass audit log (gate field).
 func runInboxGatePreflight(ctx context.Context, client *store.Client, commandName string) error {
 	role := resolveActorRole()
-	result, err := enforcement.CheckInboxGate(ctx, client, role)
+	// BUG-102: the gate must query the SAME read-model gg inbox writes. A
+	// message's read_by set is keyed by identity.Agent() (resolveInboxAgent),
+	// NOT by the role string — so the reader passed here must be that identity,
+	// or an agent that has read its mail would still be blocked.
+	reader := resolveInboxAgent()
+	result, err := enforcement.CheckInboxGate(ctx, client, role, reader)
 	if err != nil {
 		return nil // fail open: Qdrant unreachable should not block work
 	}

@@ -83,7 +83,13 @@ func runNext(cmd *cobra.Command, _ []string) error {
 		snap.StateWarnings = append(snap.StateWarnings, warning)
 	}
 
-	if msgs, msgErr := d.store.GetInbox(ctx, roleForQuery(role), true, ""); msgErr == nil {
+	// BUG-102 sibling: read the per-recipient inbox with the SAME reader key gg
+	// inbox writes (identity.Agent()), not reader="". With reader="" an agent that
+	// had already read all its mail still saw InboxCount>0 and `gg next` short-
+	// circuited at "Inbox has N unread message(s). Read it before choosing work",
+	// suppressing every task recommendation forever. Filtering is a pure read —
+	// `gg next` stays non-consuming.
+	if msgs, msgErr := d.store.GetInbox(ctx, roleForQuery(role), true, resolveInboxAgent()); msgErr == nil {
 		snap.InboxCount = len(msgs)
 	} else {
 		snap.StateWarnings = append(snap.StateWarnings, fmt.Sprintf("inbox unavailable: %v", msgErr))
