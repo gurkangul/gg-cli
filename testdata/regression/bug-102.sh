@@ -53,6 +53,11 @@ git init -q .
 
 # A repro must not inherit the caller's gate-bypass or in-hook context.
 unset GG_EMBED_MODEL GG_ALLOW_INBOX_SKIP GG_INSIDE_HOOK GG_TASK_ID 2>/dev/null || true
+# BUG-103: identity.Agent() now derives a per-tab id from CLAUDE_CODE_SESSION_ID
+# (CLAUDE_SESSION_ID fallback). Unset both so Phase 3's `env -u GG_AGENT` dismiss
+# is genuinely ANONYMOUS (empty reader -> legacy global read=true) regardless of
+# an outer Claude session leaking its session id into this hermetic repro.
+unset CLAUDE_CODE_SESSION_ID CLAUDE_SESSION_ID 2>/dev/null || true
 export GG_ENFORCEMENT=on
 
 # --- seed one role-targeted handoff to `reviewer`

@@ -294,6 +294,32 @@ GG_ALLOW_INBOX_SKIP="continuing async sprint, messages already triaged" \
   gg task start TASK-099
 ```
 
+### `GG_INBOX_GATE_WINDOW`
+
+Bounds how far back the inbox handoff gate blocks on role-targeted handoffs
+(BUG-103). Once agent identity is resolved per session/tab, a fresh identity has
+an empty per-recipient read set, so without a window the gate would re-block on
+the entire accumulated handoff history for every new tab. The window makes the
+candidate set proportional to recent activity by a wall-clock cutoff, independent
+of identity/cursor/read-state.
+
+- Unset/empty → **14d** (default, on).
+- A parseable duration overrides — Go's `time.ParseDuration` plus a `d` (day)
+  suffix: `7d`, `48h`, `30m`.
+- `0` or `off` → **disabled** (legacy unbounded: block role-targeted handoffs of
+  any age — the maximum-safety setting).
+- A parse failure falls back to 14d (never unbounded), so a typo cannot silently
+  resurrect the backlog.
+
+A handoff older than the window is not lost — it still appears in
+`gg inbox --role <role> --include-agents` (no window there) and, if task-linked,
+via `gg next`; the gate is a backstop, not the sole notifier.
+
+```sh
+GG_INBOX_GATE_WINDOW=7d gg task start TASK-099   # narrower window
+GG_INBOX_GATE_WINDOW=0  gg task start TASK-099    # unbounded (legacy)
+```
+
 ---
 
 ## Pre-tool-use hook variables

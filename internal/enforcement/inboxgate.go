@@ -5,9 +5,53 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gurkangul/gg-cli/internal/store"
 )
+
+// defaultInboxGateWindow bounds how far back the gate blocks on role-targeted
+// handoffs. BUG-103: once identity.Agent() resolves per-tab (a fresh session id
+// with an empty read_by), an unbounded gate would re-block every accumulated
+// handoff for every new tab — BUG-102 reached from the other side. The window
+// makes the fresh-tab candidate set O(recent activity), not O(history), by a
+// wall-clock threshold independent of identity/cursor/read_by. 14d is generous
+// enough that a weekend or sprint gap never drops a live handoff by age.
+const defaultInboxGateWindow = 14 * 24 * time.Hour
+
+// inboxGateWindow returns the recency window and whether it is enabled.
+// Unset/empty => 14d (ON). "0"/"off" => disabled (legacy unbounded: block
+// role-targeted handoffs of any age — the max-safety escape hatch). Any parseable
+// duration overrides. A parse failure falls back to the default (bounded), never
+// to unbounded, so a typo cannot silently resurrect the whole backlog.
+func inboxGateWindow(getenv func(string) string) (time.Duration, bool) {
+	raw := strings.TrimSpace(getenv("GG_INBOX_GATE_WINDOW"))
+	switch strings.ToLower(raw) {
+	case "":
+		return defaultInboxGateWindow, true
+	case "0", "off":
+		return 0, false
+	}
+	d, err := parseDayDuration(raw)
+	if err != nil || d <= 0 {
+		return defaultInboxGateWindow, true
+	}
+	return d, true
+}
+
+// parseDayDuration extends time.ParseDuration with a "d" (day) suffix (e.g. "7d").
+// Duplicated locally because cmd.parseDuration is package cmd and internal/
+// enforcement must not import cmd.
+func parseDayDuration(s string) (time.Duration, error) {
+	if strings.HasSuffix(s, "d") {
+		var n int
+		if _, err := fmt.Sscanf(strings.TrimSuffix(s, "d"), "%d", &n); err != nil {
+			return 0, fmt.Errorf("invalid day value %q", s)
+		}
+		return time.Duration(n) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(s)
+}
 
 // inboxChecker is a narrow interface satisfied by *store.Client. Injected in
 // tests to avoid real Qdrant calls.
@@ -65,10 +109,27 @@ func CheckInboxGate(ctx context.Context, client inboxChecker, role, reader strin
 		return InboxGateResult{}, nil
 	}
 
+	// BUG-103: bound the gate to a recency window so a fresh per-tab identity
+	// leaves it satisfiable (see defaultInboxGateWindow). Computed once.
+	window, windowed := inboxGateWindow(os.Getenv)
+	var threshold time.Time
+	if windowed {
+		threshold = time.Now().Add(-window)
+	}
+
 	// Filter to only role-targeted messages (to_role == role or @role mention).
 	var targeted []store.Message
 	lowerRole := strings.ToLower(role)
 	for _, m := range msgs {
+		// Recency window first: an old handoff is skipped before the assignment-
+		// resolved GetTask round-trip. Keep-on-parse-error mirrors cmd/inbox.go's
+		// fail-open convention (and preserves tests whose messages have no
+		// CreatedAt) — an unparseable timestamp never silently drops a message.
+		if windowed {
+			if ts, perr := time.Parse(time.RFC3339, m.CreatedAt); perr == nil && ts.Before(threshold) {
+				continue
+			}
+		}
 		if assignmentResolved(ctx, client, m) {
 			continue
 		}

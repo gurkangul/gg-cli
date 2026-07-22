@@ -14,18 +14,31 @@ const GenericClaudeAgent = "claude-code"
 // ResolveAgent returns the effective per-runtime agent identity.
 //
 // BUG-084: when GG_AGENT is the generic shared "claude-code" default (or unset)
-// but the process runs inside a Claude Code session that exposes
-// CLAUDE_SESSION_ID, gg derives a unique id "claude-code-<short-session>" so two
-// concurrent tabs on one project no longer collapse into one identity — which
-// silently defeated task-ownership leases, per-recipient inbox read-state
-// (BUG-082), and verifier separation. When no session id is available it
-// degrades to the explicit GG_AGENT, preserving existing behavior.
+// but the process runs inside a Claude Code session that exposes a session id, gg
+// derives a unique id "claude-code-<short-session>" so two concurrent tabs on one
+// project no longer collapse into one identity — which silently defeated
+// task-ownership leases, per-recipient inbox read-state (BUG-082), and verifier
+// separation. When no session id is available it degrades to the explicit
+// GG_AGENT, preserving existing behavior.
+//
+// BUG-103: the original code read only CLAUDE_SESSION_ID, but Claude Code exports
+// the session id as CLAUDE_CODE_SESSION_ID (CLAUDE_SESSION_ID is unset), so this
+// branch was dead and every tab collapsed to the generic id. Read
+// CLAUDE_CODE_SESSION_ID first (the real variable), then CLAUDE_SESSION_ID as a
+// forward/backward-compatible fallback for other runtimes. Per the recorded
+// decision, this per-tab sharpening only lands together with the inbox-gate
+// recency window, or a fresh per-tab id would re-block on the entire handoff
+// backlog (BUG-102 from the other side).
 func ResolveAgent(getenv func(string) string) string {
 	agent := strings.TrimSpace(getenv("GG_AGENT"))
 	if agent != "" && agent != GenericClaudeAgent {
 		return agent // explicit, already-unique identity — respect it.
 	}
-	if sid := strings.TrimSpace(getenv("CLAUDE_SESSION_ID")); sid != "" {
+	sid := strings.TrimSpace(getenv("CLAUDE_CODE_SESSION_ID"))
+	if sid == "" {
+		sid = strings.TrimSpace(getenv("CLAUDE_SESSION_ID"))
+	}
+	if sid != "" {
 		short := sid
 		if len(short) > 8 {
 			short = short[:8]
