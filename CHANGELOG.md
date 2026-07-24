@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-07-24
+
+### Added
+
+- **`gg task unblock TASK-ID` — the non-destructive inverse of `gg task block`.**
+  A blocked task previously had no CLI path back to active work: `start` rejects a
+  blocked task, `release`/`renew` require `in_progress`, leaving only `done` (the
+  verify gate) or `cancel` (which destroys the task). `unblock` returns a blocked
+  task to `in_progress` under the caller with a fresh lease and clears the stored
+  block reason, mirroring `start`'s ownership and lease semantics, and records an
+  `unblocked` task event. `gg reconcile` folds the new event as a re-claim, so a
+  `block` → `unblock` lifecycle no longer surfaces as false projection drift (and
+  `gg reconcile --apply` can no longer revert an unblocked task back to blocked).
+
 ## [2.7.8] - 2026-07-20
 
 ### Fixed
