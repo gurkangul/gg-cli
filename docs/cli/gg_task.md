@@ -36,3 +36,4 @@ gg task [flags]
 * [gg task renew](gg_task_renew.md)	 - Renew the current owner lease for an in-progress task
 * [gg task review](gg_task_review.md)	 - Set review status on a task (approve or reject)
 * [gg task start](gg_task_start.md)	 - Claim a task and move it to in_progress
+* [gg task unblock](gg_task_unblock.md)	 - Clear a task's blocked state and return it to in_progress

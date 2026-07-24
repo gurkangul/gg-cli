@@ -170,6 +170,72 @@ func (c *Client) StartTask(ctx context.Context, taskID, owner string, lease time
 	return updated, nil
 }
 
+// UnblockTask is the non-destructive inverse of blocking a task: it returns a
+// status=blocked task to in_progress under the caller, clearing the stored
+// block reason and re-establishing a fresh lease. Without it a blocked task has
+// no CLI path back to active work — start rejects blocked, release/renew require
+// in_progress — leaving only 'done' (the verify gate) or 'cancel' (destroys it).
+func (c *Client) UnblockTask(ctx context.Context, taskID, owner string, lease time.Duration) (*Task, error) {
+	owner, err := requireTaskOwner(owner)
+	if err != nil {
+		return nil, err
+	}
+	if err := requirePositiveLease(lease); err != nil {
+		return nil, err
+	}
+	current, err := c.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if current.Status != "blocked" {
+		return nil, fmt.Errorf("%w: cannot unblock %s from status %q", ErrTaskTransitionConflict, taskID, current.Status)
+	}
+	now := time.Now().UTC()
+	if current.Owner != "" && current.Owner != owner && taskLeaseActive(current, now) {
+		return nil, fmt.Errorf("%w: %s is owned by %s until %s", ErrTaskClaimed, taskID, current.Owner, current.LeaseUntil)
+	}
+
+	leaseUntil := now.Add(lease).Format(time.RFC3339)
+	payload := map[string]*Value{
+		"status":       taskStringValue("in_progress"),
+		"owner":        taskStringValue(owner),
+		"claimed_at":   taskStringValue(now.Format(time.RFC3339)),
+		"lease_until":  taskStringValue(leaseUntil),
+		"block_reason": taskStringValue(""),
+		"done_summary": taskStringValue(""),
+	}
+	payload = taskVersionedPayload(current, payload, now)
+	filter := taskCurrentMutationFilter(current, "blocked")
+	if current.Owner != "" {
+		filter = taskCurrentOwnedMutationFilter(current, "blocked", current.Owner)
+	}
+	if err := c.setTaskPayloadByFilter(ctx, filter, payload); err != nil {
+		return nil, err
+	}
+	updated, err := c.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if updated.Status != "in_progress" || updated.Owner != owner || updated.LeaseUntil != leaseUntil {
+		if updated.Owner != "" && updated.Owner != owner {
+			return nil, fmt.Errorf("%w: %s is owned by %s until %s", ErrTaskClaimed, taskID, updated.Owner, updated.LeaseUntil)
+		}
+		return nil, fmt.Errorf("%w: unblock %s expected owner=%s status=in_progress, got owner=%s status=%s", ErrTaskTransitionConflict, taskID, owner, updated.Owner, updated.Status)
+	}
+	if err := c.AppendTaskEvent(TaskEvent{
+		TaskID:     taskID,
+		Action:     "unblocked",
+		FromStatus: current.Status,
+		ToStatus:   updated.Status,
+		Owner:      owner,
+		LeaseUntil: leaseUntil,
+		Actor:      owner,
+	}); err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
 func (c *Client) RenewTask(ctx context.Context, taskID, owner string, lease time.Duration) (*Task, error) {
 	owner, err := requireTaskOwner(owner)
 	if err != nil {

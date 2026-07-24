@@ -16,6 +16,8 @@ var (
 	taskRenewOwner   string
 	taskRenewLease   time.Duration
 	taskReleaseOwner string
+	taskUnblockOwner string
+	taskUnblockLease time.Duration
 )
 
 var taskStartCmd = &cobra.Command{
@@ -46,15 +48,32 @@ var taskReleaseCmd = &cobra.Command{
 	RunE:  runTaskRelease,
 }
 
+var taskUnblockCmd = &cobra.Command{
+	Use:   "unblock TASK-ID",
+	Short: "Clear a task's blocked state and return it to in_progress",
+	Long: `Return a blocked task to active work — the non-destructive inverse of 'gg task block'.
+
+WHEN TO USE: the dependency a task was blocked on has cleared and you want to
+resume it. Moves the task from blocked back to in_progress under the caller with
+a fresh lease and clears the stored block reason.
+
+Refused if the task is not blocked, or if another agent holds an active lease.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runTaskUnblock,
+}
+
 func init() {
 	taskStartCmd.Flags().StringVar(&taskStartOwner, "owner", "", "agent taking the claim (defaults to $GG_AGENT / $GG_ROLE)")
 	taskStartCmd.Flags().DurationVar(&taskStartLease, "lease", 30*time.Minute, "claim lease duration (for example 30m, 2h)")
 	taskRenewCmd.Flags().StringVar(&taskRenewOwner, "owner", "", "agent renewing the claim (defaults to $GG_AGENT / $GG_ROLE)")
 	taskRenewCmd.Flags().DurationVar(&taskRenewLease, "lease", 30*time.Minute, "new lease duration from now")
 	taskReleaseCmd.Flags().StringVar(&taskReleaseOwner, "owner", "", "agent releasing the claim (defaults to $GG_AGENT / $GG_ROLE)")
+	taskUnblockCmd.Flags().StringVar(&taskUnblockOwner, "owner", "", "agent resuming the task (defaults to $GG_AGENT / $GG_ROLE)")
+	taskUnblockCmd.Flags().DurationVar(&taskUnblockLease, "lease", 30*time.Minute, "claim lease duration (for example 30m, 2h)")
 	taskCmd.AddCommand(taskStartCmd)
 	taskCmd.AddCommand(taskRenewCmd)
 	taskCmd.AddCommand(taskReleaseCmd)
+	taskCmd.AddCommand(taskUnblockCmd)
 }
 
 func resolveTaskOwner(flagValue string) string {
@@ -100,6 +119,40 @@ func runTaskStart(cmd *cobra.Command, args []string) error {
 		"lease_until": t.LeaseUntil,
 	}, func() {
 		fmt.Printf("→ %s started by %s (lease until %s)\n", taskID, t.Owner, t.LeaseUntil)
+	})
+}
+
+func runTaskUnblock(cmd *cobra.Command, args []string) error {
+	taskID, err := requireTaskID(args[0])
+	if err != nil {
+		return err
+	}
+	owner := resolveTaskOwner(taskUnblockOwner)
+	if owner == "" {
+		return fmt.Errorf("--owner is required (or set GG_AGENT / GG_ROLE)")
+	}
+	d, err := loadDeps(false)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	ctx, cancel := withTimeout(cmd.Context())
+	defer cancel()
+
+	t, err := d.store.UnblockTask(ctx, taskID, owner, taskUnblockLease)
+	if err != nil {
+		return err
+	}
+	notifyTaskLifecycle(ctx, d.store, taskID, "unblocked", owner)
+
+	return printJSON(map[string]any{
+		"id":          taskID,
+		"status":      t.Status,
+		"owner":       t.Owner,
+		"lease_until": t.LeaseUntil,
+	}, func() {
+		fmt.Printf("▲ %s unblocked by %s — back to in_progress (lease until %s)\n", taskID, t.Owner, t.LeaseUntil)
 	})
 }
 

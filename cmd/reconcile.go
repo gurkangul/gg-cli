@@ -174,11 +174,14 @@ func foldTaskEvents(creates map[string]brain.Entry, events []brain.Entry) map[st
 			if p.Status == "" {
 				p.Status = defaultStatus(toStatus, "pending")
 			}
-		case "started", "renewed":
+		case "started", "renewed", "unblocked":
 			p.Status = defaultStatus(toStatus, "in_progress")
 			p.Owner = stringField(e.Payload, "owner")
 			p.LeaseUntil = stringField(e.Payload, "lease_until")
-			if action == "started" {
+			// "started" and "unblocked" both re-acquire the claim and stamp a
+			// fresh claimed_at in the store (UnblockTask mirrors StartTask), so
+			// the projection must refresh ClaimedAt too; "renewed" keeps it.
+			if action == "started" || action == "unblocked" {
 				p.ClaimedAt = stringField(e.Payload, "created_at")
 			}
 			p.Cancelled = false

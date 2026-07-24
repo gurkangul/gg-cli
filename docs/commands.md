@@ -35,6 +35,7 @@ gg task ready-for-live TASK-ID --plan "Reviewer: <check>; Evidence: commands=<cm
 gg task review TASK-ID --approve|--reject --by reviewer --notes "..."
 gg task done TASK-ID "verified summary" --verifier reviewer
 gg task block TASK-ID "reason"
+gg task unblock TASK-ID --owner "$GG_AGENT"   # clear blocked -> back to in_progress (inverse of block)
 gg task deps TASK-ID
 gg task packet TASK-ID             # reviewer handoff packet; also available as gg task get --review
 ```
