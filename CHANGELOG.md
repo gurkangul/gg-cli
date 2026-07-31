@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-07-31
+
+### Upgrade note
+
+- **Run `gg doctor --refresh-hooks` in each project after updating.** The
+  `30-file-size.sh` template changed, so every project with it deployed will
+  report hook-template **drift** — and drift is a `fail`, which makes
+  `gg doctor` exit non-zero until the hook is refreshed. `gg system sync`
+  detects the drift and prints the reminder but does **not** auto-refresh
+  `pre-task-done.d` hooks (it only refreshes agent, task and index hooks), so
+  this one step is manual per project.
+
+### Fixed
+
+- **Durable writes no longer land anonymous when `GG_ROLE` is unset (BUG-106).**
+  `resolveAuthor` resolved only `--from` then `$GG_ROLE`, so any runtime that
+  never exported a role wrote `author=""` — silently, and indistinguishably from
+  a record whose author simply was not printed by that view. The sharp edge is
+  that gg had **already accepted** that session's identity: `requireAgentIdentity()`
+  refuses any state-changing write unless `GG_ROLE` or `GG_AGENT` is set, "so
+  shared evidence and handoffs are attributable". gg verified the identity at the
+  door and then stamped the record from a different variable. 436 records in this
+  repo's own ledger were anonymous *despite passing that check* — decisions
+  160/643, tasks 221/516, bugs 32/107, rejections 23/38.
+
+  Every durable stamp now resolves through one ladder:
+  `--from` → `$GG_ROLE` → the runtime's agent identity (`GG_AGENT`, sharpened
+  per tab by BUG-084) → `""`. The role stays ahead of the agent id deliberately:
+  an exported `GG_ROLE` is the provenance the operator *means*, while the agent
+  id is only the runtime that happened to execute the command.
+
+  That covers five paths that each had their own ladder — `gg record` /
+  `decide` / `reject` / `bug report` / `task create` / `task cancel` /
+  `canon set`, plus `gg tell` (which fell through to the literal `"user"`,
+  signing agent traffic as the human), the auto-written bypass-rationale record,
+  the task-lifecycle broadcast (which said plain `claude-code` while the same
+  command stamped the task owner `claude-code-<sid>`), `task ready-for-live`,
+  and `task review` (which invented the literal `"reviewer"`).
+
+  Existing anonymous records are **not** backfilled — they now render visibly
+  anonymous, which is the accurate history.
+
+- **`gg audit file-size --over N` is a real threshold (BUG-107).** It was
+  documented as "a custom threshold instead of the per-type defaults" but
+  implemented as a filter over the already-computed >500 violation set, so it
+  could only ever *narrow* that list: `--over 100` and `--over 440` returned
+  byte-identical output, and no file below its limit could be reported at any
+  value of N. It now replaces the per-type limit, and ignores the grandfather
+  list — filtering a raw size query through a list that exists to excuse rule
+  violations is the same silent omission.
+
+### Added
+
+- **A warning band at 90% of the file-size limit** (450 source / 720 test), in
+  both `gg audit file-size` and the `30-file-size.sh` pre-task-done hook. The
+  rule previously fired only strictly *above* the limit, so a file could sit at
+  499/500 producing no signal at all and the next two-line edit flipped it
+  straight to a violation — a limit with no approach warning reports "compliant"
+  right up to the wall. The band is signal only: it prints in `warn` and `block`
+  mode alike, never touches the exit code, and in the hook covers only files the
+  current task changed. The baseline does not suppress it — a grandfathered file
+  is exempt from failing, not from being visible. This repo was sitting on 14
+  in-band files with nothing reporting them, including one test file seven lines
+  from a hard block.
+
+- **`gg doctor` reports a lint gate that is installed but not armed.**
+  `60-lint-gate.sh` exits 0 with "no baseline — skipping gate" when
+  `.gg/lint-baseline.json` is absent, which is correct runtime behaviour but
+  makes a deployed gate indistinguishable from an armed one. A fresh `gg init`
+  lands in exactly that state, so it was the default condition of every new
+  project. Four states are now reported: armed with the baseline count,
+  installed but unarmed, baseline present but unreadable, and `golangci-lint`
+  missing from PATH. Arm with `gg doctor --capture-lint-baseline`. Deliberately
+  not symmetric with the file-size baseline, whose absence makes that gate
+  *stricter*, not inert.
+
+- **`GG_REQUIRE_AUTHOR=1`** — opt-in strict provenance for projects that adopted
+  a written convention. An unattributable write fails instead of landing
+  anonymously. Default off, so a human in a bare shell and CI are never blocked
+  by a convention they did not adopt.
+
+### Changed
+
+- **An unresolvable author renders `[anonymous]` instead of being dropped.**
+  Every renderer guarded on `Author != ""`, so an anonymous record looked
+  identical to one whose author that view simply did not print. gg already
+  prints an explicit marker for its other missing-provenance signal — absent
+  evidence renders `[unverified]` — and author was the lone exception. Compact
+  renderers are unchanged: they never show author at all, so they carry no
+  present/absent asymmetry.
+
 ## [2.8.0] - 2026-07-24
 
 ### Added
