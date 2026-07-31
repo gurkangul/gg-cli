@@ -50,3 +50,23 @@ func ResolveAgent(getenv func(string) string) string {
 
 // Agent is ResolveAgent bound to the real process environment.
 func Agent() string { return ResolveAgent(os.Getenv) }
+
+// CoarsenAgent reverses the per-tab sharpening ResolveAgent applies, returning
+// the runtime name a "claude-code-<short-session>" id was derived from. Any
+// other value is returned unchanged.
+//
+// This exists for DISPLAY aggregation only — grouping an inbox by sender, say,
+// where several tabs of one runtime should read as one heading. Never store the
+// coarsened form: collapsing distinct sessions into a shared id is precisely
+// what BUG-084 was filed to fix, and it silently defeated task leases,
+// per-recipient inbox read state and verifier separation.
+//
+// The prefix check is deliberately exact rather than "strip the last dash
+// segment", so a legitimate role like "backend-dev" is never mangled.
+func CoarsenAgent(agent string) string {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(agent), GenericClaudeAgent+"-")
+	if !ok || rest == "" || len(rest) > 8 {
+		return agent
+	}
+	return GenericClaudeAgent
+}

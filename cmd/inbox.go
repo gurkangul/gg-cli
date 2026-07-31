@@ -293,6 +293,20 @@ func printMessages(messages []store.Message, groupBy string) {
 	writeMessages(os.Stdout, messages, groupBy, strings.TrimSpace(os.Getenv("GG_ROLE")))
 }
 
+// senderGroupKey coarsens a per-tab agent identity back to its runtime name for
+// DISPLAY grouping only.
+//
+// BUG-106 gave every durable write and message the per-tab identity
+// (`claude-code-<sid8>`), which is the accurate provenance — but this view
+// groups by sender, so several tabs would fragment into several one-message
+// groups. The fix belongs here rather than in what gets stored: writing a
+// coarser identity to make a heading nicer would re-introduce exactly the
+// two-tabs-collapse-into-one problem BUG-084 was filed to fix. Each message
+// still shows its exact sender inside the group.
+func senderGroupKey(from string) string {
+	return identity.CoarsenAgent(from)
+}
+
 // writeMessages renders the default (rich) inbox view to w. Split from
 // printMessages so the compact-baseline measurement can capture the exact
 // bytes the default view would have printed without a stdout redirect.
@@ -302,11 +316,12 @@ func writeMessages(w io.Writer, messages []store.Message, groupBy, myRole string
 		var order []string
 		seen := make(map[string]bool)
 		for _, m := range messages {
-			if !seen[m.FromRole] {
-				order = append(order, m.FromRole)
-				seen[m.FromRole] = true
+			key := senderGroupKey(m.FromRole)
+			if !seen[key] {
+				order = append(order, key)
+				seen[key] = true
 			}
-			byRole[m.FromRole] = append(byRole[m.FromRole], m)
+			byRole[key] = append(byRole[key], m)
 		}
 		for _, role := range order {
 			msgs := byRole[role]
