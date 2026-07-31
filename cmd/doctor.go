@@ -362,6 +362,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	doctorPrintln("\nHook templates:")
 	doctorCheckHookTemplates(report)
 
+	// 7b. Gate arming — a deployed gate and an armed gate look identical from
+	// the outside; an unarmed one blocks nothing while appearing installed.
+	doctorCheckGateArming(report)
+
 	// Artifact drift check (advisory — does not count as a problem).
 	driftCount := doctorCheckArtifactDrift()
 

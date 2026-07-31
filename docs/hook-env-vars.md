@@ -123,6 +123,26 @@ Project-wide, `gg audit file-size` prints the same band, and
 **Bypass (audited):** set `GG_ALLOW_LINT_REGRESSIONS="<reason>"`. Recorded
 via `gg record`.
 
+**Arming is a separate step from installing.** With no `.gg/lint-baseline.json`
+the gate exits 0 on every run — installed, but unable to block anything. `gg
+init` deploys the hook without capturing a baseline, so a fresh project starts
+unarmed by design (it must not be blocked by debt it has never measured). Arm it
+once the project is clean enough to hold a line:
+
+```sh
+gg doctor --capture-lint-baseline
+```
+
+`gg doctor` reports the state as a `lint gate` check — `armed (baseline N
+issue(s))`, `installed but NOT armed`, or `golangci-lint is not on PATH`. Once
+armed, the gate is a ratchet: it blocks only when the count *increases*, and it
+shrinks the baseline automatically whenever the count drops, so existing debt is
+grandfathered and paid down without further bookkeeping.
+
+The file-size gate is not symmetric here: a missing
+`.gg/file-size-baseline.json` makes `30-file-size.sh` *stricter* (it
+grandfathers nothing), so its absence is not a finding.
+
 ### `GG_SECRET_SCAN` — secret scan gate (`20-secret-scan.sh`)
 
 Controls whether the pre-commit secret scan hook blocks commits on findings.
