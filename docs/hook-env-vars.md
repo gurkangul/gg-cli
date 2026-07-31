@@ -93,6 +93,25 @@ GG_FILE_SIZE_GATE=block GG_ALLOW_FILE_SIZE="TASK-042: generated file, exempt" \
   gg task done TASK-042 "..."
 ```
 
+**Warning band (BUG-107).** In every mode except `off`, the gate also prints a
+non-blocking `approaching limit` list for changed files at or above 90% of their
+limit (450 source / 720 test):
+
+```
+[file-size] approaching limit (not a violation):
+  band.go  (495 lines, limit 500 — 5 left)
+[file-size] split these on the next touch rather than at the wall.
+```
+
+The band never affects the exit code, in `warn` or `block` mode, and there is no
+knob to disable it separately — it only ever covers files the current task
+changed. It exists because a limit with no approach warning reports "compliant"
+right up to the wall: a file could sit at 499/500 producing no signal at all
+until the next two-line edit turned it into a hard violation.
+
+Project-wide, `gg audit file-size` prints the same band, and
+`gg audit file-size --over 450` reports every file above an arbitrary threshold.
+
 ### `GG_LINT_GATE` — lint regression gate (`60-lint-gate.sh`)
 
 | Value | Effect |

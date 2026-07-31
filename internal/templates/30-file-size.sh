@@ -2,6 +2,12 @@
 # gg pre-task-done hook: file-size modularity gate.
 # Warns (or blocks) when source files exceed 500 lines or test files exceed 800 lines.
 #
+# BUG-107: also reports a non-blocking warning band at >=90% of the limit (450
+# source / 720 test). Without it the gate said nothing at all until the wall was
+# already behind you — a file could sit at 499/500 reporting "compliant" and the
+# next two-line edit turned it into a violation. The band never affects the exit
+# code, and it only covers files this task actually changed.
+#
 # Mode (env GG_FILE_SIZE_GATE): warn (default) | block | off
 # Bypass in block mode: set GG_ALLOW_FILE_SIZE=<reason> to log + skip.
 #
@@ -23,6 +29,7 @@ if [ -z "$CHANGED" ]; then
 fi
 
 VIOLATIONS=""
+NEAR=""
 
 for f in $CHANGED; do
   [ -f "$f" ] || continue
@@ -46,7 +53,18 @@ for f in $CHANGED; do
       LIMIT=500 ;;
   esac
 
-  LINES=$(wc -l < "$f" 2>/dev/null || echo 0)
+  # tr strips the leading padding wc emits on BSD/macOS, which otherwise leaks
+  # into every reported line as "(     495 lines, ...)".
+  LINES=$(wc -l < "$f" 2>/dev/null | tr -d ' ' || echo 0)
+  [ -n "$LINES" ] || LINES=0
+
+  # Warning band: still compliant, but close enough that the next edit can push
+  # it over. Collected before the baseline/violation logic so a `continue` below
+  # can never swallow it. Never blocks.
+  SOFT=$(( LIMIT * 90 / 100 ))
+  if [ "$LINES" -le "$LIMIT" ] && [ "$LINES" -ge "$SOFT" ]; then
+    NEAR="$NEAR\n  $f  ($LINES lines, limit $LIMIT — $(( LIMIT - LINES )) left)"
+  fi
 
   # Baseline check: only flag if current count exceeds baseline.
   BASELINE_FILE=".gg/file-size-baseline.json"
@@ -85,6 +103,12 @@ except Exception:
     VIOLATIONS="$VIOLATIONS\n  $f  ($LINES lines, limit $LIMIT)"
   fi
 done
+
+# The band is signal only — printed in every mode, before any exit decision.
+if [ -n "$NEAR" ]; then
+  printf "[file-size] approaching limit (not a violation):%b\n" "$NEAR" >&2
+  echo "[file-size] split these on the next touch rather than at the wall." >&2
+fi
 
 if [ -z "$VIOLATIONS" ]; then
   exit 0

@@ -14,7 +14,20 @@ import (
 const (
 	DefaultSourceLimit = 500
 	DefaultTestLimit   = 800
+
+	// SoftBandPercent is where the warning band opens, as a percentage of a
+	// file's limit (450 lines for source, 720 for tests).
+	//
+	// BUG-107: the rule only ever fired strictly ABOVE the limit, so a file
+	// could sit at 499/500 producing no signal at all and the next two-line edit
+	// flipped it straight to a violation. A limit with no approach warning
+	// reports "compliant" right up to the wall.
+	SoftBandPercent = 90
 )
+
+// SoftLimit returns the line count at which a file enters the warning band for
+// the given hard limit.
+func SoftLimit(limit int) int { return limit * SoftBandPercent / 100 }
 
 // excludedPrefixes lists path prefixes that are never gated.
 var excludedPrefixes = []string{
@@ -244,9 +257,25 @@ func ScanDir(root string) (map[string]int, error) {
 // CheckViolations computes violations from a file→lines map given a baseline.
 // When useBaseline is false, all files over their limit are flagged regardless.
 func CheckViolations(files map[string]int, b *Baseline, useBaseline bool) []Violation {
+	return CheckViolationsOver(files, b, useBaseline, 0)
+}
+
+// CheckViolationsOver is CheckViolations with an explicit line threshold that
+// REPLACES the per-type defaults; threshold <= 0 keeps them.
+//
+// BUG-107: `gg audit file-size --over N` documented itself as "a custom
+// threshold instead of the per-type defaults" but was implemented as a filter
+// applied to the already-computed >500 violation set, so it could only ever
+// narrow that list. `--over 100` and `--over 440` returned identical output and
+// no file under its limit could ever be reported at any value of N — which made
+// the approach band unobservable.
+func CheckViolationsOver(files map[string]int, b *Baseline, useBaseline bool, threshold int) []Violation {
 	var out []Violation
 	for path, lines := range files {
 		limit := ParseLimit(path)
+		if threshold > 0 {
+			limit = threshold
+		}
 		if lines <= limit {
 			continue
 		}
@@ -266,6 +295,25 @@ func CheckViolations(files map[string]int, b *Baseline, useBaseline bool) []Viol
 			Limit:    limit,
 			Baseline: baselineLines,
 		})
+	}
+	return out
+}
+
+// CheckNearLimit returns files inside the warning band: at or above
+// SoftLimit(limit) but not yet over the limit. These are not violations and
+// never affect an exit code — they are the signal that used to be missing
+// entirely, so a file cannot reach the wall unannounced.
+//
+// The baseline is deliberately not consulted: a grandfathered file is exempt
+// from failing, not from being visible.
+func CheckNearLimit(files map[string]int) []Violation {
+	var out []Violation
+	for path, lines := range files {
+		limit := ParseLimit(path)
+		if lines > limit || lines < SoftLimit(limit) {
+			continue
+		}
+		out = append(out, Violation{Path: path, Lines: lines, Limit: limit})
 	}
 	return out
 }

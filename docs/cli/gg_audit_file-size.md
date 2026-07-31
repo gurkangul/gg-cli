@@ -8,12 +8,21 @@ Walk the project and report files that exceed the size limit.
 Source files (.go/.ts/.js/.py/.rs/.java) must stay under 500 lines;
 test files (*_test.go, *.test.*, *.spec.*) under 800 lines.
 
+A file at or above 90% of its limit (450 source / 720 test) is also listed
+under "approaching limit". Those are not violations and never affect the exit
+code — they are the warning band that lets a file be split on the next touch
+instead of at the wall.
+
 Files in the .gg/file-size-baseline.json grandfather list are only
-flagged when they have grown beyond their baseline value.
+flagged when they have grown beyond their baseline value. The baseline does not
+suppress the warning band: a grandfathered file is exempt from failing, not
+from being visible.
 
 Use --no-baseline to see raw violations ignoring the grandfather list.
-Use --over N to use a custom threshold instead of the per-type defaults.
-Use --json for machine-readable output.
+Use --over N to report every file above N lines, replacing the per-type
+defaults — this is also the machine-readable way to query the band
+(--over 450 --json).
+Use --json for machine-readable output (a bare array of violations).
 
 ```
 gg audit file-size [flags]
