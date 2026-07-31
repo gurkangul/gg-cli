@@ -22,10 +22,13 @@ set -eu
 cd "$(git rev-parse --show-toplevel)"
 
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"; git checkout -- docs/cli 2>/dev/null || true' EXIT
+# Clean up ONLY the file this script plants. An earlier version ran
+# `git checkout -- docs/cli` here and silently restored pages the fix had
+# legitimately pruned — a repro must never be able to undo the thing it guards.
+ORPHAN="docs/cli/gg_bug108_ghost_command.md"
+trap 'rm -rf "$TMP"; rm -f "$ORPHAN"' EXIT
 
 # Plant an orphan: a page for a command that does not exist.
-ORPHAN="docs/cli/gg_bug108_ghost_command.md"
 printf '# gg bug108-ghost-command\n\nstale page for a command that no longer exists\n' > "$ORPHAN"
 
 go run ./tools/docs-gen > "$TMP/out.txt" 2>&1 || {
