@@ -97,12 +97,17 @@ func runDecide(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	author, err := requireAuthor(cmd)
+	if err != nil {
+		return err
+	}
+
 	dec := store.Decision{
 		Text:   text,
 		Reason: reason,
 		Tags:   parseTags(decideTags),
 		TaskID: taskRef,
-		Author: resolveAuthor(cmd),
+		Author: author,
 	}
 
 	if err := d.store.AddDecision(ctx, dec, vector); err != nil {
@@ -153,12 +158,17 @@ func runDecideAsRejection(cmd *cobra.Command, approach string) error {
 		return nil
 	}
 
+	author, err := requireAuthor(cmd)
+	if err != nil {
+		return err
+	}
+
 	r := store.Rejection{
 		Approach: approach,
 		Reason:   reason,
 		Tags:     parseTags(decideTags),
 		TaskID:   taskRef,
-		Author:   resolveAuthor(cmd),
+		Author:   author,
 	}
 
 	if err := d.store.AddRejection(ctx, r, vector); err != nil {

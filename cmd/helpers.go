@@ -12,6 +12,7 @@ import (
 
 	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/embedding"
+	"github.com/gurkangul/gg-cli/internal/identity"
 	"github.com/gurkangul/gg-cli/internal/store"
 )
 
@@ -283,21 +284,80 @@ func normalizeTaskRef(raw string) (string, error) {
 	return t, nil
 }
 
-// requireTaskID validates a required TASK-ID positional argument. Empty or
-// malformed input is an error.
-// resolveAuthor returns the --from flag value if set, falling back to the
-// GG_ROLE environment variable. Returns "" if neither is set.
+// resolveAuthor resolves the provenance stamped on a durable write.
+// Ladder: --from → $GG_ROLE → the runtime's agent identity.
+//
+// BUG-106: the ladder used to stop at GG_ROLE, so any runtime that never
+// exported a role wrote author="" — silently, and indistinguishably from a
+// record whose author simply was not printed. gg already knows who is calling:
+// gg init writes GG_AGENT into the runtime's env and internal/identity sharpens
+// it into a per-tab id (BUG-084/BUG-103). The task lifecycle has consumed that
+// exact ladder since BUG-084 (resolveTaskOwner), so the same process in the same
+// second attributed a task event to "claude-code-<sid>" and a decision to nobody.
+//
+// Role stays ahead of agent id deliberately: when an operator exports GG_ROLE,
+// that role IS the provenance they mean ("master", "reviewer"); the agent id is
+// merely the runtime that happened to execute the command. An explicitly empty
+// --from is not a provenance statement either, so it falls through to the rest
+// of the ladder rather than short-circuiting to "".
 func resolveAuthor(cmd *cobra.Command) string {
 	if f := cmd.Flags().Lookup("from"); f != nil && f.Changed {
-		return strings.TrimSpace(f.Value.String())
+		if from := strings.TrimSpace(f.Value.String()); from != "" {
+			return from
+		}
 	}
-	return strings.TrimSpace(os.Getenv("GG_ROLE"))
+	if role := strings.TrimSpace(os.Getenv("GG_ROLE")); role != "" {
+		return role
+	}
+	return strings.TrimSpace(identity.Agent())
+}
+
+// requireAuthor is resolveAuthor plus the opt-in strict policy. Projects that
+// adopted a written provenance convention set GG_REQUIRE_AUTHOR=1 so an
+// unattributable write fails loudly instead of landing anonymously in the
+// ledger. Default off, because after the resolveAuthor ladder an empty author
+// means a bare human shell with no role and no agent env — and neither a human
+// nor CI may be broken by a convention they never opted into.
+func requireAuthor(cmd *cobra.Command) (string, error) {
+	author := resolveAuthor(cmd)
+	if author != "" || !strictAuthorRequired() {
+		return author, nil
+	}
+	return "", fmt.Errorf("author could not be resolved and GG_REQUIRE_AUTHOR is set: " +
+		"pass --from <role>, or export GG_ROLE / GG_AGENT")
+}
+
+// strictAuthorRequired reports whether GG_REQUIRE_AUTHOR asks for a hard failure
+// on an unattributable write.
+func strictAuthorRequired() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GG_REQUIRE_AUTHOR"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// anonymousAuthorLabel marks a record whose provenance could not be resolved.
+const anonymousAuthorLabel = "[anonymous]"
+
+// authorLabel renders an author for display — never silently.
+//
+// BUG-106: an empty author used to render as omission (every call site guarded
+// on `Author != ""`), so an anonymous record was indistinguishable from one
+// whose author simply was not printed by that view. gg already prints an
+// explicit marker for its other missing-provenance signal — absent evidence
+// renders "[unverified]" via trustLabel — and author was the lone exception.
+func authorLabel(author string) string {
+	if a := strings.TrimSpace(author); a != "" {
+		return a
+	}
+	return anonymousAuthorLabel
 }
 
 // addFromFlag attaches a --from flag. Runtime env is resolved in resolveAuthor
 // so help/docs output remains deterministic across agent shells.
 func addFromFlag(cmd *cobra.Command) {
-	cmd.Flags().String("from", "", "author/role recording this (defaults to $GG_ROLE)")
+	cmd.Flags().String("from", "", "author/role recording this (defaults to $GG_ROLE, then the agent identity)")
 }
 
 // printProjectBanner prints a single-line "Recording to project: <name> (<uuid8>)"
@@ -323,6 +383,8 @@ func printProjectBanner() {
 	fmt.Printf("→ Recording to project: %s (%s)\n", name, uuid8)
 }
 
+// requireTaskID validates a required TASK-ID positional argument. Empty or
+// malformed input is an error.
 func requireTaskID(raw string) (string, error) {
 	t := strings.ToUpper(strings.TrimSpace(raw))
 	if t == "" {

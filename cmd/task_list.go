@@ -187,10 +187,7 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 
 func renderTaskListDefault(w io.Writer, tasks []store.Task) {
 	for _, t := range tasks {
-		author := ""
-		if t.Author != "" {
-			author = " (" + t.Author + ")"
-		}
+		author := " (" + authorLabel(t.Author) + ")"
 		fmt.Fprintf(w, "%s %s [%s] %s%s\n", statusIcon(t.Status), t.ID, t.Priority, t.Title, author)
 		if t.Owner != "" {
 			fmt.Fprintf(w, "    → Owner: %s (lease until %s)\n", t.Owner, t.LeaseUntil)
@@ -426,9 +423,7 @@ func renderTaskGetDefault(w io.Writer, t *store.Task) {
 	if t.DoneSummary != "" {
 		fmt.Fprintf(w, "  ✓ Done: %s\n", t.DoneSummary)
 	}
-	if t.Author != "" {
-		fmt.Fprintf(w, "  By: %s\n", t.Author)
-	}
+	fmt.Fprintf(w, "  By: %s\n", authorLabel(t.Author))
 	fmt.Fprintf(w, "  Created: %s\n", t.CreatedAt)
 }
 

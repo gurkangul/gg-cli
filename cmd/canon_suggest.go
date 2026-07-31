@@ -320,7 +320,10 @@ func runCanonApply(cmd *cobra.Command, _ []string) error {
 	}
 	defer d.Close()
 
-	author := resolveAuthor(cmd)
+	author, err := requireAuthor(cmd)
+	if err != nil {
+		return err
+	}
 
 	// Validate EVERY operation before applying ANY — canon.jsonl is append-only
 	// last-write-wins, so a batch that wrote op[0] then errored on a later invalid

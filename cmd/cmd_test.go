@@ -558,10 +558,72 @@ func TestResolveAuthor_FromEnv(t *testing.T) {
 	}
 }
 
-func TestResolveAuthor_EmptyEnv(t *testing.T) {
+// BUG-106: this test used to assert that an unset GG_ROLE yields an empty
+// author — it encoded the trap rather than a requirement. The contract is now
+// that provenance is only empty when gg has no identity signal at all; an
+// agent runtime that carries GG_AGENT must be attributed without the operator
+// exporting anything per tab.
+func TestResolveAuthor_NoIdentitySignal(t *testing.T) {
 	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_AGENT", "")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	t.Setenv("CLAUDE_SESSION_ID", "")
 	if got := resolveAuthor(statusCmd); got != "" {
 		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+func TestResolveAuthor_FallsBackToAgentIdentity(t *testing.T) {
+	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_AGENT", "codex")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	t.Setenv("CLAUDE_SESSION_ID", "")
+	if got := resolveAuthor(statusCmd); got != "codex" {
+		t.Errorf("expected 'codex', got %q", got)
+	}
+}
+
+// The role an operator exported is the provenance they mean; the agent id is
+// only the runtime that happened to execute the command.
+func TestResolveAuthor_RoleOutranksAgentIdentity(t *testing.T) {
+	t.Setenv("GG_ROLE", "master")
+	t.Setenv("GG_AGENT", "claude-code")
+	if got := resolveAuthor(statusCmd); got != "master" {
+		t.Errorf("expected 'master', got %q", got)
+	}
+}
+
+func TestRequireAuthor_StrictModeRejectsUnattributableWrite(t *testing.T) {
+	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_AGENT", "")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	t.Setenv("CLAUDE_SESSION_ID", "")
+
+	t.Setenv("GG_REQUIRE_AUTHOR", "")
+	if _, err := requireAuthor(statusCmd); err != nil {
+		t.Fatalf("strict mode is opt-in — a human in a bare shell must not be blocked: %v", err)
+	}
+
+	t.Setenv("GG_REQUIRE_AUTHOR", "1")
+	if _, err := requireAuthor(statusCmd); err == nil {
+		t.Error("expected GG_REQUIRE_AUTHOR=1 to reject an unattributable write")
+	}
+
+	t.Setenv("GG_AGENT", "codex")
+	if got, err := requireAuthor(statusCmd); err != nil || got != "codex" {
+		t.Errorf("expected strict mode satisfied by the agent identity, got %q err=%v", got, err)
+	}
+}
+
+func TestAuthorLabel_MarksMissingProvenance(t *testing.T) {
+	if got := authorLabel(""); got != anonymousAuthorLabel {
+		t.Errorf("empty author must render %s, got %q", anonymousAuthorLabel, got)
+	}
+	if got := authorLabel("  "); got != anonymousAuthorLabel {
+		t.Errorf("blank author must render %s, got %q", anonymousAuthorLabel, got)
+	}
+	if got := authorLabel("master"); got != "master" {
+		t.Errorf("expected 'master', got %q", got)
 	}
 }
 

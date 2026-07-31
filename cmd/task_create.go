@@ -140,6 +140,11 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ vector store unavailable — read served from JSONL (may miss cross-project context)")
 	}
 
+	author, err := requireAuthor(cmd)
+	if err != nil {
+		return err
+	}
+
 	t := store.Task{
 		Title:     title,
 		Detail:    strings.TrimSpace(taskDetail),
@@ -148,7 +153,7 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 		DependsOn: deps,
 		Blocks:    blocks,
 		Deadline:  strings.TrimSpace(taskDeadline),
-		Author:    resolveAuthor(cmd),
+		Author:    author,
 		Requester: taskRequester,
 	}
 

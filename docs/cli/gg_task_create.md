@@ -25,7 +25,7 @@ gg task create "title" [flags]
       --deadline string     deadline date (YYYY-MM-DD)
       --depends-on string   comma-separated task IDs this task depends on (e.g. TASK-001,TASK-002)
       --detail string       task description
-      --from string         author/role recording this (defaults to $GG_ROLE)
+      --from string         author/role recording this (defaults to $GG_ROLE, then the agent identity)
   -h, --help                help for create
       --priority string     priority: high, medium, low (omit to leave unset)
       --requester string    who initiated this task: user, agent, or system (required)

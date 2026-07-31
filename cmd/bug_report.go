@@ -150,6 +150,11 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 	affectedFiles := normalizeBugFiles(parseTags(bugFiles))
 	affectedSymbols := parseTags(bugSymbols)
 
+	author, err := requireAuthor(cmd)
+	if err != nil {
+		return err
+	}
+
 	b := store.Bug{
 		Title:           title,
 		Detail:          strings.TrimSpace(bugDetail),
@@ -158,7 +163,7 @@ func runBugReport(cmd *cobra.Command, args []string) error {
 		TaskID:          taskID,
 		AffectedFiles:   affectedFiles,
 		AffectedSymbols: affectedSymbols,
-		By:              resolveAuthor(cmd),
+		By:              author,
 	}
 
 	id, reportErr := d.store.ReportBug(ctx, b, vector)

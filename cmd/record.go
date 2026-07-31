@@ -84,6 +84,13 @@ func runRecord(cmd *cobra.Command, args []string) error {
 		stance = "reject"
 	}
 
+	// BUG-106: resolve provenance before any expensive work (embedding, dup
+	// check) so a GG_REQUIRE_AUTHOR failure costs nothing and cannot half-run.
+	author, err := requireAuthor(cmd)
+	if err != nil {
+		return err
+	}
+
 	reason := strings.TrimSpace(recordReason)
 	taskRef, err := normalizeTaskRef(recordTask)
 	if err != nil {
@@ -139,7 +146,7 @@ func runRecord(cmd *cobra.Command, args []string) error {
 			Reason:   reason,
 			Tags:     parseTags(recordTags),
 			TaskID:   taskRef,
-			Author:   resolveAuthor(cmd),
+			Author:   author,
 		}
 		if addErr := d.store.AddRejection(ctx, r, vector); addErr != nil {
 			var oq *store.OutboxQueued
@@ -172,7 +179,7 @@ func runRecord(cmd *cobra.Command, args []string) error {
 		RejectedAlternatives: parseTags(recordRejectedAlternatives),
 		Tags:                 parseTags(recordTags),
 		TaskID:               taskRef,
-		Author:               resolveAuthor(cmd),
+		Author:               author,
 		Evidence:             strings.TrimSpace(recordEvidence),
 		Pinned:               recordPin,
 	}

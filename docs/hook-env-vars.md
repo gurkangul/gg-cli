@@ -350,12 +350,37 @@ These are typically set once per shell session or injected via
 
 | Variable | Effect |
 |---|---|
-| `GG_AGENT` | Tags every gg call as agent-initiated in telemetry. Set to `claude-code`, `gsd`, `cursor`, etc. Required for agent-initiated call separation in `gg status` metrics. |
-| `GG_ROLE` | Role of the current session (`developer`, `master`, `qa`, …). Used as `GG_ACTOR` in hook env; also read by inbox routing. |
+| `GG_AGENT` | Tags every gg call as agent-initiated in telemetry. Set to `claude-code`, `gsd`, `cursor`, etc. Required for agent-initiated call separation in `gg status` metrics. Also the fallback provenance stamped on durable writes. |
+| `GG_ROLE` | Role of the current session (`developer`, `master`, `qa`, …). Used as `GG_ACTOR` in hook env; also read by inbox routing, and the preferred provenance on durable writes. |
+| `GG_REQUIRE_AUTHOR` | Opt-in strict provenance. `1`/`true`/`yes`/`on` makes an unattributable write (`gg record`, `decide`, `reject`, `bug report`, `task create`, `task cancel`, `canon set`) fail instead of landing anonymously. Default off. |
 
 `GG_ACTOR` inside a hook is always derived from these two: `GG_ROLE` takes
 priority; `GG_AGENT` is the fallback. **Never set `GG_ACTOR` directly** in a
 hook — the runner sets it for you.
+
+### Provenance on durable writes (BUG-106)
+
+Every durable write stamps an author, resolved through one ladder:
+
+```
+--from <role>  →  $GG_ROLE  →  the agent identity (GG_AGENT, sharpened per tab)  →  "" 
+```
+
+The role wins over the agent id on purpose: an exported `GG_ROLE` is the
+provenance the operator *means*, while the agent id is merely the runtime that
+executed the command. `gg tell` uses the same ladder with `user` as its final
+fallback, which is truthful only in a bare human shell.
+
+Before BUG-106 the ladder stopped at `GG_ROLE`, so an agent that never exported
+a role wrote `author=""` — even though `requireAgentIdentity()` had already
+accepted that same session's `GG_AGENT` at the door. The identity was verified
+and then discarded. An author that still cannot be resolved now renders as
+`[anonymous]` rather than being silently omitted, mirroring how absent evidence
+renders `[unverified]`.
+
+Projects with a written provenance convention should set
+`GG_REQUIRE_AUTHOR=1` so the convention is enforced by the tool rather than by
+memory.
 
 ---
 
@@ -437,7 +462,8 @@ and merges it over `os.Environ()`. This is the correct pattern.
 | `GG_ALLOW_INBOX_SKIP` | caller / bypass | inbox gate |
 | `GG_NO_AUTO_NOTIFY` | CI / session | gate runner |
 | `GG_DEBUG` | caller | gate runner |
-| `GG_AGENT` | `settings.json` / session | telemetry, inbox cursor, actor |
+| `GG_AGENT` | `settings.json` / session | telemetry, inbox cursor, actor, write provenance |
+| `GG_REQUIRE_AUTHOR` | caller / session | write verbs (`record`, `decide`, `reject`, `bug report`, `task create`, `task cancel`, `canon set`) |
 | `GG_ROLE` | session | inbox routing, actor |
 | `GG_TRACE` | session | `internal/trace` |
 | `GG_TELEMETRY` | session | `internal/telemetry` |

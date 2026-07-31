@@ -29,7 +29,7 @@ gg record "text" [flags]
 ```
       --decision-status string         decision lifecycle status: active, superseded, rejected (default "active")
       --evidence string                how this was verified (commands run, live smoke, source ref) — empty surfaces as [unverified]
-      --from string                    author/role recording this (defaults to $GG_ROLE)
+      --from string                    author/role recording this (defaults to $GG_ROLE, then the agent identity)
   -h, --help                           help for record
       --implements string              TASK-X that implements this decision (writes code-graph edge)
       --pin                            pin this decision so it surfaces first in gg context overview AND in the session-start PROJECT CANON regardless of age — use for durable rules/policies (commit conventions, ownership, invariants) that must not fall off the recent-decisions window; tagging constraint/convention/policy has the same effect

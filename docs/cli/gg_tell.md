@@ -27,7 +27,7 @@ gg tell "role[,role2,...]" "message" [flags]
 
 ```
       --audience string   visibility: all | human | agents (agents = filtered from human inbox by default) (default "all")
-      --from string       sender role (defaults to $GG_ROLE, then 'user')
+      --from string       sender role (defaults to $GG_ROLE, then the agent identity, then 'user')
   -h, --help              help for tell
       --task string       related task ID
 ```

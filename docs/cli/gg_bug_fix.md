@@ -10,7 +10,7 @@ gg bug fix BUG-ID "summary" [flags]
 
 ```
       --files string              comma-separated source file paths affected by this fix
-      --from string               author/role recording this (defaults to $GG_ROLE)
+      --from string               author/role recording this (defaults to $GG_ROLE, then the agent identity)
   -h, --help                      help for fix
       --repro string              path to repro script or *_test.go that guards against regression (required)
       --repro-broken-ref string   git SHA where the repro MUST fail — proves the bug existed before the fix

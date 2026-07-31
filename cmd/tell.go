@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gurkangul/gg-cli/internal/config"
+	"github.com/gurkangul/gg-cli/internal/identity"
 	"github.com/gurkangul/gg-cli/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -42,7 +43,7 @@ var (
 var mentionRe = regexp.MustCompile(`@([A-Za-z][A-Za-z0-9_-]*)`)
 
 func init() {
-	tellCmd.Flags().StringVar(&tellFrom, "from", "", "sender role (defaults to $GG_ROLE, then 'user')")
+	tellCmd.Flags().StringVar(&tellFrom, "from", "", "sender role (defaults to $GG_ROLE, then the agent identity, then 'user')")
 	tellCmd.Flags().StringVar(&tellTask, "task", "", "related task ID")
 	tellCmd.Flags().StringVar(&tellAudience, "audience", "all", "visibility: all | human | agents (agents = filtered from human inbox by default)")
 	rootCmd.AddCommand(tellCmd)
@@ -98,9 +99,17 @@ func runTell(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--task: %w", err)
 	}
 
+	// BUG-106: the ladder used to fall straight from GG_ROLE to the literal
+	// "user", so an agent that never exported a role sent messages signed as the
+	// human — a false attribution, which is worse than a missing one. Consult the
+	// runtime's agent identity first; "user" stays as the last resort for a bare
+	// human shell, where it is the truthful answer.
 	from := strings.TrimSpace(tellFrom)
 	if from == "" {
 		from = strings.TrimSpace(os.Getenv("GG_ROLE"))
+	}
+	if from == "" {
+		from = strings.TrimSpace(identity.Agent())
 	}
 	if from == "" {
 		from = "user"

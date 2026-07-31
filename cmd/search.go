@@ -373,9 +373,7 @@ func renderSearchResultsDefault(w io.Writer, results []searchResult) {
 			if dec.TaskID != "" {
 				fmt.Fprintf(w, "    Task: %s\n", dec.TaskID)
 			}
-			if dec.Author != "" {
-				fmt.Fprintf(w, "    By: %s\n", dec.Author)
-			}
+			fmt.Fprintf(w, "    By: %s\n", authorLabel(dec.Author))
 		case result.Rejection != nil:
 			r := *result.Rejection
 			fmt.Fprintf(w, "  ✗ %s%s\n", sourcePrefix(result.SourceProjectID), r.Approach)
@@ -388,9 +386,7 @@ func renderSearchResultsDefault(w io.Writer, results []searchResult) {
 			if r.TaskID != "" {
 				fmt.Fprintf(w, "    Task: %s\n", r.TaskID)
 			}
-			if r.Author != "" {
-				fmt.Fprintf(w, "    By: %s\n", r.Author)
-			}
+			fmt.Fprintf(w, "    By: %s\n", authorLabel(r.Author))
 		case result.Task != nil:
 			t := *result.Task
 			fmt.Fprintf(w, "  %s %s[%s] %s — %s\n", taskStatusIcon(t.Status), sourcePrefix(result.SourceProjectID), t.ID, t.Title, t.Priority)

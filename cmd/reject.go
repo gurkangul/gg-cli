@@ -82,12 +82,17 @@ func runReject(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠ vector store unavailable — read served from JSONL (may miss cross-project context)")
 	}
 
+	author, err := requireAuthor(cmd)
+	if err != nil {
+		return err
+	}
+
 	r := store.Rejection{
 		Approach: approach,
 		Reason:   reason,
 		Tags:     parseTags(rejectTags),
 		TaskID:   taskRef,
-		Author:   resolveAuthor(cmd),
+		Author:   author,
 	}
 
 	if err := d.store.AddRejection(ctx, r, vector); err != nil {

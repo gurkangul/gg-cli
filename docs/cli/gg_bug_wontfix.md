@@ -9,7 +9,7 @@ gg bug wontfix BUG-ID "reason" [flags]
 ### Options
 
 ```
-      --from string    author/role recording this (defaults to $GG_ROLE)
+      --from string    author/role recording this (defaults to $GG_ROLE, then the agent identity)
   -h, --help           help for wontfix
       --repro string   path to repro script or *_test.go documenting the confirmed failure mode (required)
 ```

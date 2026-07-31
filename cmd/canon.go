@@ -65,7 +65,11 @@ func runCanonSet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer d.Close()
-	if err := d.store.SetCanon(area, text, resolveAuthor(cmd)); err != nil {
+	author, err := requireAuthor(cmd)
+	if err != nil {
+		return err
+	}
+	if err := d.store.SetCanon(area, text, author); err != nil {
 		return err
 	}
 	fmt.Printf("✓ Canon updated: %s\n", area)
