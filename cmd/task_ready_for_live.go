@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -148,10 +147,8 @@ func runTaskReadyForLive(cmd *cobra.Command, args []string) error {
 
 	actor := strings.TrimSpace(taskReadyForLiveFrom)
 	if actor == "" {
-		actor = os.Getenv("GG_ROLE")
-	}
-	if actor == "" {
-		actor = os.Getenv("GG_AGENT")
+		// BUG-106: one ladder for every durable actor stamp.
+		actor = resolveAuthorEnv()
 	}
 	if actor == "" {
 		return fmt.Errorf("--from is required (or set GG_ROLE / GG_AGENT) — ready-for-live evidence needs a durable actor for reviewer handoff")

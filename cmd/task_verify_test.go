@@ -367,6 +367,11 @@ func TestNotifyTaskLifecycle_FallsBackToGGAgent(t *testing.T) {
 	t.Setenv("GG_NO_AUTO_NOTIFY", "")
 	t.Setenv("GG_ROLE", "")
 	t.Setenv("GG_AGENT", "claude-code")
+	// BUG-106: without clearing the session vars this asserted the coarse id
+	// only because the test process happened to lack one. The runtime identity
+	// is what the broadcast carries, so the test must state which one it means.
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	t.Setenv("CLAUDE_SESSION_ID", "")
 	sender := &mockMessageSender{}
 	notifyTaskLifecycle(context.Background(), sender, "TASK-001", "blocked", "reason")
 	if len(sender.msgs) != 1 {
@@ -374,6 +379,25 @@ func TestNotifyTaskLifecycle_FallsBackToGGAgent(t *testing.T) {
 	}
 	if sender.msgs[0].FromRole != "claude-code" {
 		t.Errorf("FromRole: got %q, want claude-code", sender.msgs[0].FromRole)
+	}
+}
+
+// A lifecycle broadcast must carry the SAME identity the command stamped on the
+// task itself. Before BUG-106 this read raw GG_AGENT, so `gg task start` printed
+// "started by claude-code-<sid>" while the broadcast it emitted in the same call
+// said plain "claude-code" — one action, two identities.
+func TestNotifyTaskLifecycle_UsesPerTabIdentity(t *testing.T) {
+	t.Setenv("GG_NO_AUTO_NOTIFY", "")
+	t.Setenv("GG_ROLE", "")
+	t.Setenv("GG_AGENT", "claude-code")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "deadbeef99887766")
+	sender := &mockMessageSender{}
+	notifyTaskLifecycle(context.Background(), sender, "TASK-001", "started", "x")
+	if len(sender.msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(sender.msgs))
+	}
+	if got, want := sender.msgs[0].FromRole, resolveTaskOwner(""); got != want {
+		t.Errorf("broadcast identity %q must match the task owner identity %q", got, want)
 	}
 }
 
@@ -390,6 +414,8 @@ func TestNotifyTaskLifecycle_DefaultActorWhenNoEnv(t *testing.T) {
 	t.Setenv("GG_NO_AUTO_NOTIFY", "")
 	t.Setenv("GG_ROLE", "")
 	t.Setenv("GG_AGENT", "")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	t.Setenv("CLAUDE_SESSION_ID", "")
 	sender := &mockMessageSender{}
 	notifyTaskLifecycle(context.Background(), sender, "TASK-001", "created", "some title")
 	if len(sender.msgs) != 1 {

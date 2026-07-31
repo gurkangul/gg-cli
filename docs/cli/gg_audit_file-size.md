@@ -21,7 +21,8 @@ from being visible.
 Use --no-baseline to see raw violations ignoring the grandfather list.
 Use --over N to report every file above N lines, replacing the per-type
 defaults — this is also the machine-readable way to query the band
-(--over 450 --json).
+(--over 450 --json). --over is a raw size query and always ignores the
+grandfather list, which only ever excuses violations of the real limits.
 Use --json for machine-readable output (a bare array of violations).
 
 ```

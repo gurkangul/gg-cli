@@ -306,6 +306,15 @@ func resolveAuthor(cmd *cobra.Command) string {
 			return from
 		}
 	}
+	return resolveAuthorEnv()
+}
+
+// resolveAuthorEnv is the environment half of the ladder, for durable writes
+// that have no *cobra.Command to read --from from (e.g. the bypass-rationale
+// record written by emitGuardSkipEvent). It exists so those paths cannot drift
+// into a private ladder of their own — which is exactly how gsdguard ended up
+// reading raw GG_AGENT and missing the per-tab identity sharpening.
+func resolveAuthorEnv() string {
 	if role := strings.TrimSpace(os.Getenv("GG_ROLE")); role != "" {
 		return role
 	}

@@ -270,10 +270,11 @@ func tryAutoWriteBypassRecord(rationale, taskID string) string {
 	}
 
 	id := uuid.New().String()
-	author := strings.TrimSpace(os.Getenv("GG_ROLE"))
-	if author == "" {
-		author = strings.TrimSpace(os.Getenv("GG_AGENT"))
-	}
+	// BUG-106: this used to carry its own GG_ROLE -> raw GG_AGENT ladder, so a
+	// bypass record — the one artifact whose whole purpose is being auditable —
+	// was stamped with the shared "claude-code" instead of the per-tab identity
+	// every other durable write now uses.
+	author := resolveAuthorEnv()
 	dec := store.Decision{
 		ID:     id,
 		Text:   "bypass rationale: " + rationale,

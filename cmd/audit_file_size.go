@@ -32,7 +32,8 @@ from being visible.
 Use --no-baseline to see raw violations ignoring the grandfather list.
 Use --over N to report every file above N lines, replacing the per-type
 defaults — this is also the machine-readable way to query the band
-(--over 450 --json).
+(--over 450 --json). --over is a raw size query and always ignores the
+grandfather list, which only ever excuses violations of the real limits.
 Use --json for machine-readable output (a bare array of violations).`,
 	Args: cobra.NoArgs,
 	RunE: runAuditFileSize,
@@ -51,8 +52,14 @@ func runAuditFileSize(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("scanning project: %w", err)
 	}
 
+	// An explicit --over is a raw query about file sizes, not an evaluation of
+	// the rule, so the grandfather list must not filter it: cmd/audit.go is
+	// baselined at 843 and is 211 lines today, and "--over 100" silently omitted
+	// it. Suppressing files from an arbitrary threshold query using a list that
+	// exists to excuse rule violations is the same silent-omission failure this
+	// command was fixed to remove.
 	var b *filesize.Baseline
-	useBaseline := !auditFileSizeNoBaseline
+	useBaseline := !auditFileSizeNoBaseline && auditFileSizeOver <= 0
 	if useBaseline {
 		b, err = filesize.ReadBaseline(root)
 		if err != nil {

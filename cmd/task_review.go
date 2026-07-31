@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -67,7 +66,10 @@ func runTaskReview(cmd *cobra.Command, args []string) error {
 
 	reviewer := strings.TrimSpace(taskReviewBy)
 	if reviewer == "" {
-		reviewer = strings.TrimSpace(os.Getenv("GG_ROLE"))
+		// BUG-106: falling straight from GG_ROLE to the literal "reviewer"
+		// fabricated an identity for the one field a verifier-separation check
+		// reads. Consult the real runtime identity before inventing a name.
+		reviewer = resolveAuthorEnv()
 	}
 	if reviewer == "" {
 		reviewer = "reviewer"

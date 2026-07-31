@@ -104,10 +104,10 @@ func notifyTaskLifecycle(ctx context.Context, sender messageSender, taskID, even
 	if os.Getenv("GG_NO_AUTO_NOTIFY") == "1" {
 		return
 	}
-	actor := os.Getenv("GG_ROLE")
-	if actor == "" {
-		actor = os.Getenv("GG_AGENT")
-	}
+	// BUG-106: read raw GG_AGENT and this broadcast said "claude-code" while the
+	// very same command stamped the task owner "claude-code-<sid>" — one action,
+	// two identities. "agent" stays as the last resort, where it is honest.
+	actor := resolveAuthorEnv()
 	if actor == "" {
 		actor = "agent"
 	}
