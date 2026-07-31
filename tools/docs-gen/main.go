@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/gurkangul/gg-cli/cmd"
+	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )
 
@@ -56,6 +57,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: generate docs: %v\n", err)
 		os.Exit(1)
 	}
+	removed, err := pruneOrphanedDocs(root, outDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: prune docs: %v\n", err)
+		os.Exit(1)
+	}
 	if err := normalizeMarkdownEOF(outDir); err != nil {
 		fmt.Fprintf(os.Stderr, "error: normalize docs: %v\n", err)
 		os.Exit(1)
@@ -70,7 +76,55 @@ func main() {
 		}
 	}
 
+	if removed > 0 {
+		fmt.Printf("Pruned %d orphaned markdown file(s)\n", removed)
+	}
 	fmt.Printf("Generated %d markdown files in %s\n", mdCount, outDir)
+}
+
+// pruneOrphanedDocs deletes docs/cli pages that no longer correspond to a
+// command cobra emits.
+//
+// BUG-108: GenMarkdownTree skips commands whose Deprecated field is set
+// (IsAvailableCommand() reports false), but the page generated before the
+// deprecation stays on disk and is never refreshed again — so its flag
+// documentation freezes and silently drifts from the real --help. CI could not
+// catch it either: the drift check runs this tool and then `git diff
+// --exit-code docs/cli/`, and a file nobody rewrites produces no diff. Deleting
+// the orphan is what gives that check something to see.
+func pruneOrphanedDocs(root *cobra.Command, outDir string) (int, error) {
+	expected := map[string]bool{}
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		// Mirrors GenMarkdownTree's own filter, so "expected" means exactly the
+		// set of pages it just wrote.
+		if !c.IsAvailableCommand() || c.IsAdditionalHelpTopicCommand() {
+			return
+		}
+		expected[strings.ReplaceAll(c.CommandPath(), " ", "_")+".md"] = true
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(root)
+
+	entries, err := os.ReadDir(outDir)
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || filepath.Ext(name) != ".md" || expected[name] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(outDir, name)); err != nil {
+			return removed, err
+		}
+		fmt.Printf("pruned orphaned doc: %s\n", name)
+		removed++
+	}
+	return removed, nil
 }
 
 func normalizeMarkdownEOF(dir string) error {
