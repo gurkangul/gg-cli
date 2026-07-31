@@ -26,6 +26,7 @@ type Bug struct {
 	Status          string // open | fixing | fixed | wontfix | reopened
 	RootCause       string // filled on fix
 	FixSummary      string // short description of the fix
+	FixedBy         string // BUG-106: who closed the bug — distinct from By, the reporter
 	ReproScript     string // path to repro script or *_test.go file; "REPRO-MISSING" for legacy bugs
 	TaskID          string // optional linked task
 	Tags            []string
@@ -87,6 +88,7 @@ func (c *Client) ReportBug(ctx context.Context, b Bug, vector []float32) (string
 		"status":           b.Status,
 		"root_cause":       b.RootCause,
 		"fix_summary":      b.FixSummary,
+		"fixed_by":         b.FixedBy,
 		"repro_script":     b.ReproScript,
 		"task_id":          b.TaskID,
 		"tags":             toAnySlice(b.Tags),
@@ -175,20 +177,21 @@ func (c *Client) ListBugs(ctx context.Context, statusFilter string) ([]Bug, erro
 }
 
 // FixBug transitions a bug to "fixed" and records the root cause, fix summary,
-// and the repro script path that guards against regression.
-func (c *Client) FixBug(ctx context.Context, bugID, rootCause, fixSummary, reproScript string) error {
-	return c.updateBugStatus(ctx, bugID, "fixed", rootCause, fixSummary, reproScript)
+// the repro script path that guards against regression, and who fixed it.
+func (c *Client) FixBug(ctx context.Context, bugID, rootCause, fixSummary, reproScript, author string) error {
+	return c.updateBugStatus(ctx, bugID, "fixed", rootCause, fixSummary, reproScript, author)
 }
 
-// WontFixBug transitions a bug to "wontfix" with a reason and an optional repro
-// script that documents the confirmed-but-accepted failure mode.
-func (c *Client) WontFixBug(ctx context.Context, bugID, reason, reproScript string) error {
-	return c.updateBugStatus(ctx, bugID, "wontfix", "", reason, reproScript)
+// WontFixBug transitions a bug to "wontfix" with a reason, an optional repro
+// script that documents the confirmed-but-accepted failure mode, and who made
+// the call.
+func (c *Client) WontFixBug(ctx context.Context, bugID, reason, reproScript, author string) error {
+	return c.updateBugStatus(ctx, bugID, "wontfix", "", reason, reproScript, author)
 }
 
 // StartFixingBug transitions a bug to "fixing".
 func (c *Client) StartFixingBug(ctx context.Context, bugID string) error {
-	return c.updateBugStatus(ctx, bugID, "fixing", "", "", "")
+	return c.updateBugStatus(ctx, bugID, "fixing", "", "", "", "")
 }
 
 // updateBugStatus transitions a bug and records root cause / fix summary / repro.
@@ -197,9 +200,15 @@ func (c *Client) StartFixingBug(ctx context.Context, bugID string) error {
 // appended to .gg/brain/bugs.jsonl under an optimistic version guard, then
 // mirrored to the vector store. On a rebuild the fixed/wontfix state and root_cause are
 // recovered from JSONL instead of reverting to the create-time "open" state.
-func (c *Client) updateBugStatus(ctx context.Context, bugID, status, rootCause, fixSummary, reproScript string) error {
+// BUG-106 follow-up: author is the actor closing the bug, recorded as
+// "fixed_by". It is deliberately a separate field from the record's own author:
+// the mutation path inherits the existing author when none is supplied
+// (mutations.go), so without this a fix was silently attributed to the bug's
+// REPORTER — and `gg bug fix --from` was a flag that promised provenance and
+// delivered none.
+func (c *Client) updateBugStatus(ctx context.Context, bugID, status, rootCause, fixSummary, reproScript, author string) error {
 	brainUUID := pointUUIDForBugID(bugID)
-	err := c.applyBrainMutation(ctx, "bugs", c.collBugs(), OutboxKindBug, brainUUID, "", func(raw map[string]any) error {
+	err := c.applyBrainMutation(ctx, "bugs", c.collBugs(), OutboxKindBug, brainUUID, author, func(raw map[string]any) error {
 		currentStatus, _ := raw["status"].(string)
 		if currentStatus == status {
 			return fmt.Errorf("%w: bug %s already %s — refusing to overwrite root_cause/summary (concurrent update?)", ErrAlreadyInState, bugID, status)
@@ -208,6 +217,9 @@ func (c *Client) updateBugStatus(ctx context.Context, bugID, status, rootCause, 
 		raw["root_cause"] = rootCause
 		raw["fix_summary"] = fixSummary
 		raw["repro_script"] = reproScript
+		if author != "" {
+			raw["fixed_by"] = author
+		}
 		return nil
 	})
 	if errors.Is(err, ErrRecordNotFound) {

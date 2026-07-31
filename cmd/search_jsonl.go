@@ -33,6 +33,7 @@ func bugFromJSONLEntry(e brain.Entry) store.Bug {
 		Status:          stringPayload(e.Payload, "status", ""),
 		RootCause:       stringPayload(e.Payload, "root_cause", ""),
 		FixSummary:      stringPayload(e.Payload, "fix_summary", ""),
+		FixedBy:         stringPayload(e.Payload, "fixed_by", ""),
 		ReproScript:     stringPayload(e.Payload, "repro_script", ""),
 		TaskID:          stringPayload(e.Payload, "task_id", ""),
 		Tags:            stringSlicePayload(e.Payload, "tags"),

@@ -244,7 +244,13 @@ func runBugFix(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := d.store.FixBug(ctx, bugID, rootCause, summary, bugFixRepro); err != nil {
+	// BUG-106: --from was registered on this command but never read, so a fix
+	// inherited the REPORTER's identity through the mutation path.
+	author, authorErr := requireAuthor(cmd)
+	if authorErr != nil {
+		return authorErr
+	}
+	if err := d.store.FixBug(ctx, bugID, rootCause, summary, bugFixRepro, author); err != nil {
 		return err
 	}
 
@@ -331,7 +337,11 @@ func runBugWontFix(cmd *cobra.Command, args []string) error {
 	if err := enforceBugHydrationGate(cmd.ErrOrStderr(), nil, bugID, "bug wontfix", "compact-hydration-bug-wontfix"); err != nil {
 		return err
 	}
-	if err := d.store.WontFixBug(ctx, bugID, reason, bugWontFixRepro); err != nil {
+	author, authorErr := requireAuthor(cmd)
+	if authorErr != nil {
+		return authorErr
+	}
+	if err := d.store.WontFixBug(ctx, bugID, reason, bugWontFixRepro, author); err != nil {
 		return err
 	}
 

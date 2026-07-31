@@ -124,6 +124,7 @@ func bugFromEntry(e brainpkg.Entry) store.Bug {
 		Status:          payStr(e.Payload, "status", ""),
 		RootCause:       payStr(e.Payload, "root_cause", ""),
 		FixSummary:      payStr(e.Payload, "fix_summary", ""),
+		FixedBy:         payStr(e.Payload, "fixed_by", ""),
 		ReproScript:     payStr(e.Payload, "repro_script", ""),
 		TaskID:          payStr(e.Payload, "task_id", ""),
 		Tags:            payStrSlice(e.Payload, "tags"),

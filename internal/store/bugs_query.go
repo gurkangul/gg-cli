@@ -77,6 +77,7 @@ func bugFromPayload(pay map[string]*Value) Bug {
 		Status:          pay["status"].GetStringValue(),
 		RootCause:       pay["root_cause"].GetStringValue(),
 		FixSummary:      pay["fix_summary"].GetStringValue(),
+		FixedBy:         pay["fixed_by"].GetStringValue(),
 		ReproScript:     pay["repro_script"].GetStringValue(),
 		TaskID:          pay["task_id"].GetStringValue(),
 		Tags:            extractStringList(pay["tags"]),

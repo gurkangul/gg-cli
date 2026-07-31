@@ -129,6 +129,11 @@ func runBugGet(cmd *cobra.Command, args []string) error {
 		if b.FixSummary != "" {
 			fmt.Fprintf(w, "  Fix: %s\n", b.FixSummary)
 		}
+		// BUG-106: the reporter (By) and the fixer are different people, and the
+		// fix used to inherit the reporter's name silently.
+		if b.Status == "fixed" || b.Status == "wontfix" {
+			fmt.Fprintf(w, "  Fixed by: %s\n", authorLabel(b.FixedBy))
+		}
 		if b.ReproScript != "" {
 			fmt.Fprintf(w, "  Repro: %s\n", b.ReproScript)
 		}
