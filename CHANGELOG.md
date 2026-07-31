@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-07-31
+
+The follow-through on 2.9.0: the paths that unification missed, and the two
+places where a mechanism could not see its own drift.
+
+### Fixed
+
+- **`gg bug fix --from` and `gg bug wontfix --from` were dead flags (BUG-106
+  follow-up).** `store.FixBug`/`WontFixBug` took no author, so `updateBugStatus`
+  passed `""` into the mutation path — which inherits the existing record's
+  author when none is supplied. Every fix was therefore attributed to the bug's
+  **reporter**. That is worse than a missing field: a flag that promises
+  provenance and returns someone else's name is a false answer, not an absent
+  one, in the one lifecycle whose job is recording who is accountable for a fix.
+
+  The author now resolves through the full `--from` → `$GG_ROLE` → agent
+  identity ladder (so `GG_REQUIRE_AUTHOR` applies too) and is stored as a
+  distinct `fixed_by`, so reporter and fixer never collapse. Bugs closed before
+  this change render `Fixed by: [anonymous]` rather than silently showing the
+  reporter — the accurate history. `StartFixingBug` deliberately keeps no
+  author: "fixing" is a state change, not a closure claim.
+
+- **`docs/cli` kept orphaned pages for deprecated commands (BUG-108).** cobra's
+  `GenMarkdownTree` skips any command whose `Deprecated` field is set, but the
+  page generated *before* the deprecation stays on disk and is never rewritten,
+  so its flag documentation freezes. CI could not catch it either: the drift
+  check runs the generator and then `git diff --exit-code docs/cli/`, and a file
+  nobody rewrites produces no diff — the rot was invisible to exactly the
+  mechanism meant to prevent it. `tools/docs-gen` now deletes any page that does
+  not correspond to a command it just emitted, which is what gives that check
+  something to see.
+
+- **`gg inbox --group-by sender` no longer fragments across tabs.** 2.9.0 gave
+  messages the per-tab identity, which is the accurate provenance, but the
+  grouping keyed on it verbatim so three tabs of one runtime produced three
+  one-message groups. Fixed in the **display**: `identity.CoarsenAgent` reverses
+  the sharpening for aggregation only, and its prefix check is exact rather than
+  "strip the last dash segment", so a legitimate role like `backend-dev` is
+  never mangled. Each message still shows its exact sender. Storing the coarse
+  form instead would have re-introduced the BUG-084 collapse that silently
+  defeated task leases, per-recipient read state and verifier separation.
+
+### Added
+
+- **`fixed_by` on bugs**, rendered by `gg bug get` for fixed and wontfix bugs.
+
+### Internal
+
+- `internal/graph/crud.go` was 504 lines — over this project's own 500-line rule,
+  in the repo that ships the rule, and not grandfathered. Split at the type
+  boundary already present in the file: node operations stay in `crud.go` (345
+  lines), the `Edge` type and its operations move to `crud_edge.go` (171). Pure
+  code motion. The 14 files now visible in the 2.9.0 warning band are
+  deliberately left alone — that band's policy is "split on the next touch", and
+  refactoring compliant files en masse trades real regression risk for nothing.
+
 ## [2.9.0] - 2026-07-31
 
 ### Upgrade note
