@@ -85,6 +85,8 @@ func collectHookTemplateSpecs() ([]hookTemplateSpec, error) {
 		hookTemplateSpec{path: filepath.Join(preDir, "05-smoke-e2e.sh"), name: "SmokeE2EHook", body: templates.SmokeE2EHook},
 		hookTemplateSpec{path: filepath.Join(preDir, "20-decide-capture.sh"), name: "PreTaskDoneDecideCaptureHook", body: templates.PreTaskDoneDecideCaptureHook},
 		hookTemplateSpec{path: filepath.Join(preDir, "30-file-size.sh"), name: "FileSizeGateHook", body: templates.FileSizeGateHook},
+		hookTemplateSpec{path: filepath.Join(preDir, "35-stub-scan.sh"), name: "StubScanGateHook", body: templates.StubScanGateHook},
+		hookTemplateSpec{path: filepath.Join(preDir, "45-dependency-justification.sh"), name: "DependencyJustificationGateHook", body: templates.DependencyJustificationGateHook},
 		hookTemplateSpec{path: filepath.Join(preDir, "40-review-required.sh"), name: "PreTaskDoneReviewRequiredHook", body: templates.PreTaskDoneReviewRequiredHook},
 		hookTemplateSpec{path: filepath.Join(preDir, "50-ac-attestation.sh"), name: "PreTaskDoneACAttestationHook", body: templates.PreTaskDoneACAttestationHook},
 		hookTemplateSpec{path: filepath.Join(preDir, "60-lint-gate.sh"), name: "PreTaskDoneLintGateHook", body: templates.PreTaskDoneLintGateHook},

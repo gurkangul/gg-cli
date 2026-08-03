@@ -174,6 +174,10 @@ func artifactContent(key string) (string, bool) {
 		return templates.PreTaskDoneReviewRequiredHook, true
 	case "hooks/pre-task-done.d/30-file-size.sh":
 		return templates.FileSizeGateHook, true
+	case "hooks/pre-task-done.d/35-stub-scan.sh":
+		return templates.StubScanGateHook, true
+	case "hooks/pre-task-done.d/45-dependency-justification.sh":
+		return templates.DependencyJustificationGateHook, true
 	case "hooks/pre-task-done.d/50-ac-attestation.sh":
 		return templates.PreTaskDoneACAttestationHook, true
 	case "hooks/pre-task-done.d/60-lint-gate.sh":

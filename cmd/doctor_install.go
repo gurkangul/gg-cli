@@ -216,6 +216,28 @@ func runDoctorInstallTaskHooks() error {
 		installed += n
 	}
 
+	// 35-stub-scan.sh: warns (or blocks) when the task diff adds stub markers
+	// to source files. The marker list lives in the hook, deliberately not
+	// here — spelling them out in a .go file trips the gate on its own
+	// registration, which is the gate working correctly.
+	stubScanPath := filepath.Join(preDir, "35-stub-scan.sh")
+	if n, err := installHookIfAbsent(stubScanPath, "StubScanGateHook", templates.StubScanGateHook,
+		"stub gate — warns on stub markers added by this task (GG_STUB_GATE=warn|block|off)"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
+	// 45-dependency-justification.sh: warns (or blocks) when a manifest gains a
+	// dependency that no decision linked to the task names.
+	depGatePath := filepath.Join(preDir, "45-dependency-justification.sh")
+	if n, err := installHookIfAbsent(depGatePath, "DependencyJustificationGateHook", templates.DependencyJustificationGateHook,
+		"dependency gate — warns on new dependencies with no linked decision (GG_DEP_GATE=warn|block|off)"); err != nil {
+		return err
+	} else {
+		installed += n
+	}
+
 	// 40-review-required.sh: warns (or blocks) when a task is closed without
 	// an explicit `gg task review --approve`. Target: close the nominal
 	// self-approval loophole in verifier_separation (2026-04-22 finding).

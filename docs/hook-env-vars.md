@@ -112,6 +112,63 @@ until the next two-line edit turned it into a hard violation.
 Project-wide, `gg audit file-size` prints the same band, and
 `gg audit file-size --over 450` reports every file above an arbitrary threshold.
 
+### `GG_STUB_GATE` — stub-scan gate (`35-stub-scan.sh`)
+
+| Value | Effect |
+|---|---|
+| `warn` *(default)* | Lists stub markers this task added; does not block |
+| `block` | Exits 7 when the task's diff adds a stub marker |
+| `off` | Gate is skipped entirely |
+
+Enforces the engineering-baseline line "ship no TODO stubs, dead flags, or
+half-wired paths described as done". Matches `TODO`, `FIXME`, `XXX`, `HACK`,
+`not implemented` and `unimplemented`.
+
+Scope is deliberately narrow so the gate stays honest:
+
+- **Added lines only.** A marker already living in a file you happen to touch is
+  somebody else's debt; blocking on it would punish whoever walks past next.
+- **Source extensions only** (`.go .ts .tsx .js .jsx .py .rs .java`), so prose in
+  a `.md` file or a hook that merely names the markers is never a finding.
+- **Whole tokens only** — `TODOS_ENDPOINT` is an identifier, not a stub.
+
+**Bypass in block mode (audited):** set `GG_ALLOW_STUB="<reason>"`.
+
+```sh
+GG_STUB_GATE=block GG_ALLOW_STUB="TASK-042: remainder tracked in TASK-043" \
+  gg task done TASK-042 "..."
+```
+
+### `GG_DEP_GATE` — dependency-justification gate (`45-dependency-justification.sh`)
+
+| Value | Effect |
+|---|---|
+| `warn` *(default)* | Lists new dependencies with no linked decision; does not block |
+| `block` | Exits 7 when a new dependency has no linked decision naming it |
+| `off` | Gate is skipped entirely |
+
+Enforces the engineering-baseline line that a new dependency "must buy something
+concrete; put that reason in the `gg record`". The lockfile preserves the fact
+that a dependency was added and never the reason, which is the part a future
+agent cannot reconstruct.
+
+Manifests watched: `go.mod`, `package.json`, `composer.json`,
+`requirements.txt`, `pyproject.toml`, `Cargo.toml`, `Gemfile`, `pom.xml`,
+`build.gradle(.kts)`.
+
+A dependency counts as *justified* when `gg task decisions $GG_TASK_ID` mentions
+its name (the trailing path segment also matches, so a decision saying
+`gorilla/mux` covers `github.com/gorilla/mux`). **Version bumps never trigger
+the gate** — the name appears on both sides of the diff, so only genuinely new
+names are reported.
+
+**Bypass in block mode (audited):** set `GG_ALLOW_DEP="<reason>"`.
+
+```sh
+GG_DEP_GATE=block GG_ALLOW_DEP="TASK-042: transitive, pulled by go mod tidy" \
+  gg task done TASK-042 "..."
+```
+
 ### `GG_LINT_GATE` — lint regression gate (`60-lint-gate.sh`)
 
 | Value | Effect |
@@ -485,6 +542,10 @@ and merges it over `os.Environ()`. This is the correct pattern.
 | `GG_REVIEW_GATE` | caller / session | `40-review-required.sh` |
 | `GG_FILE_SIZE_GATE` | caller / session | `30-file-size.sh` |
 | `GG_ALLOW_FILE_SIZE` | caller / one-shot bypass | `30-file-size.sh` |
+| `GG_STUB_GATE` | caller / session | `35-stub-scan.sh` |
+| `GG_ALLOW_STUB` | caller / one-shot bypass | `35-stub-scan.sh` |
+| `GG_DEP_GATE` | caller / session | `45-dependency-justification.sh` |
+| `GG_ALLOW_DEP` | caller / one-shot bypass | `45-dependency-justification.sh` |
 | `GG_LINT_GATE` | caller / session | `60-lint-gate.sh` |
 | `GG_SECRET_SCAN` | caller / session | `20-secret-scan.sh` |
 | `GG_GITLEAKS_BIN` | caller / override | `20-secret-scan.sh`, `gg doctor --check-secrets` |
