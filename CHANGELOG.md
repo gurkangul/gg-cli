@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-08-03
+
+2.11.0 wrote the engineering baseline down. This release makes the two lines
+that *can* be checked stop being promises (TASK-536).
+
+### Added
+
+- **`35-stub-scan.sh` — stub gate (`GG_STUB_GATE`, default `warn`).** Flags stub
+  markers the task's diff *adds* to a source file: `TODO`, `FIXME`, `XXX`,
+  `HACK`, `not implemented`, `unimplemented`. The scope is where the value is.
+  Only **added** lines are read, so a marker already living in a file you happen
+  to touch is somebody else's debt and never blocks you — a whole-file scan
+  would punish whoever walks past next instead of whoever left it. Only source
+  extensions are scanned, so prose in a `.md` file naming the markers is never a
+  finding. Matching is whole-token, so `TODOS_ENDPOINT` is an identifier rather
+  than a stub.
+
+- **`45-dependency-justification.sh` — dependency gate (`GG_DEP_GATE`, default
+  `warn`).** When a package manifest gains a dependency, the gate asks whether a
+  decision linked to the task names it. A lockfile records the fact that a
+  dependency was added and never the reason, and the reason is the part a future
+  agent cannot reconstruct. Version bumps do **not** trigger it: the name is
+  present on both sides of the diff, so only genuinely new names are reported.
+  Watches `go.mod`, `package.json`, `composer.json`, `requirements.txt`,
+  `pyproject.toml`, `Cargo.toml`, `Gemfile`, `pom.xml` and `build.gradle(.kts)`.
+
+  Both gates warn by default, escalate to exit 7 with `=block`, disappear with
+  `=off`, and take an audited one-shot bypass (`GG_ALLOW_STUB`, `GG_ALLOW_DEP`)
+  that is logged through `gg record`.
+
+### Changed
+
+- **The two baseline lines now name their gates.** The contract already did this
+  for the 500-line file-size rule, and the reasoning holds here: a rule that
+  lives only in prose can be missed, while a gate cannot. Contract version moves
+  again, so projects need one more `gg system sync`.
+
+  Worth recording how the stub gate was verified, because it caught its own
+  author: run against this very diff, it flagged the registration comment in
+  `cmd/doctor_install.go`, which spelled the marker words out literally in a
+  `.go` file. That is the gate working correctly, not a bug — so the comment was
+  reworded rather than an ignore-pragma invented for it. The marker list lives
+  in the hook and in `docs/hook-env-vars.md`, which the gate does not scan.
+
 ## [2.11.0] - 2026-08-03
 
 The agent contract stops being only about what to remember and starts carrying
