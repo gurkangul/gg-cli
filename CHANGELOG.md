@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-08-03
+
+The agent contract stops being only about what to remember and starts carrying
+the engineering baseline every agent was assumed to already have.
+
+### Added
+
+- **`ENGINEERING BASELINE` in the managed agent contract.** The contract told
+  agents how to *remember* and never how to *build*, so the quality floor of
+  every project was whatever each model happened to bring with it. Nine lines
+  now travel with the memory contract into every registered project's
+  `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.cursor/rules/gg-mandatory.mdc`,
+  `.openhands/microagents/gg.md` and `.gsd/KNOWLEDGE.md`: ceremony scaled to
+  blast radius, reuse before writing, scope-may-be-cut but quality-may-not,
+  stay inside your diff, fail loudly, an explicit tie-break order, no invented
+  APIs, report what actually happened, and decide rather than defer.
+
+  The tie-break order is deliberate: correctness → security → reliability →
+  simplicity → maintainability → consistency → performance. The widely-copied
+  form of this list ranks security *below* simplicity and consistency, which
+  contradicts its own "never weaken security for convenience" rule the moment a
+  simpler-but-weaker implementation shows up. Security sits second here so the
+  ordering and the rule cannot disagree. For the same reason "always improve the
+  codebase" is bounded to the diff you are already changing — unbounded, it
+  licenses an unrequested refactor riding along in someone else's bugfix — and
+  "ask when requirements are unclear" carries a threshold, because a rule
+  without one stalls an autonomous worker on every ambiguity.
+
+  Two of the nine are mechanically checkable rather than aspirational: "ship no
+  TODO stubs" and "a new dependency needs a recorded reason". TASK-536 tracks
+  binding those to `pre-task-done` gates. The other seven are judgment calls no
+  gate can score — they depend on the model reading them, which is exactly why
+  they belong in the contract and not in a hook.
+
+  Existing projects report the block as `STALE` and repair with
+  `gg doctor --check-contract --fix`; `gg system sync --contract-only` reaches
+  every registered project in one pass. Note that the contract body is embedded
+  in the binary: a host still running an older `gg` sees the new block as
+  `EXTENDED` and will overwrite it (backing the file up under `.gg/backups/`
+  first), so update the binary before syncing.
+
 ## [2.10.0] - 2026-07-31
 
 The follow-through on 2.9.0: the paths that unification missed, and the two
