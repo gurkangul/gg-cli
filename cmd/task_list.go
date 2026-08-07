@@ -2,13 +2,11 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -341,56 +339,11 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 		if taskGetWithCtx {
 			if cfg, cfgErr := config.Load(); cfgErr == nil {
 				if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
-					telemetry.RecordWithContext(rtDir, "task", "", ctxBlock.Len())
+					telemetry.RecordWithContext(rtDir, "task", "", ctxBlock.Len(), relCtx.items())
 				}
 			}
 		}
 	})
-}
-
-// relatedContext holds the top-3 semantically related items for a task.
-type relatedContext struct {
-	decisions  []store.Decision
-	rejections []store.Rejection
-	notes      []store.Note
-}
-
-const withContextLimit uint64 = 3
-const withContextMaxBytes = 3072 // ~800 tokens hard cap
-
-// fetchRelatedContext embeds the task title+detail and searches the embedded vector store for top-3 items.
-func fetchRelatedContext(d *deps, t *store.Task) *relatedContext {
-	query := t.Title
-	if t.Detail != "" {
-		query = t.Title + " " + t.Detail
-	}
-
-	// Use a fresh timeout so we don't share the parent's deadline.
-	ctx, cancel := withTimeout(context.Background())
-	defer cancel()
-
-	vector, err := d.embedder.Generate(ctx, query)
-	if err != nil {
-		return nil
-	}
-
-	rc := &relatedContext{}
-	var wg sync.WaitGroup
-	wg.Add(3)
-	go func() {
-		defer wg.Done()
-		rc.decisions, _ = d.store.SearchDecisions(ctx, vector, withContextLimit, false)
-	}()
-	go func() {
-		defer wg.Done()
-		rc.rejections, _ = d.store.SearchRejections(ctx, vector, withContextLimit)
-	}()
-	go func() {
-		defer wg.Done()
-		rc.notes, _ = d.store.SearchNotes(ctx, vector, withContextLimit)
-	}()
-	wg.Wait()
-	return rc
 }
 
 func renderTaskGetDefault(w io.Writer, t *store.Task) {
@@ -439,47 +392,4 @@ func renderTaskGetCompact(w io.Writer, t *store.Task) {
 	}
 	fmt.Fprintf(w, "%s %s [%s] %s%s\n",
 		statusIcon(t.Status), t.ID, t.Priority, compactTrim(t.Title, compactLineWidth), suffix)
-}
-
-// renderRelatedContext writes the === Related Context === block to w.
-// Each item is a single line (ID/date + 1-sentence summary). The block is
-// capped at withContextMaxBytes to enforce the ≤800-token hard cap.
-// When rc is nil (vector store unavailable or embed failed), writes a brief notice.
-func renderRelatedContext(w *bytes.Buffer, rc *relatedContext) {
-	fmt.Fprintln(w, "\n=== Related Context ===")
-
-	if rc == nil {
-		fmt.Fprintln(w, "  (unavailable — vector store unavailable or embedding failed)")
-		return
-	}
-
-	total := len(rc.decisions) + len(rc.rejections) + len(rc.notes)
-	if total == 0 {
-		fmt.Fprintln(w, "  (no related items found)")
-		return
-	}
-
-	var lines []string
-	for _, dec := range rc.decisions {
-		lines = append(lines, compactDecisionLine(dec))
-	}
-	for _, r := range rc.rejections {
-		lines = append(lines, compactRejectionLine(r))
-	}
-	for _, n := range rc.notes {
-		lines = append(lines, compactNoteLine(n))
-	}
-
-	// Enforce byte cap — stop adding lines once we'd exceed the limit.
-	// Header already written; budget from current buffer length.
-	budget := withContextMaxBytes - w.Len()
-	for _, line := range lines {
-		entry := "  " + line + "\n"
-		if budget-len(entry) < 0 {
-			fmt.Fprintln(w, "  … (truncated — context block size limit reached)")
-			break
-		}
-		fmt.Fprint(w, entry)
-		budget -= len(entry)
-	}
 }

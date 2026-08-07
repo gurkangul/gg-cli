@@ -33,8 +33,19 @@ type WeeklySummary struct {
 	// TaskStartContext measures what gg pushed at claim time whether they asked
 	// or not. Collapsing them would hide exactly the adoption gap that motivated
 	// the push.
+	//
+	// TaskStartContextDegraded counts the subset that carried no records — an
+	// "(unavailable)" or "(no related items found)" notice. It is reported
+	// alongside the total because a push count that silently includes outages
+	// tells the owner memory is flowing while nothing is being delivered, which
+	// is the failure this metric exists to make visible.
+	// Delivered and Degraded are counted explicitly rather than derived from
+	// each other, so entries predating the item count fall into neither bucket
+	// instead of being guessed into one.
 	TaskStartContextCalls      int `json:"task_start_context_calls"`
 	TaskStartContextBytesTotal int `json:"task_start_context_bytes_total"`
+	TaskStartContextDelivered  int `json:"task_start_context_delivered"`
+	TaskStartContextDegraded   int `json:"task_start_context_degraded"`
 	// Hydration re-fetch aggregates (TASK-279). HydrationCalls counts full-record
 	// fetches that follow a compact display. HydrationBytesTotal is the sum of
 	// full-render sizes fetched back. NetSavingsBytes and NetTokensSaved subtract
@@ -258,6 +269,15 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 			if e.Verb == VerbTaskStartContext {
 				sum.TaskStartContextCalls++
 				sum.TaskStartContextBytesTotal += e.ContextBlockBytes
+				// nil = pre-schema entry, counted as neither delivered nor
+				// degraded rather than guessed at.
+				if e.ContextItems != nil {
+					if *e.ContextItems > 0 {
+						sum.TaskStartContextDelivered++
+					} else {
+						sum.TaskStartContextDegraded++
+					}
+				}
 			} else {
 				sum.WithContextCalls++
 				sum.WithContextBytesTotal += e.ContextBlockBytes

@@ -257,8 +257,18 @@ func runTelemetrySummary(cmd *cobra.Command, args []string) error {
 				sum.WithContextCalls, sum.WithContextBytesTotal)
 		}
 		if sum.TaskStartContextCalls > 0 {
-			fmt.Printf("task-start memory push: %d packets, %d bytes total context\n",
-				sum.TaskStartContextCalls, sum.TaskStartContextBytesTotal)
+			fmt.Printf("task-start memory push: %d packets (%d delivered, %d empty/degraded), %d bytes total context\n",
+				sum.TaskStartContextCalls, sum.TaskStartContextDelivered,
+				sum.TaskStartContextDegraded, sum.TaskStartContextBytesTotal)
+			if unknown := sum.TaskStartContextCalls - sum.TaskStartContextDelivered - sum.TaskStartContextDegraded; unknown > 0 {
+				fmt.Printf("  note: %d packet(s) predate the item count and are excluded from the split\n", unknown)
+			}
+			// Only judge the packets that can actually be judged — a warning
+			// computed against the total would fire on backfill alone.
+			if judged := sum.TaskStartContextDelivered + sum.TaskStartContextDegraded; judged > 0 &&
+				sum.TaskStartContextDegraded*2 > judged {
+				fmt.Printf("  warning: over half of pushed packets carried no records — check the embedding backend and vector store\n")
+			}
 		}
 		if sum.DupeCheckCalls > 0 {
 			fmt.Printf("dupe-check: %d calls, %d fires  (cancel=%d force=%d auto-force=%d reuse=%d)\n",

@@ -26,7 +26,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   packets and their bytes, reported separately from `--with-context`. The two
   answer different questions — what agents chose to pull versus what gg pushed
   whether they asked or not — and collapsing them would hide the adoption gap
-  that motivated the push in the first place.
+  that motivated the push in the first place. The line splits delivered packets
+  from empty or degraded ones and warns when over half carried no records: a
+  push count that silently included outages would report memory flowing while
+  nothing was reaching anyone.
+
+### Fixed
+
+- **A failed related-item search no longer reports itself as an empty brain.**
+  `fetchRelatedContext` discarded the errors from its three searches, so a
+  timeout or a missing collection rendered `(no related items found)` —
+  indistinguishable from "nothing was ever decided here", which is the worst
+  possible thing to tell an agent that is about to make a decision. Failures now
+  render `(unavailable — related-item search failed; treat as unknown, not as
+  empty)`, and a partial result is labelled incomplete. This was pre-existing
+  and also affects `gg task get --with-context`, which shares the renderer; it
+  became urgent because the block is now on the default path of every claim.
 
 ### Changed
 
@@ -34,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keys are unchanged; the field is omitted under `--no-context`. A dead
   embedding backend degrades the block to a one-line notice and still exits 0 —
   the memory packet must never cost you the claim.
+
+- The related-context packet moved from `cmd/task_list.go` to
+  `cmd/task_related_context.go`. It has two consumers now — pulled by
+  `gg task get --with-context`, pushed by `gg task start` — so it belongs to
+  neither renderer, and the move keeps `task_list.go` under the 500-line limit.
 
 ## [2.12.0] - 2026-08-03
 

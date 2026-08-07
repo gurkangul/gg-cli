@@ -170,7 +170,7 @@ func taskStartContextBlock(d *deps, t *store.Task) *bytes.Buffer {
 
 	if cfg, cfgErr := config.Load(); cfgErr == nil {
 		if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
-			telemetry.RecordWithContext(rtDir, telemetry.VerbTaskStartContext, "", buf.Len())
+			telemetry.RecordWithContext(rtDir, telemetry.VerbTaskStartContext, "", buf.Len(), rc.items())
 		}
 	}
 	return &buf

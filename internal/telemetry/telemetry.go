@@ -64,6 +64,17 @@ type Entry struct {
 	// --with-context fields (omitted when flag is not used).
 	WithContext       bool `json:"with_context,omitempty"`
 	ContextBlockBytes int  `json:"context_block_bytes,omitempty"`
+	// ContextItems is how many related records the block actually carried.
+	// Byte size alone cannot tell a delivered packet from a degraded one — an
+	// "(unavailable)" notice is still bytes — so a packet count that ignored
+	// this would report healthy pushes during an outage.
+	//
+	// Pointer, not int: entries written before this field existed decode to the
+	// zero value, and a plain int would make every one of them indistinguishable
+	// from "delivered nothing". That would have the degraded counter accuse a
+	// healthy backend of an outage purely from backfill. nil means "recorded
+	// before this field existed — unknown"; 0 means a genuinely empty packet.
+	ContextItems *int `json:"context_items,omitempty"`
 	// Hydration re-fetch fields (TASK-279). Set by RecordHydration when a
 	// caller fetches the full record after the agent saw compact output.
 	// BytesHydrated is the full-render byte size of the fetched record.
@@ -230,15 +241,18 @@ func RecordDupeCheck(runtimeDir, verb, fromFlag string, matchesCount int, topSco
 // those two delivery modes have very different adoption.
 const VerbTaskStartContext = "task-start"
 
-// RecordWithContext appends a telemetry entry for a --with-context invocation.
-// contextBlockBytes is the size in bytes of the appended === Related Context === block.
-func RecordWithContext(runtimeDir, verb, fromFlag string, contextBlockBytes int) {
+// RecordWithContext appends a telemetry entry for a related-context block.
+// contextBlockBytes is the size in bytes of the appended === Related Context ===
+// block; contextItems is how many related records it carried (0 for a degraded
+// or empty block, which is what separates a delivered packet from a notice).
+func RecordWithContext(runtimeDir, verb, fromFlag string, contextBlockBytes, contextItems int) {
 	recordEntry(runtimeDir, Entry{
 		Verb:              verb,
 		Origin:            classify(fromFlag),
 		Timestamp:         time.Now().UTC().Format(time.RFC3339),
 		WithContext:       true,
 		ContextBlockBytes: contextBlockBytes,
+		ContextItems:      &contextItems,
 	})
 }
 
