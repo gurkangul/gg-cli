@@ -31,12 +31,21 @@ type relatedContext struct {
 
 // items returns how many related records were actually rendered. Zero means the
 // packet carried no memory, whether because the brain is empty or because the
-// lookup degraded.
+// lookup degraded — use degraded() to tell those apart.
 func (rc *relatedContext) items() int {
 	if rc == nil {
 		return 0
 	}
 	return len(rc.decisions) + len(rc.rejections) + len(rc.notes)
+}
+
+// degraded reports whether the lookup failed, as opposed to succeeding and
+// finding nothing. A nil relatedContext means the embedding call failed; a set
+// searchFailed means at least one store query did. Callers must not infer this
+// from an empty item count: a project that has recorded nothing yet is healthy,
+// and reporting it as a failure sends the owner to debug a working backend.
+func (rc *relatedContext) degraded() bool {
+	return rc == nil || rc.searchFailed
 }
 
 const withContextLimit uint64 = 3

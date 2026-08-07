@@ -68,6 +68,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   had was not running at all. The retirement machinery above removes the stale
   entry at the next session start.
 
+- **The telemetry summary no longer calls a healthy backend broken (TASK-543).**
+  Pushed packets now split three ways instead of two — `delivered`, `empty`,
+  `failed` — and only `failed` triggers the "check the embedding backend and
+  vector store" warning. Previously an empty packet shared a bucket with a failed
+  one, so a fresh project that had simply not recorded anything yet was told to
+  go debug a working vector store. This is the same empty-vs-failed conflation
+  fixed one layer down in the renderer; it needed fixing in both places. The
+  verdict is stored as one `context_outcome` string rather than derived at read
+  time, so entries written before it existed carry no verdict and stay out of
+  all three buckets instead of having one backdated onto them.
+
+- **Related-context records no longer inflate command usage (TASK-540).** A
+  context packet is a side-record *about* an invocation, not an invocation, but
+  the summary counted it as one — inventing a phantom `task-start` row beside the
+  real `start`, colliding the pull path's record with the genuine top-level
+  `task` verb, and overstating the `N calls` headline that the North Star
+  adoption number is read from. These records now feed only their own counters.
+
 - **A failed related-item search no longer reports itself as an empty brain.**
   `fetchRelatedContext` discarded the errors from its three searches, so a
   timeout or a missing collection rendered `(no related items found)` —

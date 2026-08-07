@@ -34,18 +34,21 @@ type WeeklySummary struct {
 	// or not. Collapsing them would hide exactly the adoption gap that motivated
 	// the push.
 	//
-	// TaskStartContextDegraded counts the subset that carried no records — an
-	// "(unavailable)" or "(no related items found)" notice. It is reported
-	// alongside the total because a push count that silently includes outages
-	// tells the owner memory is flowing while nothing is being delivered, which
-	// is the failure this metric exists to make visible.
-	// Delivered and Degraded are counted explicitly rather than derived from
-	// each other, so entries predating the item count fall into neither bucket
-	// instead of being guessed into one.
+	// A pushed packet lands in exactly one of three buckets, and the split is
+	// the whole point: Delivered carried records, Empty succeeded but the brain
+	// had nothing to say, Failed could not look. Only Failed is a defect. Merging
+	// Empty into Failed would tell the owner of a brand-new project to debug a
+	// perfectly healthy backend; merging it into Delivered would report memory
+	// flowing while nothing reached anyone.
+	//
+	// All three are counted explicitly rather than derived from each other, so
+	// entries written before these fields existed fall into none of them instead
+	// of being guessed into one.
 	TaskStartContextCalls      int `json:"task_start_context_calls"`
 	TaskStartContextBytesTotal int `json:"task_start_context_bytes_total"`
 	TaskStartContextDelivered  int `json:"task_start_context_delivered"`
-	TaskStartContextDegraded   int `json:"task_start_context_degraded"`
+	TaskStartContextEmpty      int `json:"task_start_context_empty"`
+	TaskStartContextFailed     int `json:"task_start_context_failed"`
 	// Hydration re-fetch aggregates (TASK-279). HydrationCalls counts full-record
 	// fetches that follow a compact display. HydrationBytesTotal is the sum of
 	// full-render sizes fetched back. NetSavingsBytes and NetTokensSaved subtract
@@ -187,6 +190,35 @@ func Summarize(runtimeDir string) (*WeeklySummary, error) {
 	return SummarizeFrom(runtimeDir, time.Now().UTC().AddDate(0, 0, -7))
 }
 
+// recordContextPacket folds one related-context side-record into the summary.
+// Pull packets (`gg task get --with-context`) only carry a call count and byte
+// total; push packets (`gg task start`) additionally split into delivered,
+// genuinely-empty, and failed, because only the last of those is a defect worth
+// warning anyone about.
+//
+// An entry written before ContextOutcome existed carries no verdict and lands
+// in none of the three buckets. Guessing it into one would backdate a verdict
+// onto data that never recorded one.
+func (s *WeeklySummary) recordContextPacket(e Entry) {
+	if e.Verb != VerbTaskStartContext {
+		s.WithContextCalls++
+		s.WithContextBytesTotal += e.ContextBlockBytes
+		return
+	}
+	s.TaskStartContextCalls++
+	s.TaskStartContextBytesTotal += e.ContextBlockBytes
+	switch e.ContextOutcome {
+	case OutcomeDelivered:
+		s.TaskStartContextDelivered++
+	case OutcomeEmpty:
+		s.TaskStartContextEmpty++
+	case OutcomeFailed:
+		s.TaskStartContextFailed++
+	}
+	// An empty outcome is a pre-field entry and stays out of all three buckets
+	// on purpose — see the ContextOutcome doc comment.
+}
+
 // SummarizeFrom reads the telemetry file and aggregates all entries at or
 // after since. Returns an empty summary (not an error) when the file doesn't
 // exist. Useful for per-session gap detection where the cutoff is the
@@ -229,6 +261,17 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 		if err != nil || ts.Before(since) {
 			continue
 		}
+		// TASK-540: a related-context entry is a side-record ABOUT an invocation,
+		// not an invocation. root.go already recorded the real command under its
+		// own name, so counting this one too invents a phantom command row
+		// (`task-start` next to the real `start`, `task` colliding with the real
+		// top-level verb) and inflates the "N calls" headline that the North Star
+		// adoption number is read from. Its own counters below still see it.
+		if e.WithContext {
+			sum.recordContextPacket(e)
+			continue
+		}
+
 		sum.Total++
 		sum.VerbCounts[e.Verb]++
 		if e.Origin == originAgent {
@@ -265,24 +308,6 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 				}
 			}
 		}
-		if e.WithContext {
-			if e.Verb == VerbTaskStartContext {
-				sum.TaskStartContextCalls++
-				sum.TaskStartContextBytesTotal += e.ContextBlockBytes
-				// nil = pre-schema entry, counted as neither delivered nor
-				// degraded rather than guessed at.
-				if e.ContextItems != nil {
-					if *e.ContextItems > 0 {
-						sum.TaskStartContextDelivered++
-					} else {
-						sum.TaskStartContextDegraded++
-					}
-				}
-			} else {
-				sum.WithContextCalls++
-				sum.WithContextBytesTotal += e.ContextBlockBytes
-			}
-		}
 		if e.DupeCheck {
 			sum.DupeCheckCalls++
 			if e.MatchesCount > 0 {
@@ -304,6 +329,7 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 			sum.MissingHandlerVerbCounts[e.Verb]++
 		}
 	}
+
 	if saved := sum.CompactBytesDefault - sum.CompactBytesOut; saved > 0 {
 		sum.CompactTokensSaved = saved / BytesPerToken
 	}

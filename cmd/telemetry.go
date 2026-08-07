@@ -257,17 +257,22 @@ func runTelemetrySummary(cmd *cobra.Command, args []string) error {
 				sum.WithContextCalls, sum.WithContextBytesTotal)
 		}
 		if sum.TaskStartContextCalls > 0 {
-			fmt.Printf("task-start memory push: %d packets (%d delivered, %d empty/degraded), %d bytes total context\n",
+			fmt.Printf("task-start memory push: %d packets (%d delivered, %d empty, %d failed), %d bytes total context\n",
 				sum.TaskStartContextCalls, sum.TaskStartContextDelivered,
-				sum.TaskStartContextDegraded, sum.TaskStartContextBytesTotal)
-			if unknown := sum.TaskStartContextCalls - sum.TaskStartContextDelivered - sum.TaskStartContextDegraded; unknown > 0 {
-				fmt.Printf("  note: %d packet(s) predate the item count and are excluded from the split\n", unknown)
+				sum.TaskStartContextEmpty, sum.TaskStartContextFailed,
+				sum.TaskStartContextBytesTotal)
+			if unknown := sum.TaskStartContextCalls - sum.TaskStartContextDelivered -
+				sum.TaskStartContextEmpty - sum.TaskStartContextFailed; unknown > 0 {
+				fmt.Printf("  note: %d packet(s) predate the delivery split and are excluded from it\n", unknown)
 			}
-			// Only judge the packets that can actually be judged — a warning
-			// computed against the total would fire on backfill alone.
-			if judged := sum.TaskStartContextDelivered + sum.TaskStartContextDegraded; judged > 0 &&
-				sum.TaskStartContextDegraded*2 > judged {
-				fmt.Printf("  warning: over half of pushed packets carried no records — check the embedding backend and vector store\n")
+			// Only a FAILED packet indicts the backend. An empty one usually just
+			// means the project has not recorded anything on that topic yet, and
+			// sending someone to debug a healthy embedding backend over it is
+			// worse than saying nothing. Judged excludes pre-split entries so the
+			// warning can never fire on backfill alone.
+			judged := sum.TaskStartContextDelivered + sum.TaskStartContextEmpty + sum.TaskStartContextFailed
+			if judged > 0 && sum.TaskStartContextFailed*2 > judged {
+				fmt.Printf("  warning: over half of pushed packets failed to look — check the embedding backend and vector store\n")
 			}
 		}
 		if sum.DupeCheckCalls > 0 {

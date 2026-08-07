@@ -339,7 +339,12 @@ func runTaskGet(cmd *cobra.Command, args []string) error {
 		if taskGetWithCtx {
 			if cfg, cfgErr := config.Load(); cfgErr == nil {
 				if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
-					telemetry.RecordWithContext(rtDir, "task", "", ctxBlock.Len(), relCtx.items())
+					telemetry.RecordContextPacket(rtDir, telemetry.ContextPacket{
+						Verb:     "task",
+						Bytes:    ctxBlock.Len(),
+						Items:    relCtx.items(),
+						Degraded: relCtx.degraded(),
+					})
 				}
 			}
 		}

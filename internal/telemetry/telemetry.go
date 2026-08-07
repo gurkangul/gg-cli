@@ -66,15 +66,17 @@ type Entry struct {
 	ContextBlockBytes int  `json:"context_block_bytes,omitempty"`
 	// ContextItems is how many related records the block actually carried.
 	// Byte size alone cannot tell a delivered packet from a degraded one — an
-	// "(unavailable)" notice is still bytes — so a packet count that ignored
-	// this would report healthy pushes during an outage.
-	//
-	// Pointer, not int: entries written before this field existed decode to the
-	// zero value, and a plain int would make every one of them indistinguishable
-	// from "delivered nothing". That would have the degraded counter accuse a
-	// healthy backend of an outage purely from backfill. nil means "recorded
-	// before this field existed — unknown"; 0 means a genuinely empty packet.
-	ContextItems *int `json:"context_items,omitempty"`
+	// "(unavailable)" notice is still bytes.
+	ContextItems int `json:"context_items,omitempty"`
+	// ContextOutcome is the packet's verdict: OutcomeDelivered, OutcomeEmpty, or
+	// OutcomeFailed. It is one string rather than flags derived at read time
+	// because the three cases must stay distinguishable in old data: an entry
+	// written before this field existed has no verdict at all, and an empty
+	// string says exactly that. Deriving the verdict from other fields would
+	// silently backdate one onto records that never carried it — a pre-field
+	// failure would read as a healthy empty result, which is the same
+	// empty-vs-failed conflation this field exists to end.
+	ContextOutcome string `json:"context_outcome,omitempty"`
 	// Hydration re-fetch fields (TASK-279). Set by RecordHydration when a
 	// caller fetches the full record after the agent saw compact output.
 	// BytesHydrated is the full-render byte size of the fetched record.
@@ -241,18 +243,63 @@ func RecordDupeCheck(runtimeDir, verb, fromFlag string, matchesCount int, topSco
 // those two delivery modes have very different adoption.
 const VerbTaskStartContext = "task-start"
 
-// RecordWithContext appends a telemetry entry for a related-context block.
-// contextBlockBytes is the size in bytes of the appended === Related Context ===
-// block; contextItems is how many related records it carried (0 for a degraded
-// or empty block, which is what separates a delivered packet from a notice).
-func RecordWithContext(runtimeDir, verb, fromFlag string, contextBlockBytes, contextItems int) {
+// Packet outcomes. Only OutcomeFailed indicts the backend: OutcomeEmpty means
+// the lookup worked and the project simply has nothing recorded on the topic
+// yet, which is the normal state of a young project and must never be reported
+// as a fault.
+const (
+	OutcomeDelivered = "delivered"
+	OutcomeEmpty     = "empty"
+	OutcomeFailed    = "failed"
+)
+
+// ContextPacket describes one rendered === Related Context === block. It is a
+// struct rather than a positional argument list because this record has now been
+// extended twice; the fields answer three different questions (how big, how
+// useful, and whether it worked) and a caller must not be able to transpose them.
+type ContextPacket struct {
+	// Verb distinguishes the pull path (`gg task get --with-context`) from the
+	// push path (VerbTaskStartContext).
+	Verb     string
+	FromFlag string
+	// Bytes is the rendered block size. Degraded blocks still have bytes — a
+	// notice is bytes — so size alone cannot judge a packet.
+	Bytes int
+	// Items is how many related records reached the caller.
+	Items int
+	// Degraded marks a packet that failed rather than one that found nothing.
+	// Items==0 alone cannot tell those apart, and conflating them makes the
+	// summary accuse a healthy backend whenever a project simply has not
+	// recorded anything yet.
+	Degraded bool
+}
+
+// outcome classifies the packet. A failed lookup outranks the item count: a
+// partial result that lost one of its three searches is still a failure to
+// report, even though it delivered something.
+func (p ContextPacket) outcome() string {
+	switch {
+	case p.Degraded:
+		return OutcomeFailed
+	case p.Items > 0:
+		return OutcomeDelivered
+	default:
+		return OutcomeEmpty
+	}
+}
+
+// RecordContextPacket appends a telemetry entry for a rendered related-context
+// block. This is a side-record about an invocation, not an invocation itself —
+// summarize() deliberately keeps it out of the command-usage counts.
+func RecordContextPacket(runtimeDir string, p ContextPacket) {
 	recordEntry(runtimeDir, Entry{
-		Verb:              verb,
-		Origin:            classify(fromFlag),
+		Verb:              p.Verb,
+		Origin:            classify(p.FromFlag),
 		Timestamp:         time.Now().UTC().Format(time.RFC3339),
 		WithContext:       true,
-		ContextBlockBytes: contextBlockBytes,
-		ContextItems:      &contextItems,
+		ContextBlockBytes: p.Bytes,
+		ContextItems:      p.Items,
+		ContextOutcome:    p.outcome(),
 	})
 }
 
