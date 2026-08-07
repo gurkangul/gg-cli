@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-08-07
+
+2.12.0 made the checkable baseline lines enforceable. This release retires the
+model those gates were built around: the second *window* is gone, the second
+*party* stays (TASK-537).
+
+> **Upgrade order matters: binary first, sync second.** Until a machine is
+> running 2.13.0, its `gg` carries the 2.12.0 contract and will overwrite this
+> release's contract block in all six agent entry points — and not only via
+> `doctor --check-contract --fix`: the session-start resync rewrites the block
+> too, so a stale binary reverts the contract with no user action at all
+> (BUG-110). Update every machine's `gg` before running `gg system sync`.
+
 ### Added
 
 - **The managed agent contract now describes single-session operation
