@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -35,7 +36,7 @@ func TestContextPacketOutcome(t *testing.T) {
 // stay counted in the packet total but land in none of the three buckets —
 // guessing it into one backdates a verdict onto data that never carried it,
 // which is the failure mode that killed the two-field design.
-func TestRecordContextPacket_PreFieldEntryLandsInNoBucket(t *testing.T) {
+func TestSummarize_PreFieldEntryLandsInNoBucket(t *testing.T) {
 	preField := Entry{
 		Verb:              VerbTaskStartContext,
 		WithContext:       true,
@@ -53,7 +54,7 @@ func TestRecordContextPacket_PreFieldEntryLandsInNoBucket(t *testing.T) {
 	}
 }
 
-func TestRecordContextPacket_BucketsByOutcome(t *testing.T) {
+func TestSummarize_BucketsByOutcome(t *testing.T) {
 	tests := []struct {
 		outcome                  string
 		delivered, empty, failed int
@@ -84,7 +85,7 @@ func TestRecordContextPacket_BucketsByOutcome(t *testing.T) {
 
 // The pull path keeps its own counters and must never leak into the push-path
 // split — the two measure what agents chose to pull versus what gg pushed.
-func TestRecordContextPacket_PullPathStaysSeparate(t *testing.T) {
+func TestSummarize_PullPathStaysSeparate(t *testing.T) {
 	var s WeeklySummary
 	s.recordContextPacket(Entry{
 		Verb:              "task",
@@ -101,9 +102,67 @@ func TestRecordContextPacket_PullPathStaysSeparate(t *testing.T) {
 	}
 }
 
-// An empty packet must write "context_items":0 rather than omit the key, or the
-// raw log cannot tell "delivered nothing" from "written before the field
-// existed" — the ambiguity that sank the rejected two-field verdict design.
+// This drives the exported writer end-to-end and reads the file back, rather
+// than asserting against a hand-built Entry literal. A literal only pins the
+// struct tag: if someone later "tidies" RecordContextPacket into
+// `if p.Items > 0 { ... }` — the same instinct that produced the bare int in
+// the first place — a tag-only test stays green while the empty-vs-pre-field
+// ambiguity silently returns to the raw log. That is the regression this whole
+// change exists to prevent, so it is asserted at the layer that can regress.
+func TestRecordContextPacket_WriterStampsOutcomeAndExplicitZero(t *testing.T) {
+	dir := t.TempDir()
+	RecordContextPacket(dir, ContextPacket{Verb: VerbTaskStartContext, Bytes: 40, Items: 0})
+	RecordContextPacket(dir, ContextPacket{Verb: VerbTaskStartContext, Bytes: 300, Items: 3})
+	RecordContextPacket(dir, ContextPacket{Verb: VerbTaskStartContext, Bytes: 90, Items: 3, Degraded: true})
+	// A non-context entry, to prove the key is not stamped on every record.
+	Record(dir, "status", "")
+
+	data, err := os.ReadFile(filePath(dir))
+	if err != nil {
+		t.Fatalf("read telemetry: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 entries, got %d:\n%s", len(lines), data)
+	}
+
+	// Line 0: empty packet — must carry an explicit zero, not an omitted key.
+	if !strings.Contains(lines[0], `"context_items":0`) {
+		t.Errorf("empty packet must write an explicit zero item count, got: %s", lines[0])
+	}
+	if !strings.Contains(lines[0], `"context_outcome":"empty"`) {
+		t.Errorf("empty packet outcome wrong: %s", lines[0])
+	}
+	// Line 1: delivered.
+	if !strings.Contains(lines[1], `"context_outcome":"delivered"`) {
+		t.Errorf("delivered packet outcome wrong: %s", lines[1])
+	}
+	// Line 2: partial — non-zero count but degraded, so failed wins. Proves the
+	// precedence holds through the writer, not only in the pure function.
+	if !strings.Contains(lines[2], `"context_outcome":"failed"`) {
+		t.Errorf("partial result must be recorded as failed, got: %s", lines[2])
+	}
+	// Line 3: non-context entry must not carry the key at all.
+	if strings.Contains(lines[3], "context_items") {
+		t.Errorf("non-context entry must omit the item count, got: %s", lines[3])
+	}
+
+	// And the round-trip: what the writer produced must bucket as intended.
+	sum, err := Summarize(dir)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if sum.TaskStartContextDelivered != 1 || sum.TaskStartContextEmpty != 1 || sum.TaskStartContextFailed != 1 {
+		t.Errorf("writer output bucketed as (d=%d e=%d f=%d), want (1,1,1)",
+			sum.TaskStartContextDelivered, sum.TaskStartContextEmpty, sum.TaskStartContextFailed)
+	}
+	if sum.Total != 1 {
+		t.Errorf("only the non-context entry is a call: Total = %d, want 1", sum.Total)
+	}
+}
+
+// The struct tag itself, kept as a fast unit-level guard alongside the
+// end-to-end writer test above.
 func TestEntryJSON_EmptyPacketWritesExplicitZero(t *testing.T) {
 	zero := 0
 	blob, err := json.Marshal(Entry{
