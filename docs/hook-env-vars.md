@@ -420,9 +420,16 @@ GG_INBOX_GATE_WINDOW=0  gg task start TASK-099    # unbounded (legacy)
 
 ## Pre-tool-use hook variables
 
-These are injected by the **Claude Code harness** (not by gg) before running
-scripts in `.gg/hooks/pre-tool-use.d/`. They are only available in that hook
-category, not in `pre-task-done.d/` or `task-done.d/`.
+> **gg does not run `.gg/hooks/pre-tool-use.d/`.** No gg code path iterates that
+> directory; it is documented here only because projects created by older
+> versions may still contain scripts in it, and those scripts never execute.
+> The live pre-tool-use path is the host runtime's own hook config —
+> `.claude/settings.json` calling `gg gsd-guard` (see `cmd/gsdguard.go`). Role
+> authority for lifecycle transitions is enforced in-process by
+> `checkAgentLifecycleGate`, not by a pre-tool-use script.
+
+The variable below is injected by the **Claude Code harness** (not by gg) and
+is available to a pre-tool-use script only if you wire one up yourself.
 
 | Variable | Value | Example |
 |---|---|---|

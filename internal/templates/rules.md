@@ -133,6 +133,7 @@ tasks:
 10. Work in the native tool of choice and test; renew long leases with `gg task renew TASK-XXX --owner "$GG_AGENT" --lease 30m`
 11. If configured review gates require handoff, mark ready rather than done: `gg task ready-for-live TASK-XXX --plan "Reviewer: inspect diff and rerun smoke. Evidence: commands=<cmds run>; live=<smoke result>; impact=<files checked with gg impact>; gaps=<none|known gap>; artifacts=<paths>" --from "$GG_ROLE"`
 12. Notify reviewer: `gg tell reviewer "TASK-XXX ready. Evidence: commands run: <cmds>; live smoke: <result>; impacted files: <files>; known gaps: <none|gap>; artifacts: <paths>" --from "$GG_ROLE" --task TASK-XXX`
+13. Review happens in a separate CONTEXT, not necessarily a second window. One session may do steps 1-12 and orchestrate this step, but it may never approve its own diff — the context that wrote the code confirms rather than falsifies it. Hand the review to a subagent that has not seen the implementation reasoning, and give it its own identity so the gates record a real second party: `GG_AGENT=reviewer-TASK-XXX GG_ROLE=reviewer gg task review TASK-XXX --approve --by reviewer --notes "<what you verified>"`. Closure stays with the owner/maintainer.
 
 Release only when abandoning/handoff unfinished `in_progress` work:
 `gg task release TASK-XXX --owner "$GG_AGENT"`. Do not release after

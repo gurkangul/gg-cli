@@ -36,6 +36,13 @@ func SyncManagedBlocks(projectRoot string) SyncResult {
 	}
 	sr.Errors = append(sr.Errors, cleanupErrs...)
 
+	hookLines, hookErrs := RemoveObsoleteHooks(projectRoot)
+	if len(hookLines) > 0 {
+		sr.Repaired = true
+		sr.Lines = append(sr.Lines, hookLines...)
+	}
+	sr.Errors = append(sr.Errors, hookErrs...)
+
 	// Pass 1: all installer-owned blocks (contract + agent-specific managed blocks).
 	// InstallDetected runs Detect() so only present agents are touched.
 	results := InstallDetected(projectRoot, Options{})

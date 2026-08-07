@@ -117,6 +117,44 @@ The CLI gives agents common verbs:
 - `reviewer`: closure authority that approves/rejects and may run `gg task
   done` when configured gates require verifier separation.
 
+## Single-session operation
+
+A modern host runtime can run implementer and reviewer as isolated-context
+subagents inside one session. That is supported: the protocol never required
+two windows, it required two parties. Collapse the windows, keep the identities.
+
+- One controller session may plan, implement, orchestrate review, and own the
+  task lifecycle.
+- It may not review its own work. The context that wrote the code has already
+  justified every trade-off in it and will confirm rather than falsify.
+  Independence here means a reviewer that never saw the implementation
+  reasoning — that is a property of context isolation, not of window count.
+- Give each subagent its own identity, explicitly. `gg` resolves the runtime
+  identity from `GG_AGENT`, and when that is unset or left at the generic
+  shared default it derives one from the host session id instead
+  (`internal/identity/identity.go`). Anything running under the same host
+  session that does not set `GG_AGENT` therefore resolves to the *same*
+  identity as its parent, and the separation gate refuses the close. Do not
+  assume a runtime hands its subagents a distinct session id — set it:
+
+```bash
+# reviewer subagent — distinct identity, distinct role
+GG_AGENT=reviewer-TASK-123 GG_ROLE=reviewer \
+  gg task review TASK-123 --approve --by reviewer --notes "<what you verified>"
+```
+
+- The separation gates are advisory, not cryptographic (see
+  `checkReadyForLiveGate`): role and agent strings are self-declared. Setting a
+  reviewer identity for a subagent that genuinely did not see the
+  implementation is honest use; swapping `GG_ROLE` inside one context to clear
+  a gate is not, and it silently degrades every "independently verified" signal
+  in the ledger.
+- Record the model honestly. A single-session review is a weaker independence
+  signal than two separately driven runtimes; say so in the review notes rather
+  than letting the ledger imply more than happened.
+- Final closure stays with the owner/maintainer. Delegating the typing of an
+  approval is fine; delegating the judgement is not.
+
 ## Recommended orientation
 
 Use this at the start of an agent session when the agent can run shell commands:
