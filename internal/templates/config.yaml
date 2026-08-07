@@ -11,8 +11,11 @@ embedding:
   backend: ollama                # ollama (default, offline) | voyage (cloud, opt-in)
   host: http://localhost:11434   # Ollama base URL (ollama backend only).
                                  # Install native Ollama: `brew install ollama` then
-                                 # `ollama serve` + `ollama pull nomic-embed-text`.
-  model: nomic-embed-text        # 768-dim — matches the vector store size
+                                 # `ollama serve` + `ollama pull qwen3-embedding:0.6b`.
+  model: qwen3-embedding:0.6b    # 1024-dim. Any Ollama embedding model works —
+                                 # the dimension is probed on first run and then
+                                 # recorded in embedding-meta.json, so changing
+                                 # this later needs `gg reembed`.
 
   # Optional Voyage AI cloud backend. OFF by default: it sends your text
   # off-machine (privacy trade-off) in exchange for higher-quality embeddings.

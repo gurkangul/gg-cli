@@ -6,7 +6,7 @@
    ```sh
    brew install ollama          # or https://ollama.com/download
    ollama serve &
-   ollama pull nomic-embed-text   # default; any embedding model works — override per-shell with GG_EMBED_MODEL
+   ollama pull qwen3-embedding:0.6b   # default; any embedding model works — override per-shell with GG_EMBED_MODEL
    ```
    Alternatively, opt into the Voyage cloud backend (set `embedding.backend: voyage`
    in `.gg/config.yaml` and export `VOYAGE_API_KEY`).

@@ -26,11 +26,15 @@ const (
 	collSuffixNotes       = "notes"
 	collSuffixBugs        = "bugs"
 
-	// VectorSize is the nomic-embed-text dimension. It is ONLY the Ollama
-	// first-run fallback — the authoritative dim comes from embedding-meta.json
-	// (see embedding.EffectiveDim). Non-nomic models (e.g. qwen3-embedding:0.6b
-	// at 1024) are sized from meta/probe, never forced to this constant.
-	VectorSize = 768
+	// VectorSize is the dimension of the DEFAULT embedding model
+	// (qwen3-embedding:0.6b). It is ONLY the Ollama first-run fallback — the
+	// authoritative dim comes from embedding-meta.json (see
+	// embedding.EffectiveDim), and any other model is sized from meta or from
+	// the probe, never forced to this constant. It tracks the default on
+	// purpose: the fallback is reached exactly when the probe failed on a fresh
+	// project, and sizing those collections for a model the project is not
+	// configured to use produces a dimension mismatch on the very first write.
+	VectorSize = 1024
 )
 
 // scrollerIface is the minimal scroll interface used by ExportBrainCollection

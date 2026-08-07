@@ -233,7 +233,7 @@ func DefaultConfig() *Config {
 		Embedding: EmbeddingConfig{
 			Backend: BackendOllama,
 			Host:    "http://localhost:11434",
-			Model:   "nomic-embed-text",
+			Model:   "qwen3-embedding:0.6b",
 		},
 		Backup: BackupConfig{
 			Enabled:  &backupEnabled,

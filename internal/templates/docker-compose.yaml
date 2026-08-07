@@ -10,7 +10,7 @@
 # users who prefer running Ollama inside Docker instead of natively. Start it
 # with:
 #     docker compose -f ~/.gg/docker-compose.yaml up -d ollama
-#     docker compose -f ~/.gg/docker-compose.yaml exec ollama ollama pull nomic-embed-text
+#     docker compose -f ~/.gg/docker-compose.yaml exec ollama ollama pull qwen3-embedding:0.6b
 #
 # The Qdrant and Memgraph server backends have been removed — the embedded
 # SQLite stores (.gg/vectorstore.db and .gg/graph.db) are the only option.

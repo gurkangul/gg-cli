@@ -214,7 +214,7 @@ func (g *Generator) Generate(ctx context.Context, text string) (vec []float32, r
 	}
 	if g.expectedDim > 0 && len(vec) != g.expectedDim {
 		return nil, fmt.Errorf(
-			"embedding dimension mismatch: model %q returned %d dimensions, expected %d — check that your embedding model/backend matches the vector store collection size (hint: nomic-embed-text produces 768-dim vectors; switching backends requires `gg reembed`)",
+			"embedding dimension mismatch: model %q returned %d dimensions, expected %d — check that your embedding model/backend matches the vector store collection size (the default qwen3-embedding:0.6b produces 1024-dim vectors, nomic-embed-text 768; changing model or backend requires `gg reembed`)",
 			g.model, len(vec), g.expectedDim,
 		)
 	}

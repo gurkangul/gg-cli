@@ -214,8 +214,8 @@ func TestDefaultPath_OllamaRequestParity(t *testing.T) {
 	if gotMethod != http.MethodPost || gotPath != "/api/embed" {
 		t.Errorf("request = %s %s, want POST /api/embed", gotMethod, gotPath)
 	}
-	if gotBody.Model != "nomic-embed-text" {
-		t.Errorf("request model = %q, want nomic-embed-text", gotBody.Model)
+	if gotBody.Model != "qwen3-embedding:0.6b" {
+		t.Errorf("request model = %q, want qwen3-embedding:0.6b", gotBody.Model)
 	}
 	if gotBody.Input != "parity probe" {
 		t.Errorf("request input = %q, want parity probe", gotBody.Input)

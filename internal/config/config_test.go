@@ -127,8 +127,11 @@ func TestDefaultConfig_EmbeddingBackendIsOllama(t *testing.T) {
 	if cfg.Embedding.Backend != BackendOllama {
 		t.Fatalf("default embedding.backend = %q, want %q", cfg.Embedding.Backend, BackendOllama)
 	}
-	if cfg.Embedding.Model != "nomic-embed-text" {
-		t.Fatalf("default embedding.model = %q, want nomic-embed-text", cfg.Embedding.Model)
+	// The fleet moved to qwen3-embedding:0.6b in June 2026 but the fresh-init
+	// default was left behind, so every new project started on the model the
+	// fleet had deliberately left (TASK-548). Pinned here so it cannot drift back.
+	if cfg.Embedding.Model != "qwen3-embedding:0.6b" {
+		t.Fatalf("default embedding.model = %q, want qwen3-embedding:0.6b", cfg.Embedding.Model)
 	}
 }
 
