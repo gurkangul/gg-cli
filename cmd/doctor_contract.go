@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -33,8 +34,18 @@ func runDoctorCheckContract(fix, forceReset bool) error {
 		for _, l := range hookLines {
 			fmt.Println(l)
 		}
-		if len(hookErrs) > 0 {
-			return hookErrs[0]
+		// Deliberately NOT fatal, unlike the obsolete-block cleanup above.
+		// RemoveObsoleteBlocks only errors on a real I/O failure or an unpaired
+		// marker, so returning there is effectively unreachable. Hook cleanup
+		// errors on any JSON syntax error in a file users hand-edit constantly
+		// (a trailing comma in permissions.allow is enough), and this command's
+		// job — and the instruction printed on contract drift — is repairing the
+		// CONTRACT. Aborting that because an unrelated settings file will not
+		// parse strands the drift with no way to fix it, and `gg system sync`
+		// treats the non-zero exit as "skip this project's remaining stages".
+		// Report loudly, then carry on.
+		for _, e := range hookErrs {
+			fmt.Fprintf(os.Stderr, "  ✗ obsolete-hook cleanup skipped: %v\n", e)
 		}
 
 		lines, fixErr := agenthooks.FixContract(projectRoot, forceReset)

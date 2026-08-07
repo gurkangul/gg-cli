@@ -108,8 +108,13 @@ func removeHookCommand(data map[string]any, event, cmd string) bool {
 			}
 			keptInner = append(keptInner, h)
 		}
-		if len(keptInner) == 0 {
-			// The matcher entry existed only to run the retired command.
+		if len(keptInner) == 0 && len(inner) > 0 {
+			// This entry existed only to run the retired command, so it goes
+			// with it. The len(inner) > 0 guard matters: an entry that ARRIVED
+			// with an empty hooks list is somebody's disabled hook, not our
+			// leftover, and `changed` is a whole-event flag — without the
+			// guard a removal anywhere else in this event would rewrite the
+			// file and take that innocent entry along.
 			continue
 		}
 		m["hooks"] = keptInner

@@ -103,4 +103,44 @@ if grep -q "removed obsolete dev-role-guard" "$TMP/out2.txt"; then
   exit 1
 fi
 
+# The session-start path, separately. This is the one that actually matters for
+# already-installed projects: nobody runs doctor by hand, they just open a
+# session. Asserting only the doctor path would let the SyncManagedBlocks wiring
+# be deleted with the repro still green.
+PROJ2="$TMP/proj2"
+mkdir -p "$PROJ2/.gg" "$PROJ2/.claude"
+cp "$PROJ/.gg/config.yaml" "$PROJ2/.gg/config.yaml"
+cat > "$PROJ2/.claude/settings.json" <<'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "gg dev-role-guard" } ] },
+      { "matcher": "MyTool", "hooks": [] }
+    ]
+  }
+}
+JSON
+
+( cd "$PROJ2" && "$TMP/gg" session-start --agent claude-code --role master ) > "$TMP/out3.txt" 2>&1 || true
+
+python3 - "$PROJ2/.claude/settings.json" <<'PY' || exit 1
+import json, sys
+
+pre = json.load(open(sys.argv[1]))["hooks"].get("PreToolUse", [])
+cmds = [h["command"] for e in pre for h in e["hooks"]]
+fail = []
+
+if any("dev-role-guard" in c for c in cmds):
+    fail.append("session-start did not retire the stale hook — SyncManagedBlocks is not wired, so installed projects never heal on their own")
+# An entry that ARRIVED with an empty hooks list is a disabled hook the user
+# owns, not our leftover. It must survive a removal elsewhere in the same event.
+if not any(e.get("matcher") == "MyTool" for e in pre):
+    fail.append("an unrelated matcher entry with an empty hooks list was deleted as collateral")
+
+if fail:
+    for f in fail:
+        print("BUG-109: " + f, file=sys.stderr)
+    sys.exit(1)
+PY
+
 echo "BUG-109 repro OK: retired hook commands are pruned from settings.json, siblings and unrelated events survive"

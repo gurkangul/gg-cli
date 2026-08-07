@@ -428,12 +428,18 @@ GG_INBOX_GATE_WINDOW=0  gg task start TASK-099    # unbounded (legacy)
 > authority for lifecycle transitions is enforced in-process by
 > `checkAgentLifecycleGate`, not by a pre-tool-use script.
 
-The variable below is injected by the **Claude Code harness** (not by gg) and
-is available to a pre-tool-use script only if you wire one up yourself.
+**`GG_TOOL_NAME` does not exist either.** It was previously documented here as
+"injected by the Claude Code harness", but nothing sets it — `grep -rn
+GG_TOOL_NAME` across this repo matches only the sentence you are reading. Claude
+Code exports its own `CLAUDE_*` variables and passes the tool name to a
+PreToolUse hook as the stdin JSON field `tool_name`, which is how the real guard
+reads it (`cmd/gsdguard.go` decodes stdin; see `parseGuardToolName`). A hook that
+branches on `$GG_TOOL_NAME` sees an empty string and silently takes the wrong
+path. Read stdin instead:
 
-| Variable | Value | Example |
-|---|---|---|
-| `GG_TOOL_NAME` | The tool being invoked by the agent | `Edit`, `Write`, `MultiEdit` |
+```sh
+tool=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("tool_name",""))')
+```
 
 ---
 
