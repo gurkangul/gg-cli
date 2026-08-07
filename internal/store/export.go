@@ -70,11 +70,14 @@ func bundleVectorDim(bundle *Bundle) int {
 // Vectors are reused as-is — no re-embedding required.
 // Existing points with the same ID are overwritten (upsert semantics).
 func (c *Client) ImportBundle(ctx context.Context, bundle *Bundle) error {
-	// Size collections to the bundle's actual vector dimension, not a hardcoded
-	// default: a bundle exported from a non-768 model (e.g. qwen3-embedding=1024)
-	// must not be loaded into 768-sized collections, which would silently store
-	// mismatched-length vectors and break recall. An empty/vectorless bundle falls
-	// back to the default model's dim.
+	// Size collections to the bundle's actual vector dimension rather than the
+	// default. This is hygiene, NOT a guard: EnsureCollections skips collections
+	// that already exist, so on the project this would supposedly protect — one
+	// that already holds differently-sized collections — the call is a no-op; and
+	// the recorded dim is never read back, so it cannot reject anything either.
+	// The real protection lives in cmd/brain_import.go, which compares the
+	// bundle's embedding model against local meta and hard-errors on a mismatch.
+	// An empty/vectorless bundle falls back to the default model's dim.
 	dim := bundleVectorDim(bundle)
 	if dim == 0 {
 		dim = VectorSize

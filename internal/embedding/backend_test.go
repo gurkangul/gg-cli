@@ -242,14 +242,19 @@ func TestDefaultPath_DimMismatchGuardPreserved(t *testing.T) {
 	// qwen3-embedding:0.6b and nomic-embed-text, so the expectation would be
 	// satisfied by boilerplate even if the "model %q" substitution were deleted.
 	// Verified by deleting that verb and watching this test fail.
+	// Same reasoning for the DIM: the hint text contains "nomic-embed-text 768",
+	// so asserting "768" would also be satisfied by boilerplate. 999 appears
+	// nowhere in the static text, so the assertion requires the "expected %d"
+	// substitution. Verified by replacing that verb with a literal and watching
+	// this test fail.
 	cfg.Model = "sentinel-model-not-in-hint"
-	g := New(&cfg, 768) // expect 768, server returns 384
+	g := New(&cfg, 999) // expect 999, server returns 384
 
 	_, err := g.Generate(context.Background(), "x")
 	if err == nil {
 		t.Fatal("expected dimension mismatch error")
 	}
-	for _, want := range []string{"dimension mismatch", "384", "768", cfg.Model} {
+	for _, want := range []string{"dimension mismatch", "384", "999", cfg.Model} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing %q", err.Error(), want)
 		}

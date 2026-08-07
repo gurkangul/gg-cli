@@ -51,14 +51,14 @@ type deps struct {
 // resolves the corpus-aligned embedding config plus the authoritative dim and
 // validates both against stored meta via CheckMeta — which also records the meta
 // on first run. Returning ONE config+dim for guard and generator prevents the
-// false ErrModelMismatch loop a non-768 Ollama model used to trigger, and stops a
+// false ErrModelMismatch loop an off-default-dim Ollama model used to trigger, and stops a
 // drifted config.yaml from embedding queries in a different vector space than the
 // stored corpus (TASK-516).
 //
 // On Ollama first run (no meta yet) this probes the live model. If the probe fails
-// (Ollama down / model not pulled), it uses the 768 fallback for the in-process dim
-// but does NOT call CheckMeta — so it does not stamp meta{model,768} with a wrong
-// default that would cause a spurious mismatch once the model becomes available.
+// (Ollama down / model not pulled), it uses store.VectorSize for the in-process dim
+// but does NOT call CheckMeta — so it does not stamp meta with the default's dim,
+// which would cause a spurious mismatch once the real model becomes available.
 func resolveEmbedding(cfg *config.Config, ggDir string) (config.EmbeddingConfig, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
 	defer cancel()
@@ -92,8 +92,9 @@ func resolveEmbedding(cfg *config.Config, ggDir string) (config.EmbeddingConfig,
 		} else {
 			// First run — probe the live model so we record its true dim.
 			// If the probe fails (Ollama unreachable / model not pulled), use the
-			// 768 fallback but DON'T write meta: stamping meta{model,768} for a
-			// 1024-dim model would cause a spurious mismatch on the next run.
+			// store.VectorSize fallback but DON'T write meta: stamping the
+			// default's dim for a model of a different size would cause a
+			// spurious mismatch on the next run.
 			vec, probeErr := embedding.New(&embCfg, 0).Generate(ctx, "dimension probe")
 			if probeErr == nil && len(vec) > 0 {
 				dim = len(vec)

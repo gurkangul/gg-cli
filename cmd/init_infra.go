@@ -150,7 +150,7 @@ func setupProjectCollections(ctx context.Context, projectID, ggDir string) error
 	defer cancelSetup()
 	// Size the collections to the active embedding backend's dimension (audit
 	// EMB-1) so vectors are not silently truncated/rejected at insert time. On a
-	// fresh project this probes the configured model once, so a non-768 model
+	// fresh project this probes the configured model once, so an off-default-dim model
 	// (e.g. qwen3-embedding:0.6b=1024) gets correctly-sized collections.
 	dim := embedding.EffectiveDim(setupCtx, &cfg.Embedding, ggDir, store.VectorSize)
 	if err := client.EnsureCollections(setupCtx, uint64(dim)); err != nil {
