@@ -123,7 +123,10 @@ JSON
 
 ( cd "$PROJ2" && "$TMP/gg" session-start --agent claude-code --role master ) > "$TMP/out3.txt" 2>&1 || true
 
-python3 - "$PROJ2/.claude/settings.json" <<'PY' || exit 1
+# Dump session-start's own output on failure. Without it, a session-start that
+# died early misreports as "SyncManagedBlocks is not wired" and sends the next
+# reader after the wrong cause.
+python3 - "$PROJ2/.claude/settings.json" <<'PY' || { echo "--- session-start output ---" >&2; cat "$TMP/out3.txt" >&2; exit 1; }
 import json, sys
 
 pre = json.load(open(sys.argv[1]))["hooks"].get("PreToolUse", [])

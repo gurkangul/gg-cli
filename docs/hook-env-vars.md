@@ -438,7 +438,10 @@ branches on `$GG_TOOL_NAME` sees an empty string and silently takes the wrong
 path. Read stdin instead:
 
 ```sh
-tool=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("tool_name",""))')
+# An empty payload is legitimate passthrough, not an error — `json.load` on ""
+# raises, and a PreToolUse hook that exits non-zero fails silently, which is the
+# exact failure this section exists to warn about. Guard the empty case.
+tool=$(python3 -c 'import json,sys; d=sys.stdin.read(); print(json.loads(d).get("tool_name","") if d.strip() else "")')
 ```
 
 ---
