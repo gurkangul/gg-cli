@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`gg task start` now pushes the task-scoped memory packet (TASK-538).** A
+  successful claim prints an `=== Related Context ===` block: the top-3
+  decisions, rejected approaches, and notes semantically related to the task
+  being claimed. This is not a new capability — the block shipped in April
+  behind `gg task get --with-context`, where it was measured at 1/518 calls and
+  again at 0/482 calls, roughly 0% against its recorded 30% adoption gate. An
+  opt-in read path is not read. Claiming is the first moment the topic is known,
+  so the packet is pushed there instead of waiting to be asked for. The
+  renderer, the top-3 limit, and the ~800-token cap are reused unchanged.
+
+- **`--no-context` on `gg task start`.** Suppresses the block for scripted and
+  CI callers that only want the lifecycle line.
+
+- **`task-start memory push` line in `gg telemetry summary`.** Counts pushed
+  packets and their bytes, reported separately from `--with-context`. The two
+  answer different questions — what agents chose to pull versus what gg pushed
+  whether they asked or not — and collapsing them would hide the adoption gap
+  that motivated the push in the first place.
+
+### Changed
+
+- `gg task start --json` gained an additive `related_context` field. Existing
+  keys are unchanged; the field is omitted under `--no-context`. A dead
+  embedding backend degrades the block to a one-line notice and still exits 0 —
+  the memory packet must never cost you the claim.
+
 ## [2.12.0] - 2026-08-03
 
 2.11.0 wrote the engineering baseline down. This release makes the two lines

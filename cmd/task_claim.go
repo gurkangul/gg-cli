@@ -1,23 +1,28 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/gurkangul/gg-cli/internal/config"
 	"github.com/gurkangul/gg-cli/internal/identity"
+	"github.com/gurkangul/gg-cli/internal/store"
+	"github.com/gurkangul/gg-cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
 var (
-	taskStartOwner   string
-	taskStartLease   time.Duration
-	taskRenewOwner   string
-	taskRenewLease   time.Duration
-	taskReleaseOwner string
-	taskUnblockOwner string
-	taskUnblockLease time.Duration
+	taskStartOwner     string
+	taskStartLease     time.Duration
+	taskStartNoContext bool
+	taskRenewOwner     string
+	taskRenewLease     time.Duration
+	taskReleaseOwner   string
+	taskUnblockOwner   string
+	taskUnblockLease   time.Duration
 )
 
 var taskStartCmd = &cobra.Command{
@@ -29,7 +34,14 @@ WHEN TO USE: an agent is actively taking ownership of a pending task. The
 claim is stored on the task and visible in task list/get so other agents avoid
 colliding with the same work.
 
-Existing active claims are refused unless the lease has expired.`,
+Existing active claims are refused unless the lease has expired.
+
+A successful claim also prints an === Related Context === block: the top-3
+decisions, rejected approaches, and notes semantically related to this task.
+Claiming is the moment the topic is known, so prior decisions are pushed here
+rather than left to a flag the agent has to remember. The block is capped at
+~800 tokens and never fails the claim — if the vector store or embedder is
+unavailable it degrades to a one-line notice. Use --no-context to suppress it.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runTaskStart,
 }
@@ -65,6 +77,7 @@ Refused if the task is not blocked, or if another agent holds an active lease.`,
 func init() {
 	taskStartCmd.Flags().StringVar(&taskStartOwner, "owner", "", "agent taking the claim (defaults to $GG_AGENT / $GG_ROLE)")
 	taskStartCmd.Flags().DurationVar(&taskStartLease, "lease", 30*time.Minute, "claim lease duration (for example 30m, 2h)")
+	taskStartCmd.Flags().BoolVar(&taskStartNoContext, "no-context", false, "suppress the === Related Context === block (for scripted/CI callers)")
 	taskRenewCmd.Flags().StringVar(&taskRenewOwner, "owner", "", "agent renewing the claim (defaults to $GG_AGENT / $GG_ROLE)")
 	taskRenewCmd.Flags().DurationVar(&taskRenewLease, "lease", 30*time.Minute, "new lease duration from now")
 	taskReleaseCmd.Flags().StringVar(&taskReleaseOwner, "owner", "", "agent releasing the claim (defaults to $GG_AGENT / $GG_ROLE)")
@@ -97,7 +110,10 @@ func runTaskStart(cmd *cobra.Command, args []string) error {
 	if owner == "" {
 		return fmt.Errorf("--owner is required (or set GG_AGENT / GG_ROLE)")
 	}
-	d, err := loadDeps(false)
+	// The embedder is only constructed when the memory packet will actually be
+	// rendered — building it is cheap and offline, and a dead embedding backend
+	// degrades inside fetchRelatedContext rather than failing the claim.
+	d, err := loadDeps(!taskStartNoContext)
 	if err != nil {
 		return err
 	}
@@ -112,14 +128,52 @@ func runTaskStart(cmd *cobra.Command, args []string) error {
 	}
 	notifyTaskLifecycle(ctx, d.store, taskID, "started", owner)
 
-	return printJSON(map[string]any{
+	// TASK-538: push the task-scoped memory packet at claim time. Faz 1 shipped
+	// this same block behind `gg task get --with-context`, where it scored 0 of
+	// 482 get calls in 7 days — an opt-in read path is not read. Claiming is the
+	// one moment the topic is already known, so the packet is pushed here.
+	// Never fatal: a nil relatedContext renders as an "(unavailable)" notice and
+	// the claim still succeeds.
+	ctxBlock := taskStartContextBlock(d, t)
+
+	payload := map[string]any{
 		"id":          taskID,
 		"status":      t.Status,
 		"owner":       t.Owner,
 		"lease_until": t.LeaseUntil,
-	}, func() {
+	}
+	if ctxBlock.Len() > 0 {
+		payload["related_context"] = ctxBlock.String()
+	}
+
+	return printJSON(payload, func() {
 		fmt.Printf("→ %s started by %s (lease until %s)\n", taskID, t.Owner, t.LeaseUntil)
+		_, _ = os.Stdout.Write(ctxBlock.Bytes())
 	})
+}
+
+// taskStartContextBlock renders the === Related Context === block for a freshly
+// claimed task and records the injection in telemetry so its usage is countable
+// the same way `--with-context` is. Returns an empty buffer when the caller
+// passed --no-context.
+func taskStartContextBlock(d *deps, t *store.Task) *bytes.Buffer {
+	var buf bytes.Buffer
+	if taskStartNoContext {
+		return &buf
+	}
+
+	var rc *relatedContext
+	if d.embedder != nil {
+		rc = fetchRelatedContext(d, t)
+	}
+	renderRelatedContext(&buf, rc)
+
+	if cfg, cfgErr := config.Load(); cfgErr == nil {
+		if rtDir, rtErr := cfg.RuntimeDir(); rtErr == nil {
+			telemetry.RecordWithContext(rtDir, telemetry.VerbTaskStartContext, "", buf.Len())
+		}
+	}
+	return &buf
 }
 
 func runTaskUnblock(cmd *cobra.Command, args []string) error {

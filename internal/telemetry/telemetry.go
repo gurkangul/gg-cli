@@ -223,6 +223,13 @@ func RecordDupeCheck(runtimeDir, verb, fromFlag string, matchesCount int, topSco
 	})
 }
 
+// VerbTaskStartContext is the Verb recorded when `gg task start` pushes the
+// task-scoped memory packet. It is deliberately distinct from the `task` verb
+// used by `gg task get --with-context` so the summary can report pushed
+// injections separately from pulled ones — the whole point of TASK-538 is that
+// those two delivery modes have very different adoption.
+const VerbTaskStartContext = "task-start"
+
 // RecordWithContext appends a telemetry entry for a --with-context invocation.
 // contextBlockBytes is the size in bytes of the appended === Related Context === block.
 func RecordWithContext(runtimeDir, verb, fromFlag string, contextBlockBytes int) {

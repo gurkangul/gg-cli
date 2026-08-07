@@ -27,6 +27,14 @@ type WeeklySummary struct {
 	// WithContextCalls counts gg get --with-context invocations.
 	WithContextCalls      int `json:"with_context_calls"`
 	WithContextBytesTotal int `json:"with_context_bytes_total"`
+	// TaskStartContextCalls counts the memory packets pushed by `gg task start`
+	// (TASK-538). Kept separate from WithContextCalls because the two answer
+	// different questions: WithContext measures what agents chose to pull,
+	// TaskStartContext measures what gg pushed at claim time whether they asked
+	// or not. Collapsing them would hide exactly the adoption gap that motivated
+	// the push.
+	TaskStartContextCalls      int `json:"task_start_context_calls"`
+	TaskStartContextBytesTotal int `json:"task_start_context_bytes_total"`
 	// Hydration re-fetch aggregates (TASK-279). HydrationCalls counts full-record
 	// fetches that follow a compact display. HydrationBytesTotal is the sum of
 	// full-render sizes fetched back. NetSavingsBytes and NetTokensSaved subtract
@@ -247,8 +255,13 @@ func SummarizeFrom(runtimeDir string, since time.Time) (*WeeklySummary, error) {
 			}
 		}
 		if e.WithContext {
-			sum.WithContextCalls++
-			sum.WithContextBytesTotal += e.ContextBlockBytes
+			if e.Verb == VerbTaskStartContext {
+				sum.TaskStartContextCalls++
+				sum.TaskStartContextBytesTotal += e.ContextBlockBytes
+			} else {
+				sum.WithContextCalls++
+				sum.WithContextBytesTotal += e.ContextBlockBytes
+			}
 		}
 		if e.DupeCheck {
 			sum.DupeCheckCalls++

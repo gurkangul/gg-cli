@@ -12,6 +12,13 @@ colliding with the same work.
 
 Existing active claims are refused unless the lease has expired.
 
+A successful claim also prints an === Related Context === block: the top-3
+decisions, rejected approaches, and notes semantically related to this task.
+Claiming is the moment the topic is known, so prior decisions are pushed here
+rather than left to a flag the agent has to remember. The block is capped at
+~800 tokens and never fails the claim — if the vector store or embedder is
+unavailable it degrades to a one-line notice. Use --no-context to suppress it.
+
 ```
 gg task start TASK-ID [flags]
 ```
@@ -21,6 +28,7 @@ gg task start TASK-ID [flags]
 ```
   -h, --help             help for start
       --lease duration   claim lease duration (for example 30m, 2h) (default 30m0s)
+      --no-context       suppress the === Related Context === block (for scripted/CI callers)
       --owner string     agent taking the claim (defaults to $GG_AGENT / $GG_ROLE)
 ```
 

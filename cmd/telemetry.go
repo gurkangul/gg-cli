@@ -256,6 +256,10 @@ func runTelemetrySummary(cmd *cobra.Command, args []string) error {
 			fmt.Printf("--with-context: %d calls, %d bytes total context\n",
 				sum.WithContextCalls, sum.WithContextBytesTotal)
 		}
+		if sum.TaskStartContextCalls > 0 {
+			fmt.Printf("task-start memory push: %d packets, %d bytes total context\n",
+				sum.TaskStartContextCalls, sum.TaskStartContextBytesTotal)
+		}
 		if sum.DupeCheckCalls > 0 {
 			fmt.Printf("dupe-check: %d calls, %d fires  (cancel=%d force=%d auto-force=%d reuse=%d)\n",
 				sum.DupeCheckCalls, sum.DupeCheckMatchesHits,
