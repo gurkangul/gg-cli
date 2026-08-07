@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The managed contract now carries continuous execution, subagent-trust and
+  context-health handoff (TASK-546).** 2.13.0 propagated the single-session
+  *permission* — a session may drive a whole task but never review its own diff.
+  It did not propagate the *behaviour*: measured after that rollout, the contract
+  line was present in 9 of 9 projects while the rules that make it work were in 1
+  of 9, because project-local rules sit below the managed block and by design do
+  not travel. Three bullets promoted: keep going through in-scope work rather
+  than stopping to report each sub-step; never take a subagent's result on trust,
+  since the contract *mandates* delegating the diff-quality judgement and a
+  finding is a claim until you have checked it; and on context degradation,
+  finish the atomic step, leave the repo building, and write the handoff into gg
+  rather than into chat — the next session cannot read your chat. Deliberately
+  left project-local: the orchestration paragraph, "debug before delegating",
+  "own your breakage" and "resuming".
+
 ### Fixed
 
 - **The telemetry summary no longer calls a healthy backend broken (TASK-543).**
