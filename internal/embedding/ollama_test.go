@@ -59,8 +59,8 @@ func TestGenerate_DimValidation_Pass(t *testing.T) {
 // TestGenerate_DimValidation_Fail verifies that a wrong-dim embedding returns
 // a descriptive error mentioning the model name and both dim values.
 func TestGenerate_DimValidation_Fail(t *testing.T) {
-	_, gen := testServer(t, 4096) // model returns 4096, we expect 768
-	gen.expectedDim = 768
+	_, gen := testServer(t, 4096) // model returns 4096, we expect 4242
+	gen.expectedDim = 4242
 
 	_, err := gen.Generate(context.Background(), "hello")
 	if err == nil {
@@ -70,8 +70,11 @@ func TestGenerate_DimValidation_Fail(t *testing.T) {
 	if !strings.Contains(msg, "4096") {
 		t.Errorf("error should mention actual dim 4096: %s", msg)
 	}
-	if !strings.Contains(msg, "768") {
-		t.Errorf("error should mention expected dim 768: %s", msg)
+	// Sentinel, not 768: the error's static hint contains "nomic-embed-text 768",
+	// so asserting 768 here passed even with the "expected %d" verb deleted — it
+	// claimed to check the expected dim while checking boilerplate.
+	if !strings.Contains(msg, "4242") {
+		t.Errorf("error should mention expected dim 4242: %s", msg)
 	}
 	if !strings.Contains(msg, "test-model") {
 		t.Errorf("error should mention model name: %s", msg)

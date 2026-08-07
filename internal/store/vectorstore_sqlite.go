@@ -30,7 +30,7 @@ func collectionNotFoundErr(name string) error {
 // index. Vectors are stored as little-endian float32 BLOBs in modernc.org/sqlite
 // (already a dependency); semantic search loads the candidate set for a
 // collection, applies the same server-side payload filters the vector store enforced, and
-// computes exact cosine similarity in Go. At the project's scale (~3.5k × 768)
+// computes exact cosine similarity in Go. At the project's scale (~3.5k × 1024)
 // this is single-digit milliseconds and is exact rather than approximate, so it
 // matches or strictly improves on the vector store's HNSW recall.
 //
