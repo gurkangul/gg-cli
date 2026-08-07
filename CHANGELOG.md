@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The managed agent contract now describes single-session operation
+  (TASK-537).** The two-window model — a master pane coordinating a side-pane
+  worker — was written when the only way to get a second reader was a second
+  process. That machinery is gone: the cmux/spawn orchestration was retired in
+  May, `gg spawn` is not a command, and
+  `.gg/hooks/pre-tool-use.d/50-master-guard.sh` turned out to be dead code no gg
+  path ever invoked. One session may now drive a whole task — plan, implement,
+  review — but it may never be its own reviewer. Independence is a property of
+  context isolation, not of window count: the review belongs to a subagent that
+  never saw the implementation reasoning, carrying its own `GG_AGENT`/`GG_ROLE`
+  so the separation gate records a genuine second party. Nothing was loosened to
+  get there — `verifier_separation`, `checkReadyForLiveGate` and
+  `checkAgentLifecycleGate` are untouched, and final closure still belongs to
+  the owner.
+
+- **`RemoveObsoleteHooks` — retired managed hook commands are pruned from
+  `.claude/settings.json`.** gg has always retired obsolete CLAUDE.md blocks;
+  hook entries in JSON settings had no equivalent, so deleting an installer only
+  stopped new installs and left every already-written entry in place. Cleanup
+  runs from the same two call sites as the block cleanup — the session-start
+  resync and `doctor --check-contract --fix` — so installed projects heal
+  themselves without anyone running a repair command. Narrow by construction:
+  only exact gg-owned commands are removed, a matcher entry that still runs
+  something else keeps it, an entry that *arrived* with an empty hooks list is
+  somebody's disabled hook and is left alone, and a settings file that will not
+  parse is reported on stderr and skipped rather than rewritten — a bystander's
+  syntax error must never abort a contract repair.
+
 - **`gg task start` now pushes the task-scoped memory packet (TASK-538).** A
   successful claim prints an `=== Related Context ===` block: the top-3
   decisions, rejected approaches, and notes semantically related to the task
@@ -33,6 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A PreToolUse hook pointed at a command gg no longer ships (BUG-109).**
+  `gg dev-role-guard` was wired with matcher `Bash`, so it ran — and exited 1 —
+  on every Bash tool call in the project. Claude Code treats a PreToolUse exit 1
+  as non-blocking, so nothing ever surfaced: the guard the project believed it
+  had was not running at all. The retirement machinery above removes the stale
+  entry at the next session start.
+
 - **A failed related-item search no longer reports itself as an empty brain.**
   `fetchRelatedContext` discarded the errors from its three searches, so a
   timeout or a missing collection rendered `(no related items found)` —
@@ -54,6 +89,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cmd/task_related_context.go`. It has two consumers now — pulled by
   `gg task get --with-context`, pushed by `gg task start` — so it belongs to
   neither renderer, and the move keeps `task_list.go` under the 500-line limit.
+
+### Removed
+
+- `.gg/hooks/pre-tool-use.d/50-master-guard.sh`. No gg code path iterates
+  `.gg/hooks/pre-tool-use.d/` — `RunHooks` is only ever called with `task-done`
+  and `pre-task-done` — so the script never ran, and it routed implementation to
+  a `gg spawn` command that does not exist. `docs/hook-env-vars.md` now says the
+  directory is not executed, and drops its claim that the harness injects
+  `GG_TOOL_NAME`: nothing sets that variable, and Claude Code passes the tool
+  name as the stdin JSON field `tool_name`.
 
 ## [2.12.0] - 2026-08-03
 
