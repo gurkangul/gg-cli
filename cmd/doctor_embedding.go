@@ -77,8 +77,8 @@ func doctorCheckOllama(cmd *cobra.Command, cfg *config.Config, report *doctorRep
 	doctorCheckEmbeddingModel(cmd.Context(), cfg.Embedding.Host, eff, report)
 
 	// Resolve the authoritative expected dim (meta.Dim once collections exist, else
-	// a one-time probe, else the nomic fallback) so doctor is green for a non-768
-	// model like qwen3-embedding:0.6b=1024 instead of comparing against a hardcoded 768.
+	// a one-time probe, else the default's dim) so doctor is green for any model
+	// whose dim differs from the default instead of comparing against a constant.
 	ggDir, _ := config.GGDir()
 	dimCtx, dimCancel := withTimeout(cmd.Context())
 	defer dimCancel()

@@ -74,7 +74,7 @@ func (c *Client) ImportBundle(ctx context.Context, bundle *Bundle) error {
 	// default: a bundle exported from a non-768 model (e.g. qwen3-embedding=1024)
 	// must not be loaded into 768-sized collections, which would silently store
 	// mismatched-length vectors and break recall. An empty/vectorless bundle falls
-	// back to the nomic default.
+	// back to the default model's dim.
 	dim := bundleVectorDim(bundle)
 	if dim == 0 {
 		dim = VectorSize

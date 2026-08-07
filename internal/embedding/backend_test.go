@@ -237,13 +237,19 @@ func TestDefaultPath_DimMismatchGuardPreserved(t *testing.T) {
 
 	cfg := config.DefaultConfig().Embedding
 	cfg.Host = srv.URL
+	// A sentinel model name that appears NOWHERE in the error's static hint.
+	// Asserting the real default would be vacuous: the hint text names both
+	// qwen3-embedding:0.6b and nomic-embed-text, so the expectation would be
+	// satisfied by boilerplate even if the "model %q" substitution were deleted.
+	// Verified by deleting that verb and watching this test fail.
+	cfg.Model = "sentinel-model-not-in-hint"
 	g := New(&cfg, 768) // expect 768, server returns 384
 
 	_, err := g.Generate(context.Background(), "x")
 	if err == nil {
 		t.Fatal("expected dimension mismatch error")
 	}
-	for _, want := range []string{"dimension mismatch", "384", "768", "nomic-embed-text"} {
+	for _, want := range []string{"dimension mismatch", "384", "768", cfg.Model} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing %q", err.Error(), want)
 		}

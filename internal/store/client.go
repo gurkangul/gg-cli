@@ -30,10 +30,18 @@ const (
 	// (qwen3-embedding:0.6b). It is ONLY the Ollama first-run fallback — the
 	// authoritative dim comes from embedding-meta.json (see
 	// embedding.EffectiveDim), and any other model is sized from meta or from
-	// the probe, never forced to this constant. It tracks the default on
-	// purpose: the fallback is reached exactly when the probe failed on a fresh
-	// project, and sizing those collections for a model the project is not
-	// configured to use produces a dimension mismatch on the very first write.
+	// the probe, never forced to this constant.
+	//
+	// It tracks the default for CONSISTENCY, not for protection. Nothing in the
+	// store validates it: `collections.dim` is written by EnsureCollections and
+	// never read back, upsertTx stores the vector blob without checking its
+	// length, and cosineSimilarity silently returns 0 when lengths differ. A
+	// divergence between this constant and the corpus is therefore inert rather
+	// than caught, which is precisely why the constant should not be left
+	// pointing at a model the default is not. The real guards live elsewhere:
+	// embedding-meta.json records the true dim, CheckMeta compares model
+	// identity, and Generator.expectedDim rejects a wrong-sized vector at
+	// generation time.
 	VectorSize = 1024
 )
 

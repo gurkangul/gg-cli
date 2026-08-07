@@ -40,8 +40,10 @@ type VoyageConfig struct {
 	// Model is the Voyage embedding model. Default voyage-3.5-lite.
 	Model string `yaml:"model,omitempty"`
 	// OutputDim is the requested embedding dimension. Voyage supports
-	// 256/512/1024/2048; default 1024. This differs from nomic's 768, so a
-	// backend switch requires `gg reembed` (the meta guard enforces this).
+	// 256/512/1024/2048; default 1024 — the same dim as gg's default Ollama
+	// model, so a backend switch is NOT caught by dimension. It is caught by
+	// model identity: the meta guard compares the recorded model name, so
+	// switching backends still requires `gg reembed`.
 	OutputDim int `yaml:"output_dim,omitempty"`
 	// APIKeyEnv names the environment variable holding the Voyage API key.
 	// Default VOYAGE_API_KEY. Never put the key itself in config.yaml.

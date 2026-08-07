@@ -174,10 +174,10 @@ func EffectiveModelIdentity(cfg *config.EmbeddingConfig) string {
 //   - Ollama with embedding-meta.json present: the recorded meta.Dim — the
 //     authoritative steady-state answer, with NO network call.
 //   - Ollama without meta (first run): one live probe of the configured model so
-//     a non-768 model (e.g. qwen3-embedding:0.6b → 1024) is recorded at its true
-//     dim instead of being forced to the nomic fallback.
+//     a model whose dim differs from the default is recorded at its true dim
+//     instead of being forced to the fallback.
 //   - Ollama, no meta, probe unavailable (server down / model missing): the
-//     fallback (store.VectorSize, the nomic 768 default). A wrong stamp here is
+//     fallback (store.VectorSize, the default model's dim). A wrong stamp here is
 //     self-healing — `gg reembed` probes and rewrites meta with the real dim.
 //
 // ctx bounds the first-run probe; pass a cancellable/timeout context.

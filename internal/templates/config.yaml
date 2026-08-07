@@ -20,8 +20,9 @@ embedding:
   # Optional Voyage AI cloud backend. OFF by default: it sends your text
   # off-machine (privacy trade-off) in exchange for higher-quality embeddings.
   # To enable: set backend: voyage above, export VOYAGE_API_KEY in your shell
-  # (never store the key here), then run `gg reembed` — voyage's dimension
-  # differs from nomic's 768 so existing collections must be rebuilt.
+  # (never store the key here), then run `gg reembed` — switching backends
+  # changes the recorded embedding model, so existing collections must be
+  # rebuilt even when the dimension happens to match.
   #
   # voyage:
   #   model: voyage-3.5-lite     # Voyage embedding model
