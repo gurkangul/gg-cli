@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-08-07
+
+2.13.0 gave every project permission to run as a single session. This release
+gives them the behaviour that makes it work, and stops new projects starting on
+the embedding model the fleet left a year ago.
+
+> **Upgrade order still matters: binary first, sync second** (BUG-110). A machine
+> on an older gg overwrites this release's contract block at session start with
+> no command run and no warning.
+
 ### Added
 
 - **The managed contract now carries continuous execution, subagent-trust and
@@ -119,6 +129,24 @@ model those gates were built around: the second *window* is gone, the second
   nothing was reaching anyone.
 
 ### Fixed
+
+- **Fresh `gg init` no longer defaults to nomic-embed-text (TASK-548).** The qwen
+  migration was recorded twice in June 2026 and completed across every registered
+  project — but only EXISTING projects were migrated. The fresh-init default was
+  never touched, so each new project started on the model the fleet had
+  deliberately left and someone had to notice and override it by hand. The
+  default is now `qwen3-embedding:0.6b`, and `store.VectorSize` moves 768 → 1024
+  with it so the first-run fallback matches the model it falls back for. Existing
+  projects are unaffected: `EffectiveDim` reads `embedding-meta.json` before it
+  probes or falls back. Every user-facing `ollama pull` hint moved too, including
+  `docs/getting-started.md` — the file a new install actually follows.
+
+  Documented while fixing it, because three review rounds turned on the claim:
+  the store validates no dimension at all. `collections.dim` is written and never
+  read back, `upsertTx` stores the vector blob unchecked, and `cosineSimilarity`
+  returns 0 on a length mismatch rather than erroring. A divergence is inert, not
+  caught. The guards that do exist are `embedding-meta.json`, `CheckMeta`, and
+  `Generator.expectedDim`.
 
 - **A PreToolUse hook pointed at a command gg no longer ships (BUG-109).**
   `gg dev-role-guard` was wired with matcher `Bash`, so it ran — and exited 1 —
