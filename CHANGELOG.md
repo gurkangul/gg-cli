@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `task` verb, and overstating the `N calls` headline that the North Star
   adoption number is read from. These records now feed only their own counters.
 
+  Two knock-on effects worth knowing before you compare numbers across versions.
+  The 7-day call total drops slightly — measured at −1.3% on this repo — while
+  the agent-initiated *share* is unchanged, so the North Star percentage is not
+  distorted. And `gg audit stop` gets marginally stricter: `task` is a capture
+  verb, so a session that ran `gg task get --with-context` but recorded nothing
+  used to escape the "no capture calls" warning on the strength of the context
+  read alone. Reading context is not capture, so it now gets the warning it
+  earned.
+
 ## [2.13.0] - 2026-08-07
 
 2.12.0 made the checkable baseline lines enforceable. This release retires the

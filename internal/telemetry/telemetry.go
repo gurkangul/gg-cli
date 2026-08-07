@@ -64,10 +64,23 @@ type Entry struct {
 	// --with-context fields (omitted when flag is not used).
 	WithContext       bool `json:"with_context,omitempty"`
 	ContextBlockBytes int  `json:"context_block_bytes,omitempty"`
-	// ContextItems is how many related records the block actually carried.
-	// Byte size alone cannot tell a delivered packet from a degraded one — an
-	// "(unavailable)" notice is still bytes.
-	ContextItems int `json:"context_items,omitempty"`
+	// ContextItems is how many related records the block actually carried, kept
+	// as raw data for anyone reading the JSONL directly. Byte size alone cannot
+	// stand in for it — an "(unavailable)" notice is still bytes.
+	//
+	// Pointer, not int: Entry is shared by every record type, so a bare int with
+	// omitempty would stamp nothing on non-context entries but would also omit
+	// the key for a genuinely empty packet, making "0 items" and "written before
+	// this field existed" indistinguishable in the raw log. A pointer omits only
+	// on entries that are not context packets, and writes an explicit 0 for one
+	// that delivered nothing.
+	//
+	// Do NOT derive a packet's verdict from this count. It cannot separate "found
+	// nothing" from "could not look" — that is what ContextOutcome is for, and a
+	// partial result that lost one of three searches has a non-zero count while
+	// still being a failure. Deriving from the count is the mistake recorded in
+	// the rejected two-field verdict design.
+	ContextItems *int `json:"context_items,omitempty"`
 	// ContextOutcome is the packet's verdict: OutcomeDelivered, OutcomeEmpty, or
 	// OutcomeFailed. It is one string rather than flags derived at read time
 	// because the three cases must stay distinguishable in old data: an entry
@@ -292,13 +305,14 @@ func (p ContextPacket) outcome() string {
 // block. This is a side-record about an invocation, not an invocation itself —
 // summarize() deliberately keeps it out of the command-usage counts.
 func RecordContextPacket(runtimeDir string, p ContextPacket) {
+	items := p.Items
 	recordEntry(runtimeDir, Entry{
 		Verb:              p.Verb,
 		Origin:            classify(p.FromFlag),
 		Timestamp:         time.Now().UTC().Format(time.RFC3339),
 		WithContext:       true,
 		ContextBlockBytes: p.Bytes,
-		ContextItems:      p.Items,
+		ContextItems:      &items,
 		ContextOutcome:    p.outcome(),
 	})
 }
